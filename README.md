@@ -21,7 +21,7 @@ Add to your AI tool's MCP configuration:
   "mcpServers": {
     "openmemory": {
       "command": "npx",
-      "args": ["-y", "@openmemory/server", "--data", "~/.openmemory"]
+      "args": ["-y", "@openmem/mcp", "--data", "~/.openmemory"]
     }
   }
 }

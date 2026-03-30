@@ -1,5 +1,5 @@
 {
-  "name": "@openmemory/server",
+  "name": "@openmem/mcp",
   "version": "0.0.1",
   "description": "AI memory engine exposed as an MCP server",
   "type": "module",
