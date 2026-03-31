@@ -89,16 +89,20 @@ describe.skipIf(!canLoadSqlite)("sessions", () => {
     expect(getSession(db, "non-existent")).toBeNull();
   });
 
-  it("getLatestSession returns the most recently active", () => {
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+  it("getLatestSession returns the most recently active", async () => {
     const s1 = createSession(db, { source_tool: "a", project: null });
+    await sleep(5000);
     const s2 = createSession(db, { source_tool: "b", project: null });
 
-    // s2 was created second, so it's the latest
+    // s2 was created 5 s later, so it's the latest
     const latest = getLatestSession(db);
     expect(latest).not.toBeNull();
     expect(latest!.id).toBe(s2.id);
 
-    // Insert an event into s1 to make it the latest
+    // Insert an event into s1 — its last_activity_at is now ahead of s2's
+    await sleep(5000);
     insertEvent(db, {
       session_id: s1.id,
       event_type: "message",
@@ -108,7 +112,7 @@ describe.skipIf(!canLoadSqlite)("sessions", () => {
 
     const updated = getLatestSession(db);
     expect(updated!.id).toBe(s1.id);
-  });
+  }, 15_000);
 
   it("returns null when no sessions exist", () => {
     expect(getLatestSession(db)).toBeNull();
