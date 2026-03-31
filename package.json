@@ -10,7 +10,8 @@
     "url": "https://github.com/gordonkjlee/openmemory"
   },
   "bin": {
-    "mcp-server-openmemory": "dist/index.js"
+    "mcp-server-openmemory": "dist/index.js",
+    "openmemory": "dist/cli/index.js"
   },
   "files": [
     "dist"

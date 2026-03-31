@@ -21,13 +21,113 @@ Add to your AI tool's MCP configuration:
   "mcpServers": {
     "openmemory": {
       "command": "npx",
-      "args": ["-y", "@openmem/mcp", "--data", "~/.openmemory"]
+      "args": ["-y", "@openmem/mcp"]
     }
   }
 }
 ```
 
-Works with Claude Code, Claude Desktop, Cursor, and any MCP-compatible tool.
+Works with Claude Code, Claude Desktop, Cursor, and any MCP-compatible tool. Data is stored at `~/.openmemory` by default. To change this, add `"env": { "OPENMEMORY_DATA": "/absolute/path" }` to the config above.
+
+## MCP Tools
+
+### Session
+- `log_event` - Log a session event (user messages, assistant responses, tool calls, tool results, artifacts). Call this to build the episodic record of the conversation.
+- `get_events` - Retrieve events from the current or a previous session. Use this to recall what happened earlier (especially after context compaction), or to review a previous session.
+
+## Session Event Logging
+
+OpenMemory captures every interaction as a `SessionEvent` — the DIKW Data layer. This is the episodic ground truth that consolidation, search, and recall all build on.
+
+### How events are captured
+
+All events are captured via the `log_event` MCP tool or the `openmemory log-event` CLI command. The calling AI logs conversation messages; Claude Code hooks can automate this:
+
+### Claude Code Hooks
+
+For Claude Code, hooks provide deterministic capture — they fire every time, regardless of whether the AI "remembers" the tool description.
+
+#### Available hooks
+
+| Hook | Fires when | What it captures |
+|------|-----------|-----------------|
+| `UserPromptSubmit` | User sends a message | Full prompt text |
+| `Stop` | Assistant finishes responding | Last assistant message |
+| `PostToolUse` | Tool call completes | Tool name, input, and response |
+
+#### Setup
+
+Install the CLI for hooks:
+
+    npm install -g @openmem/mcp
+
+Alternatively, replace `openmemory` with `npx -y @openmem/mcp` in the hook commands below (no install needed, but adds ~2-3s latency per hook).
+
+Add to `.claude/settings.json` (project-level) or `~/.claude/settings.json` (global):
+
+```json
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "matcher": null,
+        "hooks": [
+          {
+            "type": "command",
+            "command": "openmemory log-event --role user --event-type message"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": null,
+        "hooks": [
+          {
+            "type": "command",
+            "command": "openmemory log-event --role assistant --event-type message"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "^(?!mcp__openmemory__)",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "openmemory log-event --role tool --event-type tool_result"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+The CLI reads the hook JSON payload from stdin and extracts the relevant content field (`prompt` for `UserPromptSubmit`, `last_assistant_message` for `Stop`, full JSON for `PostToolUse`). Events are appended to the most recently active session in the database.
+
+The `PostToolUse` matcher excludes OpenMemory's own tools (`^(?!mcp__openmemory__)`) to avoid capturing internal operations.
+
+### CLI Reference
+
+The `openmemory log-event` command inserts events directly into the database (no running server needed):
+
+```bash
+# From a hook (reads JSON payload from stdin):
+echo '{"hook_event_name":"UserPromptSubmit","prompt":"hello"}' | openmemory log-event --role user
+
+# With explicit content:
+openmemory log-event --role user --event-type message --content "hello world"
+
+# Options:
+#   --role          user | assistant | system | tool (default: user)
+#   --event-type    message | tool_call | tool_result | artifact (default: message)
+#   --content-type  text | json | image | audio | binary (default: text)
+#   --content       Event content (or pipe via stdin)
+#   --session-id    Target session (default: most recent)
+#   --data          Data directory (default: ~/.openmemory or $OPENMEMORY_DATA)
+```
 
 ## Development
 
