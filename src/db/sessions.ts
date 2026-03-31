@@ -81,7 +81,7 @@ export function getLatestSession(
   db: Database.Database,
 ): Session | null {
   const row = db.prepare(
-    `SELECT * FROM sessions ORDER BY last_activity_at DESC LIMIT 1`,
+    `SELECT * FROM sessions ORDER BY last_activity_at DESC, rowid DESC LIMIT 1`,
   ).get();
   return (row as Session) ?? null;
 }
