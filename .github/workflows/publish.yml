@@ -1,0 +1,70 @@
+name: Publish to npm
+
+on:
+  workflow_run:
+    # Must match the `name:` in release-please.yml exactly
+    workflows: ["Release Please"]
+    types: [completed]
+  workflow_dispatch:
+
+concurrency:
+  group: publish-npm
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write
+    environment: npm
+    steps:
+      - name: Find unpublished release
+        id: release
+        run: |
+          TAG=$(gh api repos/${{ github.repository }}/releases/latest --jq '.tag_name' 2>/dev/null || echo "")
+          if [ -z "$TAG" ]; then
+            echo "No releases found"
+            echo "found=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          VERSION="${TAG#v}"
+          if npm view @openmem/mcp@"$VERSION" version 2>/dev/null; then
+            echo "$TAG already on npm"
+            echo "found=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "$TAG not on npm — publishing"
+            echo "found=true" >> "$GITHUB_OUTPUT"
+            echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          fi
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - if: steps.release.outputs.found == 'true'
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          ref: ${{ steps.release.outputs.tag }}
+
+      - if: steps.release.outputs.found == 'true'
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+
+      - if: steps.release.outputs.found == 'true'
+        name: Install dependencies
+        run: npm ci  # `prepare` script runs tsc after install
+
+      - if: steps.release.outputs.found == 'true'
+        name: Run tests
+        run: npm test
+
+      - if: steps.release.outputs.found == 'true'
+        name: Publish ${{ steps.release.outputs.tag }}
+        run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
