@@ -1,6 +1,6 @@
 {
   "name": "@openmem/mcp",
-  "version": "0.0.6",
+  "version": "0.0.7",
   "description": "AI memory engine exposed as an MCP server",
   "type": "module",
   "license": "MIT",
