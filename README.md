@@ -16,7 +16,7 @@ One place that accumulates structured knowledge - validated, owned by you - and 
 
 Add to your AI tool's MCP configuration:
 
-<!-- x-release-please-version -->
+<!-- x-release-please-start-version -->
 ```json
 {
   "mcpServers": {
@@ -27,6 +27,7 @@ Add to your AI tool's MCP configuration:
   }
 }
 ```
+<!-- x-release-please-end -->
 
 Works with Claude Code, Claude Desktop, Cursor, and any MCP-compatible tool. Data is stored at `~/.openmemory` by default. To change this, add `"env": { "OPENMEMORY_DATA": "/absolute/path" }` to the config above.
 
