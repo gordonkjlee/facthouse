@@ -13,7 +13,7 @@ try {
 }
 
 const dbMod = canLoadSqlite ? await import("../../src/db/index.js") : ({} as any);
-const { createSessionManager } = canLoadSqlite
+const { createSessionManager, withEventLogging } = canLoadSqlite
   ? await import("../../src/tools/session-manager.js")
   : ({} as any);
 
@@ -92,6 +92,47 @@ describe.skipIf(!canLoadSqlite)("session manager", () => {
   });
 });
 
+describe.skipIf(!canLoadSqlite)("withEventLogging", () => {
+  it("wraps a sync handler and logs tool_call + tool_result", () => {
+    const manager = createSessionManager(db);
+    manager.startSession(null, null);
+
+    const handler = (args: any) => ({
+      content: [{ type: "text" as const, text: `result for ${args.query}` }],
+    });
+
+    const wrapped = withEventLogging(manager, "search_knowledge", handler);
+    const result = wrapped({ query: "allergies" });
+
+    expect(result.content[0].text).toBe("result for allergies");
+
+    // Should have logged 2 events: tool_call + tool_result
+    const events = dbMod.getEvents(db, manager.getActiveSession()!.id);
+    expect(events).toHaveLength(2);
+    expect(events[0].event_type).toBe("tool_call");
+    expect(events[0].role).toBe("assistant");
+    expect(events[1].event_type).toBe("tool_result");
+    expect(events[1].role).toBe("tool");
+    expect(events[1].metadata).toEqual({ tool: "search_knowledge" });
+  });
+
+  it("wraps an async handler", async () => {
+    const manager = createSessionManager(db);
+    manager.startSession(null, null);
+
+    const handler = async (args: any) => ({
+      content: [{ type: "text" as const, text: "async result" }],
+    });
+
+    const wrapped = withEventLogging(manager, "async_tool", handler);
+    const result = await wrapped({});
+
+    expect(result.content[0].text).toBe("async result");
+
+    const events = dbMod.getEvents(db, manager.getActiveSession()!.id);
+    expect(events).toHaveLength(2);
+  });
+});
 
 describe.skipIf(!canLoadSqlite)("get_events read tool", () => {
   it("returns events from the current session", () => {

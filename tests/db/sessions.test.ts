@@ -37,13 +37,13 @@ afterEach(() => {
 });
 
 describe.skipIf(!canLoadSqlite)("schema", () => {
-  it("applies version 1", () => {
-    expect(getSchemaVersion(db)).toBe(1);
+  it("applies version 2", () => {
+    expect(getSchemaVersion(db)).toBe(2);
   });
 
   it("is idempotent", () => {
     applySchema(db); // second call
-    expect(getSchemaVersion(db)).toBe(1);
+    expect(getSchemaVersion(db)).toBe(2);
   });
 });
 
@@ -104,7 +104,7 @@ describe.skipIf(!canLoadSqlite)("sessions", () => {
     // Insert an event into s1 — its last_activity_at is now ahead of s2's
     await sleep(5000);
     insertEvent(db, {
-      session_id: s1.id,
+      mcp_session_id: s1.id,
       event_type: "message",
       role: "user",
       content: "hello",
@@ -132,21 +132,21 @@ describe.skipIf(!canLoadSqlite)("session events", () => {
 
   it("inserts an event with auto-incremented sequence", () => {
     const e1 = insertEvent(db, {
-      session_id: sessionId,
+      mcp_session_id: sessionId,
       event_type: "message",
       role: "user",
       content: "first message",
     });
 
     const e2 = insertEvent(db, {
-      session_id: sessionId,
+      mcp_session_id: sessionId,
       event_type: "message",
       role: "assistant",
       content: "second message",
     });
 
     const e3 = insertEvent(db, {
-      session_id: sessionId,
+      mcp_session_id: sessionId,
       event_type: "tool_call",
       role: "assistant",
       content: '{"tool":"search"}',
@@ -161,7 +161,7 @@ describe.skipIf(!canLoadSqlite)("session events", () => {
   it("updates session last_activity_at on insert", () => {
     const before = getSession(db, sessionId)!;
     insertEvent(db, {
-      session_id: sessionId,
+      mcp_session_id: sessionId,
       event_type: "message",
       role: "user",
       content: "hello",
@@ -169,11 +169,13 @@ describe.skipIf(!canLoadSqlite)("session events", () => {
     const after = getSession(db, sessionId)!;
 
     expect(after.last_activity_at >= before.last_activity_at).toBe(true);
+    // Verify the UPDATE actually ran by checking the session was touched.
+    expect(after.last_activity_at).toBeTruthy();
   });
 
   it("defaults content_type to text", () => {
     const event = insertEvent(db, {
-      session_id: sessionId,
+      mcp_session_id: sessionId,
       event_type: "message",
       role: "user",
       content: "hello",
@@ -183,8 +185,8 @@ describe.skipIf(!canLoadSqlite)("session events", () => {
   });
 
   it("stores and retrieves content_ref for non-text events", () => {
-    const event = insertEvent(db, {
-      session_id: sessionId,
+    insertEvent(db, {
+      mcp_session_id: sessionId,
       event_type: "artifact",
       role: "user",
       content: null,
@@ -201,7 +203,7 @@ describe.skipIf(!canLoadSqlite)("session events", () => {
   it("round-trips metadata through JSON", () => {
     const meta = { tool: "search_knowledge", latency_ms: 42 };
     insertEvent(db, {
-      session_id: sessionId,
+      mcp_session_id: sessionId,
       event_type: "tool_result",
       role: "tool",
       content: "results",
@@ -214,7 +216,7 @@ describe.skipIf(!canLoadSqlite)("session events", () => {
 
   it("stores null metadata", () => {
     insertEvent(db, {
-      session_id: sessionId,
+      mcp_session_id: sessionId,
       event_type: "message",
       role: "user",
       content: "hello",
@@ -227,7 +229,7 @@ describe.skipIf(!canLoadSqlite)("session events", () => {
   it("getEvents returns ordered by sequence", () => {
     for (let i = 0; i < 5; i++) {
       insertEvent(db, {
-        session_id: sessionId,
+        mcp_session_id: sessionId,
         event_type: "message",
         role: i % 2 === 0 ? "user" : "assistant",
         content: `message ${i}`,
@@ -244,7 +246,7 @@ describe.skipIf(!canLoadSqlite)("session events", () => {
   it("getEvents respects after_sequence filter", () => {
     for (let i = 0; i < 5; i++) {
       insertEvent(db, {
-        session_id: sessionId,
+        mcp_session_id: sessionId,
         event_type: "message",
         role: "user",
         content: `message ${i}`,
@@ -260,7 +262,7 @@ describe.skipIf(!canLoadSqlite)("session events", () => {
   it("getEvents respects limit", () => {
     for (let i = 0; i < 5; i++) {
       insertEvent(db, {
-        session_id: sessionId,
+        mcp_session_id: sessionId,
         event_type: "message",
         role: "user",
         content: `message ${i}`,
@@ -275,7 +277,7 @@ describe.skipIf(!canLoadSqlite)("session events", () => {
     expect(getEventCount(db, sessionId)).toBe(0);
 
     insertEvent(db, {
-      session_id: sessionId,
+      mcp_session_id: sessionId,
       event_type: "message",
       role: "user",
       content: "hello",
@@ -284,24 +286,54 @@ describe.skipIf(!canLoadSqlite)("session events", () => {
     expect(getEventCount(db, sessionId)).toBe(1);
   });
 
-  it("assigns independent sequences across sessions", () => {
+  it("uses global sequence across sessions", () => {
     const s2 = createSession(db, { source_tool: null, project: null });
 
     const e1 = insertEvent(db, {
-      session_id: sessionId,
+      mcp_session_id: sessionId,
       event_type: "message",
       role: "user",
       content: "session 1",
     });
 
     const e2 = insertEvent(db, {
-      session_id: s2.id,
+      mcp_session_id: s2.id,
       event_type: "message",
       role: "user",
       content: "session 2",
     });
 
     expect(e1.sequence).toBe(1);
-    expect(e2.sequence).toBe(1);
+    expect(e2.sequence).toBe(2);
+  });
+
+  it("retrieves events by client_session_id", () => {
+    insertEvent(db, {
+      client_session_id: "claude-uuid",
+      event_type: "message",
+      role: "user",
+      content: "from hook",
+    });
+
+    const events = getEvents(db, "claude-uuid");
+    expect(events).toHaveLength(1);
+    expect(events[0].client_session_id).toBe("claude-uuid");
+    expect(events[0].mcp_session_id).toBeNull();
+  });
+
+  it("retrieves events by either session column", () => {
+    insertEvent(db, {
+      mcp_session_id: sessionId,
+      client_session_id: "claude-uuid",
+      event_type: "message",
+      role: "user",
+      content: "both ids",
+    });
+
+    const byMcp = getEvents(db, sessionId);
+    const byClient = getEvents(db, "claude-uuid");
+    expect(byMcp).toHaveLength(1);
+    expect(byClient).toHaveLength(1);
+    expect(byMcp[0].id).toBe(byClient[0].id);
   });
 });

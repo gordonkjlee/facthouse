@@ -17,7 +17,8 @@ export interface NewSession {
 }
 
 export interface NewSessionEvent {
-  session_id: string;
+  mcp_session_id?: string | null;
+  client_session_id?: string | null;
   event_type: SessionEvent["event_type"];
   role: SessionEvent["role"];
   content_type?: SessionEvent["content_type"];
@@ -91,8 +92,8 @@ export function getLatestSession(
 // ---------------------------------------------------------------------------
 
 /**
- * Insert a new event into a session. Assigns the next sequence number
- * and updates the session's last_activity_at, all within a transaction.
+ * Insert a new event. Assigns the next global sequence number
+ * and updates the MCP session's last_activity_at (if applicable).
  */
 export function insertEvent(
   db: Database.Database,
@@ -100,6 +101,8 @@ export function insertEvent(
 ): SessionEvent {
   const id = randomUUID();
   const now = new Date().toISOString();
+  const mcpSessionId = event.mcp_session_id ?? null;
+  const clientSessionId = event.client_session_id ?? null;
   const contentType = event.content_type ?? "text";
   const contentRef = event.content_ref ?? null;
   const metadata = event.metadata ? JSON.stringify(event.metadata) : null;
@@ -107,20 +110,21 @@ export function insertEvent(
   const result = db.transaction(() => {
     const seqRow = db
       .prepare(
-        `SELECT COALESCE(MAX(sequence), 0) AS max_seq
-         FROM session_events WHERE session_id = ?`,
+        `SELECT COALESCE(MAX(sequence), 0) AS max_seq FROM session_events`,
       )
-      .get(event.session_id) as { max_seq: number };
+      .get() as { max_seq: number };
 
     const sequence = seqRow.max_seq + 1;
 
     db.prepare(
       `INSERT INTO session_events
-         (id, session_id, sequence, event_type, role, content_type, content, content_ref, metadata, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         (id, mcp_session_id, client_session_id, sequence, event_type, role,
+          content_type, content, content_ref, metadata, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(
       id,
-      event.session_id,
+      mcpSessionId,
+      clientSessionId,
       sequence,
       event.event_type,
       event.role,
@@ -131,13 +135,16 @@ export function insertEvent(
       now,
     );
 
-    db.prepare(
-      `UPDATE sessions SET last_activity_at = ? WHERE id = ?`,
-    ).run(now, event.session_id);
+    if (mcpSessionId) {
+      db.prepare(
+        `UPDATE sessions SET last_activity_at = ? WHERE id = ?`,
+      ).run(now, mcpSessionId);
+    }
 
     return {
       id,
-      session_id: event.session_id,
+      mcp_session_id: mcpSessionId,
+      client_session_id: clientSessionId,
       sequence,
       event_type: event.event_type,
       role: event.role,
@@ -164,11 +171,11 @@ export function getEvents(
   const rows = db
     .prepare(
       `SELECT * FROM session_events
-       WHERE session_id = ? AND sequence > ?
+       WHERE (mcp_session_id = ? OR client_session_id = ?) AND sequence > ?
        ORDER BY sequence ASC
        LIMIT ?`,
     )
-    .all(sessionId, afterSeq, limit) as Array<
+    .all(sessionId, sessionId, afterSeq, limit) as Array<
     Omit<SessionEvent, "metadata"> & { metadata: string | null }
   >;
 
@@ -178,13 +185,16 @@ export function getEvents(
   }));
 }
 
-/** Count the total number of events in a session. */
+/** Count the total number of events matching a session ID. */
 export function getEventCount(
   db: Database.Database,
   sessionId: string,
 ): number {
   const row = db
-    .prepare(`SELECT COUNT(*) AS count FROM session_events WHERE session_id = ?`)
-    .get(sessionId) as { count: number };
+    .prepare(
+      `SELECT COUNT(*) AS count FROM session_events
+       WHERE mcp_session_id = ? OR client_session_id = ?`,
+    )
+    .get(sessionId, sessionId) as { count: number };
   return row.count;
 }

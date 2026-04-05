@@ -47,7 +47,10 @@ export interface SessionManager {
 // Factory
 // ---------------------------------------------------------------------------
 
-export function createSessionManager(db: Database.Database): SessionManager {
+export function createSessionManager(
+  db: Database.Database,
+  clientSessionId?: string | null,
+): SessionManager {
   let activeSession: Session | null = null;
 
   const manager: SessionManager = {
@@ -69,7 +72,8 @@ export function createSessionManager(db: Database.Database): SessionManager {
       }
 
       const event = insertEvent(db, {
-        session_id: activeSession.id,
+        mcp_session_id: activeSession.id,
+        client_session_id: clientSessionId ?? null,
         event_type: opts.event_type,
         role: opts.role,
         content: opts.content,
@@ -175,7 +179,10 @@ export function registerSessionReadTools(
       session_id: z
         .string()
         .optional()
-        .describe("Session to query. Omit for the current session."),
+        .describe(
+          "Session to query (matches MCP or client session ID). " +
+            "Omit for the current session.",
+        ),
       after_sequence: z
         .number()
         .optional()

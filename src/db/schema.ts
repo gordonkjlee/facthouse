@@ -5,7 +5,7 @@
 
 import type Database from "better-sqlite3";
 
-const CURRENT_VERSION = 1;
+const CURRENT_VERSION = 2;
 
 /** Read the current schema version from the database. */
 export function getSchemaVersion(db: Database.Database): number {
@@ -19,6 +19,9 @@ export function applySchema(db: Database.Database): void {
 
   if (version < 1) {
     applyV1(db);
+  }
+  if (version < 2) {
+    applyV2(db);
   }
 }
 
@@ -54,5 +57,46 @@ function applyV1(db: Database.Database): void {
       ON session_events(session_id, sequence);
   `);
 
+  db.pragma("user_version = 1");
+}
+
+// ---------------------------------------------------------------------------
+// Schema version 2 — drop FK, split session_id into two nullable columns
+// ---------------------------------------------------------------------------
+
+function applyV2(db: Database.Database): void {
+  // foreign_keys pragma cannot be changed inside a transaction.
+  db.pragma("foreign_keys = OFF");
+
+  db.exec(`
+    CREATE TABLE session_events_new (
+      id TEXT PRIMARY KEY,
+      mcp_session_id TEXT,
+      client_session_id TEXT,
+      sequence INTEGER NOT NULL,
+      event_type TEXT NOT NULL CHECK (event_type IN ('message', 'tool_call', 'tool_result', 'artifact')),
+      role TEXT NOT NULL CHECK (role IN ('user', 'assistant', 'system', 'tool')),
+      content_type TEXT NOT NULL DEFAULT 'text' CHECK (content_type IN ('text', 'json', 'image', 'audio', 'binary')),
+      content TEXT,
+      content_ref TEXT,
+      metadata TEXT,
+      created_at TEXT NOT NULL
+    );
+
+    INSERT INTO session_events_new
+      (id, mcp_session_id, client_session_id, sequence, event_type, role,
+       content_type, content, content_ref, metadata, created_at)
+    SELECT id, session_id, NULL, sequence, event_type, role,
+           content_type, content, content_ref, metadata, created_at
+    FROM session_events;
+
+    DROP TABLE session_events;
+    ALTER TABLE session_events_new RENAME TO session_events;
+
+    CREATE INDEX idx_session_events_mcp ON session_events(mcp_session_id, sequence);
+    CREATE INDEX idx_session_events_client ON session_events(client_session_id);
+  `);
+
+  db.pragma("foreign_keys = ON");
   db.pragma(`user_version = ${CURRENT_VERSION}`);
 }

@@ -60,7 +60,9 @@ const server = new McpServer({
   version: pkg.version,
 });
 
-const sessionManager = createSessionManager(db);
+const clientSessionId = process.env.OPENMEMORY_CLIENT_SESSION ?? null;
+
+const sessionManager = createSessionManager(db, clientSessionId);
 sessionManager.registerTools(server);
 registerSessionReadTools(server, sessionManager, db);
 
