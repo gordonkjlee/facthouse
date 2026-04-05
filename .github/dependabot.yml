@@ -9,10 +9,16 @@ updates:
     labels:
       - dependencies
     groups:
-      dev-dependencies:
+      dev-dependencies-minor-patch:
         dependency-type: development
-      production-dependencies:
+        update-types:
+          - minor
+          - patch
+      production-dependencies-minor-patch:
         dependency-type: production
+        update-types:
+          - minor
+          - patch
 
   - package-ecosystem: github-actions
     directory: /
