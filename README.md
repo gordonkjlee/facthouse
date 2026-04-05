@@ -16,12 +16,13 @@ One place that accumulates structured knowledge - validated, owned by you - and 
 
 Add to your AI tool's MCP configuration:
 
+<!-- x-release-please-version -->
 ```json
 {
   "mcpServers": {
     "openmemory": {
       "command": "npx",
-      "args": ["-y", "@openmem/mcp"]
+      "args": ["-y", "@openmem/mcp@0.0.5"]
     }
   }
 }
@@ -70,7 +71,6 @@ Add to `.claude/settings.json` (project-level) or `~/.claude/settings.json` (glo
   "hooks": {
     "UserPromptSubmit": [
       {
-        "matcher": null,
         "hooks": [
           {
             "type": "command",
@@ -81,7 +81,6 @@ Add to `.claude/settings.json` (project-level) or `~/.claude/settings.json` (glo
     ],
     "Stop": [
       {
-        "matcher": null,
         "hooks": [
           {
             "type": "command",

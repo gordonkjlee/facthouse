@@ -8,7 +8,7 @@
  */
 
 import { parseArgs } from "node:util";
-import { mkdirSync } from "node:fs";
+import { mkdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -53,16 +53,18 @@ applySchema(db);
 // MCP Server
 // ---------------------------------------------------------------------------
 
+const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf-8"));
+
 const server = new McpServer({
   name: "openmemory",
-  version: "0.0.1",
+  version: pkg.version,
 });
 
 const sessionManager = createSessionManager(db);
 sessionManager.registerTools(server);
 registerSessionReadTools(server, sessionManager, db);
 
-// Future tools (capture_fact, search_knowledge, etc.) will be registered here.
+// Future tools will be registered here with withEventLogging wrapper.
 // See docs/design/mcp-tools.md for the full specification.
 
 // ---------------------------------------------------------------------------
