@@ -45,7 +45,7 @@ mkdirSync(dataDir, { recursive: true });
 // Database
 // ---------------------------------------------------------------------------
 
-const dbPath = path.join(dataDir, "knowledge.db");
+const dbPath = path.join(dataDir, "memory.db");
 const db = openDatabase(dbPath);
 applySchema(db);
 

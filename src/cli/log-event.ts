@@ -25,7 +25,7 @@ export interface LogEventArgs {
  * @throws If no sessions exist and no sessionId is provided.
  */
 export function logEvent(args: LogEventArgs): SessionEvent {
-  const dbPath = path.join(args.dataDir, "knowledge.db");
+  const dbPath = path.join(args.dataDir, "memory.db");
   const db = openDatabase(dbPath);
 
   try {
