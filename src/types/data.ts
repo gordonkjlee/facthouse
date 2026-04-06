@@ -9,8 +9,9 @@
  *   Wisdom       Inference       Applied judgement — hypotheses from patterns (Phase 3)
  *
  * Each transformation is explicit:
- *   Data → Information    The calling LLM decides what's worth capturing (capture_fact)
- *   Information → Knowledge   Session-boundary consolidation (end_session)
+ *   Data → Information    The calling LLM captures explicitly (capture_fact) or the server
+ *                          extracts from events during consolidation (ADR-15: hybrid capture)
+ *   Information → Knowledge   Event-driven consolidation (ADR-13, amended)
  *   Knowledge → Wisdom        Inference pipeline (Phase 3)
  *
  * Session scopes the technical boundary (MCP connection).
@@ -33,6 +34,9 @@ export interface Consolidation {
   facts_in: number;
   facts_graduated: number;
   facts_rejected: number;
+  entities_created: number;
+  entities_linked: number;
+  supersessions: number;
   summary: string | null;
   open_threads: string[] | null;
   created_at: string;
@@ -60,22 +64,38 @@ export interface SessionEvent {
 }
 
 /**
- * DIKW: Information — LLM-extracted capture in the session buffer. Tagged and
- * scored but not yet integrated. Graduates to Fact during consolidation.
+ * DIKW: Information — captured or extracted fact awaiting consolidation.
+ * Also serves as in-session working memory (queryable via get_session_context).
+ * Graduates to Fact during consolidation. See ADR-15 (hybrid capture).
  */
 export interface SessionFact {
   id: string;
   session_id: string;
   content: string;
-  /** Points to the SessionEvent that prompted this capture.
-   *  Full provenance: Fact → SessionFact → SessionEvent. */
+  /** SHA-256 of content for intra-session dedup (ADR-16: pattern separation). */
+  content_hash: string;
+  /** Who created this: AI via capture_fact or server via event extraction (ADR-15). */
+  source_origin: "explicit" | "inferred";
+  /** Points to the primary SessionEvent that prompted this capture. */
   source_event_id: string | null;
   domain_hint: string | null;
   confidence: number | null;
   importance: number | null;
   source_tool: string | null;
   capture_context: string | null;
+  /** UUID of the consolidation run that claimed this fact (null = unclaimed). */
+  consolidation_id: string | null;
   created_at: string;
+}
+
+/** Provenance link: which events contributed to a session fact (ADR-17). */
+export interface SessionFactSource {
+  session_fact_id: string;
+  event_id: string;
+  /** How central this event was to the extracted fact (0.0–1.0). */
+  relevance: number;
+  /** 'primary' = stated the fact, 'corroborating' = mentioned again, 'contextual' = nearby context. */
+  extraction_type: "primary" | "corroborating" | "contextual";
 }
 
 /**
