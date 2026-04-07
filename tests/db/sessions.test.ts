@@ -37,13 +37,13 @@ afterEach(() => {
 });
 
 describe.skipIf(!canLoadSqlite)("schema", () => {
-  it("applies version 2", () => {
-    expect(getSchemaVersion(db)).toBe(2);
+  it("applies current version", () => {
+    expect(getSchemaVersion(db)).toBe(4);
   });
 
   it("is idempotent", () => {
     applySchema(db); // second call
-    expect(getSchemaVersion(db)).toBe(2);
+    expect(getSchemaVersion(db)).toBe(4);
   });
 });
 

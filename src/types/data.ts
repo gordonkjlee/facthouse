@@ -10,8 +10,8 @@
  *
  * Each transformation is explicit:
  *   Data → Information    The calling LLM captures explicitly (capture_fact) or the server
- *                          extracts from events during consolidation (ADR-15: hybrid capture)
- *   Information → Knowledge   Event-driven consolidation (ADR-13, amended)
+ *                          extracts from events during consolidation (hybrid capture model)
+ *   Information → Knowledge   Event-driven batch consolidation
  *   Knowledge → Wisdom        Inference pipeline (Phase 3)
  *
  * Session scopes the technical boundary (MCP connection).
@@ -30,7 +30,7 @@ export interface Session {
 /** A consolidation run over session facts. Can happen multiple times per session. */
 export interface Consolidation {
   id: string;
-  session_id: string;
+  session_id: string | null;
   facts_in: number;
   facts_graduated: number;
   facts_rejected: number;
@@ -66,15 +66,15 @@ export interface SessionEvent {
 /**
  * DIKW: Information — captured or extracted fact awaiting consolidation.
  * Also serves as in-session working memory (queryable via get_session_context).
- * Graduates to Fact during consolidation. See ADR-15 (hybrid capture).
+ * Graduates to Fact during consolidation.
  */
 export interface SessionFact {
   id: string;
   session_id: string;
   content: string;
-  /** SHA-256 of content for intra-session dedup (ADR-16: pattern separation). */
+  /** SHA-256 of content for intra-session dedup. */
   content_hash: string;
-  /** Who created this: AI via capture_fact or server via event extraction (ADR-15). */
+  /** Who created this: AI via capture_fact ('explicit') or server via event extraction ('inferred'). */
   source_origin: "explicit" | "inferred";
   /** Points to the primary SessionEvent that prompted this capture. */
   source_event_id: string | null;
@@ -88,7 +88,7 @@ export interface SessionFact {
   created_at: string;
 }
 
-/** Provenance link: which events contributed to a session fact (ADR-17). */
+/** Provenance link: which events contributed to a session fact. */
 export interface SessionFactSource {
   session_fact_id: string;
   event_id: string;
@@ -128,7 +128,7 @@ export interface Entity {
   id: string;
   type: string;
   name: string;
-  canonical_name: string | null;
+  canonical_name: string;
   metadata: Record<string, unknown> | null;
   created_at: string;
   access_count: number;

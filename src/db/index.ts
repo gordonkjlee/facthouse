@@ -14,3 +14,8 @@ export {
   getEventCount,
 } from "./sessions.js";
 export type { NewSession, NewSessionEvent, GetEventsOpts } from "./sessions.js";
+export * from "./session-facts.js";
+export * from "./facts.js";
+export * from "./entities.js";
+export * from "./domains.js";
+export * from "./consolidation-lock.js";
