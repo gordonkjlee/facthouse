@@ -19,3 +19,4 @@ export * from "./facts.js";
 export * from "./entities.js";
 export * from "./domains.js";
 export * from "./consolidation-lock.js";
+export * from "./sources.js";

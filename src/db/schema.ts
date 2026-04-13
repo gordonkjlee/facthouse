@@ -244,7 +244,7 @@ function applyV4(db: Database.Database): void {
       PRIMARY KEY (from_entity, to_entity, relationship)
     );
 
-    -- Phase 2: source provenance records. No data access module yet.
+    -- Source provenance records.
     CREATE TABLE IF NOT EXISTS sources (
       id TEXT PRIMARY KEY,
       type TEXT NOT NULL,

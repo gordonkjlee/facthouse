@@ -16,6 +16,9 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { openDatabase, closeDatabase } from "./db/connection.js";
 import { applySchema } from "./db/schema.js";
 import { createSessionManager, registerSessionReadTools } from "./tools/session-manager.js";
+import { createFactManager } from "./tools/fact-manager.js";
+import { createHeuristicProvider } from "./intelligence/heuristic.js";
+import { registerReadTools } from "./tools/read-tools.js";
 
 // ---------------------------------------------------------------------------
 // Parse arguments
@@ -66,8 +69,16 @@ const sessionManager = createSessionManager(db, clientSessionId);
 sessionManager.registerTools(server);
 registerSessionReadTools(server, sessionManager, db);
 
-// Future tools will be registered here with withEventLogging wrapper.
-// See docs/design/mcp-tools.md for the full specification.
+const intelligence = createHeuristicProvider();
+const factManager = createFactManager(db, sessionManager, { intelligence });
+factManager.registerTools(server);
+registerReadTools(server, db);
+
+// TODO(event-logging): none of the registered tools (capture_fact,
+// consolidate, search_knowledge, etc.) are wrapped with withEventLogging, so
+// tool calls do not produce session_events. Event extraction therefore cannot
+// observe our own tool activity. Before enabling extraction by default,
+// refactor tool registration to accept an optional logging wrapper.
 
 // ---------------------------------------------------------------------------
 // Lifecycle

@@ -162,6 +162,27 @@ describe.skipIf(!canLoadSqlite)("facts", () => {
     expect(locationFacts[0].content).toBe("Lives in Lisbon");
   });
 
+  it("getFactsByDomain returns facts in created_at DESC order (B1)", async () => {
+    const first = insertFact(db, {
+      content: "First fact inserted",
+      domain: "profile",
+      source_type: "explicit",
+    });
+    // Ensure distinct timestamps
+    await new Promise((r) => setTimeout(r, 10));
+    const second = insertFact(db, {
+      content: "Second fact inserted",
+      domain: "profile",
+      source_type: "explicit",
+    });
+
+    const facts = getFactsByDomain(db, "profile");
+    expect(facts).toHaveLength(2);
+    // Newest first
+    expect(facts[0].id).toBe(second.id);
+    expect(facts[1].id).toBe(first.id);
+  });
+
   it("getFactsByEntity returns facts linked to an entity", () => {
     const fact = insertFact(db, {
       content: "Gordon works at Acme",
@@ -389,5 +410,74 @@ describe.skipIf(!canLoadSqlite)("bitemporal valid_from", () => {
 
     expect(fact.valid_from).not.toBeNull();
     expect(fact.valid_from! >= before).toBe(true);
+  });
+});
+
+describe.skipIf(!canLoadSqlite)("sanitiseFtsQuery — adversarial inputs", () => {
+  // Every case must: (a) not throw when passed to keywordSearch via MATCH,
+  // and (b) for non-empty inputs with a matching fact, actually return it.
+  it("empty string produces empty sanitised output", () => {
+    expect(sanitiseFtsQuery("")).toBe("");
+  });
+
+  it("whitespace-only produces empty sanitised output", () => {
+    expect(sanitiseFtsQuery("   \t\n  ")).toBe("");
+  });
+
+  it("single character term wraps to a literal quoted token", () => {
+    expect(sanitiseFtsQuery("a")).toBe('"a"');
+  });
+
+  it("apostrophe inside a term does not break FTS5 MATCH", () => {
+    insertFact(db, {
+      content: "I'm allergic to peanuts",
+      domain: "medical",
+      source_type: "conversation",
+    });
+    const sanitised = sanitiseFtsQuery("I'm allergic");
+    expect(() => keywordSearch(db, sanitised)).not.toThrow();
+    const results = keywordSearch(db, sanitised);
+    expect(results.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("wildcard char (*) is quoted to prevent prefix expansion", () => {
+    insertFact(db, {
+      content: "I love coffee beans",
+      domain: "preferences",
+      source_type: "conversation",
+    });
+    // The sanitiser wraps in quotes but does not strip the *. FTS5 will not
+    // treat it as a prefix operator when quoted. Must not throw.
+    const sanitised = sanitiseFtsQuery("coffee*");
+    expect(() => keywordSearch(db, sanitised)).not.toThrow();
+  });
+
+  it("FTS5 boolean operators AND/OR/NOT are treated as literals", () => {
+    insertFact(db, {
+      content: "I prefer tea AND coffee equally",
+      domain: "preferences",
+      source_type: "conversation",
+    });
+    const sanitised = sanitiseFtsQuery("AND OR NOT");
+    expect(() => keywordSearch(db, sanitised)).not.toThrow();
+  });
+
+  it("embedded double-quote is stripped from the term", () => {
+    // Sanitiser strips inner " to avoid unbalanced quotes breaking the parser.
+    const sanitised = sanitiseFtsQuery('quote"middle');
+    expect(sanitised).toBe('"quotemiddle"');
+    expect(() => keywordSearch(db, sanitised)).not.toThrow();
+  });
+
+  it("unicode term with accent is preserved and searchable", () => {
+    insertFact(db, {
+      content: "I love café culture in Paris",
+      domain: "preferences",
+      source_type: "conversation",
+    });
+    const sanitised = sanitiseFtsQuery("café");
+    expect(() => keywordSearch(db, sanitised)).not.toThrow();
+    const results = keywordSearch(db, sanitised);
+    expect(results.length).toBeGreaterThanOrEqual(1);
   });
 });

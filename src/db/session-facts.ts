@@ -133,6 +133,20 @@ export function getUnconsolidatedFacts(
     .all() as SessionFact[];
 }
 
+/** Retrieve unconsolidated session facts for a specific session. */
+export function getUnconsolidatedSessionFacts(
+  db: Database.Database,
+  sessionId: string,
+): SessionFact[] {
+  return db
+    .prepare(
+      `SELECT * FROM session_facts
+       WHERE session_id = ? AND consolidation_id IS NULL
+       ORDER BY created_at ASC`,
+    )
+    .all(sessionId) as SessionFact[];
+}
+
 /**
  * Atomically claim all unclaimed session facts for a consolidation run.
  * Caller must hold the consolidation lock — see consolidation-lock.ts.

@@ -31,11 +31,52 @@ Add to your AI tool's MCP configuration:
 
 Works with Claude Code, Claude Desktop, Cursor, and any MCP-compatible tool. Data is stored at `~/.openmemory` by default. To change this, add `"env": { "OPENMEMORY_DATA": "/absolute/path" }` to the config above.
 
+> **Disable your client's built-in memory.** OpenMemory replaces it — running both fragments your knowledge across two systems. In Claude Desktop: Settings → Memory → off. In ChatGPT: Settings → Personalisation → Memory → off. This ensures OpenMemory is the single source of truth.
+
+## How It Works
+
+OpenMemory captures knowledge through two complementary paths:
+
+1. **Fast capture** — During conversation, the AI calls `capture_fact` whenever it learns something useful. Facts are stored immediately in a session staging buffer.
+
+2. **Batch consolidation** — Periodically, the server processes all pending facts as a batch: classifying domains, extracting entities (people, places, organisations), detecting duplicates and contradictions, and building a knowledge graph.
+
+Optionally, the server can also scan raw conversation events during consolidation to extract facts the AI missed — a safety net that ensures important knowledge isn't lost.
+
+The result is a structured, evolving knowledge graph that any AI tool can query via MCP.
+
+## Features
+
+- **Hybrid knowledge capture** — AI explicitly captures facts during conversation. Optionally, the server can also extract facts from raw events during consolidation as a safety net.
+- **Batch consolidation** — Periodic processing integrates pending captures into the long-term knowledge graph: classifies domains, extracts entities, resolves duplicates, detects contradictions.
+- **Entity graph** — People, places, organisations automatically extracted and linked. Relationship strength tracks corroboration.
+- **Hybrid search** — BM25 keyword + structured domain + entity-graph paths, merged via Reciprocal Rank Fusion with temporal decay.
+- **In-session memory** — Recently captured facts are immediately accessible via `get_session_context`, even before consolidation.
+- **Immutable history** — Facts are never deleted, only superseded. Full history preserved.
+- **Source traceability** — Every fact links back to the conversation events that produced it.
+- **Manual consolidation** — Call `consolidate` at natural breakpoints (topic change, task completion, pre-compaction). No reliance on session boundaries.
+
 ## MCP Tools
 
 ### Session
-- `log_event` - Log a session event (user messages, assistant responses, tool calls, tool results, artifacts). Call this to build the episodic record of the conversation.
-- `get_events` - Retrieve events from the current or a previous session. Use this to recall what happened earlier (especially after context compaction), or to review a previous session.
+- `log_event` — Log conversation events (messages, artifacts).
+- `get_events` — Retrieve events from current or previous session.
+- `get_session_context` — Recall facts captured in the current session (in-session working memory).
+
+### Reading
+- `get_profile` — Core identity facts
+- `get_preferences` — Preferences by domain
+- `get_people` — Person profiles with relationships
+- `get_context` — Everything relevant to a topic (search + entity traversal)
+- `search_knowledge` — Hybrid search across graduated knowledge
+
+### Writing
+- `capture_fact` — Store a fact. Fast append with session tagging. Full intelligence deferred to consolidation.
+- `consolidate` — Integrate pending facts into long-term knowledge. Extracts entities, resolves duplicates, detects contradictions, builds the knowledge graph. Call at natural breakpoints or before context compaction.
+
+### Meta
+- `get_schemas` — Available domains and structure
+- `get_stats` — Fact count, entity count, domain distribution
 
 ## Session Event Logging
 
@@ -128,6 +169,68 @@ openmemory log-event --role user --event-type message --content "hello world"
 #   --session-id    Target session (default: most recent)
 #   --data          Data directory (default: ~/.openmemory or $OPENMEMORY_DATA)
 ```
+
+## Integration Patterns
+
+OpenMemory's tool descriptions are the primary integration layer — they tell AI assistants when to capture facts and search knowledge, working with every MCP client out of the box. For deeper integration, clients can add **rules-based hooks** (instructions loaded into the AI's context) at key moments in the conversation lifecycle. These are optional but make capture and retrieval more reliable.
+
+### Without Configuration
+
+The `capture_fact` tool description tells the AI to "call this proactively whenever you learn something useful." The `search_knowledge` description says "call this BEFORE answering questions that might benefit from personal context." These descriptions ship with the server and drive behaviour without any client setup.
+
+### Hook Points
+
+| Hook Point | When | What to Call | Why It Matters |
+|---|---|---|---|
+| Session start | Conversation begins | `get_profile`, `search_knowledge` | AI knows who you are from message one |
+| Proactive capture | User mentions a preference, fact, or decision | `capture_fact` | Knowledge compounds across sessions |
+| Pre-response search | Before generating a reply | `search_knowledge`, `get_context` | Responses informed by personal knowledge |
+| Pre-compaction | Before context window compression | `consolidate` | Processes pending facts before context is wiped |
+| Natural breakpoints | Topic change, task completion | `consolidate` (optional) | Keeps knowledge graph current |
+
+**On pre-compaction:** This is the highest-value hook point — without it, knowledge is silently lost when the client compresses context. Calling `consolidate` before compaction processes all pending facts into long-term knowledge. If event extraction is enabled, the server also scans the raw conversation events to extract facts the AI missed.
+
+### Claude Code
+
+Create `.claude/rules/openmemory.md` in your project (or `~/.claude/rules/openmemory.md` globally). This loads automatically into context:
+
+```markdown
+# OpenMemory
+
+- At the start of each conversation, call `get_profile` to load identity context
+- Before answering questions about preferences, people, or history, call `search_knowledge`
+- When the user mentions preferences, personal details, relationships, or decisions, call `capture_fact`
+- When the conversation is getting long, call `consolidate` to process pending facts before they are lost to compaction
+- At natural breakpoints (topic change, task completion), call `consolidate` to keep the knowledge graph current
+```
+
+To allow OpenMemory tools without per-call approval prompts, add to the `permissions.allow` array in `.claude/settings.json`:
+
+```json
+{
+  "permissions": {
+    "allow": [
+      "mcp__openmemory__*"
+    ]
+  }
+}
+```
+
+### Cursor / Windsurf
+
+Add to `.cursorrules` (Cursor) or `.windsurfrules` (Windsurf) in your project root:
+
+```
+When the openmemory MCP server is available:
+- At conversation start, call get_profile to load user context
+- Before answering questions about preferences or history, call search_knowledge
+- When the user shares preferences, facts, or decisions, call capture_fact
+- When context is getting long, call consolidate to process pending facts before they are lost
+```
+
+### Claude Desktop / Other MCP Clients
+
+No configuration needed. Tool descriptions handle integration automatically — the AI assistant reads the tool descriptions and knows when to capture and search.
 
 ## Development
 

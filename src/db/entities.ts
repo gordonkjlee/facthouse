@@ -142,7 +142,7 @@ export function linkFactEntity(
  * With alpha=0.3: step 1 → 0.30, 2 → 0.51, 3 → 0.66, 5 → 0.83, 10 → 0.97
  *
  * Monotonically increasing by construction — no practical precision concern at expected iteration counts.
- * Phase 3: the inference pipeline can adjust alpha based on observed
+ * A future inference pipeline could adjust alpha based on observed
  * correction patterns (parametric feedback).
  */
 export const EDGE_POTENTIATION_ALPHA = 0.3;

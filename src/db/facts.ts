@@ -109,13 +109,21 @@ export function getFactsByDomain(
   domain: string,
   subdomain?: string,
 ): Fact[] {
-  let sql = `SELECT * FROM facts WHERE domain = ? AND status = 'active' AND is_latest = 1`;
+  // is_latest is the canonical current-state predicate. The valid_until guard
+  // is defence-in-depth: if any code path ever mutates a fact with is_latest=1
+  // AND valid_until set, we still exclude it from current-state results.
+  let sql = `SELECT * FROM facts
+             WHERE domain = ? AND status = 'active' AND is_latest = 1
+               AND (valid_until IS NULL OR valid_until > datetime('now'))`;
   const params: unknown[] = [domain];
 
   if (subdomain !== undefined) {
     sql += ` AND subdomain = ?`;
     params.push(subdomain);
   }
+
+  // Deterministic ordering: newest first. Required for stable supersession candidate selection.
+  sql += ` ORDER BY created_at DESC`;
 
   const rows = db.prepare(sql).all(...params) as Array<
     Omit<Fact, "is_latest"> & { is_latest: number }
@@ -133,7 +141,8 @@ export function getFactsByEntity(
     .prepare(
       `SELECT f.* FROM facts f
        JOIN fact_entities fe ON f.id = fe.fact_id
-       WHERE fe.entity_id = ? AND f.status = 'active' AND f.is_latest = 1`,
+       WHERE fe.entity_id = ? AND f.status = 'active' AND f.is_latest = 1
+         AND (f.valid_until IS NULL OR f.valid_until > datetime('now'))`,
     )
     .all(entityId) as Array<Omit<Fact, "is_latest"> & { is_latest: number }>;
 
@@ -247,6 +256,7 @@ export function keywordSearch(
        FROM facts_fts fts
        JOIN facts f ON f.rowid = fts.rowid
        WHERE facts_fts MATCH ? AND f.status = 'active' AND f.is_latest = 1
+         AND (f.valid_until IS NULL OR f.valid_until > datetime('now'))
        ORDER BY fts.rank
        LIMIT ?`,
     )

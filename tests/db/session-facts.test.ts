@@ -26,6 +26,7 @@ const {
   computeContentHash,
   getSessionFacts,
   getUnconsolidatedFacts,
+  getUnconsolidatedSessionFacts,
   claimForConsolidation,
   getClaimedFacts,
   linkFactSource,
@@ -149,6 +150,26 @@ describe.skipIf(!canLoadSqlite)("session facts", () => {
       "Unclaimed A",
       "Unclaimed C",
     ]);
+  });
+
+  it("getUnconsolidatedSessionFacts filters by session AND unclaimed, ordered by created_at ASC", async () => {
+    const session2 = createSession(db, { source_tool: "test", project: null });
+
+    insertSessionFact(db, { session_id: sessionId, content: "First A" });
+    await new Promise((r) => setTimeout(r, 10));
+    insertSessionFact(db, { session_id: sessionId, content: "Second B" });
+    insertSessionFact(db, {
+      session_id: sessionId,
+      content: "Claimed C",
+      consolidation_id: "run-1",
+    });
+    // Fact in a different session — must not appear
+    insertSessionFact(db, { session_id: session2.id, content: "Other session" });
+
+    const result = getUnconsolidatedSessionFacts(db, sessionId);
+    expect(result).toHaveLength(2);
+    expect(result[0].content).toBe("First A");
+    expect(result[1].content).toBe("Second B");
   });
 
   it("claimForConsolidation atomically claims unclaimed facts and returns count", () => {
