@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.1.0](https://github.com/gordonkjlee/openmemory/compare/v0.0.7...v0.1.0) (2026-04-13)
+
+
+### Features
+
+* **db:** schema v3-v4 and data access layer for knowledge pipeline ([801a582](https://github.com/gordonkjlee/openmemory/commit/801a5823b750bf30391bada889ac9c6d7024822c))
+* **intelligence:** add consolidation pipeline, hybrid search, and MCP tools ([#38](https://github.com/gordonkjlee/openmemory/issues/38)) ([6c7d5ee](https://github.com/gordonkjlee/openmemory/commit/6c7d5ee5bbd09f49718fcbdce6170e57d876ce3e))
+* **types:** extend data model and config for DIKW knowledge pipeline ([#30](https://github.com/gordonkjlee/openmemory/issues/30)) ([a05ef5a](https://github.com/gordonkjlee/openmemory/commit/a05ef5af535ae2f1f3649411fd722f25dd8bcff5))
+
 ## [0.0.7](https://github.com/gordonkjlee/openmemory/compare/v0.0.6...v0.0.7) (2026-04-05)
 
 
