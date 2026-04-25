@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.0](https://github.com/gordonkjlee/openmemory/compare/v0.1.0...v0.2.0) (2026-04-25)
+
+
+### Features
+
+* **intelligence:** auto-consolidation pipeline with configurable triggers ([#44](https://github.com/gordonkjlee/openmemory/issues/44)) ([a6c368a](https://github.com/gordonkjlee/openmemory/commit/a6c368aa88ec0f7be8585f6638292a8147987270))
+
 ## [0.1.0](https://github.com/gordonkjlee/openmemory/compare/v0.0.7...v0.1.0) (2026-04-13)
 
 
