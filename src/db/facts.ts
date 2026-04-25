@@ -23,6 +23,8 @@ export interface NewFact {
   valid_from?: string | null;
   session_id?: string | null;
   capture_context?: string | null;
+  /** Which intelligence provider produced this fact. Defaults to 'heuristic'. */
+  source_quality?: "heuristic" | "cli" | "sampling" | "explicit";
 }
 
 // ---------------------------------------------------------------------------
@@ -42,15 +44,16 @@ export function insertFact(db: Database.Database, fact: NewFact): Fact {
   const validFrom = fact.valid_from !== undefined ? fact.valid_from : now;
   const sessionId = fact.session_id ?? null;
   const captureContext = fact.capture_context ?? null;
+  const sourceQuality = fact.source_quality ?? "heuristic";
 
   const result = db.prepare(
     `INSERT INTO facts
        (id, content, domain, subdomain, confidence, importance,
         source_type, source_tool, source_id, status, superseded_by,
         is_latest, created_at, valid_from, valid_until,
-        system_retired_at, session_id, capture_context, access_count)
+        system_retired_at, session_id, capture_context, access_count, source_quality)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', NULL,
-             1, ?, ?, NULL, NULL, ?, ?, 0)`,
+             1, ?, ?, NULL, NULL, ?, ?, 0, ?)`,
   ).run(
     id,
     fact.content,
@@ -65,6 +68,7 @@ export function insertFact(db: Database.Database, fact: NewFact): Fact {
     validFrom,
     sessionId,
     captureContext,
+    sourceQuality,
   );
 
   if (result.changes === 0) {
@@ -91,6 +95,7 @@ export function insertFact(db: Database.Database, fact: NewFact): Fact {
     session_id: sessionId,
     capture_context: captureContext,
     access_count: 0,
+    source_quality: sourceQuality,
   };
 }
 
@@ -166,6 +171,7 @@ export function supersedeFact(
   const sourceId = newFact.source_id ?? null;
   const sessionId = newFact.session_id ?? null;
   const captureContext = newFact.capture_context ?? null;
+  const sourceQuality = newFact.source_quality ?? "heuristic";
 
   const result = db.transaction(() => {
     const updated = db.prepare(
@@ -183,9 +189,9 @@ export function supersedeFact(
          (id, content, domain, subdomain, confidence, importance,
           source_type, source_tool, source_id, status, superseded_by,
           is_latest, created_at, valid_from, valid_until,
-          system_retired_at, session_id, capture_context, access_count)
+          system_retired_at, session_id, capture_context, access_count, source_quality)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', NULL,
-               1, ?, ?, NULL, NULL, ?, ?, 0)`,
+               1, ?, ?, NULL, NULL, ?, ?, 0, ?)`,
     ).run(
       newId,
       newFact.content,
@@ -200,6 +206,7 @@ export function supersedeFact(
       now,
       sessionId,
       captureContext,
+      sourceQuality,
     );
 
     return {
@@ -222,6 +229,7 @@ export function supersedeFact(
       session_id: sessionId,
       capture_context: captureContext,
       access_count: 0,
+      source_quality: sourceQuality,
     } satisfies Fact;
   })();
 

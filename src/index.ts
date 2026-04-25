@@ -17,8 +17,12 @@ import { openDatabase, closeDatabase } from "./db/connection.js";
 import { applySchema } from "./db/schema.js";
 import { createSessionManager, registerSessionReadTools } from "./tools/session-manager.js";
 import { createFactManager } from "./tools/fact-manager.js";
+import { createSamplingProvider } from "./intelligence/sampling.js";
 import { createHeuristicProvider } from "./intelligence/heuristic.js";
 import { registerReadTools } from "./tools/read-tools.js";
+import { startScheduler, type Scheduler } from "./scheduler.js";
+import { loadConfig } from "./config.js";
+import { startSchedulerListener, type SchedulerListener } from "./ipc/scheduler-ipc.js";
 
 // ---------------------------------------------------------------------------
 // Parse arguments
@@ -69,45 +73,106 @@ const sessionManager = createSessionManager(db, clientSessionId);
 sessionManager.registerTools(server);
 registerSessionReadTools(server, sessionManager, db);
 
-const intelligence = createHeuristicProvider();
-const factManager = createFactManager(db, sessionManager, { intelligence });
+// Load config (reads <dataDir>/config.json if present, otherwise defaults).
+const config = loadConfig(dataDir);
+const triggers = new Set(config.consolidation.triggers);
+
+// Provider selector — heuristic is always the fallback. The sampling provider
+// uses the MCP client's sampling capability for LLM-quality consolidation;
+// when the client doesn't advertise sampling, the provider falls through to
+// heuristic per-method. Users can override the choice via config.json.
+const heuristic = createHeuristicProvider();
+const intelligence =
+  config.intelligence.provider === "sampling"
+    ? createSamplingProvider(server.server, heuristic)
+    : heuristic;
+
+const factManager = createFactManager(db, sessionManager, {
+  intelligence,
+  serverConfig: { extraction: config.extraction },
+});
 factManager.registerTools(server);
 registerReadTools(server, db);
 
-// TODO(event-logging): none of the registered tools (capture_fact,
-// consolidate, search_knowledge, etc.) are wrapped with withEventLogging, so
-// tool calls do not produce session_events. Event extraction therefore cannot
-// observe our own tool activity. Before enabling extraction by default,
-// refactor tool registration to accept an optional logging wrapper.
+const scheduler: Scheduler = startScheduler({
+  db,
+  runConsolidate: () => factManager.runConsolidate(),
+  threshold: config.consolidation.threshold,
+});
 
 // ---------------------------------------------------------------------------
 // Lifecycle
 // ---------------------------------------------------------------------------
 
+let ipcListener: SchedulerListener | null = null;
+
+// Idempotent shutdown path — may be invoked by MCP transport close, SIGINT,
+// or SIGTERM. Guards against double-run so concurrent signals don't race.
+let shuttingDown = false;
+async function shutdown(): Promise<void> {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  ipcListener?.close();
+  if (triggers.has("shutdown")) {
+    await scheduler.flush().catch(() => undefined);
+  }
+  closeDatabase(db);
+}
+
 async function main() {
   const transport = new StdioServerTransport();
 
   // Start session when the MCP handshake completes.
-  server.server.oninitialized = () => {
+  server.server.oninitialized = async () => {
     const clientInfo = server.server.getClientVersion();
     sessionManager.startSession(
       clientInfo?.name ?? null,
       process.env.OPENMEMORY_PROJECT ?? null,
     );
+
+    // IPC listener for threshold + compaction signals.
+    if (triggers.has("threshold") || triggers.has("compaction")) {
+      try {
+        ipcListener = await startSchedulerListener(dataDir, (kind) => {
+          if (kind === "flush") void scheduler.flush();
+          else void scheduler.tick();
+        });
+        if (!ipcListener.bound) {
+          console.error(
+            "[openmemory] Another MCP server is handling scheduler signals for this data dir.",
+          );
+        }
+      } catch (err) {
+        console.error(
+          `[openmemory] Could not start IPC listener: ${(err as Error).message}. ` +
+            `Threshold / compaction triggers will not fire.`,
+        );
+      }
+    }
+
+    // session_start: process any events left over from a prior session.
+    if (triggers.has("session_start")) {
+      void scheduler.flush();
+    }
   };
 
-  // Clean up on connection close.
+  // The MCP SDK calls onclose synchronously and doesn't await our handler.
+  // Run the shutdown sequence explicitly and exit only after it completes —
+  // otherwise Node may exit before the shutdown-trigger flush finishes its
+  // LLM calls and DB writes.
   server.server.onclose = () => {
-    closeDatabase(db);
+    void shutdown().then(() => process.exit(0));
   };
 
   await server.connect(transport);
 }
 
-// Graceful shutdown.
+// Graceful shutdown — same path for SIGINT and SIGTERM.
 process.on("SIGINT", () => {
-  closeDatabase(db);
-  process.exit(0);
+  void shutdown().then(() => process.exit(0));
+});
+process.on("SIGTERM", () => {
+  void shutdown().then(() => process.exit(0));
 });
 
 main().catch((error) => {

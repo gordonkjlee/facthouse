@@ -125,6 +125,10 @@ export function createFactManager(
         importance: importance ?? DEFAULT_IMPORTANCE,
         source_tool: session.source_tool,
         capture_context: input.capture_context ?? null,
+        // Facts captured deliberately by the AI/user via this tool are
+        // 'explicit' regardless of which intelligence provider is active —
+        // they didn't come from regex extraction or LLM inference.
+        source_quality: "explicit",
       });
 
       if (!fact) return null; // duplicate

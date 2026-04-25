@@ -27,6 +27,15 @@ export function applySchema(db: Database.Database): void {
   if (version < 4) {
     applyV4(db);
   }
+  if (version < 5) {
+    applyV5(db);
+  }
+  if (version < 6) {
+    applyV6(db);
+  }
+  if (version < 7) {
+    applyV7(db);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -279,4 +288,92 @@ function applyV4(db: Database.Database): void {
   `);
 
   db.pragma("user_version = 4");
+}
+
+// ---------------------------------------------------------------------------
+// Schema version 5 — consolidations.last_event_sequence watermark
+// Every consolidation records the highest session_events.sequence observed at
+// run start, so threshold checks and extraction catch-up can read a durable
+// watermark instead of joining through session_fact_sources (which stalls
+// when a run emits zero facts).
+// ---------------------------------------------------------------------------
+
+function applyV5(db: Database.Database): void {
+  db.exec(`
+    ALTER TABLE consolidations ADD COLUMN last_event_sequence INTEGER NOT NULL DEFAULT 0;
+    CREATE INDEX IF NOT EXISTS idx_consolidations_created ON consolidations(created_at);
+  `);
+
+  db.pragma("user_version = 5");
+}
+
+// ---------------------------------------------------------------------------
+// Schema version 6 — intelligence provenance + rich staging
+// Facts gain a source_quality column so heuristic-era facts can be identified
+// and (later) reprocessed when a better provider is available. session_facts
+// gain columns for rich extraction output — signals and pre-computed entities
+// that the consolidation pipeline carries through to the K-layer without
+// re-invoking the LLM. All nullable so the heuristic provider stays conformant.
+// ---------------------------------------------------------------------------
+
+function applyV6(db: Database.Database): void {
+  db.exec(`
+    ALTER TABLE facts ADD COLUMN source_quality TEXT NOT NULL DEFAULT 'heuristic'
+      CHECK (source_quality IN ('heuristic', 'cli', 'sampling', 'explicit'));
+
+    ALTER TABLE session_facts ADD COLUMN subdomain_hint TEXT;
+    ALTER TABLE session_facts ADD COLUMN confidence_signal REAL;
+    ALTER TABLE session_facts ADD COLUMN importance_signal REAL;
+    ALTER TABLE session_facts ADD COLUMN valid_from_hint TEXT;
+    ALTER TABLE session_facts ADD COLUMN valid_until_hint TEXT;
+    ALTER TABLE session_facts ADD COLUMN entities_json TEXT;
+    ALTER TABLE session_facts ADD COLUMN source_quality TEXT NOT NULL DEFAULT 'heuristic'
+      CHECK (source_quality IN ('heuristic', 'cli', 'sampling', 'explicit'));
+  `);
+
+  db.pragma("user_version = 6");
+}
+
+// ---------------------------------------------------------------------------
+// Schema version 7 — drop NOT NULL on consolidations.session_id
+// Earlier releases created the column as NOT NULL, but the application
+// legitimately writes NULL when a consolidation spans multiple sessions or
+// when an empty run has no session context. SQLite has no ALTER COLUMN, so
+// this is the standard table-rebuild dance.
+// ---------------------------------------------------------------------------
+
+function applyV7(db: Database.Database): void {
+  db.pragma("foreign_keys = OFF");
+  db.exec(`
+    CREATE TABLE consolidations_new (
+      id TEXT PRIMARY KEY,
+      session_id TEXT,
+      facts_in INTEGER NOT NULL,
+      facts_graduated INTEGER NOT NULL,
+      facts_rejected INTEGER NOT NULL,
+      entities_created INTEGER NOT NULL DEFAULT 0,
+      entities_linked INTEGER NOT NULL DEFAULT 0,
+      supersessions INTEGER NOT NULL DEFAULT 0,
+      summary TEXT,
+      open_threads TEXT,
+      created_at TEXT NOT NULL,
+      last_event_sequence INTEGER NOT NULL DEFAULT 0
+    );
+
+    INSERT INTO consolidations_new
+      (id, session_id, facts_in, facts_graduated, facts_rejected,
+       entities_created, entities_linked, supersessions,
+       summary, open_threads, created_at, last_event_sequence)
+    SELECT id, session_id, facts_in, facts_graduated, facts_rejected,
+           entities_created, entities_linked, supersessions,
+           summary, open_threads, created_at, last_event_sequence
+    FROM consolidations;
+
+    DROP TABLE consolidations;
+    ALTER TABLE consolidations_new RENAME TO consolidations;
+
+    CREATE INDEX IF NOT EXISTS idx_consolidations_created ON consolidations(created_at);
+  `);
+  db.pragma("foreign_keys = ON");
+  db.pragma("user_version = 7");
 }

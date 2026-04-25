@@ -80,8 +80,22 @@ export interface SessionFact {
   /** Points to the primary SessionEvent that prompted this capture. */
   source_event_id: string | null;
   domain_hint: string | null;
+  /** LLM-suggested subdomain tag (e.g. 'beverage', 'dietary'). */
+  subdomain_hint: string | null;
   confidence: number | null;
   importance: number | null;
+  /** LLM self-assessed confidence 0–1. */
+  confidence_signal: number | null;
+  /** LLM-assessed importance/durability 0–1. */
+  importance_signal: number | null;
+  /** ISO timestamp when this fact became true, if the LLM extracted it. */
+  valid_from_hint: string | null;
+  /** ISO timestamp when this fact stopped being true, if the LLM extracted it. */
+  valid_until_hint: string | null;
+  /** JSON-serialised entities attached to this fact by holistic extraction. */
+  entities_json: string | null;
+  /** Which provider produced this fact. */
+  source_quality: "heuristic" | "cli" | "sampling" | "explicit";
   source_tool: string | null;
   capture_context: string | null;
   /** UUID of the consolidation run that claimed this fact (null = unclaimed). */
@@ -123,6 +137,9 @@ export interface Fact {
   session_id: string | null;
   capture_context: string | null;
   access_count: number;
+  /** Which intelligence provider produced this fact. Enables provenance
+   *  tracking and future reprocess passes that upgrade heuristic-era facts. */
+  source_quality: "heuristic" | "cli" | "sampling" | "explicit";
 }
 
 export interface Entity {

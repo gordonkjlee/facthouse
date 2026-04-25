@@ -7,6 +7,7 @@ import path from "node:path";
 import { openDatabase, closeDatabase } from "../db/connection.js";
 import { applySchema } from "../db/schema.js";
 import { insertEvent } from "../db/sessions.js";
+import { sendSchedulerSignal } from "../ipc/scheduler-ipc.js";
 import type { SessionEvent } from "../types/data.js";
 
 export interface LogEventArgs {
@@ -24,15 +25,21 @@ export interface LogEventArgs {
  *
  * When a sessionId is provided (e.g. from a hook payload), it is stored
  * as client_session_id. Otherwise both session columns are null.
+ *
+ * After insertion, best-effort signals the running MCP server to tick the
+ * scheduler. If the server isn't reachable (not running, different user
+ * session, etc.), the signal is silently dropped — session_start on the
+ * next server launch will pick up the event.
  */
-export function logEvent(args: LogEventArgs): SessionEvent {
+export async function logEvent(args: LogEventArgs): Promise<SessionEvent> {
   const dbPath = path.join(args.dataDir, "memory.db");
   const db = openDatabase(dbPath);
 
+  let event: SessionEvent;
   try {
     applySchema(db);
 
-    return insertEvent(db, {
+    event = insertEvent(db, {
       client_session_id: args.sessionId ?? null,
       event_type: args.eventType,
       role: args.role,
@@ -42,6 +49,10 @@ export function logEvent(args: LogEventArgs): SessionEvent {
   } finally {
     closeDatabase(db);
   }
+
+  // Signal the running MCP server. 500ms timeout internally; never throws.
+  await sendSchedulerSignal(args.dataDir, "tick");
+  return event;
 }
 
 // ---------------------------------------------------------------------------

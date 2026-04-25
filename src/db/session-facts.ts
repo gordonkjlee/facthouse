@@ -17,8 +17,22 @@ export interface NewSessionFact {
   source_origin?: "explicit" | "inferred";
   source_event_id?: string | null;
   domain_hint?: string | null;
+  subdomain_hint?: string | null;
   confidence?: number | null;
   importance?: number | null;
+  /** LLM self-assessed signals — distinct from the explicit capture values.
+   *  Providers like the CLI provider fill these when they have LLM judgements
+   *  from extraction; consolidation can blend them with the explicit values. */
+  confidence_signal?: number | null;
+  importance_signal?: number | null;
+  valid_from_hint?: string | null;
+  valid_until_hint?: string | null;
+  /** Pre-extracted entities carried through from holistic extraction.
+   *  When present, consolidate() uses these directly instead of calling
+   *  intelligence.extractEntities() again. */
+  entities_json?: string | null;
+  /** Provenance of this session fact's extraction quality. */
+  source_quality?: "heuristic" | "cli" | "sampling" | "explicit";
   source_tool?: string | null;
   capture_context?: string | null;
   consolidation_id?: string | null;
@@ -59,8 +73,15 @@ export function insertSessionFact(
   const sourceOrigin = fact.source_origin ?? "explicit";
   const sourceEventId = fact.source_event_id ?? null;
   const domainHint = fact.domain_hint ?? null;
+  const subdomainHint = fact.subdomain_hint ?? null;
   const confidence = fact.confidence ?? null;
   const importance = fact.importance ?? null;
+  const confidenceSignal = fact.confidence_signal ?? null;
+  const importanceSignal = fact.importance_signal ?? null;
+  const validFromHint = fact.valid_from_hint ?? null;
+  const validUntilHint = fact.valid_until_hint ?? null;
+  const entitiesJson = fact.entities_json ?? null;
+  const sourceQuality = fact.source_quality ?? "heuristic";
   const sourceTool = fact.source_tool ?? null;
   const captureContext = fact.capture_context ?? null;
   const consolidationId = fact.consolidation_id ?? null;
@@ -69,9 +90,12 @@ export function insertSessionFact(
     const result = db.prepare(
       `INSERT OR IGNORE INTO session_facts
          (id, session_id, content, content_hash, source_origin, source_event_id,
-          domain_hint, confidence, importance, source_tool, capture_context,
+          domain_hint, subdomain_hint, confidence, importance,
+          confidence_signal, importance_signal,
+          valid_from_hint, valid_until_hint, entities_json, source_quality,
+          source_tool, capture_context,
           consolidation_id, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(
       id,
       fact.session_id,
@@ -80,8 +104,15 @@ export function insertSessionFact(
       sourceOrigin,
       sourceEventId,
       domainHint,
+      subdomainHint,
       confidence,
       importance,
+      confidenceSignal,
+      importanceSignal,
+      validFromHint,
+      validUntilHint,
+      entitiesJson,
+      sourceQuality,
       sourceTool,
       captureContext,
       consolidationId,
@@ -100,8 +131,15 @@ export function insertSessionFact(
       source_origin: sourceOrigin,
       source_event_id: sourceEventId,
       domain_hint: domainHint,
+      subdomain_hint: subdomainHint,
       confidence,
       importance,
+      confidence_signal: confidenceSignal,
+      importance_signal: importanceSignal,
+      valid_from_hint: validFromHint,
+      valid_until_hint: validUntilHint,
+      entities_json: entitiesJson,
+      source_quality: sourceQuality,
       source_tool: sourceTool,
       capture_context: captureContext,
       consolidation_id: consolidationId,

@@ -23,6 +23,25 @@ export interface NewEntity {
 
 /** Find an entity by name, optionally filtered by type. Uses canonical_name for matching.
  *  Without type, returns first match — non-deterministic if multiple entities share a canonical name. */
+/** Look up an entity by its id. Returns null if not found. */
+export function getEntityById(
+  db: Database.Database,
+  id: string,
+): Entity | null {
+  const row = db
+    .prepare(`SELECT * FROM entities WHERE id = ?`)
+    .get(id) as
+    | (Omit<Entity, "metadata"> & { metadata: string | null })
+    | undefined;
+  if (!row) return null;
+  return {
+    ...row,
+    metadata: row.metadata
+      ? (JSON.parse(row.metadata) as Record<string, unknown>)
+      : null,
+  };
+}
+
 export function findEntity(
   db: Database.Database,
   name: string,

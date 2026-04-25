@@ -240,8 +240,17 @@ export function createHeuristicProvider(): IntelligenceProvider {
       return result;
     },
 
-    async extractFactsFromEvents(events, _contextEvents) {
-      const extracted: Array<{ content: string; domain_hint: string | null }> = [];
+    async extractFactsFromEvents(
+      events,
+      _workingMemory,
+      _sessionSummary,
+      _longTermMemory,
+    ) {
+      const extracted: Array<{
+        content: string;
+        domain_hint: string | null;
+        source_quality: "heuristic";
+      }> = [];
 
       for (const event of events) {
         if (!event.content || event.content.length < 10) continue;
@@ -256,6 +265,7 @@ export function createHeuristicProvider(): IntelligenceProvider {
             extracted.push({
               content: factContent,
               domain_hint: domain !== "general" ? domain : null,
+              source_quality: "heuristic",
             });
             break; // One fact per event for the heuristic provider
           }
@@ -290,22 +300,24 @@ export function createHeuristicProvider(): IntelligenceProvider {
     },
 
     async reconcile(candidate, existingFacts) {
-      if (existingFacts.length === 0) return "add";
+      if (existingFacts.length === 0) return { kind: "add" };
 
-      // O(1) lookup via Set rather than re-normalising every existing fact.
       // Uses the same normalisation as intra-batch dedup in consolidate.ts so
       // "I prefer coffee" and "I prefer coffee." are consistently deduplicated.
-      const existingNormalised = new Set(
-        existingFacts.map((f) => normaliseForDedup(f.content)),
-      );
-      return existingNormalised.has(normaliseForDedup(candidate.content))
-        ? "noop"
-        : "add";
+      // The heuristic provider only distinguishes noop vs add — 'enrich' requires
+      // semantic paraphrase detection which only the LLM providers do.
+      const needle = normaliseForDedup(candidate.content);
+      const dupe = existingFacts.find((f) => normaliseForDedup(f.content) === needle);
+      return dupe ? { kind: "noop" } : { kind: "add" };
     },
 
-    async summarise(facts, graduatedFacts) {
+    async summarise(facts, graduatedFacts, priorSummary) {
       if (graduatedFacts.length === 0) {
-        return { summary: "No facts graduated.", openThreads: [] };
+        // Empty run: keep the prior rolling summary verbatim if it exists.
+        return {
+          summary: priorSummary ?? "No facts graduated.",
+          openThreads: [],
+        };
       }
 
       // Count by actual classified domain (from graduated facts, not hints)
@@ -323,8 +335,14 @@ export function createHeuristicProvider(): IntelligenceProvider {
         .map((f) => f.content.length > 60 ? f.content.slice(0, 60) + "…" : f.content)
         .join("; ");
 
+      // Heuristic can't merge prior + new narratively. Concatenate as a crude
+      // rolling summary — the LLM-backed providers do this properly.
+      const newPart = `Graduated ${graduatedFacts.length} facts across domains: ${domainList}. Key topics: ${previews}.`;
+      const summary = priorSummary
+        ? `${priorSummary} ${newPart}`
+        : newPart;
       return {
-        summary: `Graduated ${graduatedFacts.length} facts across domains: ${domainList}. Key topics: ${previews}.`,
+        summary,
         openThreads: [],
       };
     },

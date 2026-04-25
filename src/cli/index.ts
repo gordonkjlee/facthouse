@@ -2,13 +2,19 @@
 
 /**
  * OpenMemory CLI entry point.
- * Subcommands: log-event
+ * Subcommands: log-event, consolidate
  */
 
 import { parseArgs } from "node:util";
 import { homedir } from "node:os";
 import path from "node:path";
 import { logEvent, extractContentFromHookPayload } from "./log-event.js";
+import { openDatabase, closeDatabase } from "../db/connection.js";
+import { applySchema } from "../db/schema.js";
+import { consolidate } from "../intelligence/consolidate.js";
+import { createHeuristicProvider } from "../intelligence/heuristic.js";
+import { DEFAULT_CONFIG } from "../types/config.js";
+import { sendSchedulerSignal, type SignalKind } from "../ipc/scheduler-ipc.js";
 
 const DEFAULT_DATA_DIR = path.join(homedir(), ".openmemory");
 
@@ -35,15 +41,107 @@ function readStdin(): Promise<string> {
 }
 
 async function main() {
+  // Recursion guard: any subprocess-based intelligence provider that
+  // re-invokes an MCP client should set OPENMEMORY_SUBPROCESS=1 in the
+  // child's env. If a surviving hook then re-enters this CLI, we must
+  // not log events or signal the scheduler — both would feed back into
+  // an extraction loop. Exit silently with success.
+  if (process.env.OPENMEMORY_SUBPROCESS === "1") {
+    process.exit(0);
+  }
+
   const subcommand = process.argv[2];
 
   if (subcommand === "log-event") {
     await runLogEvent();
+  } else if (subcommand === "consolidate") {
+    await runConsolidate();
+  } else if (subcommand === "signal") {
+    await runSignal();
   } else {
     console.error(
-      `Usage: openmemory <command>\n\nCommands:\n  log-event   Log a session event (used by hooks)`,
+      `Usage: openmemory <command>\n\n` +
+        `Commands:\n` +
+        `  log-event     Log a session event (used by hooks)\n` +
+        `  signal        Signal the running MCP server to tick or flush\n` +
+        `  consolidate   Run consolidation in-process with the heuristic provider`,
     );
     process.exit(1);
+  }
+}
+
+async function runSignal() {
+  const kindArg = process.argv[3] ?? "tick";
+  const { values } = parseArgs({
+    args: process.argv.slice(4),
+    options: {
+      data: { type: "string", default: process.env.OPENMEMORY_DATA ?? DEFAULT_DATA_DIR },
+    },
+    strict: true,
+  });
+
+  if (kindArg !== "tick" && kindArg !== "flush") {
+    console.error(`Invalid signal kind: ${kindArg}. Expected 'tick' or 'flush'.`);
+    process.exit(1);
+  }
+  const kind = kindArg as SignalKind;
+  const dataDir = resolveTilde(values.data as string);
+
+  const delivered = await sendSchedulerSignal(dataDir, kind);
+  if (delivered) {
+    console.log(JSON.stringify({ delivered: true, kind }));
+    return;
+  }
+
+  // Fallback only for 'flush' — matches the PreCompact "don't lose data"
+  // contract. For 'tick' (routine log-event signals), a missed delivery
+  // is recovered by session_start on the next launch.
+  if (kind === "flush") {
+    console.error(
+      "[openmemory] Server unreachable; running heuristic consolidate in-process as fallback.",
+    );
+    await consolidateInProcess(dataDir);
+    return;
+  }
+
+  // 'tick' delivery failed — silent exit. Don't spawn fallback work.
+  console.log(JSON.stringify({ delivered: false, kind }));
+}
+
+async function runConsolidate() {
+  const { values } = parseArgs({
+    args: process.argv.slice(3),
+    options: {
+      data: { type: "string", default: process.env.OPENMEMORY_DATA ?? DEFAULT_DATA_DIR },
+    },
+    strict: true,
+  });
+  const dataDir = resolveTilde(values.data as string);
+  await consolidateInProcess(dataDir);
+}
+
+/**
+ * Open the DB at dataDir, run consolidate() with the heuristic provider,
+ * print the JSON result, then close. Used by both `openmemory consolidate`
+ * and the `signal flush` fallback when the server is unreachable.
+ *
+ * Taking dataDir as a parameter (rather than re-parsing process.argv) lets
+ * callers invoke this from contexts where argv contains positional args the
+ * parser doesn't expect (e.g. signal flush's own `flush` positional).
+ */
+export async function consolidateInProcess(dataDir: string): Promise<void> {
+  const dbPath = path.join(dataDir, "memory.db");
+  const db = openDatabase(dbPath);
+
+  try {
+    applySchema(db);
+    const result = await consolidate(db, createHeuristicProvider(), DEFAULT_CONFIG);
+    console.log(JSON.stringify(result));
+  } catch (err: any) {
+    console.error(err.message);
+    process.exit(1);
+  } finally {
+    closeDatabase(db);
   }
 }
 
@@ -109,7 +207,7 @@ async function runLogEvent() {
   }
 
   try {
-    const event = logEvent({
+    const event = await logEvent({
       role: role as any,
       eventType: eventType as any,
       content,

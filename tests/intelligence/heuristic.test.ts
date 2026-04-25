@@ -324,14 +324,14 @@ describe("reconcile", () => {
     const existing = fakeFact2("My name is Gordon", "profile");
 
     const decision = await provider.reconcile(candidate, [existing]);
-    expect(decision).toBe("noop");
+    expect(decision.kind).toBe("noop");
   });
 
   it("returns 'add' for new content with no similar facts", async () => {
     const candidate = fakeFact("I prefer dark roast coffee");
 
     const decision = await provider.reconcile(candidate, []);
-    expect(decision).toBe("add");
+    expect(decision.kind).toBe("add");
   });
 
   it("returns 'add' when similar facts exist but content differs", async () => {
@@ -339,7 +339,7 @@ describe("reconcile", () => {
     const existing = fakeFact2("I prefer light roast coffee", "preferences");
 
     const decision = await provider.reconcile(candidate, [existing]);
-    expect(decision).toBe("add");
+    expect(decision.kind).toBe("add");
   });
 
   it("is case-insensitive for dedup", async () => {
@@ -347,7 +347,7 @@ describe("reconcile", () => {
     const existing = fakeFact2("My Name Is Gordon", "profile");
 
     const decision = await provider.reconcile(candidate, [existing]);
-    expect(decision).toBe("noop");
+    expect(decision.kind).toBe("noop");
   });
 });
 
