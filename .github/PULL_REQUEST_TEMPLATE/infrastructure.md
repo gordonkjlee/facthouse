@@ -3,6 +3,13 @@
 ### Summary
 > What does this infrastructure change accomplish?
 
+### Stakeholder
+> `@mention` other team members who should be notified (not the PR author)
+
+### Links
+**Ticket:**
+**Requirements:**
+
 ---
 
 ### Description
@@ -23,9 +30,17 @@
 
 ---
 
+### Complexity
+- [ ] Simple (config tweak, dependency update)
+- [ ] Moderate (new workflow, migration change)
+- [ ] Complex (core infrastructure change, many dependencies)
+
+---
+
 ### Checklist
 - [ ] `npm run build` succeeds
 - [ ] `npm test` passes
 - [ ] Testing complete (migration tested, workflow triggered, or config validated)
 - [ ] No personal data or real memory content in the diff or this description (synthetic only)
 - [ ] Code follows project standards
+- [ ] Code is production-ready and can be reviewed

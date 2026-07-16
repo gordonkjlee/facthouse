@@ -3,7 +3,11 @@
 ### Summary
 > What capability does this add or change?
 
+### Stakeholder
+> `@mention` other team members who should be notified (not the PR author)
+
 ### Links
+**Ticket:**
 **Design doc:**
 
 ---
@@ -24,9 +28,17 @@
 
 ---
 
+### Complexity
+- [ ] Simple (single tool or minor logic change)
+- [ ] Moderate (multi-component or new capability)
+- [ ] Complex (major feature, cross-cutting changes)
+
+---
+
 ### Checklist
 - [ ] `npm run build` succeeds
 - [ ] `npm test` passes
 - [ ] Tool descriptions are clear and compelling (if MCP tools changed)
 - [ ] No personal data or real memory content in the diff or this description (synthetic only)
 - [ ] Code follows project standards
+- [ ] Code is production-ready and can be reviewed
