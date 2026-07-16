@@ -39,10 +39,16 @@ export function createDomain(
 }
 
 /** Ensure a domain exists (idempotent). */
-export function ensureDomain(db: Db, name: string): void {
+export function ensureDomain(
+  db: Db,
+  name: string,
+  subdomains: string[] = [],
+): void {
   const now = new Date().toISOString();
 
+  // INSERT OR IGNORE, so an existing domain keeps whatever subdomains it has
+  // rather than being reset by a caller that doesn't know about them.
   db.prepare(
-    `INSERT OR IGNORE INTO domains (name, subdomains, created_at) VALUES (?, '[]', ?)`,
-  ).run(name, now);
+    `INSERT OR IGNORE INTO domains (name, subdomains, created_at) VALUES (?, json(?), ?)`,
+  ).run(name, JSON.stringify(subdomains), now);
 }

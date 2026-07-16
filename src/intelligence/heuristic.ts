@@ -8,6 +8,11 @@ import type {
   IntelligenceProvider,
   ExtractedEntity,
 } from "./types.js";
+import {
+  CORE_DOMAINS,
+  DEFAULT_DOMAIN,
+  normaliseDomainName,
+} from "../schemas/domains.js";
 
 // ---------------------------------------------------------------------------
 // Shared normalisation
@@ -28,80 +33,27 @@ export function normaliseForDedup(content: string): string {
 // Domain classification keywords
 // ---------------------------------------------------------------------------
 
-// First match wins. Medical is first for safety (health information takes priority).
-// Known limitation: first-match-wins produces false positives like "I prefer
-// chatting with my doctor" → medical. A scored classifier (rank all domains,
-// tie-break by margin) or an LLM classifier would be more robust.
-//
-// Patterns must match how facts are actually written. These were authored for
-// first-person statements ("I prefer coffee"), but capture_fact is called by an
-// AI recording a fact about its user, so content arrives in the third person
-// ("The user prefers coffee"). Verbs therefore need their -s form.
-const DOMAIN_SIGNALS: Array<{ domain: string; patterns: RegExp[] }> = [
-  {
-    domain: "medical",
-    patterns: [
-      /\b(allerg|medicat|doctor|diagnosis|condition|symptom|treatment|prescription|health|hospital|clinic|vaccine|blood|surgery|therapy|illness|disease)/i,
-    ],
-  },
-  {
-    domain: "profile",
-    patterns: [
-      // First person, as a user states it.
-      /\b(my name is|i am|i'm|born|nationality|age|birthday|occupation|job title)\b/i,
-      /\bi (live|lives) in\b/i,
-      // Third person, as an AI records it about its user. capture_fact is called
-      // by the assistant, not the user, so this is the shape content arrives in.
-      /\bthe user('s)? (is|was|has been)? ?(called|named)\b/i,
-      /\bthe user's (name|age|birthday|nationality|occupation|job title)\b/i,
-      /\b(the user|they) (lives?|moved|grew up|was born)\b/i,
-    ],
-  },
-  {
-    // Ahead of preferences deliberately: a relationship noun says who a fact is
-    // about, which outranks a preference verb saying what it mentions. "My
-    // partner Robin loves sushi" is a fact about Robin.
-    //
-    // This used to sit after preferences and appeared to work only by accident —
-    // the preference pattern was `\blove\b`, which never matched "loves", so the
-    // fact fell through to people. Fixing the verb forms exposed the collision.
-    domain: "people",
-    patterns: [
-      /\b(partner|wife|husband|friend|colleague|boss|sister|brother|mother|father|son|daughter|neighbour|neighbor)\b/i,
-    ],
-  },
-  {
-    domain: "preferences",
-    patterns: [
-      // -s forms matter: "The user prefers X" is the shape a capture takes, and
-      // `\bprefer\b` does not match "prefers".
-      /\b(prefers?|favourites?|favorites?|likes?|loves?|hates?|dislikes?|enjoys?|can't stand|would rather|rather)\b/i,
-    ],
-  },
-  {
-    domain: "work",
-    patterns: [
-      /\b(project|sprint|deploy|meeting|team|company|client|deadline|standup|release|merge|repository|codebase)\b/i,
-    ],
-  },
-];
-
 /** Classify a single content string into a domain. */
 function classifyContent(content: string, domainHint: string | null): { domain: string; subdomain: string | null } {
   // Explicit hint takes priority
+  // A hint is honoured as given, including a domain outside the core — the
+  // taxonomy is open. Only its spelling is canonicalised.
   if (domainHint) {
-    return { domain: domainHint, subdomain: null };
+    return { domain: normaliseDomainName(domainHint), subdomain: null };
   }
 
-  for (const { domain, patterns } of DOMAIN_SIGNALS) {
+  // Registry order is match order; first match wins. Only core domains have
+  // patterns — the fallback cannot route to a periphery domain it has never
+  // seen, so those require an LLM classifier.
+  for (const { name, patterns } of CORE_DOMAINS) {
     for (const pattern of patterns) {
       if (pattern.test(content)) {
-        return { domain, subdomain: null };
+        return { domain: name, subdomain: null };
       }
     }
   }
 
-  return { domain: "general", subdomain: null };
+  return { domain: DEFAULT_DOMAIN, subdomain: null };
 }
 
 // ---------------------------------------------------------------------------

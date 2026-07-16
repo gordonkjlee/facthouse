@@ -17,6 +17,7 @@ import {
   linkFactSource,
 } from "../db/session-facts.js";
 import { consolidate, type ConsolidationResult } from "../intelligence/consolidate.js";
+import { routableDomainList } from "../schemas/domains.js";
 
 // ---------------------------------------------------------------------------
 // Public interface
@@ -206,7 +207,7 @@ export function createFactManager(
             .string()
             .optional()
             .describe(
-              "Suggested domain (profile, preferences, medical, people, work)",
+              `Suggested domain (${routableDomainList()}) — or any other that fits better`,
             ),
           confidence: z
             .number()

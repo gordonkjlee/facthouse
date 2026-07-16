@@ -24,6 +24,7 @@ import type {
 } from "./types.js";
 import type { SessionEvent } from "../types/data.js";
 import { createHeuristicProvider } from "./heuristic.js";
+import { domainRoutingInstruction, routableDomainList } from "../schemas/domains.js";
 
 // Conservative token budgets. Prompts are short; responses are JSON-only.
 const DEFAULT_MAX_TOKENS = 2048;
@@ -94,7 +95,7 @@ export function createSamplingProvider(
           const context = sessionContext ? `\n\nSession context:\n${sessionContext}` : "";
           const raw = await ask(
             "You classify user facts into memory domains. " +
-              "Domains: profile, preferences, medical, people, work, general. " +
+              `${domainRoutingInstruction()} ` +
               "Choose the best domain per fact. Optional subdomain is a short tag. " +
               "Respond with JSON only: an array of {id, domain, subdomain} objects. " +
               "subdomain may be null. No prose.",
@@ -167,7 +168,7 @@ export function createSamplingProvider(
               "long_term_memory holds already-known facts about the user across all sessions; " +
               "use it to avoid duplicating facts the system already has. " +
               "Respond with JSON only: an array of {content, domain_hint} objects. " +
-              "domain_hint is one of profile|preferences|medical|people|work or null. " +
+              `domain_hint is one of ${routableDomainList()}, a domain already in use, or null. ` +
               "Return [] if no durable facts are present. No prose.",
             JSON.stringify({
               session_summary: sessionSummary ?? null,
