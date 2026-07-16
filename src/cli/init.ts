@@ -17,7 +17,7 @@
 
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { openDatabase, closeDatabase } from "../db/connection.js";
+import { openDatabase, closeDatabase, pragmaRead } from "../db/connection.js";
 import { applySchema } from "../db/schema.js";
 import { CONFIG_FILENAME, defaultServerConfig } from "../config.js";
 
@@ -84,7 +84,7 @@ export function initDataDir(args: InitArgs): InitResult {
   let schemaVersion: number;
   try {
     applySchema(db);
-    schemaVersion = db.pragma("user_version", { simple: true }) as number;
+    schemaVersion = pragmaRead(db, "user_version");
   } finally {
     closeDatabase(db);
   }

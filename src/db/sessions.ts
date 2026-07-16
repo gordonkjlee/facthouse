@@ -1,10 +1,11 @@
 /**
  * Data access for sessions and session events.
- * All functions are synchronous (better-sqlite3).
+ * All functions are synchronous.
  */
 
 import { randomUUID } from "node:crypto";
-import type Database from "better-sqlite3";
+import { withTransaction } from "./connection.js";
+import type { Db } from "./connection.js";
 import type { Session, SessionEvent } from "../types/data.js";
 
 // ---------------------------------------------------------------------------
@@ -38,7 +39,7 @@ export interface GetEventsOpts {
 
 /** Create a new session and return it. */
 export function createSession(
-  db: Database.Database,
+  db: Db,
   opts: NewSession,
 ): Session {
   const id = randomUUID();
@@ -60,7 +61,7 @@ export function createSession(
 
 /** Update the last_activity_at timestamp for a session. */
 export function updateLastActivity(
-  db: Database.Database,
+  db: Db,
   sessionId: string,
 ): void {
   db.prepare(
@@ -70,21 +71,21 @@ export function updateLastActivity(
 
 /** Retrieve a session by ID, or null if not found. */
 export function getSession(
-  db: Database.Database,
+  db: Db,
   sessionId: string,
 ): Session | null {
   const row = db.prepare(`SELECT * FROM sessions WHERE id = ?`).get(sessionId);
-  return (row as Session) ?? null;
+  return (row as unknown as Session) ?? null;
 }
 
 /** Get the most recently active session, or null if none exist. */
 export function getLatestSession(
-  db: Database.Database,
+  db: Db,
 ): Session | null {
   const row = db.prepare(
     `SELECT * FROM sessions ORDER BY last_activity_at DESC, rowid DESC LIMIT 1`,
   ).get();
-  return (row as Session) ?? null;
+  return (row as unknown as Session) ?? null;
 }
 
 // ---------------------------------------------------------------------------
@@ -96,7 +97,7 @@ export function getLatestSession(
  * and updates the MCP session's last_activity_at (if applicable).
  */
 export function insertEvent(
-  db: Database.Database,
+  db: Db,
   event: NewSessionEvent,
 ): SessionEvent {
   const id = randomUUID();
@@ -107,7 +108,7 @@ export function insertEvent(
   const contentRef = event.content_ref ?? null;
   const metadata = event.metadata ? JSON.stringify(event.metadata) : null;
 
-  const result = db.transaction(() => {
+  const result = withTransaction(db, () => {
     const seqRow = db
       .prepare(
         `SELECT COALESCE(MAX(sequence), 0) AS max_seq FROM session_events`,
@@ -154,14 +155,14 @@ export function insertEvent(
       metadata: event.metadata ?? null,
       created_at: now,
     } satisfies SessionEvent;
-  })();
+  });
 
   return result;
 }
 
 /** Retrieve events for a session, ordered by sequence. */
 export function getEvents(
-  db: Database.Database,
+  db: Db,
   sessionId: string,
   opts?: GetEventsOpts,
 ): SessionEvent[] {
@@ -187,7 +188,7 @@ export function getEvents(
 
 /** Count the total number of events matching a session ID. */
 export function getEventCount(
-  db: Database.Database,
+  db: Db,
   sessionId: string,
 ): number {
   const row = db

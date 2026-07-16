@@ -10,7 +10,8 @@
  */
 
 import { randomUUID } from "node:crypto";
-import type Database from "better-sqlite3";
+import { withTransaction } from "../db/connection.js";
+import type { Db } from "../db/connection.js";
 import type { Fact, SessionFact } from "../types/data.js";
 import { DEFAULT_CONFIDENCE, DEFAULT_IMPORTANCE, type ServerConfig } from "../types/config.js";
 import type {
@@ -63,7 +64,7 @@ export interface ConsolidationResult {
 // ---------------------------------------------------------------------------
 
 export async function consolidate(
-  db: Database.Database,
+  db: Db,
   intelligence: IntelligenceProvider,
   config?: Partial<ServerConfig>,
 ): Promise<ConsolidationResult> {
@@ -344,7 +345,7 @@ export async function consolidate(
     const graduatedFacts: Fact[] = [];
 
     // Phase D: Write results in a transaction
-    const writeResults = db.transaction(() => {
+    const writeResults = withTransaction(db, () => {
       let entitiesCreated = 0;
       let entitiesLinked = 0;
 
@@ -486,7 +487,7 @@ export async function consolidate(
       );
 
       return { entitiesCreated, entitiesLinked };
-    })();
+    });
     phaseDCommitted = true;
 
     // Release lock before summary generation. summarise() is async on the
@@ -572,7 +573,7 @@ export async function consolidate(
 // ---------------------------------------------------------------------------
 
 async function extractFactsFromEvents(
-  db: Database.Database,
+  db: Db,
   intelligence: IntelligenceProvider,
   consolidationId: string,
   config?: Partial<ServerConfig>,

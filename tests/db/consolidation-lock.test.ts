@@ -1,38 +1,23 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import type Database from "better-sqlite3";
+import type { Db } from "../../src/db/connection.js";
 
-let canLoadSqlite = false;
-try {
-  const Db = (await import("better-sqlite3")).default;
-  const probe = new Db(":memory:");
-  probe.close();
-  canLoadSqlite = true;
-} catch {}
 
-const { openDatabase, closeDatabase } = canLoadSqlite
-  ? await import("../../src/db/connection.js")
-  : ({} as any);
-const { applySchema } = canLoadSqlite
-  ? await import("../../src/db/schema.js")
-  : ({} as any);
-const { acquireLock, releaseLock, getLockState } = canLoadSqlite
-  ? await import("../../src/db/consolidation-lock.js")
-  : ({} as any);
+const { openDatabase, closeDatabase } = await import("../../src/db/connection.js");
+const { applySchema } = await import("../../src/db/schema.js");
+const { acquireLock, releaseLock, getLockState } = await import("../../src/db/consolidation-lock.js");
 
-let db: Database.Database;
+let db: Db;
 
 beforeEach(() => {
-  if (!canLoadSqlite) return;
   db = openDatabase(":memory:");
   applySchema(db);
 });
 
 afterEach(() => {
-  if (!canLoadSqlite) return;
   closeDatabase(db);
 });
 
-describe.skipIf(!canLoadSqlite)("consolidation lock", () => {
+describe("consolidation lock", () => {
   it("acquires when no holder exists", () => {
     expect(acquireLock(db, "holder-a")).toBe(true);
     const state = getLockState(db);

@@ -1,23 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import type Database from "better-sqlite3";
+import type { Db } from "../../src/db/connection.js";
 
-// better-sqlite3 requires native bindings — test actual constructor, not just import.
-let canLoadSqlite = false;
-try {
-  const Db = (await import("better-sqlite3")).default;
-  const probe = new Db(":memory:");
-  probe.close();
-  canLoadSqlite = true;
-} catch {
-  // Native bindings not compiled (e.g. missing Visual Studio build tools on Windows).
-}
 
-const { openDatabase, closeDatabase } = canLoadSqlite
-  ? await import("../../src/db/connection.js")
-  : ({} as any);
-const { applySchema } = canLoadSqlite
-  ? await import("../../src/db/schema.js")
-  : ({} as any);
+const { openDatabase, closeDatabase } = await import("../../src/db/connection.js");
+const { applySchema } = await import("../../src/db/schema.js");
 const {
   createEntity,
   findEntity,
@@ -27,29 +13,19 @@ const {
   upsertEntityEdge,
   getEntityEdges,
   updateEntityAccess,
-} = canLoadSqlite
-  ? await import("../../src/db/entities.js")
-  : ({} as any);
-const { insertFact, getFactsByEntity } = canLoadSqlite
-  ? await import("../../src/db/facts.js")
-  : ({} as any);
-const { ensureDomain, getDomains, createDomain } = canLoadSqlite
-  ? await import("../../src/db/domains.js")
-  : ({} as any);
-const { acquireLock, releaseLock, getLockState } = canLoadSqlite
-  ? await import("../../src/db/consolidation-lock.js")
-  : ({} as any);
+} = await import("../../src/db/entities.js");
+const { insertFact, getFactsByEntity } = await import("../../src/db/facts.js");
+const { ensureDomain, getDomains, createDomain } = await import("../../src/db/domains.js");
+const { acquireLock, releaseLock, getLockState } = await import("../../src/db/consolidation-lock.js");
 
-let db: Database.Database;
+let db: Db;
 
 beforeEach(() => {
-  if (!canLoadSqlite) return;
   db = openDatabase(":memory:");
   applySchema(db);
 });
 
 afterEach(() => {
-  if (!canLoadSqlite) return;
   closeDatabase(db);
 });
 
@@ -57,7 +33,7 @@ afterEach(() => {
 // Entities
 // ---------------------------------------------------------------------------
 
-describe.skipIf(!canLoadSqlite)("entities", () => {
+describe("entities", () => {
   it("createEntity creates with canonical_name = lowercase trimmed", () => {
     const entity = createEntity(db, { type: "person", name: "  Alex Rivera  " });
 
@@ -146,7 +122,7 @@ describe.skipIf(!canLoadSqlite)("entities", () => {
 // Fact–Entity links
 // ---------------------------------------------------------------------------
 
-describe.skipIf(!canLoadSqlite)("fact-entity links", () => {
+describe("fact-entity links", () => {
   it("linkFactEntity creates a fact-entity link", () => {
     const fact = insertFact(db, {
       content: "Alex works at Acme",
@@ -183,7 +159,7 @@ describe.skipIf(!canLoadSqlite)("fact-entity links", () => {
 // Entity edges
 // ---------------------------------------------------------------------------
 
-describe.skipIf(!canLoadSqlite)("entity edges", () => {
+describe("entity edges", () => {
   let entityA: any;
   let entityB: any;
 
@@ -247,7 +223,7 @@ describe.skipIf(!canLoadSqlite)("entity edges", () => {
 // Access tracking
 // ---------------------------------------------------------------------------
 
-describe.skipIf(!canLoadSqlite)("entity access tracking", () => {
+describe("entity access tracking", () => {
   it("updateEntityAccess increments access_count and sets last_accessed_at", () => {
     const entity = createEntity(db, { type: "person", name: "Alex" });
     expect(entity.access_count).toBe(0);
@@ -270,7 +246,7 @@ describe.skipIf(!canLoadSqlite)("entity access tracking", () => {
 // Domains
 // ---------------------------------------------------------------------------
 
-describe.skipIf(!canLoadSqlite)("domains", () => {
+describe("domains", () => {
   it("ensureDomain creates a domain", () => {
     ensureDomain(db, "profile");
 
@@ -323,7 +299,7 @@ describe.skipIf(!canLoadSqlite)("domains", () => {
 // Consolidation lock
 // ---------------------------------------------------------------------------
 
-describe.skipIf(!canLoadSqlite)("consolidation lock", () => {
+describe("consolidation lock", () => {
   it("acquireLock acquires when no lock exists", () => {
     const acquired = acquireLock(db, "worker-1");
     expect(acquired).toBe(true);

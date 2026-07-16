@@ -13,11 +13,12 @@
  * This module intentionally knows nothing about sockets, pipes, or fs events.
  */
 
-import type Database from "better-sqlite3";
+import { pragmaRead } from "./db/connection.js";
+import type { Db } from "./db/connection.js";
 import type { ConsolidationResult } from "./intelligence/consolidate.js";
 
 export interface SchedulerOpts {
-  db: Database.Database;
+  db: Db;
   /** Called when the scheduler decides to fire a consolidation run. */
   runConsolidate: () => Promise<ConsolidationResult>;
   /** Events-since-last-consolidation at which tick() fires. */
@@ -37,12 +38,12 @@ export interface Scheduler {
   stop(): void;
 }
 
-function readDataVersion(db: Database.Database): number {
-  const v = db.pragma("data_version", { simple: true });
+function readDataVersion(db: Db): number {
+  const v = pragmaRead(db, "data_version");
   return typeof v === "number" ? v : 0;
 }
 
-function eventsSinceLastConsolidation(db: Database.Database): number {
+function eventsSinceLastConsolidation(db: Db): number {
   const row = db
     .prepare(`SELECT COALESCE(MAX(sequence), 0) AS seq FROM session_events`)
     .get() as { seq: number };

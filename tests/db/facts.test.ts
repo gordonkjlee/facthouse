@@ -1,23 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import type Database from "better-sqlite3";
+import type { Db } from "../../src/db/connection.js";
 
-// better-sqlite3 requires native bindings — test actual constructor, not just import.
-let canLoadSqlite = false;
-try {
-  const Db = (await import("better-sqlite3")).default;
-  const probe = new Db(":memory:");
-  probe.close();
-  canLoadSqlite = true;
-} catch {
-  // Native bindings not compiled (e.g. missing Visual Studio build tools on Windows).
-}
 
-const { openDatabase, closeDatabase } = canLoadSqlite
-  ? await import("../../src/db/connection.js")
-  : ({} as any);
-const { applySchema } = canLoadSqlite
-  ? await import("../../src/db/schema.js")
-  : ({} as any);
+const { openDatabase, closeDatabase } = await import("../../src/db/connection.js");
+const { applySchema } = await import("../../src/db/schema.js");
 const {
   insertFact,
   getFact,
@@ -27,27 +13,21 @@ const {
   keywordSearch,
   sanitiseFtsQuery,
   incrementFactAccess,
-} = canLoadSqlite
-  ? await import("../../src/db/facts.js")
-  : ({} as any);
-const { createEntity, linkFactEntity } = canLoadSqlite
-  ? await import("../../src/db/entities.js")
-  : ({} as any);
+} = await import("../../src/db/facts.js");
+const { createEntity, linkFactEntity } = await import("../../src/db/entities.js");
 
-let db: Database.Database;
+let db: Db;
 
 beforeEach(() => {
-  if (!canLoadSqlite) return;
   db = openDatabase(":memory:");
   applySchema(db);
 });
 
 afterEach(() => {
-  if (!canLoadSqlite) return;
   closeDatabase(db);
 });
 
-describe.skipIf(!canLoadSqlite)("facts", () => {
+describe("facts", () => {
   it("inserts a fact and returns it with all fields", () => {
     const fact = insertFact(db, {
       content: "User lives in Lisbon",
@@ -200,7 +180,7 @@ describe.skipIf(!canLoadSqlite)("facts", () => {
   });
 });
 
-describe.skipIf(!canLoadSqlite)("supersession", () => {
+describe("supersession", () => {
   it("supersedeFact marks old fact as superseded and creates new fact", () => {
     const old = insertFact(db, {
       content: "User lives in Lisbon",
@@ -298,7 +278,7 @@ describe.skipIf(!canLoadSqlite)("supersession", () => {
   });
 });
 
-describe.skipIf(!canLoadSqlite)("keyword search (FTS5)", () => {
+describe("keyword search (FTS5)", () => {
   it("keywordSearch finds facts via FTS5 BM25", () => {
     insertFact(db, {
       content: "User enjoys hiking in the mountains",
@@ -339,7 +319,7 @@ describe.skipIf(!canLoadSqlite)("keyword search (FTS5)", () => {
   });
 });
 
-describe.skipIf(!canLoadSqlite)("access tracking", () => {
+describe("access tracking", () => {
   it("incrementFactAccess increments access_count", () => {
     const fact = insertFact(db, {
       content: "Accessed fact",
@@ -359,7 +339,7 @@ describe.skipIf(!canLoadSqlite)("access tracking", () => {
   });
 });
 
-describe.skipIf(!canLoadSqlite)("sanitiseFtsQuery", () => {
+describe("sanitiseFtsQuery", () => {
   it("wraps terms in double quotes", () => {
     expect(sanitiseFtsQuery("coffee tea")).toBe('"coffee" "tea"');
   });
@@ -385,7 +365,7 @@ describe.skipIf(!canLoadSqlite)("sanitiseFtsQuery", () => {
   });
 });
 
-describe.skipIf(!canLoadSqlite)("bitemporal valid_from", () => {
+describe("bitemporal valid_from", () => {
   it("insertFact with valid_from: null stores null (unknown validity start)", () => {
     const fact = insertFact(db, {
       content: "Allergic to aspirin",
@@ -413,7 +393,7 @@ describe.skipIf(!canLoadSqlite)("bitemporal valid_from", () => {
   });
 });
 
-describe.skipIf(!canLoadSqlite)("sanitiseFtsQuery — adversarial inputs", () => {
+describe("sanitiseFtsQuery — adversarial inputs", () => {
   // Every case must: (a) not throw when passed to keywordSearch via MATCH,
   // and (b) for non-empty inputs with a matching fact, actually return it.
   it("empty string produces empty sanitised output", () => {

@@ -1,62 +1,33 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import type Database from "better-sqlite3";
+import type { Db } from "../../src/db/connection.js";
 
 // ---------------------------------------------------------------------------
 // Guard: skip when native bindings are unavailable
 // ---------------------------------------------------------------------------
 
-let canLoadSqlite = false;
-try {
-  const Db = (await import("better-sqlite3")).default;
-  const probe = new Db(":memory:");
-  probe.close();
-  canLoadSqlite = true;
-} catch {
-  // Native bindings not compiled.
-}
 
-const { openDatabase, closeDatabase } = canLoadSqlite
-  ? await import("../../src/db/connection.js")
-  : ({} as any);
-const { applySchema } = canLoadSqlite
-  ? await import("../../src/db/schema.js")
-  : ({} as any);
-const { createSession } = canLoadSqlite
-  ? await import("../../src/db/sessions.js")
-  : ({} as any);
-const { insertSessionFact } = canLoadSqlite
-  ? await import("../../src/db/session-facts.js")
-  : ({} as any);
-const { insertFact, getFactsByDomain } = canLoadSqlite
-  ? await import("../../src/db/facts.js")
-  : ({} as any);
-const { findEntity } = canLoadSqlite
-  ? await import("../../src/db/entities.js")
-  : ({} as any);
-const { ensureDomain } = canLoadSqlite
-  ? await import("../../src/db/domains.js")
-  : ({} as any);
-const { consolidate } = canLoadSqlite
-  ? await import("../../src/intelligence/consolidate.js")
-  : ({} as any);
-const { createHeuristicProvider } = canLoadSqlite
-  ? await import("../../src/intelligence/heuristic.js")
-  : ({} as any);
+const { openDatabase, closeDatabase } = await import("../../src/db/connection.js");
+const { applySchema } = await import("../../src/db/schema.js");
+const { createSession } = await import("../../src/db/sessions.js");
+const { insertSessionFact } = await import("../../src/db/session-facts.js");
+const { insertFact, getFactsByDomain } = await import("../../src/db/facts.js");
+const { findEntity } = await import("../../src/db/entities.js");
+const { ensureDomain } = await import("../../src/db/domains.js");
+const { consolidate } = await import("../../src/intelligence/consolidate.js");
+const { createHeuristicProvider } = await import("../../src/intelligence/heuristic.js");
 
 // ---------------------------------------------------------------------------
 // Lifecycle
 // ---------------------------------------------------------------------------
 
-let db: Database.Database;
+let db: Db;
 
 beforeEach(() => {
-  if (!canLoadSqlite) return;
   db = openDatabase(":memory:");
   applySchema(db);
 });
 
 afterEach(() => {
-  if (!canLoadSqlite) return;
   closeDatabase(db);
 });
 
@@ -76,7 +47,7 @@ function setupSession(): string {
 // Tests
 // ---------------------------------------------------------------------------
 
-describe.skipIf(!canLoadSqlite)("consolidation pipeline", () => {
+describe("consolidation pipeline", () => {
   it("consolidates session_facts into graduated facts", async () => {
     const sessionId = setupSession();
     const provider = createHeuristicProvider();

@@ -15,11 +15,10 @@
     "openmemory": "dist/cli/index.js"
   },
   "files": [
-    "dist",
-    "scripts"
+    "dist"
   ],
   "engines": {
-    "node": "^20.0.0 || ^22.0.0 || ^24.0.0"
+    "node": "^22.5.0 || >=24.0.0"
   },
   "scripts": {
     "build": "tsc",
@@ -27,16 +26,13 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "eslint src/",
-    "postinstall": "node scripts/postinstall.cjs",
     "prepare": "npm run build"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.12.0",
-    "better-sqlite3": "^12.8.0"
+    "@modelcontextprotocol/sdk": "^1.12.0"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "@types/better-sqlite3": "^7.6.0",
     "@types/node": "^25.5.0",
     "eslint": "^10.1.0",
     "typescript": "^6.0.2",

@@ -3,37 +3,21 @@ import { mkdtempSync, rmSync, existsSync, readFileSync, writeFileSync } from "no
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-// Skip when native bindings are unavailable.
-let canLoadSqlite = false;
-try {
-  const Db = (await import("better-sqlite3")).default;
-  const probe = new Db(":memory:");
-  probe.close();
-  canLoadSqlite = true;
-} catch {
-  // Native bindings not compiled.
-}
 
-const { initDataDir, mcpConfigSnippet } = canLoadSqlite
-  ? await import("../../src/cli/init.js")
-  : ({} as any);
-const { CONFIG_FILENAME, loadConfig, defaultServerConfig } = canLoadSqlite
-  ? await import("../../src/config.js")
-  : ({} as any);
+const { initDataDir, mcpConfigSnippet } = await import("../../src/cli/init.js");
+const { CONFIG_FILENAME, loadConfig, defaultServerConfig } = await import("../../src/config.js");
 
 let root: string;
 
 beforeEach(() => {
-  if (!canLoadSqlite) return;
   root = mkdtempSync(path.join(tmpdir(), "om-init-"));
 });
 
 afterEach(() => {
-  if (!canLoadSqlite) return;
   rmSync(root, { recursive: true, force: true });
 });
 
-describe.skipIf(!canLoadSqlite)("initDataDir", () => {
+describe("initDataDir", () => {
   it("creates the data dir, database with schema, and default config", () => {
     const dataDir = path.join(root, "fresh");
     const result = initDataDir({ dataDir });
@@ -131,7 +115,7 @@ describe.skipIf(!canLoadSqlite)("initDataDir", () => {
   });
 });
 
-describe.skipIf(!canLoadSqlite)("mcpConfigSnippet", () => {
+describe("mcpConfigSnippet", () => {
   it("emits valid JSON with no env entry for the default location", () => {
     const parsed = JSON.parse(mcpConfigSnippet("@openmem/mcp@1.2.3"));
     const entry = parsed.mcpServers.openmemory;

@@ -4,7 +4,7 @@
  * get_session_context (retrieves facts captured in the current session).
  */
 
-import type Database from "better-sqlite3";
+import type { Db } from "../db/connection.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { SessionFact } from "../types/data.js";
@@ -55,7 +55,7 @@ export interface FactManagerOpts {
 }
 
 export function createFactManager(
-  db: Database.Database,
+  db: Db,
   sessionManager: SessionManager,
   opts?: FactManagerOpts,
 ): FactManager {

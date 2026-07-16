@@ -7,7 +7,7 @@
  * curve. Importance rescales the effective time constant.
  */
 
-import type Database from "better-sqlite3";
+import type { Db, SqlParam } from "../db/connection.js";
 import type { Fact, SearchResult, SearchResponse } from "../types/data.js";
 import {
   keywordSearch as fts5Search,
@@ -35,7 +35,7 @@ export interface StructuredFilters {
  * Defaults to active + is_latest = true.
  */
 export function structuredSearch(
-  db: Database.Database,
+  db: Db,
   filters: StructuredFilters,
 ): Fact[] {
   const limit = filters.limit ?? 20;
@@ -55,7 +55,7 @@ export function structuredSearch(
 
   // Fallback: query facts table directly with provided filters
   const conditions: string[] = [];
-  const params: unknown[] = [];
+  const params: SqlParam[] = [];
 
   const status = filters.status ?? "active";
   conditions.push("status = ?");
@@ -236,7 +236,7 @@ export interface HybridSearchOpts {
  * 6. Compute retrieval quality signals
  */
 export function hybridSearch(
-  db: Database.Database,
+  db: Db,
   query: string,
   opts?: HybridSearchOpts,
 ): SearchResponse {

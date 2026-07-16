@@ -3,16 +3,16 @@
  * Uses PRAGMA user_version for migration tracking.
  */
 
-import type Database from "better-sqlite3";
+import { pragmaRead, pragmaWrite } from "./connection.js";
+import type { Db } from "./connection.js";
 
 /** Read the current schema version from the database. */
-export function getSchemaVersion(db: Database.Database): number {
-  const row = db.pragma("user_version", { simple: true });
-  return typeof row === "number" ? row : 0;
+export function getSchemaVersion(db: Db): number {
+  return pragmaRead(db, "user_version");
 }
 
 /** Apply any pending schema migrations. */
-export function applySchema(db: Database.Database): void {
+export function applySchema(db: Db): void {
   const version = getSchemaVersion(db);
 
   if (version < 1) {
@@ -42,7 +42,7 @@ export function applySchema(db: Database.Database): void {
 // Schema version 1 — sessions + session_events (DIKW Data layer)
 // ---------------------------------------------------------------------------
 
-function applyV1(db: Database.Database): void {
+function applyV1(db: Db): void {
   db.exec(`
     CREATE TABLE IF NOT EXISTS sessions (
       id TEXT PRIMARY KEY,
@@ -70,16 +70,16 @@ function applyV1(db: Database.Database): void {
       ON session_events(session_id, sequence);
   `);
 
-  db.pragma("user_version = 1");
+  pragmaWrite(db, "user_version = 1");
 }
 
 // ---------------------------------------------------------------------------
 // Schema version 2 — drop FK, split session_id into two nullable columns
 // ---------------------------------------------------------------------------
 
-function applyV2(db: Database.Database): void {
+function applyV2(db: Db): void {
   // foreign_keys pragma cannot be changed inside a transaction.
-  db.pragma("foreign_keys = OFF");
+  pragmaWrite(db, "foreign_keys = OFF");
 
   db.exec(`
     CREATE TABLE session_events_new (
@@ -110,8 +110,8 @@ function applyV2(db: Database.Database): void {
     CREATE INDEX idx_session_events_client ON session_events(client_session_id);
   `);
 
-  db.pragma("foreign_keys = ON");
-  db.pragma("user_version = 2");
+  pragmaWrite(db, "foreign_keys = ON");
+  pragmaWrite(db, "user_version = 2");
 }
 
 // ---------------------------------------------------------------------------
@@ -121,7 +121,7 @@ function applyV2(db: Database.Database): void {
 // integrity via findOrCreateEntity, claimForConsolidation, etc.
 // ---------------------------------------------------------------------------
 
-function applyV3(db: Database.Database): void {
+function applyV3(db: Db): void {
   db.exec(`
     CREATE TABLE IF NOT EXISTS session_facts (
       id TEXT PRIMARY KEY,
@@ -171,14 +171,14 @@ function applyV3(db: Database.Database): void {
     );
   `);
 
-  db.pragma("user_version = 3");
+  pragmaWrite(db, "user_version = 3");
 }
 
 // ---------------------------------------------------------------------------
 // Schema version 4 — Knowledge layer: facts + FTS5 + entities + graph + sources + consolidations
 // ---------------------------------------------------------------------------
 
-function applyV4(db: Database.Database): void {
+function applyV4(db: Db): void {
   db.exec(`
     CREATE TABLE IF NOT EXISTS facts (
       id TEXT PRIMARY KEY,
@@ -287,7 +287,7 @@ function applyV4(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_entity_edges_to ON entity_edges(to_entity);
   `);
 
-  db.pragma("user_version = 4");
+  pragmaWrite(db, "user_version = 4");
 }
 
 // ---------------------------------------------------------------------------
@@ -298,13 +298,13 @@ function applyV4(db: Database.Database): void {
 // when a run emits zero facts).
 // ---------------------------------------------------------------------------
 
-function applyV5(db: Database.Database): void {
+function applyV5(db: Db): void {
   db.exec(`
     ALTER TABLE consolidations ADD COLUMN last_event_sequence INTEGER NOT NULL DEFAULT 0;
     CREATE INDEX IF NOT EXISTS idx_consolidations_created ON consolidations(created_at);
   `);
 
-  db.pragma("user_version = 5");
+  pragmaWrite(db, "user_version = 5");
 }
 
 // ---------------------------------------------------------------------------
@@ -316,7 +316,7 @@ function applyV5(db: Database.Database): void {
 // re-invoking the LLM. All nullable so the heuristic provider stays conformant.
 // ---------------------------------------------------------------------------
 
-function applyV6(db: Database.Database): void {
+function applyV6(db: Db): void {
   db.exec(`
     ALTER TABLE facts ADD COLUMN source_quality TEXT NOT NULL DEFAULT 'heuristic'
       CHECK (source_quality IN ('heuristic', 'cli', 'sampling', 'explicit'));
@@ -331,7 +331,7 @@ function applyV6(db: Database.Database): void {
       CHECK (source_quality IN ('heuristic', 'cli', 'sampling', 'explicit'));
   `);
 
-  db.pragma("user_version = 6");
+  pragmaWrite(db, "user_version = 6");
 }
 
 // ---------------------------------------------------------------------------
@@ -342,8 +342,8 @@ function applyV6(db: Database.Database): void {
 // this is the standard table-rebuild dance.
 // ---------------------------------------------------------------------------
 
-function applyV7(db: Database.Database): void {
-  db.pragma("foreign_keys = OFF");
+function applyV7(db: Db): void {
+  pragmaWrite(db, "foreign_keys = OFF");
   db.exec(`
     CREATE TABLE consolidations_new (
       id TEXT PRIMARY KEY,
@@ -374,6 +374,6 @@ function applyV7(db: Database.Database): void {
 
     CREATE INDEX IF NOT EXISTS idx_consolidations_created ON consolidations(created_at);
   `);
-  db.pragma("foreign_keys = ON");
-  db.pragma("user_version = 7");
+  pragmaWrite(db, "foreign_keys = ON");
+  pragmaWrite(db, "user_version = 7");
 }

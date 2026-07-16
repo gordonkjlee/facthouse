@@ -1,26 +1,10 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import type Database from "better-sqlite3";
+import type { Db } from "../../src/db/connection.js";
 
-// better-sqlite3 requires native bindings — test actual constructor, not just import.
-let canLoadSqlite = false;
-try {
-  const Db = (await import("better-sqlite3")).default;
-  const probe = new Db(":memory:");
-  probe.close();
-  canLoadSqlite = true;
-} catch {
-  // Native bindings not compiled (e.g. missing Visual Studio build tools on Windows).
-}
 
-const { openDatabase, closeDatabase } = canLoadSqlite
-  ? await import("../../src/db/connection.js")
-  : ({} as any);
-const { applySchema } = canLoadSqlite
-  ? await import("../../src/db/schema.js")
-  : ({} as any);
-const { createSession, insertEvent, getSession } = canLoadSqlite
-  ? await import("../../src/db/sessions.js")
-  : ({} as any);
+const { openDatabase, closeDatabase } = await import("../../src/db/connection.js");
+const { applySchema } = await import("../../src/db/schema.js");
+const { createSession, insertEvent, getSession } = await import("../../src/db/sessions.js");
 const {
   insertSessionFact,
   computeContentHash,
@@ -31,15 +15,12 @@ const {
   getClaimedFacts,
   linkFactSource,
   getFactSources,
-} = canLoadSqlite
-  ? await import("../../src/db/session-facts.js")
-  : ({} as any);
+} = await import("../../src/db/session-facts.js");
 
-let db: Database.Database;
+let db: Db;
 let sessionId: string;
 
 beforeEach(() => {
-  if (!canLoadSqlite) return;
   db = openDatabase(":memory:");
   applySchema(db);
   const session = createSession(db, { source_tool: "test", project: null });
@@ -47,11 +28,10 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  if (!canLoadSqlite) return;
   closeDatabase(db);
 });
 
-describe.skipIf(!canLoadSqlite)("session facts", () => {
+describe("session facts", () => {
   it("inserts a session fact and returns it with all fields", () => {
     const fact = insertSessionFact(db, {
       session_id: sessionId,
@@ -207,7 +187,7 @@ describe.skipIf(!canLoadSqlite)("session facts", () => {
 
 });
 
-describe.skipIf(!canLoadSqlite)("session fact sources (provenance)", () => {
+describe("session fact sources (provenance)", () => {
   let factId: string;
   let eventId: string;
 

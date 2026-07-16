@@ -2,7 +2,7 @@
  * Read tools — search and retrieve graduated knowledge.
  */
 
-import type Database from "better-sqlite3";
+import type { Db } from "../db/connection.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { hybridSearch, structuredSearch } from "../search/index.js";
@@ -16,7 +16,7 @@ import { getDomains } from "../db/domains.js";
 
 export function registerReadTools(
   server: McpServer,
-  db: Database.Database,
+  db: Db,
 ): void {
   // -----------------------------------------------------------------
   // search_knowledge

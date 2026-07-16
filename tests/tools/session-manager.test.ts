@@ -1,36 +1,22 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import type Database from "better-sqlite3";
+import type { Db } from "../../src/db/connection.js";
 
-// Skip when native bindings are unavailable.
-let canLoadSqlite = false;
-try {
-  const Db = (await import("better-sqlite3")).default;
-  const probe = new Db(":memory:");
-  probe.close();
-  canLoadSqlite = true;
-} catch {
-  // Native bindings not compiled.
-}
 
-const dbMod = canLoadSqlite ? await import("../../src/db/index.js") : ({} as any);
-const { createSessionManager, withEventLogging } = canLoadSqlite
-  ? await import("../../src/tools/session-manager.js")
-  : ({} as any);
+const dbMod = await import("../../src/db/index.js");
+const { createSessionManager, withEventLogging } = await import("../../src/tools/session-manager.js");
 
-let db: Database.Database;
+let db: Db;
 
 beforeEach(() => {
-  if (!canLoadSqlite) return;
   db = dbMod.openDatabase(":memory:");
   dbMod.applySchema(db);
 });
 
 afterEach(() => {
-  if (!canLoadSqlite) return;
   dbMod.closeDatabase(db);
 });
 
-describe.skipIf(!canLoadSqlite)("session manager", () => {
+describe("session manager", () => {
   it("starts a session and returns it via getActiveSession", () => {
     const manager = createSessionManager(db);
     expect(manager.getActiveSession()).toBeNull();
@@ -92,7 +78,7 @@ describe.skipIf(!canLoadSqlite)("session manager", () => {
   });
 });
 
-describe.skipIf(!canLoadSqlite)("withEventLogging", () => {
+describe("withEventLogging", () => {
   it("wraps a sync handler and logs tool_call + tool_result", () => {
     const manager = createSessionManager(db);
     manager.startSession(null, null);
@@ -134,7 +120,7 @@ describe.skipIf(!canLoadSqlite)("withEventLogging", () => {
   });
 });
 
-describe.skipIf(!canLoadSqlite)("get_events read tool", () => {
+describe("get_events read tool", () => {
   it("returns events from the current session", () => {
     const manager = createSessionManager(db);
     manager.startSession(null, null);

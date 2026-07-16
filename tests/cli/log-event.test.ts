@@ -1,36 +1,22 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import type Database from "better-sqlite3";
+import type { Db } from "../../src/db/connection.js";
 
-// Skip when native bindings are unavailable.
-let canLoadSqlite = false;
-try {
-  const Db = (await import("better-sqlite3")).default;
-  const probe = new Db(":memory:");
-  probe.close();
-  canLoadSqlite = true;
-} catch {
-  // Native bindings not compiled.
-}
 
-const dbMod = canLoadSqlite ? await import("../../src/db/index.js") : ({} as any);
-const { extractContentFromHookPayload } = canLoadSqlite
-  ? await import("../../src/cli/log-event.js")
-  : ({} as any);
+const dbMod = await import("../../src/db/index.js");
+const { extractContentFromHookPayload } = await import("../../src/cli/log-event.js");
 
-let db: Database.Database;
+let db: Db;
 
 beforeEach(() => {
-  if (!canLoadSqlite) return;
   db = dbMod.openDatabase(":memory:");
   dbMod.applySchema(db);
 });
 
 afterEach(() => {
-  if (!canLoadSqlite) return;
   dbMod.closeDatabase(db);
 });
 
-describe.skipIf(!canLoadSqlite)("extractContentFromHookPayload", () => {
+describe("extractContentFromHookPayload", () => {
   it("extracts prompt from UserPromptSubmit hook", () => {
     const payload = JSON.stringify({
       hook_event_name: "UserPromptSubmit",
@@ -84,7 +70,7 @@ describe.skipIf(!canLoadSqlite)("extractContentFromHookPayload", () => {
   });
 });
 
-describe.skipIf(!canLoadSqlite)("logEvent (function)", () => {
+describe("logEvent (function)", () => {
   // Note: the logEvent function opens its own database connection from a file path,
   // so we test extractContentFromHookPayload directly (which is the pure logic)
   // and rely on the db/sessions tests for insertEvent correctness.
