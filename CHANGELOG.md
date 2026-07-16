@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.4.0](https://github.com/gordonkjlee/openmemory/compare/v0.3.0...v0.4.0) (2026-07-16)
+
+
+### Features
+
+* **cli:** add init command to create data dir, database, and config ([#71](https://github.com/gordonkjlee/openmemory/issues/71)) ([076292c](https://github.com/gordonkjlee/openmemory/commit/076292cf4f80005400df29d7f3532eb3fd4f8965))
+
+
+### Bug Fixes
+
+* **cli:** create the data directory when logging an event ([#74](https://github.com/gordonkjlee/openmemory/issues/74)) ([142788b](https://github.com/gordonkjlee/openmemory/commit/142788be1d27cae9817139339624d406e41edd71))
+
 ## [0.3.0](https://github.com/gordonkjlee/openmemory/compare/v0.2.0...v0.3.0) (2026-07-16)
 
 
