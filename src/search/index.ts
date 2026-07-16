@@ -229,11 +229,15 @@ export interface HybridSearchOpts {
  *
  * Steps:
  * 1. FTS5 keyword search
- * 2. Structured domain search (if domain filter provided)
+ * 2. Structured domain search (if a domain is given)
  * 3. RRF merge
  * 4. Temporal decay boost
- * 5. Sort by final score, take top limit
+ * 5. Constrain to the domain (if given), sort by final score, take top limit
  * 6. Compute retrieval quality signals
+ *
+ * A domain both widens recall (its facts join the merge, so a fact the keyword
+ * path missed can still surface) and narrows output (results are guaranteed to
+ * be from that domain).
  */
 export function hybridSearch(
   db: Db,
@@ -298,10 +302,18 @@ export function hybridSearch(
     scored.push({ fact: ranked.fact, score: finalScore });
   }
 
-  // 6. Sort by final score descending, take top limit
+  // 6. Constrain to the requested domain, then sort and take top limit.
+  // The keyword and entity paths search the whole store, so without this a
+  // domain-scoped search leaks facts from other domains — the caller asked for
+  // one domain and must only ever get that domain back. Filtering before the
+  // slice keeps the result set full rather than dropping out-of-domain hits
+  // that already consumed slots.
   // (upstream DAL queries already filter by status='active' AND is_latest=1)
-  scored.sort((a, b) => b.score - a.score);
-  const topResults = scored.slice(0, limit);
+  const inScope = domain
+    ? scored.filter(({ fact }) => fact.domain === domain)
+    : scored;
+  inScope.sort((a, b) => b.score - a.score);
+  const topResults = inScope.slice(0, limit);
 
   // 7. Build SearchResult objects.
   // access_count column exists in the schema for future ranking boosts but is

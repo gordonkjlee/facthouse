@@ -84,22 +84,57 @@ describe("hybridSearch", () => {
   });
 
   it("fact appearing in multiple RRF lists ranks higher", () => {
-    // This fact will match both the FTS5 path AND the domain path
-    const bothPathFact = insertFact(
-      "I prefer dark roast coffee",
-      "preferences",
-    );
-    // This fact only matches FTS5 (different domain)
-    const ftsOnlyFact = insertFact("coffee is great", "general");
+    // Matches both the FTS5 path AND the domain path.
+    const bothPathFact = insertFact("I prefer dark roast coffee", "preferences");
+    // Same domain, so it reaches the merge via the domain path only.
+    const domainOnlyFact = insertFact("I like long walks", "preferences");
 
     const result = searchMod.hybridSearch(db, "coffee", { domain: "preferences" });
 
-    // The fact in both lists should rank above the fact in one list
-    const indices = result.results.map((r: any) => r.fact.id);
-    const bothPathIdx = indices.indexOf(bothPathFact.id);
-    const ftsOnlyIdx = indices.indexOf(ftsOnlyFact.id);
-    if (bothPathIdx !== -1 && ftsOnlyIdx !== -1) {
-      expect(bothPathIdx).toBeLessThan(ftsOnlyIdx);
-    }
+    // Assert unconditionally: guarding these lookups with `if (idx !== -1)`
+    // would let the test pass by silently skipping when a fact is absent.
+    const ids = result.results.map((r: any) => r.fact.id);
+    expect(ids).toContain(bothPathFact.id);
+    expect(ids).toContain(domainOnlyFact.id);
+    expect(ids.indexOf(bothPathFact.id)).toBeLessThan(
+      ids.indexOf(domainOnlyFact.id),
+    );
+  });
+
+  it("a domain search never returns facts from another domain", () => {
+    // The keyword path searches the whole store, so this is the fact that leaks
+    // if the domain is treated purely as an extra recall path.
+    insertFact("coffee is great", "general");
+    const inDomain = insertFact("I prefer dark roast coffee", "preferences");
+
+    const result = searchMod.hybridSearch(db, "coffee", { domain: "preferences" });
+
+    expect(result.results.map((r: any) => r.fact.id)).toEqual([inDomain.id]);
+    expect(result.results.every((r: any) => r.fact.domain === "preferences")).toBe(
+      true,
+    );
+  });
+
+  it("scopes by domain without shrinking the result set below the limit", () => {
+    // Out-of-domain keyword hits must not consume result slots: filtering has
+    // to happen before the limit slice, not after.
+    for (let i = 0; i < 5; i++) insertFact(`coffee note ${i}`, "general");
+    for (let i = 0; i < 3; i++) insertFact(`coffee pref ${i}`, "preferences");
+
+    const result = searchMod.hybridSearch(db, "coffee", {
+      domain: "preferences",
+      limit: 3,
+    });
+
+    expect(result.results).toHaveLength(3);
+    expect(result.results.every((r: any) => r.fact.domain === "preferences")).toBe(
+      true,
+    );
+  });
+
+  it("returns nothing for a domain that holds no facts, rather than leaking", () => {
+    insertFact("coffee is great", "general");
+    const result = searchMod.hybridSearch(db, "coffee", { domain: "medical" });
+    expect(result.results).toEqual([]);
   });
 });
