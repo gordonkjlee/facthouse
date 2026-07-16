@@ -6,9 +6,11 @@
  */
 
 import { parseArgs } from "node:util";
+import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 import { logEvent, extractContentFromHookPayload } from "./log-event.js";
+import { initDataDir, mcpConfigSnippet } from "./init.js";
 import { openDatabase, closeDatabase } from "../db/connection.js";
 import { applySchema } from "../db/schema.js";
 import { consolidate } from "../intelligence/consolidate.js";
@@ -55,7 +57,9 @@ async function main() {
 
   const subcommand = process.argv[2];
 
-  if (subcommand === "log-event") {
+  if (subcommand === "init") {
+    await runInit();
+  } else if (subcommand === "log-event") {
     await runLogEvent();
   } else if (subcommand === "consolidate") {
     await runConsolidate();
@@ -65,12 +69,85 @@ async function main() {
     console.error(
       `Usage: openmemory <command>\n\n` +
         `Commands:\n` +
+        `  init [dir]    Create the data directory, database, and default config\n` +
         `  log-event     Log a session event (used by hooks)\n` +
         `  signal        Signal the running MCP server to tick or flush\n` +
         `  consolidate   Run consolidation in-process with the configured provider`,
     );
     process.exit(1);
   }
+}
+
+/** Package version, for the copy-pasteable MCP snippet. Best-effort. */
+function packageVersion(): string | null {
+  try {
+    const pkg = JSON.parse(
+      readFileSync(new URL("../../package.json", import.meta.url), "utf-8"),
+    );
+    return typeof pkg.version === "string" ? pkg.version : null;
+  } catch {
+    return null;
+  }
+}
+
+async function runInit() {
+  const { values, positionals } = parseArgs({
+    args: process.argv.slice(3),
+    options: {
+      data: { type: "string" },
+      force: { type: "boolean", default: false },
+    },
+    allowPositionals: true,
+    strict: true,
+  });
+
+  // Accept `openmemory init ~/.openmemory` (positional) as well as --data, so
+  // the documented form and the flag used by every other subcommand both work.
+  const target =
+    positionals[0] ??
+    (values.data as string | undefined) ??
+    process.env.OPENMEMORY_DATA ??
+    DEFAULT_DATA_DIR;
+  // Normalise to an absolute, platform-native path so every path we print (and
+  // embed in the MCP snippet) is consistent regardless of how it was typed.
+  const dataDir = path.resolve(resolveTilde(target));
+
+  let result;
+  try {
+    result = initDataDir({ dataDir, force: values.force as boolean });
+  } catch (err: any) {
+    console.error(`Failed to initialise ${dataDir}: ${err.message}`);
+    process.exit(1);
+  }
+
+  const version = packageVersion();
+  const spec = version ? `@openmem/mcp@${version}` : "@openmem/mcp";
+
+  // Only non-default locations need an OPENMEMORY_DATA override.
+  const isDefaultDir = dataDir === path.resolve(DEFAULT_DATA_DIR);
+  const snippet = mcpConfigSnippet(spec, isDefaultDir ? undefined : result.dataDir);
+
+  const lines = [
+    ``,
+    `OpenMemory initialised.`,
+    ``,
+    `  Data directory  ${result.dataDir}${result.createdDataDir ? " (created)" : ""}`,
+    `  Database        ${result.dbPath} (schema v${result.schemaVersion})`,
+    `  Config          ${result.configPath}${
+      result.wroteConfig ? " (written)" : " (already exists — left unchanged; use --force to reset)"
+    }`,
+    ``,
+    `Add to your AI tool's MCP configuration:`,
+    ``,
+    snippet,
+    ``,
+    `Consolidation intelligence runs the \`claude\` CLI by default (no API key needed),`,
+    `falling back to a built-in heuristic when it's unavailable. Change it via`,
+    `intelligence.provider in config.json, or set OPENMEMORY_PROVIDER=heuristic to`,
+    `turn the subprocess provider off.`,
+    ``,
+  ];
+  console.log(lines.join("\n"));
 }
 
 async function runSignal() {

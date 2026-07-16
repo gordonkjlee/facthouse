@@ -33,13 +33,23 @@ function deepMerge<T>(base: T, override: unknown): T {
   return out as T;
 }
 
+/**
+ * The complete default configuration — every knob the server understands, with
+ * its shipped default. `loadConfig` merges the user's config.json over this,
+ * and `openmemory init` writes it out verbatim so the knobs are discoverable
+ * (otherwise defaults are invisible and users can't find what's tunable).
+ */
+export function defaultServerConfig(): ServerConfig {
+  return {
+    storage: { provider: "sqlite" },
+    temporal: { mode: "simple", bitemporal_since: null },
+    ...DEFAULT_CONFIG,
+  };
+}
+
 /** Load server config. Always returns a valid ServerConfig. */
 export function loadConfig(dataDir: string): ServerConfig {
-  const base = {
-    storage: { provider: "sqlite" as const },
-    temporal: { mode: "simple" as const, bitemporal_since: null },
-    ...DEFAULT_CONFIG,
-  } satisfies ServerConfig;
+  const base = defaultServerConfig();
 
   const configPath = path.join(dataDir, CONFIG_FILENAME);
   let raw: string;

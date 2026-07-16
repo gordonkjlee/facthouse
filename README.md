@@ -152,6 +152,28 @@ The `PostToolUse` matcher excludes OpenMemory's own tools (`^(?!mcp__openmemory_
 
 ### CLI Reference
 
+#### `openmemory init [dir]`
+
+Optional — the server creates its data directory and database on first run anyway. Use `init` to set things up ahead of time and, more usefully, to write a `config.json` you can tune (without it, the defaults are invisible):
+
+```bash
+# Initialise the default location (~/.openmemory):
+openmemory init
+
+# Or a specific directory:
+openmemory init ~/my-memory
+
+# Options:
+#   --data     Data directory (alternative to the positional argument)
+#   --force    Overwrite an existing config.json with defaults
+```
+
+It creates the data directory, applies the database schema, writes `config.json` with the shipped defaults, and prints a ready-to-paste MCP config block. Re-running is safe: an existing `config.json` is left untouched unless you pass `--force`, and your data is preserved.
+
+The generated `config.json` is where you change consolidation behaviour — most notably `intelligence.provider`, which selects how facts are extracted (`cli` by default, which runs the `claude` CLI; set it to `heuristic` for a zero-dependency regex fallback, or override at runtime with `OPENMEMORY_PROVIDER=heuristic`).
+
+#### `openmemory log-event`
+
 The `openmemory log-event` command inserts events directly into the database (no running server needed):
 
 ```bash
