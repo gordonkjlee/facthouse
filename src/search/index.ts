@@ -172,7 +172,7 @@ export function computeRetrievalQuality(
     return {
       coverage_estimate: 0,
       result_confidence: 0,
-      suggested_refinement: "Try broader terms or remove domain filter.",
+      suggested_refinement: "Nothing matched. Try broader or different terms.",
     };
   }
 
@@ -208,7 +208,7 @@ export function computeRetrievalQuality(
 
   const suggested_refinement =
     result_confidence <= 0.5
-      ? "Results are loosely matched. Try more specific terms or add a domain filter."
+      ? "Results are loosely matched. Try more specific terms, or name a domain to prioritise."
       : null;
 
   return { coverage_estimate, result_confidence, suggested_refinement };
@@ -232,12 +232,14 @@ export interface HybridSearchOpts {
  * 2. Structured domain search (if a domain is given)
  * 3. RRF merge
  * 4. Temporal decay boost
- * 5. Constrain to the domain (if given), sort by final score, take top limit
+ * 5. Sort by final score, take top limit (the domain ranks, never gates)
  * 6. Compute retrieval quality signals
  *
- * A domain both widens recall (its facts join the merge, so a fact the keyword
- * path missed can still surface) and narrows output (results are guaranteed to
- * be from that domain).
+ * A domain widens recall and biases ranking — its facts join the merge, so one
+ * the keyword path missed can still surface, and a fact in both paths outranks
+ * a fact in one. It does NOT filter: a strong match outside the domain still
+ * appears, because domain labels are approximate and a gate on one would hide a
+ * fact filed under a synonym.
  */
 export function hybridSearch(
   db: Db,
@@ -247,19 +249,36 @@ export function hybridSearch(
   const limit = opts?.limit ?? 20;
   const domain = opts?.domain;
 
+  // How many candidates each recall path contributes to the merge, before the
+  // final cut to `limit`.
+  //
+  // This must exceed `limit`. A fact only earns a path's RRF credit if it
+  // appears in THAT path's results, so fetching exactly `limit` per path starves
+  // the merge: an in-domain fact that misses the keyword top-`limit` loses its
+  // second list and ranks as though it were out of domain — the domain signal
+  // silently stops working at small limits. Measured before this existed: with
+  // limit=3 over 8 matching facts, an out-of-domain fact outranked an in-domain
+  // one; the same query at limit=8 ordered correctly.
+  //
+  // Over-fetching is cheap here (tens of rows from a local SQLite index) and is
+  // standard for rank-fusion retrieval: merge from a wide pool, then cut.
+  const candidatePool = Math.max(limit * 5, 50);
+
   // 1. FTS5 keyword search (sanitise to prevent FTS5 syntax errors)
   const sanitised = sanitiseFtsQuery(query);
-  const ftsResults = sanitised ? fts5Search(db, sanitised, limit) : [];
+  const ftsResults = sanitised ? fts5Search(db, sanitised, candidatePool) : [];
   const ftsFacts = ftsResults.map((r) => r.fact);
 
-  // 2. Structured domain search (if domain filter provided)
+  // 2. Structured domain path (if a domain was named). This is what makes the
+  //    domain a ranking signal: its facts join the merge, so a fact in both this
+  //    list and the keyword list outranks a fact in only one.
   const searchLists: Array<{ name: string; facts: Fact[] }> = [
     { name: "fts5", facts: ftsFacts },
   ];
 
   if (domain) {
     // getFactsByDomain already orders by created_at DESC
-    const domainFacts = getFactsByDomain(db, domain).slice(0, limit);
+    const domainFacts = getFactsByDomain(db, domain).slice(0, candidatePool);
     searchLists.push({ name: "domain", facts: domainFacts });
   }
 
@@ -288,7 +307,7 @@ export function hybridSearch(
     }
   }
   if (entityFacts.length > 0) {
-    searchLists.push({ name: "entity", facts: entityFacts.slice(0, limit) });
+    searchLists.push({ name: "entity", facts: entityFacts.slice(0, candidatePool) });
   }
 
   // 4. RRF merge
@@ -302,18 +321,29 @@ export function hybridSearch(
     scored.push({ fact: ranked.fact, score: finalScore });
   }
 
-  // 6. Constrain to the requested domain, then sort and take top limit.
-  // The keyword and entity paths search the whole store, so without this a
-  // domain-scoped search leaks facts from other domains — the caller asked for
-  // one domain and must only ever get that domain back. Filtering before the
-  // slice keeps the result set full rather than dropping out-of-domain hits
-  // that already consumed slots.
+  // 6. Sort by final score descending, take top limit.
+  //
+  // A domain deliberately does NOT filter here. It joins the RRF merge as its
+  // own list (step 2), which is already what makes it a ranking signal: a fact
+  // that both matches the query and sits in the domain appears in two lists and
+  // outranks everything; an out-of-domain keyword match appears in one and
+  // ranks below it, but still surfaces.
+  //
+  // That degradation is the point. Domain labels are assigned by a stochastic
+  // classifier at consolidation and would have to be matched exactly here, by a
+  // different process — a cue/encoding mismatch. A classifier may answer
+  // "health" one run and "medical" the next, so an equality gate turns a label
+  // that drifted into an empty result set, silently, with no way for the caller
+  // to tell "nothing is known" from "it was filed under a synonym". Ranking
+  // degrades where a gate fails absolutely.
+  //
+  // An earlier revision did filter, to honour a tool description that promised
+  // "filter to a specific domain". The description was the thing that was wrong.
+  // See docs/design/data-model.md § Domains.
+  //
   // (upstream DAL queries already filter by status='active' AND is_latest=1)
-  const inScope = domain
-    ? scored.filter(({ fact }) => fact.domain === domain)
-    : scored;
-  inScope.sort((a, b) => b.score - a.score);
-  const topResults = inScope.slice(0, limit);
+  scored.sort((a, b) => b.score - a.score);
+  const topResults = scored.slice(0, limit);
 
   // 7. Build SearchResult objects.
   // access_count column exists in the schema for future ranking boosts but is

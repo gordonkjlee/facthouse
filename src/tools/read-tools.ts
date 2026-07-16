@@ -35,7 +35,12 @@ export function registerReadTools(
         .string()
         .optional()
         .describe(
-          `Filter to a specific domain (${routableDomainList()}, or any other in use)`,
+          `Prioritise a domain (${routableDomainList()}, or any other in use). ` +
+            `This biases ranking rather than filtering: facts in the domain are ` +
+            `surfaced and rank higher, but a strong match elsewhere still appears. ` +
+            `Domains are assigned by a classifier and are approximate, so a hard ` +
+            `filter would hide a fact filed under a near-synonym. Omit it to ` +
+            `search everything.`,
         ),
     },
     (args) => {

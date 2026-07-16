@@ -290,17 +290,22 @@ describe.skipIf(!runnable)("cli entry — search and stats", () => {
     expect(parsed.results.length).toBeGreaterThan(0);
   });
 
-  it("search --domain returns only that domain's facts", async () => {
+  it("search --domain ranks that domain first without hiding the rest", async () => {
+    // --domain biases ranking; it does not filter. A domain label is chosen by a
+    // classifier and is approximate, so filtering on one would hide a fact filed
+    // under a near-synonym and show an empty result instead.
     const dir = path.join(root, "search-domain");
     await seed(dir);
 
     const r = run(["search", "coffee", "--domain", "work", "--json", "--data", dir]);
     expect(r.status).toBe(0);
     const parsed = JSON.parse(r.stdout);
-    expect(parsed.results.length).toBeGreaterThan(0);
-    for (const result of parsed.results) {
-      expect(result.fact.domain).toBe("work");
-    }
+
+    // The work fact matches the query and sits in the named domain, so it
+    // reaches the merge by two paths and ranks first.
+    expect(parsed.results[0].fact.domain).toBe("work");
+    // The preferences facts also match "coffee" and must still be reachable.
+    expect(parsed.results.map((x: any) => x.fact.domain)).toContain("preferences");
   });
 
   it("search --limit caps the result count", async () => {
