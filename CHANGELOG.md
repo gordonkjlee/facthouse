@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.5.0](https://github.com/gordonkjlee/openmemory/compare/v0.4.0...v0.5.0) (2026-07-16)
+
+
+### ⚠ BREAKING CHANGES
+
+* **db:** requires Node >= 22.5 (node:sqlite). Node 20 reached end-of-life on 2026-04-30 and is dropped from engines and CI.
+
+### Features
+
+* **db:** replace better-sqlite3 with Node's built-in node:sqlite ([#78](https://github.com/gordonkjlee/openmemory/issues/78)) ([f557de6](https://github.com/gordonkjlee/openmemory/commit/f557de6a7c5663635545d8712d26e5d12ef37a29))
+
+
+### Bug Fixes
+
+* **ci:** pin npm to 11.x for publishing and guard CLI tests on sqlite ([#76](https://github.com/gordonkjlee/openmemory/issues/76)) ([a280428](https://github.com/gordonkjlee/openmemory/commit/a280428d3a9204d5aeaf2cfb7e8e80d28cdc5db2))
+
 ## [0.4.0](https://github.com/gordonkjlee/openmemory/compare/v0.3.0...v0.4.0) (2026-07-16)
 
 
