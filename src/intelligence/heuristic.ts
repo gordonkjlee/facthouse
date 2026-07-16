@@ -32,6 +32,11 @@ export function normaliseForDedup(content: string): string {
 // Known limitation: first-match-wins produces false positives like "I prefer
 // chatting with my doctor" → medical. A scored classifier (rank all domains,
 // tie-break by margin) or an LLM classifier would be more robust.
+//
+// Patterns must match how facts are actually written. These were authored for
+// first-person statements ("I prefer coffee"), but capture_fact is called by an
+// AI recording a fact about its user, so content arrives in the third person
+// ("The user prefers coffee"). Verbs therefore need their -s form.
 const DOMAIN_SIGNALS: Array<{ domain: string; patterns: RegExp[] }> = [
   {
     domain: "medical",
@@ -42,19 +47,35 @@ const DOMAIN_SIGNALS: Array<{ domain: string; patterns: RegExp[] }> = [
   {
     domain: "profile",
     patterns: [
-      /\b(my name is|i am|i'm|born|live in|moved to|grew up|nationality|age|birthday|occupation|job title)\b/i,
+      // First person, as a user states it.
+      /\b(my name is|i am|i'm|born|nationality|age|birthday|occupation|job title)\b/i,
+      /\bi (live|lives) in\b/i,
+      // Third person, as an AI records it about its user. capture_fact is called
+      // by the assistant, not the user, so this is the shape content arrives in.
+      /\bthe user('s)? (is|was|has been)? ?(called|named)\b/i,
+      /\bthe user's (name|age|birthday|nationality|occupation|job title)\b/i,
+      /\b(the user|they) (lives?|moved|grew up|was born)\b/i,
+    ],
+  },
+  {
+    // Ahead of preferences deliberately: a relationship noun says who a fact is
+    // about, which outranks a preference verb saying what it mentions. "My
+    // partner Robin loves sushi" is a fact about Robin.
+    //
+    // This used to sit after preferences and appeared to work only by accident —
+    // the preference pattern was `\blove\b`, which never matched "loves", so the
+    // fact fell through to people. Fixing the verb forms exposed the collision.
+    domain: "people",
+    patterns: [
+      /\b(partner|wife|husband|friend|colleague|boss|sister|brother|mother|father|son|daughter|neighbour|neighbor)\b/i,
     ],
   },
   {
     domain: "preferences",
     patterns: [
-      /\b(prefer|favourite|favorite|like|love|hate|dislike|enjoy|can't stand|rather)\b/i,
-    ],
-  },
-  {
-    domain: "people",
-    patterns: [
-      /\b(partner|wife|husband|friend|colleague|boss|sister|brother|mother|father|son|daughter|neighbour|neighbor)\b/i,
+      // -s forms matter: "The user prefers X" is the shape a capture takes, and
+      // `\bprefer\b` does not match "prefers".
+      /\b(prefers?|favourites?|favorites?|likes?|loves?|hates?|dislikes?|enjoys?|can't stand|would rather|rather)\b/i,
     ],
   },
   {
