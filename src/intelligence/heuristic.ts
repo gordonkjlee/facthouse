@@ -8,6 +8,7 @@ import type {
   IntelligenceProvider,
   ExtractedEntity,
 } from "./types.js";
+import { DOMAINS, DEFAULT_DOMAIN, normaliseDomain } from "../schemas/domains.js";
 
 // ---------------------------------------------------------------------------
 // Shared normalisation
@@ -28,59 +29,24 @@ export function normaliseForDedup(content: string): string {
 // Domain classification keywords
 // ---------------------------------------------------------------------------
 
-// First match wins. Medical is first for safety (health information takes priority).
-// Known limitation: first-match-wins produces false positives like "I prefer
-// chatting with my doctor" → medical. A scored classifier (rank all domains,
-// tie-break by margin) or an LLM classifier would be more robust.
-const DOMAIN_SIGNALS: Array<{ domain: string; patterns: RegExp[] }> = [
-  {
-    domain: "medical",
-    patterns: [
-      /\b(allerg|medicat|doctor|diagnosis|condition|symptom|treatment|prescription|health|hospital|clinic|vaccine|blood|surgery|therapy|illness|disease)/i,
-    ],
-  },
-  {
-    domain: "profile",
-    patterns: [
-      /\b(my name is|i am|i'm|born|live in|moved to|grew up|nationality|age|birthday|occupation|job title)\b/i,
-    ],
-  },
-  {
-    domain: "preferences",
-    patterns: [
-      /\b(prefer|favourite|favorite|like|love|hate|dislike|enjoy|can't stand|rather)\b/i,
-    ],
-  },
-  {
-    domain: "people",
-    patterns: [
-      /\b(partner|wife|husband|friend|colleague|boss|sister|brother|mother|father|son|daughter|neighbour|neighbor)\b/i,
-    ],
-  },
-  {
-    domain: "work",
-    patterns: [
-      /\b(project|sprint|deploy|meeting|team|company|client|deadline|standup|release|merge|repository|codebase)\b/i,
-    ],
-  },
-];
-
 /** Classify a single content string into a domain. */
 function classifyContent(content: string, domainHint: string | null): { domain: string; subdomain: string | null } {
-  // Explicit hint takes priority
+  // Explicit hint takes priority, but is still coerced to a known domain — a
+  // caller's typo must not invent one.
   if (domainHint) {
-    return { domain: domainHint, subdomain: null };
+    return { domain: normaliseDomain(domainHint), subdomain: null };
   }
 
-  for (const { domain, patterns } of DOMAIN_SIGNALS) {
+  // Registry order is match order; first match wins.
+  for (const { name, patterns } of DOMAINS) {
     for (const pattern of patterns) {
       if (pattern.test(content)) {
-        return { domain, subdomain: null };
+        return { domain: name, subdomain: null };
       }
     }
   }
 
-  return { domain: "general", subdomain: null };
+  return { domain: DEFAULT_DOMAIN, subdomain: null };
 }
 
 // ---------------------------------------------------------------------------

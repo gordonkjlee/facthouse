@@ -33,6 +33,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import type { IntelligenceProvider, ExtractedFact } from "./types.js";
 import { createHeuristicProvider } from "./heuristic.js";
+import { domainPromptList, DOMAIN_NAMES } from "../schemas/domains.js";
 
 // ---------------------------------------------------------------------------
 // Config
@@ -308,7 +309,9 @@ const STAGE_1_SCHEMA = {
         type: "object",
         properties: {
           content: { type: "string" },
-          domain: { type: "string" },
+          // enum, not a free string: the model cannot answer "health"
+          // instead of "medical" and silently fragment the taxonomy.
+          domain: { type: "string", enum: DOMAIN_NAMES },
           subdomain: { type: ["string", "null"] },
           confidence: { type: "number", minimum: 0, maximum: 1 },
           importance: { type: "number", minimum: 0, maximum: 1 },
@@ -471,7 +474,7 @@ export function createCliProvider(
           "personal details, medical info, relationships, work context, opinions, decisions. " +
           "Ignore ephemeral statements (current tasks, transient mood). " +
           "Each fact must be a complete, self-contained sentence — rewrite from the source as needed. " +
-          "For each fact, identify its domain (profile|preferences|medical|people|work|general), " +
+          `For each fact, identify its domain (${domainPromptList()}), ` +
           "optional subdomain, confidence 0-1, importance 0-1, and any mentioned entities " +
           "(people, places, orgs, substances, foods). " +
           "Only extract facts from candidate_events. " +

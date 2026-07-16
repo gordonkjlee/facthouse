@@ -547,3 +547,78 @@ describe("consolidation pipeline", () => {
     expect(rows[0].strength).toBeGreaterThan(0.3);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Domain validation
+// ---------------------------------------------------------------------------
+
+describe("domain validation at graduation", () => {
+  /** A provider that returns whatever domain it is told to — as an LLM might. */
+  function providerReturning(domain: string) {
+    const base = createHeuristicProvider();
+    return {
+      ...base,
+      async classifyFacts(facts: Array<{ id: string; content: string }>) {
+        return facts.map((f) => ({
+          id: f.id,
+          content: f.content,
+          domain,
+          subdomain: null,
+        }));
+      },
+    };
+  }
+
+  it("coerces an unknown domain from a provider rather than minting it", async () => {
+    // The real failure mode: an LLM answers "health" instead of "medical". The
+    // output schema is a free string, so nothing upstream stops it. Left alone,
+    // the fact is stored under a domain that get_profile, get_preferences and
+    // memory://profile never query — present in the stats, unreachable forever.
+    const sessionId = setupSession();
+    insertSessionFact(db, {
+      session_id: sessionId,
+      content: "The user is allergic to peanuts",
+      domain_hint: null,
+    });
+
+    const result = await consolidate(db, providerReturning("health") as never);
+    expect(result.factsGraduated).toBe(1);
+
+    // The fact must be stored under a real domain, not an invented one...
+    const rows = db.prepare(`SELECT domain FROM facts`).all() as Array<{ domain: string }>;
+    expect(rows[0].domain).toBe("general");
+    // ...and no phantom domain may appear in the registry table.
+    const domains = db.prepare(`SELECT name FROM domains`).all() as Array<{ name: string }>;
+    expect(domains.map((d) => d.name)).not.toContain("health");
+  });
+
+  it("normalises a known domain's casing instead of forking it", async () => {
+    const sessionId = setupSession();
+    insertSessionFact(db, {
+      session_id: sessionId,
+      content: "The user prefers dark roast coffee",
+      domain_hint: null,
+    });
+
+    await consolidate(db, providerReturning("Preferences") as never);
+
+    const rows = db.prepare(`SELECT domain FROM facts`).all() as Array<{ domain: string }>;
+    expect(rows[0].domain).toBe("preferences");
+    const domains = db.prepare(`SELECT name FROM domains`).all() as Array<{ name: string }>;
+    expect(domains.map((d) => d.name)).not.toContain("Preferences");
+  });
+
+  it("still honours a valid domain from a provider", async () => {
+    const sessionId = setupSession();
+    insertSessionFact(db, {
+      session_id: sessionId,
+      content: "The user is working on the Acme project",
+      domain_hint: null,
+    });
+
+    await consolidate(db, providerReturning("work") as never);
+
+    const rows = db.prepare(`SELECT domain FROM facts`).all() as Array<{ domain: string }>;
+    expect(rows[0].domain).toBe("work");
+  });
+});

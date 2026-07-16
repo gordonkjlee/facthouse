@@ -10,6 +10,7 @@ import { findEntity, getEntityEdges } from "../db/entities.js";
 import { getFactsByEntity } from "../db/facts.js";
 import { getDomains } from "../db/domains.js";
 import { getStats } from "../db/stats.js";
+import { routableDomainList } from "../schemas/domains.js";
 
 // ---------------------------------------------------------------------------
 // Registration
@@ -34,7 +35,7 @@ export function registerReadTools(
         .string()
         .optional()
         .describe(
-          "Filter to a specific domain (profile, preferences, medical, people, work)",
+          `Filter to a specific domain (${routableDomainList()})`,
         ),
     },
     (args) => {

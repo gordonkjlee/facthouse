@@ -100,6 +100,40 @@ describe("classifyFacts", () => {
     expect(result[0].domain).toBe("general");
   });
 
+  // Every case above is first person, which is how this went unnoticed: the
+  // patterns were written for "I prefer coffee", but capture_fact is called by
+  // an AI recording a fact *about* its user, so the content is third person.
+  // `\bprefer\b` does not match "prefers", so these all fell to `general` —
+  // taking get_profile, get_preferences and memory://profile down with them for
+  // anyone on the fallback provider.
+  describe.each([
+    ["The user is called Alex Rivera", "profile"],
+    ["The user lives in Springfield", "profile"],
+    ["The user was born in 1990", "profile"],
+    ["The user's occupation is platform engineer", "profile"],
+    ["The user prefers dark roast coffee", "preferences"],
+    ["The user likes long walks", "preferences"],
+    ["The user dislikes instant coffee", "preferences"],
+    ["The user is allergic to peanuts", "medical"],
+    ["The user has a partner called Robin", "people"],
+    ["The user is working on the Acme project", "work"],
+  ])("third-person capture: %s", (content, expected) => {
+    it(`routes to '${expected}'`, async () => {
+      const result = await provider.classifyFacts([fakeFact(content)], "");
+      expect(result[0].domain).toBe(expected);
+    });
+  });
+
+  it("coerces an unknown domain_hint instead of trusting it", async () => {
+    // A hint skips keyword detection entirely, so an unknown value would
+    // otherwise become a domain nothing queries.
+    const result = await provider.classifyFacts(
+      [{ ...fakeFact("Some fact"), domain_hint: "health" }],
+      "",
+    );
+    expect(result[0].domain).toBe("general");
+  });
+
   it("domain_hint overrides keyword detection", async () => {
     // Content matches "preferences" keywords, but hint says "medical"
     const result = await provider.classifyFacts(

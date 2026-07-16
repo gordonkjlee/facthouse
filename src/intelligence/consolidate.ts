@@ -39,6 +39,7 @@ import {
   upsertEntityEdge,
 } from "../db/entities.js";
 import { ensureDomain } from "../db/domains.js";
+import { normaliseDomain } from "../schemas/domains.js";
 import { acquireLock, releaseLock } from "../db/consolidation-lock.js";
 
 // ---------------------------------------------------------------------------
@@ -169,7 +170,17 @@ export async function consolidate(
     const explicitClassified = needsClassification.length
       ? await intelligence.classifyFacts(needsClassification)
       : [];
-    const classified = [...autoClassified, ...explicitClassified];
+
+    // The gate every domain passes through, whatever produced it: a caller's
+    // hint (which skips classification entirely) or a provider's output. The
+    // LLM providers return a free-form string, so without this an answer of
+    // "health" instead of "medical" — or a capitalised "Preferences" — would
+    // silently mint a domain that get_profile and memory://profile never query,
+    // leaving the fact stored, counted, and permanently unretrievable.
+    const classified = [...autoClassified, ...explicitClassified].map((cf) => ({
+      ...cf,
+      domain: normaliseDomain(cf.domain),
+    }));
 
     // Step 2: Build entity map. Prefer pre-extracted entities stored on the
     // session_fact (populated by the CLI provider's holistic extraction) —
