@@ -91,9 +91,18 @@ export function createSessionManager(
     registerTools(server) {
       server.tool(
         "log_event",
-        `Log a session event — user messages, assistant responses, tool calls, ` +
-          `tool results, or artifacts. Call this to build the episodic record of ` +
-          `the conversation. Log both sides for full recall.`,
+        `Record a raw exchange — a user message, your response, a tool call, a ` +
+          `tool result, an artifact — as the episodic record consolidation later ` +
+          `extracts facts from. Logging both sides gives that extraction the ` +
+          `context to know what a reply refers to.\n\n` +
+          `Where the client has hooks configured, every event is logged for you ` +
+          `automatically and you do not need to call this at all. Call it when ` +
+          `there are no hooks, or when an exchange matters enough to preserve ` +
+          `verbatim — a decision, a correction, a specification — and you want it ` +
+          `recorded whether or not hooks are running. Duplicates are reconciled ` +
+          `at consolidation, so logging something twice is safe.\n\n` +
+          `To store a fact you already know, use capture_fact instead: this tool ` +
+          `records what was said, not what it means.`,
         {
           event_type: z
             .enum(["message", "tool_call", "tool_result", "artifact"])

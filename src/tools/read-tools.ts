@@ -56,8 +56,15 @@ export function registerReadTools(
   // -----------------------------------------------------------------
   server.tool(
     "get_profile",
-    `Get the user's core identity facts — name, demographics, key personal ` +
-      `details.`,
+    `Get the user's core identity — who they are. Name, demographics, where ` +
+      `they live, what they do.\n\n` +
+      `Call this at the START of a conversation, before you address the user ` +
+      `personally, and before any response that reads better for knowing who ` +
+      `they are. Use this rather than search_knowledge when you want identity ` +
+      `itself rather than a specific fact — it needs no query and returns the ` +
+      `identity facts directly.\n\n` +
+      `If it returns nothing, you genuinely know nothing about this user yet: ` +
+      `say so rather than guessing, and capture what you learn.`,
     {},
     () => {
       const facts = structuredSearch(db, { domain: "profile" });
@@ -78,7 +85,13 @@ export function registerReadTools(
   // -----------------------------------------------------------------
   server.tool(
     "get_preferences",
-    `Get the user's preferences.`,
+    `Get what the user likes, dislikes, and habitually chooses.\n\n` +
+      `Call this BEFORE recommending, suggesting, ordering, booking, or ` +
+      `choosing anything on the user's behalf — food, drink, tools, style, ` +
+      `travel, scheduling. A recommendation made without checking is a guess, ` +
+      `and the user has already told you the answer.\n\n` +
+      `Also call it before assuming a default: if you are about to pick "the ` +
+      `usual" option for them, check what their usual actually is.`,
     {
       // category parameter accepted but not used for filtering until a provider
       // populates subdomains. The heuristic provider always returns subdomain: null,
@@ -115,10 +128,22 @@ export function registerReadTools(
   // -----------------------------------------------------------------
   server.tool(
     "get_people",
-    `Get everything known about a person — identity, relationship to user, ` +
-      `preferences, facts.`,
+    `Get everything known about a person in the user's life — who they are, ` +
+      `their relationship to the user, facts about them, and their connections ` +
+      `to other people.\n\n` +
+      `Call this WHENEVER a person is named or alluded to and knowing them ` +
+      `would improve your answer — including indirect references like "my ` +
+      `partner", "my manager", "her birthday". Call it before advising on ` +
+      `anything involving that person: a gift, a message, a plan, a conflict.\n\n` +
+      `Look them up before asking the user who someone is — you may already ` +
+      `know.`,
     {
-      name: z.string().describe("Person's name to look up"),
+      name: z
+        .string()
+        .describe(
+          "Person's name. Resolve a relationship reference to a name first " +
+            "if you can (e.g. via get_context or a prior fact).",
+        ),
     },
     (args) => {
       const entity = findEntity(db, args.name, "person");
@@ -164,10 +189,19 @@ export function registerReadTools(
   server.tool(
     "get_context",
     `Get everything known about a topic, combining search with entity ` +
-      `relationship traversal. More comprehensive than search_knowledge — ` +
-      `follows entity connections.`,
+      `relationship traversal. More comprehensive than search_knowledge — it ` +
+      `follows entity connections outward (a named person → their relationship ` +
+      `to the user → their preferences and history).\n\n` +
+      `Call this when you need the COMPLETE picture of a topic, person, or ` +
+      `domain rather than a specific fact — planning something involving ` +
+      `someone, catching up on a subject, or answering an open-ended question ` +
+      `about a person or project.\n\n` +
+      `Prefer search_knowledge when you want one fact fast; prefer this when ` +
+      `missing a connection would make your answer wrong.`,
     {
-      topic: z.string().describe("Topic to explore"),
+      topic: z
+        .string()
+        .describe("Topic, person, project, or domain to explore"),
     },
     (args) => {
       // Hybrid search for the topic
@@ -240,7 +274,13 @@ export function registerReadTools(
   // -----------------------------------------------------------------
   server.tool(
     "get_schemas",
-    `List available knowledge domains and their structure.`,
+    `List the knowledge domains this user's memory actually uses, and their ` +
+      `subdomains. The set is not fixed — beyond the core domains it grows to ` +
+      `fit the user, so it is worth asking rather than assuming.\n\n` +
+      `Call this before filtering a search by domain, before choosing a ` +
+      `domain_hint for capture_fact, or when you want to know how this user's ` +
+      `knowledge is organised. Rarely needed mid-conversation — search_knowledge ` +
+      `and get_context work without it.`,
     {},
     () => {
       const domains = getDomains(db);
@@ -261,8 +301,13 @@ export function registerReadTools(
   // -----------------------------------------------------------------
   server.tool(
     "get_stats",
-    `Get knowledge base statistics — fact count, entity count, domain ` +
-      `distribution.`,
+    `Get knowledge base statistics — how many facts are currently true, how ` +
+      `many are held in total including superseded history, entity and domain ` +
+      `counts, and how facts are distributed across domains.\n\n` +
+      `Call this when the user asks what you know or remember about them, how ` +
+      `much you have stored, or whether their memory is working. This answers ` +
+      `"how much do you know", not "what do you know" — use search_knowledge, ` +
+      `get_profile or get_context for actual recall.`,
     {},
     () => {
       // Shared with `openmemory stats` so the tool and the CLI can't disagree.
