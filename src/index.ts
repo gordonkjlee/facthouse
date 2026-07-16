@@ -17,8 +17,8 @@ import { openDatabase, closeDatabase } from "./db/connection.js";
 import { applySchema } from "./db/schema.js";
 import { createSessionManager, registerSessionReadTools } from "./tools/session-manager.js";
 import { createFactManager } from "./tools/fact-manager.js";
-import { createSamplingProvider } from "./intelligence/sampling.js";
 import { createHeuristicProvider } from "./intelligence/heuristic.js";
+import { createIntelligenceProvider } from "./intelligence/provider.js";
 import { registerReadTools } from "./tools/read-tools.js";
 import { startScheduler, type Scheduler } from "./scheduler.js";
 import { loadConfig } from "./config.js";
@@ -77,15 +77,15 @@ registerSessionReadTools(server, sessionManager, db);
 const config = loadConfig(dataDir);
 const triggers = new Set(config.consolidation.triggers);
 
-// Provider selector — heuristic is always the fallback. The sampling provider
-// uses the MCP client's sampling capability for LLM-quality consolidation;
-// when the client doesn't advertise sampling, the provider falls through to
-// heuristic per-method. Users can override the choice via config.json.
+// Provider selector — heuristic is always the terminal fallback. Defaults to
+// the CLI provider: subprocess `claude -p` for real LLM consolidation
+// via the user's own subscription. The OPENMEMORY_PROVIDER env var overrides
+// the config.json choice (kill-switch, e.g. OPENMEMORY_PROVIDER=heuristic).
 const heuristic = createHeuristicProvider();
-const intelligence =
-  config.intelligence.provider === "sampling"
-    ? createSamplingProvider(server.server, heuristic)
-    : heuristic;
+const intelligence = createIntelligenceProvider(config.intelligence, {
+  server: server.server,
+  heuristic,
+});
 
 const factManager = createFactManager(db, sessionManager, {
   intelligence,
