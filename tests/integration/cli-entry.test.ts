@@ -178,9 +178,7 @@ describe.skipIf(!built)("cli entry — subprocess recursion guard", () => {
 
   it("logs an event normally when the guard is not set", () => {
     // Control case for the guard tests above: proves they skip because of the
-    // env var, not because log-event is broken. The dir is initialised first —
-    // log-event opens an existing database and does not create the data dir
-    // (the server or `init` does that).
+    // env var, not because log-event is broken.
     const dir = path.join(root, "unguarded");
     run(["init", dir]);
 
@@ -193,15 +191,17 @@ describe.skipIf(!built)("cli entry — subprocess recursion guard", () => {
     expect(existsSync(path.join(dir, "memory.db"))).toBe(true);
   });
 
-  it("fails loudly when log-event targets an uninitialised data dir", () => {
-    // Documents current behaviour: the data dir must exist (created by the
-    // server on boot, or by `init`). It errors with a clear message and a
-    // non-zero exit rather than silently dropping the event.
+  it("creates the data dir when logging to one that doesn't exist yet", () => {
+    // Hooks can fire before the server has ever run for a data dir. Requiring
+    // the dir to pre-exist dropped the event, with the error going to a hook's
+    // stderr where nobody sees it.
+    const dir = path.join(root, "never-initialised");
     const r = run([
-      "log-event", "--role", "user", "--content", "synthetic", "--data",
-      path.join(root, "never-initialised"),
+      "log-event", "--role", "user", "--event-type", "message",
+      "--content", "synthetic", "--data", dir,
     ]);
-    expect(r.status).toBe(1);
-    expect(r.stderr).toMatch(/directory does not exist/i);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toMatch(/event_id/);
+    expect(existsSync(path.join(dir, "memory.db"))).toBe(true);
   });
 });

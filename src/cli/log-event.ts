@@ -3,6 +3,7 @@
  * Used by AI client hooks to pipe conversation messages to OpenMemory.
  */
 
+import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { openDatabase, closeDatabase } from "../db/connection.js";
 import { applySchema } from "../db/schema.js";
@@ -30,8 +31,15 @@ export interface LogEventArgs {
  * scheduler. If the server isn't reachable (not running, different user
  * session, etc.), the signal is silently dropped — session_start on the
  * next server launch will pick up the event.
+ *
+ * Creates the data directory if it doesn't exist, mirroring what the server
+ * does on boot. Hooks are the primary caller and can fire before the server
+ * has ever run for a given data dir, in which case opening the database fails
+ * and the event is lost — with the error going to a hook's stderr, where
+ * nobody sees it.
  */
 export async function logEvent(args: LogEventArgs): Promise<SessionEvent> {
+  mkdirSync(args.dataDir, { recursive: true });
   const dbPath = path.join(args.dataDir, "memory.db");
   const db = openDatabase(dbPath);
 
