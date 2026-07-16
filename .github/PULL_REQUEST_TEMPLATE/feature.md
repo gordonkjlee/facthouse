@@ -17,7 +17,10 @@
 
 ### Testing Evidence
 > How was this tested? What evidence shows it works correctly?
-> Include relevant test output, example tool invocations, or search results.
+> Describe results **abstractly** — test counts, coverage areas, and behavioural pass/fail
+> (e.g. "a fact was superseded across a domain change; entities were extracted and linked").
+> **Do NOT paste memory content, database rows, or consolidation/search output** — for a
+> memory engine those are personal data. Use synthetic examples only.
 
 ---
 
@@ -25,4 +28,5 @@
 - [ ] `npm run build` succeeds
 - [ ] `npm test` passes
 - [ ] Tool descriptions are clear and compelling (if MCP tools changed)
+- [ ] No personal data or real memory content in the diff or this description (synthetic only)
 - [ ] Code follows project standards
