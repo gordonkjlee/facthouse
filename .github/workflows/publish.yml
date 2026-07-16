@@ -26,9 +26,27 @@ jobs:
       - name: Find unpublished release
         id: release
         run: |
-          TAG=$(gh api repos/${{ github.repository }}/releases/latest --jq '.tag_name' 2>/dev/null || echo "")
+          # GraphQL, not `gh api repos/.../releases/latest`. The REST call cannot
+          # distinguish "no releases exist" from "could not ask": both yield an
+          # empty string, and the empty string used to mean "nothing to publish,
+          # exit 0 green". During a GitHub REST incident (2026-07-16) that call
+          # returned empty on 5 of 5 attempts while GraphQL answered correctly —
+          # so a release would have been silently skipped by a job reporting
+          # success. That is the v0.4.0 failure wearing a different hat.
+          #
+          # A null latestRelease is a real answer (no releases yet). A failed
+          # query is not an answer, and must stop the workflow rather than be
+          # read as "nothing to do".
+          if ! RESPONSE=$(gh api graphql -f query='
+            query($owner:String!,$name:String!){
+              repository(owner:$owner,name:$name){ latestRelease{ tagName } }
+            }' -F owner="${{ github.repository_owner }}" -F name="${GITHUB_REPOSITORY#*/}" 2>&1); then
+            echo "::error::Could not query the latest release: ${RESPONSE}. Refusing to assume there is nothing to publish."
+            exit 1
+          fi
+          TAG=$(echo "$RESPONSE" | jq -r '.data.repository.latestRelease.tagName // ""')
           if [ -z "$TAG" ]; then
-            echo "No releases found"
+            echo "No releases exist yet — nothing to publish."
             echo "found=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -109,7 +127,18 @@ jobs:
       - name: Which version should be live?
         id: expected
         run: |
-          TAG=$(gh api repos/${{ github.repository }}/releases/latest --jq '.tag_name' 2>/dev/null || echo "")
+          # Same reasoning as the publish job: a query that fails is not a
+          # licence to skip the check. This guard exists precisely to catch a
+          # release that silently never shipped, so it must never pass by
+          # failing to look.
+          if ! RESPONSE=$(gh api graphql -f query='
+            query($owner:String!,$name:String!){
+              repository(owner:$owner,name:$name){ latestRelease{ tagName } }
+            }' -F owner="${{ github.repository_owner }}" -F name="${GITHUB_REPOSITORY#*/}" 2>&1); then
+            echo "::error::Could not query the latest release: ${RESPONSE}. Refusing to report a release verified when it was never checked."
+            exit 1
+          fi
+          TAG=$(echo "$RESPONSE" | jq -r '.data.repository.latestRelease.tagName // ""')
           if [ -z "$TAG" ]; then
             echo "No releases exist yet — nothing to verify."
             echo "check=false" >> "$GITHUB_OUTPUT"
