@@ -33,6 +33,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import type { IntelligenceProvider, ExtractedFact } from "./types.js";
 import { createHeuristicProvider } from "./heuristic.js";
+import { domainRoutingInstruction } from "../schemas/domains.js";
 
 // ---------------------------------------------------------------------------
 // Config
@@ -471,7 +472,7 @@ export function createCliProvider(
           "personal details, medical info, relationships, work context, opinions, decisions. " +
           "Ignore ephemeral statements (current tasks, transient mood). " +
           "Each fact must be a complete, self-contained sentence — rewrite from the source as needed. " +
-          "For each fact, identify its domain (profile|preferences|medical|people|work|general), " +
+          `${domainRoutingInstruction()} ` +
           "optional subdomain, confidence 0-1, importance 0-1, and any mentioned entities " +
           "(people, places, orgs, substances, foods). " +
           "Only extract facts from candidate_events. " +

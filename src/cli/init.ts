@@ -19,7 +19,8 @@ import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { openDatabase, closeDatabase, pragmaRead } from "../db/connection.js";
 import { applySchema } from "../db/schema.js";
-import { CONFIG_FILENAME, defaultServerConfig } from "../config.js";
+import { ensureDomain } from "../db/domains.js";
+import { CONFIG_FILENAME, defaultServerConfig, loadConfig } from "../config.js";
 
 /**
  * Render a copy-pasteable MCP client config block.
@@ -78,6 +79,12 @@ export function initDataDir(args: InitArgs): InitResult {
   const createdDataDir = !existsSync(dataDir);
   mkdirSync(dataDir, { recursive: true });
 
+  // Resolve the vocabulary to seed from the effective config — an existing
+  // config.json (a user may have added their own domains) or the shipped
+  // defaults. Read before the config is written so a first run seeds exactly
+  // what it is about to write.
+  const seedDomains = loadConfig(dataDir).domains ?? [];
+
   // Create/migrate the database. applySchema is idempotent and versioned.
   const dbPath = path.join(dataDir, "memory.db");
   const db = openDatabase(dbPath);
@@ -85,6 +92,14 @@ export function initDataDir(args: InitArgs): InitResult {
   try {
     applySchema(db);
     schemaVersion = pragmaRead(db, "user_version");
+    // Seed the domain vocabulary the config declares. The table previously
+    // started empty and stayed empty until the first fact graduated, so the
+    // earliest facts had no existing vocabulary to be routed against — the
+    // point at which consistent routing matters most. ensureDomain is
+    // idempotent, so re-running init is safe.
+    for (const domain of seedDomains) {
+      ensureDomain(db, domain.name, domain.subdomains);
+    }
   } finally {
     closeDatabase(db);
   }

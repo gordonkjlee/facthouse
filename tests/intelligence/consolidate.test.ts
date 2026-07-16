@@ -547,3 +547,60 @@ describe("consolidation pipeline", () => {
     expect(rows[0].strength).toBeGreaterThan(0.3);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Domain handling at graduation
+// ---------------------------------------------------------------------------
+
+describe("domain handling at graduation", () => {
+  /** A provider that returns whatever domain it is told to — as an LLM might. */
+  function providerReturning(domain: string) {
+    const base = createHeuristicProvider();
+    return {
+      ...base,
+      async classifyFacts(facts: Array<{ id: string; content: string }>) {
+        return facts.map((f) => ({
+          id: f.id,
+          content: f.content,
+          domain,
+          subdomain: null,
+        }));
+      },
+    };
+  }
+
+  async function graduateWith(domain: string, content = "A synthetic fact") {
+    const sessionId = setupSession();
+    insertSessionFact(db, { session_id: sessionId, content, domain_hint: null });
+    const result = await consolidate(db, providerReturning(domain) as never);
+    expect(result.factsGraduated).toBe(1);
+    return (db.prepare(`SELECT domain FROM facts`).get() as { domain: string }).domain;
+  }
+
+  it("keeps a domain outside the core rather than flattening it", async () => {
+    // The taxonomy is open beyond the core: an assistant that decides a fact
+    // belongs in "fitness" knows the user better than our list does. Coercing it
+    // to `general` would throw away the most informative thing about the fact.
+    expect(await graduateWith("fitness")).toBe("fitness");
+
+    const domains = db.prepare(`SELECT name FROM domains`).all() as Array<{ name: string }>;
+    expect(domains.map((d) => d.name)).toContain("fitness");
+  });
+
+  it("merges a spelling variant instead of forking the domain", async () => {
+    // "Preferences" and "preferences" are one domain. This is the drift control:
+    // canonicalise the spelling, don't police the meaning.
+    expect(await graduateWith("Preferences")).toBe("preferences");
+
+    const domains = db.prepare(`SELECT name FROM domains`).all() as Array<{ name: string }>;
+    expect(domains.map((d) => d.name)).not.toContain("Preferences");
+  });
+
+  it("still honours a core domain from a provider", async () => {
+    expect(await graduateWith("work")).toBe("work");
+  });
+
+  it("falls back only when a provider returns no domain at all", async () => {
+    expect(await graduateWith("")).toBe("general");
+  });
+});

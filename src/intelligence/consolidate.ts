@@ -39,6 +39,7 @@ import {
   upsertEntityEdge,
 } from "../db/entities.js";
 import { ensureDomain } from "../db/domains.js";
+import { normaliseDomainName } from "../schemas/domains.js";
 import { acquireLock, releaseLock } from "../db/consolidation-lock.js";
 
 // ---------------------------------------------------------------------------
@@ -169,7 +170,19 @@ export async function consolidate(
     const explicitClassified = needsClassification.length
       ? await intelligence.classifyFacts(needsClassification)
       : [];
-    const classified = [...autoClassified, ...explicitClassified];
+    // Canonicalise every domain's spelling, whatever produced it: a caller's
+    // hint (which skips classification) or a provider's output. This merges
+    // "Preferences" into "preferences" so one domain cannot exist twice.
+    //
+    // It deliberately does not coerce an unknown domain into `general`. The
+    // taxonomy is open beyond the core, and the label a classifier chose is the
+    // most distinctive thing about a fact that fits nothing else — discarding it
+    // is the lossy step. Retrieval must therefore never depend on the label
+    // matching exactly; see docs/design/data-model.md § Domains.
+    const classified = [...autoClassified, ...explicitClassified].map((cf) => ({
+      ...cf,
+      domain: normaliseDomainName(cf.domain),
+    }));
 
     // Step 2: Build entity map. Prefer pre-extracted entities stored on the
     // session_fact (populated by the CLI provider's holistic extraction) —

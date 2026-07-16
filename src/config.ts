@@ -9,6 +9,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { DEFAULT_CONFIG, type ServerConfig } from "./types/config.js";
+import { CORE_DOMAINS } from "./schemas/domains.js";
 
 /** Filename expected in the data dir. */
 export const CONFIG_FILENAME = "config.json";
@@ -44,6 +45,12 @@ export function defaultServerConfig(): ServerConfig {
     storage: { provider: "sqlite" },
     temporal: { mode: "simple", bitemporal_since: null },
     ...DEFAULT_CONFIG,
+    // The core taxonomy ships in config rather than staying buried in code, so
+    // it is visible and editable: a user can add their own domains here and they
+    // exist from first run. Seeding also gives a classifier something to be
+    // consistent with — schema-congruence needs a schema to pre-exist, and an
+    // empty vocabulary offers nothing to match against.
+    domains: CORE_DOMAINS.map((d) => ({ name: d.name, subdomains: d.subdomains })),
   };
 }
 
