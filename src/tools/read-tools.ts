@@ -9,6 +9,7 @@ import { hybridSearch, structuredSearch } from "../search/index.js";
 import { findEntity, getEntityEdges } from "../db/entities.js";
 import { getFactsByEntity } from "../db/facts.js";
 import { getDomains } from "../db/domains.js";
+import { getStats } from "../db/stats.js";
 
 // ---------------------------------------------------------------------------
 // Registration
@@ -263,64 +264,10 @@ export function registerReadTools(
       `distribution.`,
     {},
     () => {
-      const factCount = (
-        db
-          .prepare(
-            `SELECT COUNT(*) as count FROM facts WHERE status = 'active' AND is_latest = 1 AND (valid_until IS NULL OR valid_until > datetime('now'))`,
-          )
-          .get() as { count: number }
-      ).count;
-
-      const totalFacts = (
-        db.prepare(`SELECT COUNT(*) as count FROM facts`).get() as {
-          count: number;
-        }
-      ).count;
-
-      const entityCount = (
-        db.prepare(`SELECT COUNT(*) as count FROM entities`).get() as {
-          count: number;
-        }
-      ).count;
-
-      const domainCount = (
-        db.prepare(`SELECT COUNT(*) as count FROM domains`).get() as {
-          count: number;
-        }
-      ).count;
-
-      const consolidationCount = (
-        db.prepare(`SELECT COUNT(*) as count FROM consolidations`).get() as {
-          count: number;
-        }
-      ).count;
-
-      const domainDistribution = db
-        .prepare(
-          `SELECT domain, COUNT(*) as count FROM facts
-           WHERE status = 'active' AND is_latest = 1
-             AND (valid_until IS NULL OR valid_until > datetime('now'))
-           GROUP BY domain
-           ORDER BY count DESC
-           LIMIT 50`,
-        )
-        .all() as Array<{ domain: string; count: number }>;
-
+      // Shared with `openmemory stats` so the tool and the CLI can't disagree.
       return {
         content: [
-          {
-            type: "text" as const,
-            text: JSON.stringify({
-              facts: {
-                active_latest: factCount,
-                total: totalFacts,
-              },
-              entities: entityCount,
-              domains: domainCount,
-              consolidations: consolidationCount,
-              domain_distribution: domainDistribution,
-            }),
-          },
+          { type: "text" as const, text: JSON.stringify(getStats(db)) },
         ],
       };
     },
