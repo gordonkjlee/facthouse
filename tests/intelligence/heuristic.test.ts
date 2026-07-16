@@ -100,6 +100,39 @@ describe("classifyFacts", () => {
     expect(result[0].domain).toBe("general");
   });
 
+  // Every case above is first person, which is how this went unnoticed. The
+  // patterns were written for "I prefer coffee", but capture_fact is called by
+  // an AI recording a fact *about* its user, so content arrives in the third
+  // person — and `\bprefer\b` does not match "prefers". Identity and preference
+  // facts fell to `general`, leaving get_profile, get_preferences and
+  // memory://profile empty for anyone on the fallback provider.
+  describe.each([
+    ["The user is called Alex Rivera", "profile"],
+    ["The user lives in Springfield", "profile"],
+    ["The user was born in 1990", "profile"],
+    ["The user's occupation is platform engineer", "profile"],
+    ["The user prefers dark roast coffee", "preferences"],
+    ["The user likes long walks", "preferences"],
+    ["The user dislikes instant coffee", "preferences"],
+    ["The user is allergic to peanuts", "medical"],
+    ["The user has a partner called Robin", "people"],
+    ["The user is working on the Acme project", "work"],
+  ])("third-person capture: %s", (content, expected) => {
+    it(`routes to '${expected}'`, async () => {
+      const result = await provider.classifyFacts([fakeFact(content)], "");
+      expect(result[0].domain).toBe(expected);
+    });
+  });
+
+  it("keeps a fact about a person with that person, not their preference", () => {
+    // "My partner Robin loves sushi" matches both people and preferences. The
+    // relationship noun says who the fact concerns, so people must win. This
+    // previously held only by accident, because `\blove\b` missed "loves".
+    return provider
+      .classifyFacts([fakeFact("My partner Robin loves sushi")], "")
+      .then((r) => expect(r[0].domain).toBe("people"));
+  });
+
   it("domain_hint overrides keyword detection", async () => {
     // Content matches "preferences" keywords, but hint says "medical"
     const result = await provider.classifyFacts(
