@@ -3,7 +3,8 @@
  * Single-row table enforced by CHECK(id = 1).
  */
 
-import type Database from "better-sqlite3";
+import { withTransaction } from "./connection.js";
+import type { Db } from "./connection.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -26,10 +27,10 @@ const STALE_LOCK_MS = 2 * 60 * 1000;
 // ---------------------------------------------------------------------------
 
 /** Try to acquire the lock. Returns true if acquired. */
-export function acquireLock(db: Database.Database, holder: string): boolean {
+export function acquireLock(db: Db, holder: string): boolean {
   const now = new Date().toISOString();
 
-  const result = db.transaction(() => {
+  const result = withTransaction(db, () => {
     // Attempt to insert the lock row
     const inserted = db
       .prepare(
@@ -71,13 +72,13 @@ export function acquireLock(db: Database.Database, holder: string): boolean {
     }
 
     return false;
-  })();
+  });
 
   return result;
 }
 
 /** Release the lock. Returns true if released, false if holder didn't match. */
-export function releaseLock(db: Database.Database, holder: string): boolean {
+export function releaseLock(db: Db, holder: string): boolean {
   const result = db.prepare(
     `DELETE FROM consolidation_lock WHERE id = 1 AND holder = ?`,
   ).run(holder);
@@ -85,7 +86,7 @@ export function releaseLock(db: Database.Database, holder: string): boolean {
 }
 
 /** Check if a lock exists and return its state. */
-export function getLockState(db: Database.Database): LockState | null {
+export function getLockState(db: Db): LockState | null {
   const row = db
     .prepare(`SELECT holder, started_at FROM consolidation_lock WHERE id = 1`)
     .get() as { holder: string; started_at: string } | undefined;

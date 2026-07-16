@@ -1,10 +1,11 @@
 /**
  * Data access for entities and the knowledge graph.
- * All functions are synchronous (better-sqlite3).
+ * All functions are synchronous.
  */
 
 import { randomUUID } from "node:crypto";
-import type Database from "better-sqlite3";
+import { withTransaction } from "./connection.js";
+import type { Db, SqlParam } from "./connection.js";
 import type { Entity, EntityEdge } from "../types/data.js";
 
 // ---------------------------------------------------------------------------
@@ -25,7 +26,7 @@ export interface NewEntity {
  *  Without type, returns first match — non-deterministic if multiple entities share a canonical name. */
 /** Look up an entity by its id. Returns null if not found. */
 export function getEntityById(
-  db: Database.Database,
+  db: Db,
   id: string,
 ): Entity | null {
   const row = db
@@ -43,13 +44,13 @@ export function getEntityById(
 }
 
 export function findEntity(
-  db: Database.Database,
+  db: Db,
   name: string,
   type?: string,
 ): Entity | null {
   const canonical = name.toLowerCase().trim();
   let sql = `SELECT * FROM entities WHERE canonical_name = ?`;
-  const params: unknown[] = [canonical];
+  const params: SqlParam[] = [canonical];
 
   if (type !== undefined) {
     sql += ` AND type = ?`;
@@ -71,7 +72,7 @@ export function findEntity(
 /** Find an entity by exact canonical name. No normalisation applied — caller must lowercase/trim.
  *  Without a type filter, non-deterministic if multiple entities share a canonical name. */
 export function findEntityByCanonical(
-  db: Database.Database,
+  db: Db,
   canonicalName: string,
 ): Entity | null {
   const row = db
@@ -91,7 +92,7 @@ export function findEntityByCanonical(
 /** Create an entity. Sets canonical_name = lower(trim(name)).
  *  Throws on duplicate (canonical_name, type) — use findOrCreateEntity for upsert. */
 export function createEntity(
-  db: Database.Database,
+  db: Db,
   entity: NewEntity,
 ): Entity {
   const id = randomUUID();
@@ -119,16 +120,16 @@ export function createEntity(
 
 /** Find or create an entity. Uses UNIQUE(canonical_name, type) constraint for safety. */
 export function findOrCreateEntity(
-  db: Database.Database,
+  db: Db,
   entity: NewEntity,
 ): { entity: Entity; created: boolean } {
-  return db.transaction(() => {
+  return withTransaction(db, () => {
     const existing = findEntity(db, entity.name, entity.type);
     if (existing) return { entity: existing, created: false };
 
     const created = createEntity(db, entity);
     return { entity: created, created: true };
-  })();
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -137,7 +138,7 @@ export function findOrCreateEntity(
 
 /** Link a fact to an entity. INSERT OR IGNORE (composite PK handles dedup). */
 export function linkFactEntity(
-  db: Database.Database,
+  db: Db,
   factId: string,
   entityId: string,
   relationship: string,
@@ -169,7 +170,7 @@ export const EDGE_POTENTIATION_ALPHA = 0.3;
 /** Create or strengthen an entity-to-entity edge using saturating potentiation.
  *  Caller must ensure both entity IDs exist (no FK enforcement). */
 export function upsertEntityEdge(
-  db: Database.Database,
+  db: Db,
   fromEntity: string,
   toEntity: string,
   relationship: string,
@@ -193,7 +194,7 @@ export function upsertEntityEdge(
 
 /** Get all edges from or to an entity. */
 export function getEntityEdges(
-  db: Database.Database,
+  db: Db,
   entityId: string,
 ): EntityEdge[] {
   const rows = db
@@ -218,7 +219,7 @@ export function getEntityEdges(
 
 /** Update access tracking on an entity. */
 export function updateEntityAccess(
-  db: Database.Database,
+  db: Db,
   entityId: string,
 ): void {
   const now = new Date().toISOString();

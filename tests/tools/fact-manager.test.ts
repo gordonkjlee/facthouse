@@ -1,39 +1,23 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import type Database from "better-sqlite3";
+import type { Db } from "../../src/db/connection.js";
 
-// Skip when native bindings are unavailable.
-let canLoadSqlite = false;
-try {
-  const Db = (await import("better-sqlite3")).default;
-  const probe = new Db(":memory:");
-  probe.close();
-  canLoadSqlite = true;
-} catch {
-  // Native bindings not compiled.
-}
 
-const dbMod = canLoadSqlite ? await import("../../src/db/index.js") : ({} as any);
-const sessionMod = canLoadSqlite
-  ? await import("../../src/tools/session-manager.js")
-  : ({} as any);
-const factMod = canLoadSqlite
-  ? await import("../../src/tools/fact-manager.js")
-  : ({} as any);
+const dbMod = await import("../../src/db/index.js");
+const sessionMod = await import("../../src/tools/session-manager.js");
+const factMod = await import("../../src/tools/fact-manager.js");
 
-let db: Database.Database;
+let db: Db;
 
 beforeEach(() => {
-  if (!canLoadSqlite) return;
   db = dbMod.openDatabase(":memory:");
   dbMod.applySchema(db);
 });
 
 afterEach(() => {
-  if (!canLoadSqlite) return;
   dbMod.closeDatabase(db);
 });
 
-describe.skipIf(!canLoadSqlite)("fact manager", () => {
+describe("fact manager", () => {
   function setup() {
     const sessionManager = sessionMod.createSessionManager(db);
     sessionManager.startSession("test-client", "test-project");
@@ -204,7 +188,7 @@ describe.skipIf(!canLoadSqlite)("fact manager", () => {
   });
 });
 
-describe.skipIf(!canLoadSqlite)("get_session_context", () => {
+describe("get_session_context", () => {
   it("returns facts from the current session", () => {
     const sessionManager = sessionMod.createSessionManager(db);
     sessionManager.startSession("test", null);

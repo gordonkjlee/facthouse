@@ -3,7 +3,7 @@
  * Provides the log_event MCP tool and the withEventLogging wrapper.
  */
 
-import type Database from "better-sqlite3";
+import type { Db } from "../db/connection.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { Session, SessionEvent } from "../types/data.js";
@@ -48,7 +48,7 @@ export interface SessionManager {
 // ---------------------------------------------------------------------------
 
 export function createSessionManager(
-  db: Database.Database,
+  db: Db,
   clientSessionId?: string | null,
 ): SessionManager {
   let activeSession: Session | null = null;
@@ -167,7 +167,7 @@ export function createSessionManager(
 export function registerSessionReadTools(
   server: McpServer,
   manager: SessionManager,
-  db: Database.Database,
+  db: Db,
 ): void {
   server.tool(
     "get_events",

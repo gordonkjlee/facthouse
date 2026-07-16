@@ -2,7 +2,14 @@
  * Barrel re-export for the database layer.
  */
 
-export { openDatabase, closeDatabase } from "./connection.js";
+export {
+  openDatabase,
+  closeDatabase,
+  withTransaction,
+  pragmaRead,
+  pragmaWrite,
+} from "./connection.js";
+export type { Db } from "./connection.js";
 export { applySchema, getSchemaVersion } from "./schema.js";
 export {
   createSession,

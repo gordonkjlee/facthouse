@@ -14,44 +14,25 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import type { Server } from "@modelcontextprotocol/sdk/server/index.js";
-import type Database from "better-sqlite3";
+import type { Db } from "../../src/db/connection.js";
 
-let canLoadSqlite = false;
-try {
-  const Db = (await import("better-sqlite3")).default;
-  const probe = new Db(":memory:");
-  probe.close();
-  canLoadSqlite = true;
-} catch {}
 
-const { openDatabase, closeDatabase } = canLoadSqlite
-  ? await import("../../src/db/connection.js")
-  : ({} as any);
-const { applySchema } = canLoadSqlite
-  ? await import("../../src/db/schema.js")
-  : ({} as any);
-const { createSession, insertEvent } = canLoadSqlite
-  ? await import("../../src/db/sessions.js")
-  : ({} as any);
-const { consolidate } = canLoadSqlite
-  ? await import("../../src/intelligence/consolidate.js")
-  : ({} as any);
-const { createSamplingProvider } = canLoadSqlite
-  ? await import("../../src/intelligence/sampling.js")
-  : ({} as any);
+const { openDatabase, closeDatabase } = await import("../../src/db/connection.js");
+const { applySchema } = await import("../../src/db/schema.js");
+const { createSession, insertEvent } = await import("../../src/db/sessions.js");
+const { consolidate } = await import("../../src/intelligence/consolidate.js");
+const { createSamplingProvider } = await import("../../src/intelligence/sampling.js");
 
-let db: Database.Database;
+let db: Db;
 let sessionId: string;
 
 beforeEach(() => {
-  if (!canLoadSqlite) return;
   db = openDatabase(":memory:");
   applySchema(db);
   sessionId = createSession(db, { source_tool: "test", project: "om" }).id;
 });
 
 afterEach(() => {
-  if (!canLoadSqlite) return;
   closeDatabase(db);
 });
 
@@ -132,7 +113,7 @@ function makeSamplingStub(): { server: Server; calls: number } {
   return { server, calls: state.calls };
 }
 
-describe.skipIf(!canLoadSqlite)("end-to-end sampling consolidation", () => {
+describe("end-to-end sampling consolidation", () => {
   it("extracts, classifies, resolves entities, and graduates facts", async () => {
     // Seed raw conversation events.
     insertEvent(db, {

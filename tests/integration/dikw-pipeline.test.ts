@@ -4,47 +4,27 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import type Database from "better-sqlite3";
+import type { Db } from "../../src/db/connection.js";
 
-// Skip when native bindings are unavailable.
-let canLoadSqlite = false;
-try {
-  const Db = (await import("better-sqlite3")).default;
-  const probe = new Db(":memory:");
-  probe.close();
-  canLoadSqlite = true;
-} catch {
-  // Native bindings not compiled.
-}
 
-const dbMod = canLoadSqlite ? await import("../../src/db/index.js") : ({} as any);
-const sessionMod = canLoadSqlite
-  ? await import("../../src/tools/session-manager.js")
-  : ({} as any);
-const factMod = canLoadSqlite
-  ? await import("../../src/tools/fact-manager.js")
-  : ({} as any);
-const heuristicMod = canLoadSqlite
-  ? await import("../../src/intelligence/heuristic.js")
-  : ({} as any);
-const searchMod = canLoadSqlite
-  ? await import("../../src/search/index.js")
-  : ({} as any);
+const dbMod = await import("../../src/db/index.js");
+const sessionMod = await import("../../src/tools/session-manager.js");
+const factMod = await import("../../src/tools/fact-manager.js");
+const heuristicMod = await import("../../src/intelligence/heuristic.js");
+const searchMod = await import("../../src/search/index.js");
 
-let db: Database.Database;
+let db: Db;
 
 beforeEach(() => {
-  if (!canLoadSqlite) return;
   db = dbMod.openDatabase(":memory:");
   dbMod.applySchema(db);
 });
 
 afterEach(() => {
-  if (!canLoadSqlite) return;
   dbMod.closeDatabase(db);
 });
 
-describe.skipIf(!canLoadSqlite)("DIKW pipeline end-to-end", () => {
+describe("DIKW pipeline end-to-end", () => {
   function setup() {
     const intelligence = heuristicMod.createHeuristicProvider();
     const sessionManager = sessionMod.createSessionManager(db);

@@ -9,38 +9,20 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import type Database from "better-sqlite3";
+import type { Db } from "../../src/db/connection.js";
 
-let canLoadSqlite = false;
-try {
-  const Db = (await import("better-sqlite3")).default;
-  const probe = new Db(":memory:");
-  probe.close();
-  canLoadSqlite = true;
-} catch {}
 
-const { openDatabase, closeDatabase } = canLoadSqlite
-  ? await import("../../src/db/connection.js")
-  : ({} as any);
-const { applySchema } = canLoadSqlite
-  ? await import("../../src/db/schema.js")
-  : ({} as any);
-const { createSession, insertEvent } = canLoadSqlite
-  ? await import("../../src/db/sessions.js")
-  : ({} as any);
-const { startScheduler } = canLoadSqlite
-  ? await import("../../src/scheduler.js")
-  : ({} as any);
-const { startSchedulerListener, sendSchedulerSignal } = canLoadSqlite
-  ? await import("../../src/ipc/scheduler-ipc.js")
-  : ({} as any);
+const { openDatabase, closeDatabase } = await import("../../src/db/connection.js");
+const { applySchema } = await import("../../src/db/schema.js");
+const { createSession, insertEvent } = await import("../../src/db/sessions.js");
+const { startScheduler } = await import("../../src/scheduler.js");
+const { startSchedulerListener, sendSchedulerSignal } = await import("../../src/ipc/scheduler-ipc.js");
 
 let dir: string;
-let db: Database.Database;
+let db: Db;
 let sessionId: string;
 
 beforeEach(() => {
-  if (!canLoadSqlite) return;
   dir = mkdtempSync(path.join(tmpdir(), "om-int-"));
   db = openDatabase(path.join(dir, "memory.db"));
   applySchema(db);
@@ -48,7 +30,6 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  if (!canLoadSqlite) return;
   closeDatabase(db);
   try {
     rmSync(dir, { recursive: true, force: true });
@@ -57,7 +38,7 @@ afterEach(() => {
   }
 });
 
-describe.skipIf(!canLoadSqlite)("IPC → scheduler integration", () => {
+describe("IPC → scheduler integration", () => {
   it("a tick signal above threshold fires the scheduler", async () => {
     const runConsolidate = vi.fn().mockResolvedValue({
       consolidationId: "r1",

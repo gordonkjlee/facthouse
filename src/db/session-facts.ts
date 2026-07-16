@@ -1,10 +1,11 @@
 /**
  * Data access for session facts and their provenance sources.
- * All functions are synchronous (better-sqlite3).
+ * All functions are synchronous.
  */
 
 import { randomUUID, createHash } from "node:crypto";
-import type Database from "better-sqlite3";
+import { withTransaction } from "./connection.js";
+import type { Db } from "./connection.js";
 import type { SessionFact, SessionFactSource } from "../types/data.js";
 
 // ---------------------------------------------------------------------------
@@ -64,7 +65,7 @@ export function computeContentHash(content: string): string {
  * (matched on session_id + content_hash).
  */
 export function insertSessionFact(
-  db: Database.Database,
+  db: Db,
   fact: NewSessionFact,
 ): SessionFact | null {
   const id = randomUUID();
@@ -86,7 +87,7 @@ export function insertSessionFact(
   const captureContext = fact.capture_context ?? null;
   const consolidationId = fact.consolidation_id ?? null;
 
-  return db.transaction(() => {
+  return withTransaction(db, () => {
     const result = db.prepare(
       `INSERT OR IGNORE INTO session_facts
          (id, session_id, content, content_hash, source_origin, source_event_id,
@@ -145,35 +146,35 @@ export function insertSessionFact(
       consolidation_id: consolidationId,
       created_at: now,
     } satisfies SessionFact;
-  })();
+  });
 }
 
 /** Retrieve all facts for a session, ordered by creation time ascending. */
 export function getSessionFacts(
-  db: Database.Database,
+  db: Db,
   sessionId: string,
 ): SessionFact[] {
   return db
     .prepare(
       `SELECT * FROM session_facts WHERE session_id = ? ORDER BY created_at ASC`,
     )
-    .all(sessionId) as SessionFact[];
+    .all(sessionId) as unknown as SessionFact[];
 }
 
 /** Retrieve all session facts that have not yet been claimed by a consolidation run. */
 export function getUnconsolidatedFacts(
-  db: Database.Database,
+  db: Db,
 ): SessionFact[] {
   return db
     .prepare(
       `SELECT * FROM session_facts WHERE consolidation_id IS NULL ORDER BY created_at ASC`,
     )
-    .all() as SessionFact[];
+    .all() as unknown as SessionFact[];
 }
 
 /** Retrieve unconsolidated session facts for a specific session. */
 export function getUnconsolidatedSessionFacts(
-  db: Database.Database,
+  db: Db,
   sessionId: string,
 ): SessionFact[] {
   return db
@@ -182,7 +183,7 @@ export function getUnconsolidatedSessionFacts(
        WHERE session_id = ? AND consolidation_id IS NULL
        ORDER BY created_at ASC`,
     )
-    .all(sessionId) as SessionFact[];
+    .all(sessionId) as unknown as SessionFact[];
 }
 
 /**
@@ -191,25 +192,25 @@ export function getUnconsolidatedSessionFacts(
  * Returns the number of facts claimed.
  */
 export function claimForConsolidation(
-  db: Database.Database,
+  db: Db,
   consolidationId: string,
 ): number {
   const result = db.prepare(
     `UPDATE session_facts SET consolidation_id = ? WHERE consolidation_id IS NULL`,
   ).run(consolidationId);
-  return result.changes;
+  return Number(result.changes);
 }
 
 /** Retrieve all session facts claimed by a specific consolidation run. */
 export function getClaimedFacts(
-  db: Database.Database,
+  db: Db,
   consolidationId: string,
 ): SessionFact[] {
   return db
     .prepare(
       `SELECT * FROM session_facts WHERE consolidation_id = ? ORDER BY created_at ASC`,
     )
-    .all(consolidationId) as SessionFact[];
+    .all(consolidationId) as unknown as SessionFact[];
 }
 
 // ---------------------------------------------------------------------------
@@ -221,7 +222,7 @@ export function getClaimedFacts(
  * Uses INSERT OR IGNORE so duplicate links are silently ignored.
  */
 export function linkFactSource(
-  db: Database.Database,
+  db: Db,
   source: NewFactSource,
 ): void {
   const relevance = source.relevance ?? 1.0;
@@ -236,12 +237,12 @@ export function linkFactSource(
 
 /** Retrieve all provenance sources for a session fact. */
 export function getFactSources(
-  db: Database.Database,
+  db: Db,
   sessionFactId: string,
 ): SessionFactSource[] {
   return db
     .prepare(
       `SELECT * FROM session_fact_sources WHERE session_fact_id = ?`,
     )
-    .all(sessionFactId) as SessionFactSource[];
+    .all(sessionFactId) as unknown as SessionFactSource[];
 }

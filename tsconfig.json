@@ -3,6 +3,11 @@
     "target": "ES2022",
     "module": "Node16",
     "moduleResolution": "Node16",
+    // Declare the Node types explicitly. They were previously only in scope via
+    // a `/// <reference types="node" />` inside @types/better-sqlite3 — so
+    // dropping that dependency silently removed `process`, `Buffer`, and the
+    // NodeJS namespace from every file. Depend on them directly.
+    "types": ["node"],
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,

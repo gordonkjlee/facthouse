@@ -55,14 +55,14 @@ jobs:
           node-version: 22
           registry-url: https://registry.npmjs.org
 
-      # Trusted publishing (OIDC) requires npm >= 11.5.1; Node 22 ships npm 10.x,
-      # so npm must be upgraded explicitly.
+      # Trusted publishing (OIDC) requires npm >= 11.5.1, and Node 22 ships npm
+      # 10.x — so npm must be upgraded explicitly. That is the ONLY reason for
+      # this step; keep it as long as the pinned Node ships npm < 11.5.1.
       #
-      # Pinned to the 11.x line, NOT @latest. npm 12 (2026-07-08) stopped running
-      # dependency lifecycle scripts unless explicitly allowlisted, which silently
-      # skips better-sqlite3's prebuild-install — leaving no native binary, so the
-      # test suite's SQLite tests all skip and the CLI exits non-zero. 11.x gets
-      # OIDC without that behaviour change.
+      # The 11.x pin is no longer about npm 12's install-script blocking: this
+      # package has no native dependencies and runs no install scripts, so npm
+      # 12 is safe here. The pin simply keeps the publish path on a known-good
+      # npm rather than tracking @latest through breaking changes.
       - if: steps.release.outputs.found == 'true'
         name: Upgrade npm for trusted publishing
         run: |

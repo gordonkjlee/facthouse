@@ -1,9 +1,9 @@
 /**
  * Data access for domain definitions.
- * All functions are synchronous (better-sqlite3).
+ * All functions are synchronous.
  */
 
-import type Database from "better-sqlite3";
+import type { Db } from "./connection.js";
 import type { DomainDef } from "../types/config.js";
 
 // ---------------------------------------------------------------------------
@@ -11,7 +11,7 @@ import type { DomainDef } from "../types/config.js";
 // ---------------------------------------------------------------------------
 
 /** Get all domains. */
-export function getDomains(db: Database.Database): DomainDef[] {
+export function getDomains(db: Db): DomainDef[] {
   const rows = db.prepare(`SELECT * FROM domains`).all() as Array<{
     name: string;
     subdomains: string;
@@ -26,7 +26,7 @@ export function getDomains(db: Database.Database): DomainDef[] {
 
 /** Create a domain. */
 export function createDomain(
-  db: Database.Database,
+  db: Db,
   domain: DomainDef,
 ): DomainDef {
   const now = new Date().toISOString();
@@ -39,7 +39,7 @@ export function createDomain(
 }
 
 /** Ensure a domain exists (idempotent). */
-export function ensureDomain(db: Database.Database, name: string): void {
+export function ensureDomain(db: Db, name: string): void {
   const now = new Date().toISOString();
 
   db.prepare(

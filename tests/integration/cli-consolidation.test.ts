@@ -8,7 +8,7 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { EventEmitter } from "node:events";
-import type Database from "better-sqlite3";
+import type { Db } from "../../src/db/connection.js";
 
 // ---------------------------------------------------------------------------
 // Mock spawn — must happen before importing consolidate/cli provider.
@@ -47,29 +47,12 @@ vi.mock("node:child_process", () => ({
 // Guard: skip when native bindings are unavailable
 // ---------------------------------------------------------------------------
 
-let canLoadSqlite = false;
-try {
-  const Db = (await import("better-sqlite3")).default;
-  const probe = new Db(":memory:");
-  probe.close();
-  canLoadSqlite = true;
-} catch {}
 
-const { openDatabase, closeDatabase } = canLoadSqlite
-  ? await import("../../src/db/connection.js")
-  : ({} as any);
-const { applySchema } = canLoadSqlite
-  ? await import("../../src/db/schema.js")
-  : ({} as any);
-const { createSession, insertEvent } = canLoadSqlite
-  ? await import("../../src/db/sessions.js")
-  : ({} as any);
-const { consolidate } = canLoadSqlite
-  ? await import("../../src/intelligence/consolidate.js")
-  : ({} as any);
-const { createCliProvider } = canLoadSqlite
-  ? await import("../../src/intelligence/cli.js")
-  : ({} as any);
+const { openDatabase, closeDatabase } = await import("../../src/db/connection.js");
+const { applySchema } = await import("../../src/db/schema.js");
+const { createSession, insertEvent } = await import("../../src/db/sessions.js");
+const { consolidate } = await import("../../src/intelligence/consolidate.js");
+const { createCliProvider } = await import("../../src/intelligence/cli.js");
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -85,18 +68,16 @@ function routeByPromptPrefix(args: string[]): string {
   return "unknown";
 }
 
-let db: Database.Database;
+let db: Db;
 let sessionId: string;
 
 beforeEach(() => {
-  if (!canLoadSqlite) return;
   db = openDatabase(":memory:");
   applySchema(db);
   sessionId = createSession(db, { source_tool: "test", project: "om" }).id;
 });
 
 afterEach(() => {
-  if (!canLoadSqlite) return;
   closeDatabase(db);
 });
 
@@ -104,7 +85,7 @@ afterEach(() => {
 // Tests
 // ---------------------------------------------------------------------------
 
-describe.skipIf(!canLoadSqlite)("CLI provider end-to-end consolidation", () => {
+describe("CLI provider end-to-end consolidation", () => {
   it("extracts facts with entities, graduates them, writes all K-layer rows", async () => {
     // Seed events.
     insertEvent(db, {

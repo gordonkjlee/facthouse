@@ -9,7 +9,7 @@
  */
 
 import { randomUUID } from "node:crypto";
-import type Database from "better-sqlite3";
+import type { Db } from "./connection.js";
 import type { Source } from "../types/data.js";
 
 export interface NewSource {
@@ -20,7 +20,7 @@ export interface NewSource {
 }
 
 /** Insert a provenance source record. Returns the created Source. */
-export function createSource(db: Database.Database, source: NewSource): Source {
+export function createSource(db: Db, source: NewSource): Source {
   const id = randomUUID();
   const now = new Date().toISOString();
   const toolId = source.tool_id ?? null;
@@ -43,7 +43,7 @@ export function createSource(db: Database.Database, source: NewSource): Source {
 }
 
 /** Retrieve a source by ID. */
-export function getSource(db: Database.Database, id: string): Source | null {
+export function getSource(db: Db, id: string): Source | null {
   const row = db.prepare(`SELECT * FROM sources WHERE id = ?`).get(id) as
     | (Omit<Source, "metadata"> & { metadata: string | null })
     | undefined;

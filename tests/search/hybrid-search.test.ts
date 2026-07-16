@@ -1,36 +1,22 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import type Database from "better-sqlite3";
+import type { Db } from "../../src/db/connection.js";
 
-// Skip when native bindings are unavailable.
-let canLoadSqlite = false;
-try {
-  const Db = (await import("better-sqlite3")).default;
-  const probe = new Db(":memory:");
-  probe.close();
-  canLoadSqlite = true;
-} catch {
-  // Native bindings not compiled.
-}
 
-const dbMod = canLoadSqlite ? await import("../../src/db/index.js") : ({} as any);
-const searchMod = canLoadSqlite
-  ? await import("../../src/search/index.js")
-  : ({} as any);
+const dbMod = await import("../../src/db/index.js");
+const searchMod = await import("../../src/search/index.js");
 
-let db: Database.Database;
+let db: Db;
 
 beforeEach(() => {
-  if (!canLoadSqlite) return;
   db = dbMod.openDatabase(":memory:");
   dbMod.applySchema(db);
 });
 
 afterEach(() => {
-  if (!canLoadSqlite) return;
   dbMod.closeDatabase(db);
 });
 
-describe.skipIf(!canLoadSqlite)("hybridSearch", () => {
+describe("hybridSearch", () => {
   function insertFact(content: string, domain: string) {
     return dbMod.insertFact(db, {
       content,

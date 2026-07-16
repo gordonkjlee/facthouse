@@ -1,42 +1,24 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import type Database from "better-sqlite3";
+import type { Db } from "../../src/db/connection.js";
 
-// better-sqlite3 requires native bindings — test actual constructor, not just import.
-let canLoadSqlite = false;
-try {
-  const Db = (await import("better-sqlite3")).default;
-  const probe = new Db(":memory:");
-  probe.close();
-  canLoadSqlite = true;
-} catch {
-  // Native bindings not compiled (e.g. missing Visual Studio build tools on Windows).
-}
 
-const { openDatabase, closeDatabase } = canLoadSqlite
-  ? await import("../../src/db/connection.js")
-  : ({} as any);
-const { applySchema, getSchemaVersion } = canLoadSqlite
-  ? await import("../../src/db/schema.js")
-  : ({} as any);
+const { openDatabase, closeDatabase } = await import("../../src/db/connection.js");
+const { applySchema, getSchemaVersion } = await import("../../src/db/schema.js");
 const { createSession, getSession, getLatestSession, insertEvent, getEvents, getEventCount } =
-  canLoadSqlite
-    ? await import("../../src/db/sessions.js")
-    : ({} as any);
+  await import("../../src/db/sessions.js");
 
-let db: Database.Database;
+let db: Db;
 
 beforeEach(() => {
-  if (!canLoadSqlite) return;
   db = openDatabase(":memory:");
   applySchema(db);
 });
 
 afterEach(() => {
-  if (!canLoadSqlite) return;
   closeDatabase(db);
 });
 
-describe.skipIf(!canLoadSqlite)("schema", () => {
+describe("schema", () => {
   it("applies current version", () => {
     expect(getSchemaVersion(db)).toBe(7);
   });
@@ -47,7 +29,7 @@ describe.skipIf(!canLoadSqlite)("schema", () => {
   });
 });
 
-describe.skipIf(!canLoadSqlite)("sessions", () => {
+describe("sessions", () => {
   it("creates a session with generated id and timestamps", () => {
     const session = createSession(db, {
       source_tool: "claude-code",
@@ -119,7 +101,7 @@ describe.skipIf(!canLoadSqlite)("sessions", () => {
   });
 });
 
-describe.skipIf(!canLoadSqlite)("session events", () => {
+describe("session events", () => {
   let sessionId: string;
 
   beforeEach(() => {

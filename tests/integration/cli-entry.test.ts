@@ -7,11 +7,8 @@
  * Both bugs found in this area (a silently no-opping `init`, an unparseable
  * MCP snippet) were invisible to unit tests and only appeared when run.
  *
- * Requires a build (CI runs `build` before `test`) and working better-sqlite3
- * bindings, since every spawned command opens the database. When either is
- * missing the suite skips rather than failing for a reason unrelated to what it
- * asserts — which is exactly what happened when npm 12 stopped running install
- * scripts and left the native binary unbuilt.
+ * Requires a build: CI runs `build` before `test`. Skips when dist is absent
+ * rather than failing with a confusing module-not-found.
  */
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
@@ -25,22 +22,9 @@ const CLI = path.resolve(
   fileURLToPath(new URL("../../dist/cli/index.js", import.meta.url)),
 );
 
-// Every command spawned here opens the database, so the CLI can't work without
-// better-sqlite3's native binary. Probe for it exactly as the rest of the suite
-// does and skip when it's absent — otherwise these tests fail confusingly for a
-// reason that has nothing to do with what they assert. (npm 12 stopped running
-// install scripts by default, which silently leaves the binary unbuilt.)
-let canLoadSqlite = false;
-try {
-  const Db = (await import("better-sqlite3")).default;
-  const probe = new Db(":memory:");
-  probe.close();
-  canLoadSqlite = true;
-} catch {
-  // Native bindings not available.
-}
 
-const runnable = existsSync(CLI) && canLoadSqlite;
+// The CLI must be built to spawn it; sqlite itself is built into Node.
+const runnable = existsSync(CLI);
 
 /**
  * Run the built CLI. OPENMEMORY_* vars are stripped from the inherited

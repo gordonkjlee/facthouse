@@ -1,10 +1,11 @@
 /**
  * Data access for graduated facts (DIKW: Knowledge layer).
- * All functions are synchronous (better-sqlite3).
+ * All functions are synchronous.
  */
 
 import { randomUUID } from "node:crypto";
-import type Database from "better-sqlite3";
+import { withTransaction } from "./connection.js";
+import type { Db, SqlParam } from "./connection.js";
 import type { Fact } from "../types/data.js";
 
 // ---------------------------------------------------------------------------
@@ -33,7 +34,7 @@ export interface NewFact {
 
 /** Insert a graduated fact. Returns the created Fact.
  *  valid_from defaults to now if not provided. Pass null explicitly for unknown validity start (e.g., historical imports). */
-export function insertFact(db: Database.Database, fact: NewFact): Fact {
+export function insertFact(db: Db, fact: NewFact): Fact {
   const id = randomUUID();
   const now = new Date().toISOString();
   const confidence = fact.confidence ?? 0.7;
@@ -100,7 +101,7 @@ export function insertFact(db: Database.Database, fact: NewFact): Fact {
 }
 
 /** Retrieve a fact by ID. */
-export function getFact(db: Database.Database, id: string): Fact | null {
+export function getFact(db: Db, id: string): Fact | null {
   const row = db.prepare(`SELECT * FROM facts WHERE id = ?`).get(id) as
     | (Omit<Fact, "is_latest"> & { is_latest: number })
     | undefined;
@@ -110,7 +111,7 @@ export function getFact(db: Database.Database, id: string): Fact | null {
 
 /** Get all active, latest facts for a domain. */
 export function getFactsByDomain(
-  db: Database.Database,
+  db: Db,
   domain: string,
   subdomain?: string,
 ): Fact[] {
@@ -120,7 +121,7 @@ export function getFactsByDomain(
   let sql = `SELECT * FROM facts
              WHERE domain = ? AND status = 'active' AND is_latest = 1
                AND (valid_until IS NULL OR valid_until > datetime('now'))`;
-  const params: unknown[] = [domain];
+  const params: SqlParam[] = [domain];
 
   if (subdomain !== undefined) {
     sql += ` AND subdomain = ?`;
@@ -139,7 +140,7 @@ export function getFactsByDomain(
 
 /** Get facts linked to an entity. */
 export function getFactsByEntity(
-  db: Database.Database,
+  db: Db,
   entityId: string,
 ): Fact[] {
   const rows = db
@@ -158,7 +159,7 @@ export function getFactsByEntity(
  *  valid_from on the replacement is always set to now — the replacement becomes true at supersession time.
  *  Throws if oldId does not exist. */
 export function supersedeFact(
-  db: Database.Database,
+  db: Db,
   oldId: string,
   newFact: NewFact,
 ): Fact {
@@ -173,7 +174,7 @@ export function supersedeFact(
   const captureContext = newFact.capture_context ?? null;
   const sourceQuality = newFact.source_quality ?? "heuristic";
 
-  const result = db.transaction(() => {
+  const result = withTransaction(db, () => {
     const updated = db.prepare(
       `UPDATE facts
        SET status = 'superseded', superseded_by = ?, is_latest = 0, valid_until = ?
@@ -231,7 +232,7 @@ export function supersedeFact(
       access_count: 0,
       source_quality: sourceQuality,
     } satisfies Fact;
-  })();
+  });
 
   return result;
 }
@@ -252,7 +253,7 @@ export function sanitiseFtsQuery(query: string): string {
 /** Keyword search via FTS5. Returns facts with BM25 rank.
  *  @throws {SqliteError} on malformed FTS5 syntax. Use sanitiseFtsQuery for untrusted input. */
 export function keywordSearch(
-  db: Database.Database,
+  db: Db,
   query: string,
   limit?: number,
 ): Array<{ fact: Fact; rank: number }> {
@@ -280,7 +281,7 @@ export function keywordSearch(
 
 /** Increment access_count for a fact. */
 export function incrementFactAccess(
-  db: Database.Database,
+  db: Db,
   factId: string,
 ): void {
   db.prepare(
