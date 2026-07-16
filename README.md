@@ -56,6 +56,15 @@ The result is a structured, evolving knowledge graph that any AI tool can query 
 - **Source traceability** — Every fact links back to the conversation events that produced it.
 - **Manual consolidation** — Call `consolidate` at natural breakpoints (topic change, task completion, pre-compaction). No reliance on session boundaries.
 
+## MCP Resources
+
+Resources are context the client loads **automatically** — no tool call, no decision by the AI. Tools only help if the assistant remembers to reach for them; resources are simply present.
+
+- `memory://briefing` — Everything worth knowing right now: profile, what was learned in the last consolidation, open threads, and recent knowledge. Markdown, kept to roughly a screenful.
+- `memory://profile` — Core identity facts, most important first.
+
+Both are read-only views over the same database the tools query, so they can't drift from it. They're regenerated on read, and clients that subscribe are notified when a consolidation changes what they'd say. Clients without resource support lose no capability — the read tools below cover the same ground on demand.
+
 ## MCP Tools
 
 ### Session

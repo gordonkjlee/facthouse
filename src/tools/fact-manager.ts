@@ -52,6 +52,17 @@ export interface FactManagerOpts {
   autoLinkEvents?: number;
   intelligence?: IntelligenceProvider;
   serverConfig?: Partial<ServerConfig>;
+  /**
+   * Called after a consolidation run commits, for runs that did work. Used to
+   * tell subscribed clients that the computed resources have changed.
+   *
+   * Hooked here rather than at the scheduler because consolidation has two
+   * entry points — the scheduler and the `consolidate` tool — and both funnel
+   * through runConsolidate. Must not throw: consolidation has already
+   * committed by this point, and the scheduler swallows exceptions, so a
+   * throwing hook would be invisible.
+   */
+  onConsolidated?: (result: ConsolidationResult) => void;
 }
 
 export function createFactManager(
@@ -159,7 +170,18 @@ export function createFactManager(
       if (!intelligence) {
         throw new Error("No intelligence provider configured for consolidation.");
       }
-      return consolidate(db, intelligence, serverConfig);
+      const result = await consolidate(db, intelligence, serverConfig);
+
+      // Skipped runs (lock contention, nothing pending) changed no knowledge,
+      // so there is nothing for subscribers to re-read.
+      if (!result.skipped && opts?.onConsolidated) {
+        try {
+          opts.onConsolidated(result);
+        } catch {
+          // A notification failure must never fail a committed consolidation.
+        }
+      }
+      return result;
     },
 
     registerTools(server) {
