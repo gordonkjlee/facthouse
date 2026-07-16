@@ -208,3 +208,137 @@ describe.skipIf(!runnable)("cli entry — subprocess recursion guard", () => {
     expect(existsSync(path.join(dir, "memory.db"))).toBe(true);
   });
 });
+
+describe.skipIf(!runnable)("cli entry — search and stats", () => {
+  /** Seed synthetic facts into an initialised data dir. */
+  async function seed(dir: string) {
+    run(["init", dir]);
+    const { openDatabase, closeDatabase } = await import(
+      "../../src/db/connection.js"
+    );
+    const { insertFact } = await import("../../src/db/facts.js");
+    const { createSource } = await import("../../src/db/sources.js");
+    const { ensureDomain } = await import("../../src/db/domains.js");
+
+    const db = openDatabase(path.join(dir, "memory.db"));
+    const source = createSource(db, {
+      type: "test",
+      tool_id: null,
+      raw_content: "x",
+      metadata: {},
+    });
+    const add = (content: string, domain: string) => {
+      ensureDomain(db, domain);
+      insertFact(db, {
+        content,
+        domain,
+        subdomain: null,
+        confidence: 0.9,
+        importance: 0.5,
+        source_type: "conversation",
+        source_tool: null,
+        source_id: source.id,
+        session_id: null,
+        capture_context: null,
+        source_quality: "explicit",
+      });
+    };
+    add("Prefers dark roast coffee", "preferences");
+    add("Dislikes instant coffee", "preferences");
+    add("Drinks coffee at the Acme office", "work");
+    closeDatabase(db);
+  }
+
+  it("stats reports what the store holds", async () => {
+    const dir = path.join(root, "stats");
+    await seed(dir);
+
+    const r = run(["stats", "--data", dir]);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("3 current");
+    expect(r.stdout).toContain("preferences");
+  });
+
+  it("stats --json emits parseable JSON on stdout", async () => {
+    const dir = path.join(root, "stats-json");
+    await seed(dir);
+
+    const r = run(["stats", "--json", "--data", dir]);
+    expect(r.status).toBe(0);
+    // Nothing may pollute stdout — the experimental-SQLite warning Node emits
+    // on load goes to stderr, and this asserts it stays there.
+    const parsed = JSON.parse(r.stdout);
+    expect(parsed.facts.active_latest).toBe(3);
+  });
+
+  it("search finds a matching fact", async () => {
+    const dir = path.join(root, "search");
+    await seed(dir);
+
+    const r = run(["search", "coffee", "--data", dir]);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("dark roast");
+  });
+
+  it("search --json emits parseable JSON on stdout", async () => {
+    const dir = path.join(root, "search-json");
+    await seed(dir);
+
+    const r = run(["search", "coffee", "--json", "--data", dir]);
+    expect(r.status).toBe(0);
+    const parsed = JSON.parse(r.stdout);
+    expect(parsed.results.length).toBeGreaterThan(0);
+  });
+
+  it("search --domain returns only that domain's facts", async () => {
+    const dir = path.join(root, "search-domain");
+    await seed(dir);
+
+    const r = run(["search", "coffee", "--domain", "work", "--json", "--data", dir]);
+    expect(r.status).toBe(0);
+    const parsed = JSON.parse(r.stdout);
+    expect(parsed.results.length).toBeGreaterThan(0);
+    for (const result of parsed.results) {
+      expect(result.fact.domain).toBe("work");
+    }
+  });
+
+  it("search --limit caps the result count", async () => {
+    const dir = path.join(root, "search-limit");
+    await seed(dir);
+
+    const r = run(["search", "coffee", "--limit", "1", "--json", "--data", dir]);
+    expect(r.status).toBe(0);
+    expect(JSON.parse(r.stdout).results).toHaveLength(1);
+  });
+
+  it("search reports an empty store plainly instead of failing", async () => {
+    const dir = path.join(root, "empty");
+    run(["init", dir]);
+
+    const r = run(["search", "coffee", "--data", dir]);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("No knowledge found");
+  });
+
+  it("search without a query exits non-zero", () => {
+    const dir = path.join(root, "no-query");
+    run(["init", dir]);
+
+    const r = run(["search", "--data", dir]);
+    expect(r.status).toBe(1);
+  });
+
+  it.each(["search", "stats"])(
+    "%s points at init rather than leaking a raw SQLite error when there is no database",
+    (cmd) => {
+      const dir = path.join(root, "uninitialised");
+      const r = run(cmd === "search" ? [cmd, "coffee", "--data", dir] : [cmd, "--data", dir]);
+
+      expect(r.status).toBe(1);
+      expect(r.stderr).toContain("No database at");
+      expect(r.stderr).toContain("openmemory init");
+      expect(r.stderr).not.toMatch(/SQLITE_|unable to open database/i);
+    },
+  );
+});

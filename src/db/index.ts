@@ -28,3 +28,4 @@ export * from "./domains.js";
 export * from "./consolidation-lock.js";
 export * from "./sources.js";
 export * from "./consolidations.js";
+export * from "./stats.js";

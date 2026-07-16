@@ -6,11 +6,12 @@
  */
 
 import { parseArgs } from "node:util";
-import { readFileSync } from "node:fs";
+import { readFileSync, existsSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 import { logEvent, extractContentFromHookPayload } from "./log-event.js";
 import { initDataDir, mcpConfigSnippet } from "./init.js";
+import { runSearch, formatSearch, formatStats, getStats } from "./query.js";
 import { openDatabase, closeDatabase } from "../db/connection.js";
 import { applySchema } from "../db/schema.js";
 import { consolidate } from "../intelligence/consolidate.js";
@@ -69,11 +70,17 @@ async function main() {
     await runConsolidate();
   } else if (subcommand === "signal") {
     await runSignal();
+  } else if (subcommand === "search") {
+    await runSearchCmd();
+  } else if (subcommand === "stats") {
+    await runStatsCmd();
   } else {
     console.error(
       `Usage: openmemory <command>\n\n` +
         `Commands:\n` +
         `  init [dir]    Create the data directory, database, and default config\n` +
+        `  search <q>    Search the knowledge base\n` +
+        `  stats         Show knowledge base statistics\n` +
         `  log-event     Log a session event (used by hooks)\n` +
         `  signal        Signal the running MCP server to tick or flush\n` +
         `  consolidate   Run consolidation in-process with the configured provider`,
@@ -152,6 +159,81 @@ async function runInit() {
     ``,
   ];
   console.log(lines.join("\n"));
+}
+
+/**
+ * Open the database read-only-ish for an inspection command, run `fn`, close.
+ * Exits with a clear message when the data dir was never initialised, rather
+ * than surfacing a raw SQLite error.
+ */
+function withDb<T>(dataDir: string, fn: (db: ReturnType<typeof openDatabase>) => T): T {
+  if (!existsSync(path.join(dataDir, "memory.db"))) {
+    console.error(
+      `No database at ${dataDir}. Run 'openmemory init ${dataDir}' first, ` +
+        `or point at another directory with --data.`,
+    );
+    process.exit(1);
+  }
+  const db = openDatabase(path.join(dataDir, "memory.db"));
+  try {
+    applySchema(db);
+    return fn(db);
+  } finally {
+    closeDatabase(db);
+  }
+}
+
+async function runSearchCmd() {
+  const { values, positionals } = parseArgs({
+    args: process.argv.slice(3),
+    options: {
+      data: { type: "string", default: process.env.OPENMEMORY_DATA ?? DEFAULT_DATA_DIR },
+      domain: { type: "string" },
+      limit: { type: "string" },
+      json: { type: "boolean", default: false },
+    },
+    allowPositionals: true,
+    strict: true,
+  });
+
+  const query = positionals.join(" ").trim();
+  if (!query) {
+    console.error(
+      `Usage: openmemory search <query> [--domain <d>] [--limit <n>] [--json]`,
+    );
+    process.exit(1);
+  }
+
+  const limit = values.limit ? Number(values.limit) : undefined;
+  if (limit !== undefined && (!Number.isFinite(limit) || limit < 1)) {
+    console.error(`Invalid --limit: ${values.limit}. Expected a positive number.`);
+    process.exit(1);
+  }
+
+  const dataDir = path.resolve(resolveTilde(values.data as string));
+  const response = withDb(dataDir, (db) =>
+    runSearch(db, { query, domain: values.domain as string | undefined, limit }),
+  );
+
+  console.log(
+    values.json ? JSON.stringify(response, null, 2) : formatSearch(response, query),
+  );
+}
+
+async function runStatsCmd() {
+  const { values } = parseArgs({
+    args: process.argv.slice(3),
+    options: {
+      data: { type: "string", default: process.env.OPENMEMORY_DATA ?? DEFAULT_DATA_DIR },
+      json: { type: "boolean", default: false },
+    },
+    strict: true,
+  });
+
+  const dataDir = path.resolve(resolveTilde(values.data as string));
+  const stats = withDb(dataDir, (db) => getStats(db));
+
+  console.log(values.json ? JSON.stringify(stats, null, 2) : formatStats(stats));
 }
 
 async function runSignal() {

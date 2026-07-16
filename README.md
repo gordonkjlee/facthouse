@@ -201,6 +201,43 @@ openmemory log-event --role user --event-type message --content "hello world"
 #   --data          Data directory (default: ~/.openmemory or $OPENMEMORY_DATA)
 ```
 
+#### `openmemory search <query>`
+
+Search the knowledge base from the command line. This runs the same hybrid search the `search_knowledge` tool runs, so it answers "what does it actually know about me?" — and "why did the AI say that?" — without wiring up a client:
+
+```bash
+openmemory search "coffee"
+
+# Scope to one domain:
+openmemory search "coffee" --domain preferences
+
+# Machine-readable output for scripting:
+openmemory search "coffee" --json
+
+# Options:
+#   --domain   Restrict results to one domain (profile, preferences, medical, people, work)
+#   --limit    Maximum results (default: 20)
+#   --json     Emit the raw search payload instead of formatted text
+#   --data     Data directory (default: ~/.openmemory or $OPENMEMORY_DATA)
+```
+
+Results carry a relevance score and confidence, plus coverage and confidence estimates for the result set as a whole — so a thin result set looks thin rather than silently passing as complete.
+
+#### `openmemory stats`
+
+Show what the knowledge base holds — fact counts, entities, domains, and how facts are distributed across domains:
+
+```bash
+openmemory stats
+openmemory stats --json
+
+# Options:
+#   --json     Emit the raw statistics payload instead of formatted text
+#   --data     Data directory (default: ~/.openmemory or $OPENMEMORY_DATA)
+```
+
+Facts are immutable — superseded facts are kept, never deleted — so the current count and the total legitimately differ once anything has been superseded. Both are reported.
+
 ## Integration Patterns
 
 OpenMemory's tool descriptions are the primary integration layer — they tell AI assistants when to capture facts and search knowledge, working with every MCP client out of the box. For deeper integration, clients can add **rules-based hooks** (instructions loaded into the AI's context) at key moments in the conversation lifecycle. These are optional but make capture and retrieval more reliable.
