@@ -20,6 +20,7 @@ import { createFactManager } from "./tools/fact-manager.js";
 import { createHeuristicProvider } from "./intelligence/heuristic.js";
 import { createIntelligenceProvider } from "./intelligence/provider.js";
 import { registerReadTools } from "./tools/read-tools.js";
+import { registerResources } from "./tools/resources.js";
 import { startScheduler, type Scheduler } from "./scheduler.js";
 import { loadConfig } from "./config.js";
 import { startSchedulerListener, type SchedulerListener } from "./ipc/scheduler-ipc.js";
@@ -62,10 +63,19 @@ applySchema(db);
 
 const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf-8"));
 
-const server = new McpServer({
-  name: "openmemory",
-  version: pkg.version,
-});
+// `subscribe` must be declared here: registering a resource auto-registers
+// `resources: { listChanged: true }`, but not subscribe, and capabilities are
+// frozen once a transport is attached. Without it, clients can't ask to be told
+// when the briefing changes.
+const server = new McpServer(
+  {
+    name: "openmemory",
+    version: pkg.version,
+  },
+  {
+    capabilities: { resources: { subscribe: true, listChanged: true } },
+  },
+);
 
 const clientSessionId = process.env.OPENMEMORY_CLIENT_SESSION ?? null;
 
@@ -87,9 +97,17 @@ const intelligence = createIntelligenceProvider(config.intelligence, {
   heuristic,
 });
 
+// Resources are automatically-loaded context (memory://briefing, memory://profile).
+// Registered before connect(), because registering one registers the resources
+// capability and capabilities are frozen once the transport attaches.
+const resources = registerResources(server, db);
+
 const factManager = createFactManager(db, sessionManager, {
   intelligence,
   serverConfig: { extraction: config.extraction },
+  // Consolidation is the only thing that changes graduated knowledge, so it's
+  // the only thing that can change what these resources render.
+  onConsolidated: () => resources.notifyUpdated(),
 });
 factManager.registerTools(server);
 registerReadTools(server, db);
