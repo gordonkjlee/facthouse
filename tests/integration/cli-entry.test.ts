@@ -7,8 +7,11 @@
  * Both bugs found in this area (a silently no-opping `init`, an unparseable
  * MCP snippet) were invisible to unit tests and only appeared when run.
  *
- * Requires a build: CI runs `build` before `test`. When dist is absent the
- * suite skips rather than failing with a confusing module-not-found.
+ * Requires a build (CI runs `build` before `test`) and working better-sqlite3
+ * bindings, since every spawned command opens the database. When either is
+ * missing the suite skips rather than failing for a reason unrelated to what it
+ * asserts — which is exactly what happened when npm 12 stopped running install
+ * scripts and left the native binary unbuilt.
  */
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
@@ -21,7 +24,23 @@ import { fileURLToPath } from "node:url";
 const CLI = path.resolve(
   fileURLToPath(new URL("../../dist/cli/index.js", import.meta.url)),
 );
-const built = existsSync(CLI);
+
+// Every command spawned here opens the database, so the CLI can't work without
+// better-sqlite3's native binary. Probe for it exactly as the rest of the suite
+// does and skip when it's absent — otherwise these tests fail confusingly for a
+// reason that has nothing to do with what they assert. (npm 12 stopped running
+// install scripts by default, which silently leaves the binary unbuilt.)
+let canLoadSqlite = false;
+try {
+  const Db = (await import("better-sqlite3")).default;
+  const probe = new Db(":memory:");
+  probe.close();
+  canLoadSqlite = true;
+} catch {
+  // Native bindings not available.
+}
+
+const runnable = existsSync(CLI) && canLoadSqlite;
 
 /**
  * Run the built CLI. OPENMEMORY_* vars are stripped from the inherited
@@ -42,16 +61,16 @@ function run(args: string[], extraEnv: Record<string, string> = {}) {
 let root: string;
 
 beforeEach(() => {
-  if (!built) return;
+  if (!runnable) return;
   root = mkdtempSync(path.join(tmpdir(), "om-cli-"));
 });
 
 afterEach(() => {
-  if (!built) return;
+  if (!runnable) return;
   rmSync(root, { recursive: true, force: true });
 });
 
-describe.skipIf(!built)("cli entry — dispatch and usage", () => {
+describe.skipIf(!runnable)("cli entry — dispatch and usage", () => {
   it("prints usage listing every command and exits non-zero with no subcommand", () => {
     const r = run([]);
     expect(r.status).toBe(1);
@@ -66,7 +85,7 @@ describe.skipIf(!built)("cli entry — dispatch and usage", () => {
   });
 });
 
-describe.skipIf(!built)("cli entry — init argument precedence", () => {
+describe.skipIf(!runnable)("cli entry — init argument precedence", () => {
   it("accepts a positional directory", () => {
     const dir = path.join(root, "positional");
     const r = run(["init", dir]);
@@ -110,7 +129,7 @@ describe.skipIf(!built)("cli entry — init argument precedence", () => {
   });
 });
 
-describe.skipIf(!built)("cli entry — init output", () => {
+describe.skipIf(!runnable)("cli entry — init output", () => {
   it("prints an MCP snippet that parses as JSON, with the data dir escaped", () => {
     const dir = path.join(root, "snippet");
     const r = run(["init", dir]);
@@ -146,7 +165,7 @@ describe.skipIf(!built)("cli entry — init output", () => {
   });
 });
 
-describe.skipIf(!built)("cli entry — subprocess recursion guard", () => {
+describe.skipIf(!runnable)("cli entry — subprocess recursion guard", () => {
   it("runs init normally under OPENMEMORY_SUBPROCESS=1 (it cannot recurse)", () => {
     // Regression: the guard used to exit before dispatch, so init exited 0
     // having created nothing — an explicit setup command silently no-opping.
