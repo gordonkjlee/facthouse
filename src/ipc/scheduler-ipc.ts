@@ -28,7 +28,7 @@ import { createHash } from "node:crypto";
 import path from "node:path";
 
 // Probed on Windows and verified: ENOENT = no listener, EADDRINUSE = live listener.
-// See plan's Phase 0 results. Unix socket stale handling is test-then-bind below.
+// Unix socket stale handling is test-then-bind below.
 
 export type SignalKind = "tick" | "flush";
 

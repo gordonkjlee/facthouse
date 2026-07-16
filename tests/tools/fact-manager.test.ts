@@ -45,7 +45,7 @@ describe.skipIf(!canLoadSqlite)("fact manager", () => {
     const { factManager } = setup();
 
     const fact = factManager.captureFact({
-      content: "My name is Gordon",
+      content: "My name is Alex",
       domain_hint: "profile",
       confidence: 0.9,
       importance: 0.8,
@@ -54,7 +54,7 @@ describe.skipIf(!canLoadSqlite)("fact manager", () => {
 
     expect(fact).not.toBeNull();
     expect(fact!.id).toBeTruthy();
-    expect(fact!.content).toBe("My name is Gordon");
+    expect(fact!.content).toBe("My name is Alex");
     expect(fact!.content_hash).toBeTruthy();
     expect(fact!.source_origin).toBe("explicit");
     expect(fact!.domain_hint).toBe("profile");
@@ -175,11 +175,11 @@ describe.skipIf(!canLoadSqlite)("fact manager", () => {
     const event = sessionManager.logEvent({
       event_type: "message",
       role: "user",
-      content: "My name is Gordon",
+      content: "My name is Alex",
     });
 
     const fact = factManager.captureFact({
-      content: "User's name is Gordon",
+      content: "User's name is Alex",
       source_event_id: event.id,
     });
 

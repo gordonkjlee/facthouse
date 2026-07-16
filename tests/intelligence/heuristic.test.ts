@@ -59,7 +59,7 @@ describe("classifyFacts", () => {
   });
 
   it("classifies profile content as 'profile'", async () => {
-    const result = await provider.classifyFacts([fakeFact("My name is Gordon")], "");
+    const result = await provider.classifyFacts([fakeFact("My name is Alex")], "");
     expect(result).toHaveLength(1);
     expect(result[0].domain).toBe("profile");
   });
@@ -111,7 +111,7 @@ describe("classifyFacts", () => {
   });
 
   it("preserves id and content on classified output", async () => {
-    const input = fakeFact("My name is Gordon");
+    const input = fakeFact("My name is Alex");
     const result = await provider.classifyFacts([input], "");
     expect(result[0].id).toBe(input.id);
     expect(result[0].content).toBe(input.content);
@@ -293,7 +293,7 @@ describe("detectSupersession", () => {
       subdomain: null,
     };
 
-    const existing = fakeFact2("My name is Gordon", "profile");
+    const existing = fakeFact2("My name is Alex", "profile");
 
     const result = await provider.detectSupersession(newFact, [existing]);
     expect(result).toBeNull();
@@ -320,8 +320,8 @@ describe("detectSupersession", () => {
 
 describe("reconcile", () => {
   it("returns 'noop' for exact content match", async () => {
-    const candidate = fakeFact("My name is Gordon");
-    const existing = fakeFact2("My name is Gordon", "profile");
+    const candidate = fakeFact("My name is Alex");
+    const existing = fakeFact2("My name is Alex", "profile");
 
     const decision = await provider.reconcile(candidate, [existing]);
     expect(decision.kind).toBe("noop");
@@ -343,8 +343,8 @@ describe("reconcile", () => {
   });
 
   it("is case-insensitive for dedup", async () => {
-    const candidate = fakeFact("my name is gordon");
-    const existing = fakeFact2("My Name Is Gordon", "profile");
+    const candidate = fakeFact("my name is alex");
+    const existing = fakeFact2("My Name Is Alex", "profile");
 
     const decision = await provider.reconcile(candidate, [existing]);
     expect(decision.kind).toBe("noop");
@@ -355,7 +355,7 @@ describe("summarise", () => {
   it("produces summary with domain counts from graduated facts", async () => {
     const sessionFacts = [fakeFact("a"), fakeFact("b"), fakeFact("c")];
     const graduatedFacts = [
-      fakeFact2("My name is Gordon", "profile"),
+      fakeFact2("My name is Alex", "profile"),
       fakeFact2("I prefer dark roast", "preferences"),
       fakeFact2("I'm allergic to aspirin", "medical"),
     ];

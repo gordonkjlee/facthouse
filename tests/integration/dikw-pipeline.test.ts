@@ -61,7 +61,7 @@ describe.skipIf(!canLoadSqlite)("DIKW pipeline end-to-end", () => {
     const { factManager } = setup();
 
     // D → Staging: capture facts
-    factManager.captureFact({ content: "My name is Gordon", domain_hint: "profile", importance: 0.9 });
+    factManager.captureFact({ content: "My name is Alex", domain_hint: "profile", importance: 0.9 });
     factManager.captureFact({ content: "I prefer dark roast coffee", domain_hint: "preferences" });
     factManager.captureFact({ content: "I'm allergic to aspirin", domain_hint: "medical" });
     factManager.captureFact({ content: "I prefer dark roast coffee" }); // duplicate — should be rejected
@@ -85,7 +85,7 @@ describe.skipIf(!canLoadSqlite)("DIKW pipeline end-to-end", () => {
     // Verify: graduated facts exist with correct domains
     const profileFacts = searchMod.structuredSearch(db, { domain: "profile" });
     expect(profileFacts).toHaveLength(1);
-    expect(profileFacts[0].content).toContain("Gordon");
+    expect(profileFacts[0].content).toContain("Alex");
 
     const prefFacts = searchMod.structuredSearch(db, { domain: "preferences" });
     expect(prefFacts).toHaveLength(1);
@@ -242,7 +242,7 @@ describe.skipIf(!canLoadSqlite)("DIKW pipeline end-to-end", () => {
 
     // Use lowercase "my" to match the heuristic regex pattern
     factManager.captureFact({
-      content: "Had dinner with my partner Robin at a restaurant",
+      content: "Had dinner with my partner Robin",
       domain_hint: "people",
     });
     await factManager.runConsolidate();

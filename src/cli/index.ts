@@ -13,7 +13,10 @@ import { openDatabase, closeDatabase } from "../db/connection.js";
 import { applySchema } from "../db/schema.js";
 import { consolidate } from "../intelligence/consolidate.js";
 import { createHeuristicProvider } from "../intelligence/heuristic.js";
-import { DEFAULT_CONFIG } from "../types/config.js";
+import { createIntelligenceProvider } from "../intelligence/provider.js";
+import type { IntelligenceProvider } from "../intelligence/types.js";
+import { DEFAULT_CONFIG, type ServerConfig } from "../types/config.js";
+import { loadConfig } from "../config.js";
 import { sendSchedulerSignal, type SignalKind } from "../ipc/scheduler-ipc.js";
 
 const DEFAULT_DATA_DIR = path.join(homedir(), ".openmemory");
@@ -64,7 +67,7 @@ async function main() {
         `Commands:\n` +
         `  log-event     Log a session event (used by hooks)\n` +
         `  signal        Signal the running MCP server to tick or flush\n` +
-        `  consolidate   Run consolidation in-process with the heuristic provider`,
+        `  consolidate   Run consolidation in-process with the configured provider`,
     );
     process.exit(1);
   }
@@ -96,11 +99,17 @@ async function runSignal() {
   // Fallback only for 'flush' — matches the PreCompact "don't lose data"
   // contract. For 'tick' (routine log-event signals), a missed delivery
   // is recovered by session_start on the next launch.
+  //
+  // The fallback deliberately uses the heuristic provider (not the configured
+  // one): the point of a PreCompact flush is that data survives the context
+  // collapse quickly. Spawning `claude -p` for cli-quality here could take
+  // ~35-50s during a time-critical compaction. Lower quality, but fast and
+  // dependency-free — heuristic-era facts can be reprocessed later.
   if (kind === "flush") {
     console.error(
       "[openmemory] Server unreachable; running heuristic consolidate in-process as fallback.",
     );
-    await consolidateInProcess(dataDir);
+    await consolidateInProcess(dataDir, createHeuristicProvider(), DEFAULT_CONFIG);
     return;
   }
 
@@ -117,25 +126,38 @@ async function runConsolidate() {
     strict: true,
   });
   const dataDir = resolveTilde(values.data as string);
-  await consolidateInProcess(dataDir);
+
+  // Manual `openmemory consolidate` honours the configured provider (default
+  // cli — real LLM quality). There's no MCP server here, so a `sampling`
+  // selection degrades to heuristic; `cli` spawns `claude -p` directly. The
+  // OPENMEMORY_SUBPROCESS guard at the top of main() prevents recursion when
+  // this runs inside a provider subprocess.
+  const config = loadConfig(dataDir);
+  const provider = createIntelligenceProvider(config.intelligence);
+  await consolidateInProcess(dataDir, provider, config);
 }
 
 /**
- * Open the DB at dataDir, run consolidate() with the heuristic provider,
- * print the JSON result, then close. Used by both `openmemory consolidate`
- * and the `signal flush` fallback when the server is unreachable.
+ * Open the DB at dataDir, run consolidate() with the given provider, print the
+ * JSON result, then close. Used by both `openmemory consolidate` (configured
+ * provider) and the `signal flush` fallback (heuristic, for fast survival).
  *
- * Taking dataDir as a parameter (rather than re-parsing process.argv) lets
- * callers invoke this from contexts where argv contains positional args the
- * parser doesn't expect (e.g. signal flush's own `flush` positional).
+ * Taking dataDir + provider as parameters (rather than re-parsing process.argv
+ * or hardcoding a provider) lets callers invoke this from contexts where argv
+ * contains positional args the parser doesn't expect (e.g. signal flush's own
+ * `flush` positional) and choose the provider appropriate to the context.
  */
-export async function consolidateInProcess(dataDir: string): Promise<void> {
+export async function consolidateInProcess(
+  dataDir: string,
+  provider: IntelligenceProvider,
+  config: Partial<ServerConfig> = DEFAULT_CONFIG,
+): Promise<void> {
   const dbPath = path.join(dataDir, "memory.db");
   const db = openDatabase(dbPath);
 
   try {
     applySchema(db);
-    const result = await consolidate(db, createHeuristicProvider(), DEFAULT_CONFIG);
+    const result = await consolidate(db, provider, config);
     console.log(JSON.stringify(result));
   } catch (err: any) {
     console.error(err.message);

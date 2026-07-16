@@ -25,7 +25,7 @@ export interface TemporalConfig {
 }
 
 /** Intelligence provider type. */
-export type IntelligenceProviderType = "heuristic" | "sampling" | "api";
+export type IntelligenceProviderType = "heuristic" | "sampling" | "cli" | "api";
 
 /** Knowledge capture configuration. */
 export interface CaptureConfig {
@@ -60,6 +60,19 @@ export interface ExtractionConfig {
   working_memory_size: number;
 }
 
+/** Options for the 'cli' provider (subprocess `claude -p`). All optional —
+ *  sensible defaults are applied by createCliProvider. */
+export interface CliProviderConfig {
+  /** Command + args to invoke the CLI. Default: resolves `claude` via PATH. */
+  command?: string[];
+  /** Model alias passed via --model. Default: "haiku". */
+  model?: string;
+  /** Per-stage subprocess timeout in ms. Default: 45000. */
+  timeout_ms?: number;
+  /** Emit provider debug logging to stderr. Default: false. */
+  debug?: boolean;
+}
+
 /** Intelligence provider configuration. */
 export interface IntelligenceConfig {
   /** Which provider to use for consolidation intelligence. */
@@ -68,6 +81,8 @@ export interface IntelligenceConfig {
   fallback: IntelligenceProviderType | null;
   /** API key for the 'api' provider (when configured). */
   api_key: string | null;
+  /** Options for the 'cli' provider. */
+  cli?: CliProviderConfig;
 }
 
 /** Consolidation trigger configuration. */
@@ -125,10 +140,15 @@ export const DEFAULT_CONFIG: Omit<ServerConfig, "storage" | "temporal"> = {
     working_memory_size: 50,
   },
   intelligence: {
-    // Default to the sampling provider — uses the MCP client's sampling
-    // capability for LLM intelligence. Falls through to the heuristic provider
-    // per-method when the client doesn't advertise sampling support.
-    provider: "sampling",
+    // Default to the CLI provider — spawns the `claude` CLI using the user's
+    // existing subscription for real LLM consolidation, with no API key. Many
+    // MCP clients don't advertise the sampling capability, so the sampling
+    // provider would degrade to regex for them; the CLI provider is the path
+    // that actually delivers server-side intelligence on those hosts. Every
+    // stage falls back to the heuristic provider on failure (CLI not installed,
+    // rate limit, timeout). Override with the OPENMEMORY_PROVIDER env var
+    // (e.g. =heuristic) or intelligence.provider in config.json.
+    provider: "cli",
     fallback: "heuristic",
     api_key: null,
   },

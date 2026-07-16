@@ -59,13 +59,13 @@ afterEach(() => {
 
 describe.skipIf(!canLoadSqlite)("entities", () => {
   it("createEntity creates with canonical_name = lowercase trimmed", () => {
-    const entity = createEntity(db, { type: "person", name: "  Gordon Lee  " });
+    const entity = createEntity(db, { type: "person", name: "  Alex Rivera  " });
 
     expect(entity.id).toMatch(
       /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
     );
-    expect(entity.name).toBe("  Gordon Lee  ");
-    expect(entity.canonical_name).toBe("gordon lee");
+    expect(entity.name).toBe("  Alex Rivera  ");
+    expect(entity.canonical_name).toBe("alex rivera");
     expect(entity.type).toBe("person");
     expect(entity.access_count).toBe(0);
     expect(entity.last_accessed_at).toBeNull();
@@ -73,11 +73,11 @@ describe.skipIf(!canLoadSqlite)("entities", () => {
   });
 
   it("findEntity matches by canonical name (case-insensitive)", () => {
-    createEntity(db, { type: "person", name: "Gordon Lee" });
+    createEntity(db, { type: "person", name: "Alex Rivera" });
 
-    const found = findEntity(db, "GORDON LEE");
+    const found = findEntity(db, "ALEX RIVERA");
     expect(found).not.toBeNull();
-    expect(found!.canonical_name).toBe("gordon lee");
+    expect(found!.canonical_name).toBe("alex rivera");
   });
 
   it("findEntity with type filter", () => {
@@ -102,19 +102,19 @@ describe.skipIf(!canLoadSqlite)("entities", () => {
   });
 
   it("findEntityByCanonical matches exact canonical name (no normalisation)", () => {
-    createEntity(db, { type: "person", name: "  Gordon Lee  " });
+    createEntity(db, { type: "person", name: "  Alex Rivera  " });
 
     // Exact canonical match works
-    expect(findEntityByCanonical(db, "gordon lee")).not.toBeNull();
+    expect(findEntityByCanonical(db, "alex rivera")).not.toBeNull();
 
     // Un-normalised input does NOT match — caller must normalise
-    expect(findEntityByCanonical(db, "Gordon Lee")).toBeNull();
-    expect(findEntityByCanonical(db, "  gordon lee  ")).toBeNull();
+    expect(findEntityByCanonical(db, "Alex Rivera")).toBeNull();
+    expect(findEntityByCanonical(db, "  alex rivera  ")).toBeNull();
   });
 
   it("findOrCreateEntity returns existing entity if found", () => {
-    const original = createEntity(db, { type: "person", name: "Gordon" });
-    const result = findOrCreateEntity(db, { type: "person", name: "Gordon" });
+    const original = createEntity(db, { type: "person", name: "Alex" });
+    const result = findOrCreateEntity(db, { type: "person", name: "Alex" });
 
     expect(result.created).toBe(false);
     expect(result.entity.id).toBe(original.id);
@@ -131,13 +131,13 @@ describe.skipIf(!canLoadSqlite)("entities", () => {
   it("createEntity stores and retrieves metadata", () => {
     const entity = createEntity(db, {
       type: "person",
-      name: "Gordon",
+      name: "Alex",
       metadata: { role: "developer", team: "platform" },
     });
 
     expect(entity.metadata).toEqual({ role: "developer", team: "platform" });
 
-    const found = findEntity(db, "Gordon", "person");
+    const found = findEntity(db, "Alex", "person");
     expect(found!.metadata).toEqual({ role: "developer", team: "platform" });
   });
 });
@@ -149,11 +149,11 @@ describe.skipIf(!canLoadSqlite)("entities", () => {
 describe.skipIf(!canLoadSqlite)("fact-entity links", () => {
   it("linkFactEntity creates a fact-entity link", () => {
     const fact = insertFact(db, {
-      content: "Gordon works at Acme",
+      content: "Alex works at Acme",
       domain: "work",
       source_type: "explicit",
     });
-    const entity = createEntity(db, { type: "person", name: "Gordon" });
+    const entity = createEntity(db, { type: "person", name: "Alex" });
 
     linkFactEntity(db, fact.id, entity.id, "subject");
 
@@ -164,11 +164,11 @@ describe.skipIf(!canLoadSqlite)("fact-entity links", () => {
 
   it("linkFactEntity is idempotent (INSERT OR IGNORE)", () => {
     const fact = insertFact(db, {
-      content: "Gordon works at Acme",
+      content: "Alex works at Acme",
       domain: "work",
       source_type: "explicit",
     });
-    const entity = createEntity(db, { type: "person", name: "Gordon" });
+    const entity = createEntity(db, { type: "person", name: "Alex" });
 
     // Insert twice — should not throw
     linkFactEntity(db, fact.id, entity.id, "subject");
@@ -188,7 +188,7 @@ describe.skipIf(!canLoadSqlite)("entity edges", () => {
   let entityB: any;
 
   beforeEach(() => {
-    entityA = createEntity(db, { type: "person", name: "Gordon" });
+    entityA = createEntity(db, { type: "person", name: "Alex" });
     entityB = createEntity(db, { type: "organisation", name: "Acme" });
   });
 
@@ -249,19 +249,19 @@ describe.skipIf(!canLoadSqlite)("entity edges", () => {
 
 describe.skipIf(!canLoadSqlite)("entity access tracking", () => {
   it("updateEntityAccess increments access_count and sets last_accessed_at", () => {
-    const entity = createEntity(db, { type: "person", name: "Gordon" });
+    const entity = createEntity(db, { type: "person", name: "Alex" });
     expect(entity.access_count).toBe(0);
     expect(entity.last_accessed_at).toBeNull();
 
     updateEntityAccess(db, entity.id);
 
-    const found = findEntity(db, "Gordon", "person");
+    const found = findEntity(db, "Alex", "person");
     expect(found!.access_count).toBe(1);
     expect(found!.last_accessed_at).toBeTruthy();
 
     updateEntityAccess(db, entity.id);
 
-    const found2 = findEntity(db, "Gordon", "person");
+    const found2 = findEntity(db, "Alex", "person");
     expect(found2!.access_count).toBe(2);
   });
 });
