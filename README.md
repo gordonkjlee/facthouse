@@ -208,20 +208,23 @@ Search the knowledge base from the command line. This runs the same hybrid searc
 ```bash
 openmemory search "coffee"
 
-# Scope to one domain:
+# Prioritise a domain:
 openmemory search "coffee" --domain preferences
 
 # Machine-readable output for scripting:
 openmemory search "coffee" --json
 
 # Options:
-#   --domain   Restrict results to one domain (profile, preferences, medical, people, work)
+#   --domain   Prioritise a domain (profile, preferences, medical, people, work,
+#              or any other in use). Biases ranking; does not filter — see below
 #   --limit    Maximum results (default: 20)
 #   --json     Emit the raw search payload instead of formatted text
 #   --data     Data directory (default: ~/.openmemory or $OPENMEMORY_DATA)
 ```
 
 Results carry a relevance score and confidence, plus coverage and confidence estimates for the result set as a whole — so a thin result set looks thin rather than silently passing as complete.
+
+`--domain` **biases ranking rather than filtering.** Facts in the domain are surfaced and rank higher, and a fact that both matches your query and sits in that domain ranks top — but a strong match in another domain still appears below it. This is deliberate: domains are assigned by a classifier and are approximate, so a fact you are looking for may be filed under a near-synonym. A hard filter would hide it and show you an empty result, with no way to tell "nothing is known" from "it was filed elsewhere". Ranking degrades where a filter fails absolutely.
 
 #### `openmemory stats`
 

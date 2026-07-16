@@ -61,6 +61,27 @@ const call = (c: Client, name: string, args: Record<string, unknown> = {}) =>
 const json = async (c: Client, name: string, args: Record<string, unknown> = {}) =>
   JSON.parse(text(await call(c, name, args)));
 
+/**
+ * Consolidate and prove it actually did the work.
+ *
+ * The server runs its own scheduler, so an automatic run can hold the advisory
+ * lock while an explicit call arrives — the explicit run then skips, and a test
+ * that reads the results immediately sees an empty store and fails for reasons
+ * having nothing to do with what it was testing. Tolerating a skipped run is how
+ * these tests became intermittently flaky under parallel load.
+ */
+async function consolidateForReal(client: Client) {
+  const result = await json(client, "consolidate", {});
+  if (result.skipped) {
+    // The scheduler beat us to the lock. Its run graduates the same facts, so
+    // retry rather than fail — but never proceed on the assumption it happened.
+    const retry = await json(client, "consolidate", {});
+    expect(retry.skipped).toBe(false);
+    return retry;
+  }
+  return result;
+}
+
 /** Turn off automatic consolidation so explicit calls genuinely contend. */
 function manualConsolidationOnly(dataDir: string) {
   const p = path.join(dataDir, "config.json");
@@ -74,6 +95,16 @@ beforeEach(() => {
   if (!runnable) return;
   root = mkdtempSync(path.join(tmpdir(), "om-xtool-"));
   spawnSync(process.execPath, [CLI, "init", root], { encoding: "utf-8" });
+
+  // Every test here consolidates explicitly. Leaving the server's own scheduler
+  // running means an automatic run can hold the advisory lock when an explicit
+  // call arrives — the explicit run skips, the test reads an empty store, and it
+  // fails for reasons unrelated to cross-tool sharing. That made this file
+  // intermittently flaky under parallel load while passing in isolation, which
+  // is the worst way for a test to be wrong.
+  //
+  // The scheduler is covered by its own tests; nothing here is testing it.
+  manualConsolidationOnly(root);
 });
 
 afterEach(async () => {
@@ -91,7 +122,7 @@ describe.skipIf(!runnable)("cross-tool knowledge sharing", () => {
       const toolB = await connect("tool-b", root);
 
       await call(toolA, "capture_fact", { content: "Alex prefers dark roast coffee" });
-      await call(toolA, "consolidate", {});
+      await consolidateForReal(toolA);
 
       // Tool B never saw the capture and has no client-side rules — the server
       // is the only thing connecting them.
@@ -119,7 +150,7 @@ describe.skipIf(!runnable)("cross-tool knowledge sharing", () => {
         content: "The user is called Alex Rivera",
         domain_hint: "profile",
       });
-      await call(toolA, "consolidate", {});
+      await consolidateForReal(toolA);
 
       const profile = await toolB.readResource({ uri: "memory://profile" });
       expect(String(profile.contents[0].text)).toContain("Alex Rivera");
@@ -150,7 +181,6 @@ describe.skipIf(!runnable)("cross-tool knowledge sharing", () => {
   it(
     "two tools consolidating at once neither strand nor duplicate facts",
     async () => {
-      manualConsolidationOnly(root);
       const toolA = await connect("tool-a", root);
       const toolB = await connect("tool-b", root);
 
@@ -185,7 +215,6 @@ describe.skipIf(!runnable)("cross-tool knowledge sharing", () => {
       // Tool A captures and then goes away without consolidating — a client
       // closing mid-session. Its facts must not be orphaned: the next tool to
       // consolidate picks up the whole pending batch, not just its own session.
-      manualConsolidationOnly(root);
       const toolA = await connect("tool-a", root);
       await call(toolA, "capture_fact", { content: "Alex prefers dark roast coffee" });
       await toolA.close();
