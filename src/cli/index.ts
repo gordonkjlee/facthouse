@@ -46,16 +46,20 @@ function readStdin(): Promise<string> {
 }
 
 async function main() {
+  const subcommand = process.argv[2];
+
   // Recursion guard: any subprocess-based intelligence provider that
   // re-invokes an MCP client should set OPENMEMORY_SUBPROCESS=1 in the
-  // child's env. If a surviving hook then re-enters this CLI, we must
-  // not log events or signal the scheduler — both would feed back into
-  // an extraction loop. Exit silently with success.
-  if (process.env.OPENMEMORY_SUBPROCESS === "1") {
+  // child's env. If a surviving hook then re-enters this CLI, we must not
+  // log events, signal the scheduler, or consolidate — each would feed back
+  // into an extraction loop. Exit silently with success.
+  //
+  // `init` is exempt: it only creates a directory, database, and config, so it
+  // cannot recurse. Skipping it here would make an explicit setup command exit
+  // 0 having silently done nothing — a confusing failure with no diagnostic.
+  if (process.env.OPENMEMORY_SUBPROCESS === "1" && subcommand !== "init") {
     process.exit(0);
   }
-
-  const subcommand = process.argv[2];
 
   if (subcommand === "init") {
     await runInit();
