@@ -55,13 +55,13 @@ describe.skipIf(!canLoadSqlite)("hybridSearch", () => {
   });
 
   it("proper-noun query matches entity and adds entity path", () => {
-    const gordon = dbMod.createEntity(db, { type: "person", name: "Gordon" });
-    const fact = insertFact("Gordon works at Acme", "people");
-    dbMod.linkFactEntity(db, fact.id, gordon.id, "subject");
+    const alex = dbMod.createEntity(db, { type: "person", name: "Alex" });
+    const fact = insertFact("Alex works at Acme", "people");
+    dbMod.linkFactEntity(db, fact.id, alex.id, "subject");
 
-    const result = searchMod.hybridSearch(db, "Gordon");
+    const result = searchMod.hybridSearch(db, "Alex");
     expect(result.results.length).toBeGreaterThanOrEqual(1);
-    // The fact about Gordon should be found via entity path even if FTS5 quirks
+    // The fact about Alex should be found via entity path even if FTS5 quirks
     expect(result.results.some((r: any) => r.fact.id === fact.id)).toBe(true);
   });
 

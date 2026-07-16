@@ -237,11 +237,11 @@ describe.skipIf(!canLoadSqlite)("CLI provider end-to-end consolidation", () => {
   });
 
   it("reuses existing entities via existing_id resolution", async () => {
-    // Pre-seed an entity: Gordon.
+    // Pre-seed an entity: Alex.
     const existing = db
       .prepare(
         `INSERT INTO entities (id, type, name, canonical_name, created_at, access_count)
-         VALUES ('ent-gordon', 'person', 'Gordon', 'gordon', datetime('now'), 0)`,
+         VALUES ('ent-alex', 'person', 'Alex', 'alex', datetime('now'), 0)`,
       )
       .run();
     expect(existing.changes).toBe(1);
@@ -250,7 +250,7 @@ describe.skipIf(!canLoadSqlite)("CLI provider end-to-end consolidation", () => {
       mcp_session_id: sessionId,
       event_type: "message",
       role: "user",
-      content: "Gordy mentioned that he prefers tea.",
+      content: "Lex mentioned that he prefers tea.",
     });
 
     behaviour = (args) => {
@@ -261,7 +261,7 @@ describe.skipIf(!canLoadSqlite)("CLI provider end-to-end consolidation", () => {
           structured_output: {
             facts: [
               {
-                content: "Gordy prefers tea",
+                content: "Lex prefers tea",
                 domain: "preferences",
                 subdomain: null,
                 confidence: 0.8,
@@ -271,10 +271,10 @@ describe.skipIf(!canLoadSqlite)("CLI provider end-to-end consolidation", () => {
                 valid_until: null,
                 entities: [
                   {
-                    name: "Gordy",
+                    name: "Lex",
                     type: "person",
                     relationship: "mentioned",
-                    existing_id: "ent-gordon", // LLM resolved to existing
+                    existing_id: "ent-alex", // LLM resolved to existing
                   },
                   { name: "tea", type: "beverage", relationship: "likes" },
                 ],
@@ -295,7 +295,7 @@ describe.skipIf(!canLoadSqlite)("CLI provider end-to-end consolidation", () => {
       if (stage === "stage-4") {
         return {
           is_error: false,
-          structured_output: { summary: "Gordy prefers tea.", openThreads: [] },
+          structured_output: { summary: "Lex prefers tea.", openThreads: [] },
         };
       }
       return null;
@@ -304,19 +304,19 @@ describe.skipIf(!canLoadSqlite)("CLI provider end-to-end consolidation", () => {
     const provider = createCliProvider();
     await consolidate(db, provider, { extraction: { enabled: true } as any });
 
-    // Only ONE entity should have name 'Gordon' or 'Gordy' — the LLM-resolved
+    // Only ONE entity should have name 'Alex' or 'Lex' — the LLM-resolved
     // id means the extracted mention reuses the existing entity.
     const personEntities = db
       .prepare(`SELECT id, name FROM entities WHERE type = 'person'`)
       .all() as Array<{ id: string; name: string }>;
     expect(personEntities).toHaveLength(1);
-    expect(personEntities[0].id).toBe("ent-gordon");
-    expect(personEntities[0].name).toBe("Gordon"); // not overwritten
+    expect(personEntities[0].id).toBe("ent-alex");
+    expect(personEntities[0].name).toBe("Alex"); // not overwritten
 
     // The fact should be linked to the existing entity.
     const link = db
       .prepare(
-        `SELECT entity_id FROM fact_entities WHERE entity_id = 'ent-gordon'`,
+        `SELECT entity_id FROM fact_entities WHERE entity_id = 'ent-alex'`,
       )
       .all();
     expect(link.length).toBeGreaterThanOrEqual(1);

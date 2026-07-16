@@ -83,7 +83,7 @@ describe.skipIf(!canLoadSqlite)("consolidation pipeline", () => {
 
     insertSessionFact(db, {
       session_id: sessionId,
-      content: "My name is Gordon",
+      content: "My name is Alex",
       domain_hint: "profile",
     });
     insertSessionFact(db, {
@@ -107,7 +107,7 @@ describe.skipIf(!canLoadSqlite)("consolidation pipeline", () => {
     // Verify graduated facts exist in their correct domains
     const profileFacts = getFactsByDomain(db, "profile");
     expect(profileFacts.length).toBeGreaterThanOrEqual(1);
-    expect(profileFacts.some((f: any) => f.content.includes("Gordon"))).toBe(true);
+    expect(profileFacts.some((f: any) => f.content.includes("Alex"))).toBe(true);
 
     const prefFacts = getFactsByDomain(db, "preferences");
     expect(prefFacts.length).toBeGreaterThanOrEqual(1);
@@ -157,7 +157,7 @@ describe.skipIf(!canLoadSqlite)("consolidation pipeline", () => {
     // Pre-insert a graduated fact
     ensureDomain(db, "profile");
     insertFact(db, {
-      content: "My name is Gordon",
+      content: "My name is Alex",
       domain: "profile",
       source_type: "conversation",
     });
@@ -165,7 +165,7 @@ describe.skipIf(!canLoadSqlite)("consolidation pipeline", () => {
     // Insert the same content as a session fact
     insertSessionFact(db, {
       session_id: sessionId,
-      content: "My name is Gordon",
+      content: "My name is Alex",
     });
 
     const result = await consolidate(db, provider);
@@ -201,7 +201,7 @@ describe.skipIf(!canLoadSqlite)("consolidation pipeline", () => {
 
     insertSessionFact(db, {
       session_id: sessionId,
-      content: "My name is Gordon",
+      content: "My name is Alex",
     });
 
     const first = await consolidate(db, provider);
@@ -220,7 +220,7 @@ describe.skipIf(!canLoadSqlite)("consolidation pipeline", () => {
 
     insertSessionFact(db, {
       session_id: sessionId,
-      content: "My name is Gordon",
+      content: "My name is Alex",
       domain_hint: "profile",
     });
     insertSessionFact(db, {
@@ -241,7 +241,7 @@ describe.skipIf(!canLoadSqlite)("consolidation pipeline", () => {
 
     insertSessionFact(db, {
       session_id: sessionId,
-      content: "My name is Gordon",
+      content: "My name is Alex",
     });
 
     const result = await consolidate(db, provider);
@@ -262,7 +262,7 @@ describe.skipIf(!canLoadSqlite)("consolidation pipeline", () => {
 
     insertSessionFact(db, {
       session_id: sessionId,
-      content: "My name is Gordon",
+      content: "My name is Alex",
     });
 
     await consolidate(db, provider);
@@ -280,7 +280,7 @@ describe.skipIf(!canLoadSqlite)("consolidation pipeline", () => {
 
     insertSessionFact(db, {
       session_id: sessionId,
-      content: "My name is Gordon",
+      content: "My name is Alex",
     });
 
     const result = await consolidate(db, provider);

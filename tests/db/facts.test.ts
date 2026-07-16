@@ -151,7 +151,7 @@ describe.skipIf(!canLoadSqlite)("facts", () => {
       source_type: "explicit",
     });
     insertFact(db, {
-      content: "Named Gordon",
+      content: "Named Alex",
       domain: "profile",
       subdomain: "identity",
       source_type: "explicit",
@@ -185,12 +185,12 @@ describe.skipIf(!canLoadSqlite)("facts", () => {
 
   it("getFactsByEntity returns facts linked to an entity", () => {
     const fact = insertFact(db, {
-      content: "Gordon works at Acme",
+      content: "Alex works at Acme",
       domain: "work",
       source_type: "explicit",
     });
 
-    const entity = createEntity(db, { type: "person", name: "Gordon" });
+    const entity = createEntity(db, { type: "person", name: "Alex" });
     linkFactEntity(db, fact.id, entity.id, "subject");
 
     const facts = getFactsByEntity(db, entity.id);

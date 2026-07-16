@@ -262,7 +262,7 @@ export function hybridSearch(
   // 3. Structured entity path: if the query mentions a known entity,
   // add facts linked to that entity as a second RRF signal.
   // No uppercase filter — findEntity canonicalises to lower(trim(name)) so
-  // lowercase queries ("who's gordon?") match too. Short terms dropped to
+  // lowercase queries ("who's alex?") match too. Short terms dropped to
   // avoid noisy lookups on pronouns/articles; first 5 terms cap work for
   // pathological long queries.
   const terms = query
