@@ -55,6 +55,15 @@ jobs:
           node-version: 22
           registry-url: https://registry.npmjs.org
 
+      # Trusted publishing (OIDC) requires npm >= 11.5.1; Node 22 ships npm 10.x.
+      # Upgrading explicitly rather than relying on a Node version's bundled npm
+      # keeps this deterministic if the runner image changes.
+      - if: steps.release.outputs.found == 'true'
+        name: Upgrade npm for trusted publishing
+        run: |
+          npm install -g npm@latest
+          npm --version
+
       - if: steps.release.outputs.found == 'true'
         name: Install dependencies
         run: npm install  # `prepare` script runs tsc after install
@@ -63,8 +72,10 @@ jobs:
         name: Run tests
         run: npm test
 
+      # No NODE_AUTH_TOKEN: authentication comes from the OIDC id-token above,
+      # matched against the Trusted Publisher configured on npmjs.com for this
+      # package (owner/repo + workflow filename + environment must match exactly).
+      # Provenance is generated automatically under trusted publishing.
       - if: steps.release.outputs.found == 'true'
         name: Publish ${{ steps.release.outputs.tag }}
         run: npm publish --provenance --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
