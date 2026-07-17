@@ -113,11 +113,23 @@ describe("fact manager", () => {
     expect(fact!.importance).toBe(0.3);
   });
 
-  it("uses global default importance when no domain default", () => {
+  it("leaves importance unscored at capture when nothing knows it yet", () => {
+    // This previously asserted 0.5 here, pinning *where* the default was
+    // applied rather than *that* it was. Stamping it at capture made the column
+    // non-null forever, and graduation resolves
+    // `importance ?? importance_signal ?? domain default ?? baseline` — a
+    // non-null first link short-circuits the rest, so the provider's LLM
+    // judgement and the domain's default were both unreachable and every fact
+    // scored 0.5.
+    //
+    // Capture cannot know a fact's importance: the domain has not been
+    // classified yet. null means "not scored", which is true. The baseline is
+    // still applied — at graduation, where the domain is known. See
+    // tests/intelligence/importance.test.ts.
     const { factManager } = setup();
 
     const fact = factManager.captureFact({ content: "Some random fact" });
-    expect(fact!.importance).toBe(0.5); // DEFAULT_IMPORTANCE
+    expect(fact!.importance).toBeNull();
   });
 
   it("uses configured default confidence", () => {

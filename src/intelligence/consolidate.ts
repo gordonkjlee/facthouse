@@ -71,6 +71,8 @@ export async function consolidate(
 ): Promise<ConsolidationResult> {
   const consolidationId = randomUUID();
   const extractionEnabled = config?.extraction?.enabled ?? false;
+  const importanceDefaults: Record<string, number> =
+    config?.capture?.importance_defaults ?? {};
 
   // Phase A: Acquire lock
   const locked = acquireLock(db, consolidationId);
@@ -287,9 +289,19 @@ export async function consolidate(
         sessionFact.confidence ??
         sessionFact.confidence_signal ??
         DEFAULT_CONFIDENCE;
+      // Resolution order, per data-model.md: the assistant's explicit value, a
+      // provider's signal, the domain's default, then the neutral baseline.
+      //
+      // The domain default is applied HERE rather than at capture because this
+      // is the first point the domain is actually known. capture_fact resolves
+      // it from the caller's domain_hint, which callers rarely pass — so for an
+      // ordinary capture the config layer never fired and everything landed on
+      // DEFAULT_IMPORTANCE. Keying off the classified domain is what makes the
+      // documented order real.
       const resolvedImportance =
         sessionFact.importance ??
         sessionFact.importance_signal ??
+        importanceDefaults[cf.domain] ??
         DEFAULT_IMPORTANCE;
       toGraduate.push({
         sessionFactId: cf.id,
