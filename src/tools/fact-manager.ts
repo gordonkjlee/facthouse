@@ -200,7 +200,7 @@ export function createFactManager(
       // ---------------------------------------------------------------
       server.tool(
         "capture_fact",
-        `Store a fact about the user. Call this proactively whenever you learn ` +
+        `Store a durable fact worth remembering across sessions. Call this proactively whenever you learn ` +
           `something useful for future conversations — preferences, personal details, ` +
           `medical information, relationships, work context, opinions, or decisions.\n\n` +
           `Capture is fast — the server stores the fact immediately. Entity extraction, ` +

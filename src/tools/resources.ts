@@ -7,9 +7,11 @@
  * remembering to go looking for it.
  *
  * Both are read-only computed views over the same database the read tools
- * query. `memory://profile` overlaps `get_profile` deliberately — the resource
- * is zero-friction, the tool is on-demand and parameterised. Clients without
- * resource support lose no capability, only convenience.
+ * query. Their lead section is the store's highest-importance facts — a
+ * cue-less, always-available digest of what matters most, ranked by the store's
+ * own importance calibration rather than by a fixed domain. That is what makes
+ * them work for any store: a personal one surfaces identity and medical facts,
+ * a corporate one surfaces incidents and clients, with no engine-side opinion.
  *
  * Content is markdown rather than JSON: it is injected into a model's context,
  * so it should read as prose, not as a payload to parse.
@@ -24,13 +26,16 @@ import type { Db } from "../db/connection.js";
 import type { Fact } from "../types/data.js";
 import { structuredSearch } from "../search/index.js";
 import { getLatestSummarised } from "../db/consolidations.js";
-import { profileFacts } from "../search/profile.js";
+import { keyFacts } from "../search/key-facts.js";
 
+// The URI keeps its historical name so existing subscribers do not break; the
+// content is no longer domain-scoped. It is the store's key facts, whatever the
+// store is about.
 export const PROFILE_URI = "memory://profile";
 export const BRIEFING_URI = "memory://briefing";
 
 /** Keep the briefing near the ~100 line budget it is specified to fit in. */
-const PROFILE_LIMIT = 15;
+const KEY_FACTS_LIMIT = 15;
 const RECENT_LIMIT = 20;
 const THREADS_LIMIT = 5;
 
@@ -42,29 +47,29 @@ function bullet(f: Fact): string {
   return `- ${f.content}`;
 }
 
-/** `memory://profile` — the user's identity facts as markdown. */
+/** `memory://profile` — the store's most important facts as markdown. */
 export function buildProfile(db: Db): string {
-  const facts = profileFacts(db, 200);
+  const facts = keyFacts(db, 200);
   if (facts.length === 0) {
-    return "# Profile\n\nNo profile facts captured yet.\n";
+    return "# Key facts\n\nNothing captured yet.\n";
   }
-  return `# Profile\n\n${facts.map(bullet).join("\n")}\n`;
+  return `# Key facts\n\n${facts.map(bullet).join("\n")}\n`;
 }
 
 /**
- * `memory://briefing` — profile, the last consolidation's narrative, open
- * threads, and recent changes. The one view an assistant should read at the
- * start of a session.
+ * `memory://briefing` — the store's key facts, the last consolidation's
+ * narrative, open threads, and recent changes. The one view an assistant should
+ * read at the start of a session.
  */
 export function buildBriefing(db: Db): string {
   const parts: string[] = ["# OpenMemory Briefing"];
 
-  const profile = profileFacts(db, PROFILE_LIMIT);
+  const key = keyFacts(db, KEY_FACTS_LIMIT);
   parts.push(
-    "\n## Profile\n",
-    profile.length
-      ? profile.map(bullet).join("\n")
-      : "Nothing known about the user yet.",
+    "\n## Key facts\n",
+    key.length
+      ? key.map(bullet).join("\n")
+      : "Nothing captured yet.",
   );
 
   // The narrative comes from the last run that actually produced one: a run
@@ -96,7 +101,7 @@ export function buildBriefing(db: Db): string {
     );
   }
 
-  if (!profile.length && !last?.summary && !recent.length) {
+  if (!key.length && !last?.summary && !recent.length) {
     parts.push(
       "\nNo knowledge captured yet. Facts appear here once they have been captured and consolidated.",
     );
@@ -136,9 +141,9 @@ export function registerResources(server: McpServer, db: Db): ResourceNotifier {
     "profile",
     PROFILE_URI,
     {
-      title: "User profile",
+      title: "Key facts",
       description:
-        "The user's core identity facts — name, demographics, key personal details. Loaded automatically; no tool call needed.",
+        "The most important facts this store holds, ranked by importance — the fastest cue-less way to see what matters here. Loaded automatically; no tool call needed.",
       mimeType: "text/markdown",
     },
     (uri) => ({
@@ -154,7 +159,7 @@ export function registerResources(server: McpServer, db: Db): ResourceNotifier {
     {
       title: "Memory briefing",
       description:
-        "Everything worth knowing about the user right now: profile, what was learned in the last consolidation, open threads, and recent knowledge. Read this first — it is the fastest way to know who you are talking to.",
+        "The most important things this store knows right now: its key facts, what was learned in the last consolidation, open threads, and recent knowledge. Read this first — it is the fastest way to load context at the start of a session.",
       mimeType: "text/markdown",
     },
     (uri) => ({

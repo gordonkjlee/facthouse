@@ -5,12 +5,11 @@
 import type { Db } from "../db/connection.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { hybridSearch, structuredSearch } from "../search/index.js";
+import { hybridSearch } from "../search/index.js";
 import { findEntity, getEntityEdges } from "../db/entities.js";
 import { getFactsByEntity } from "../db/facts.js";
 import { getDomains } from "../db/domains.js";
 import { getStats } from "../db/stats.js";
-import { profileFacts } from "../search/profile.js";
 
 // ---------------------------------------------------------------------------
 // Registration
@@ -25,8 +24,8 @@ export function registerReadTools(
   // -----------------------------------------------------------------
   server.tool(
     "search_knowledge",
-    `Search the user's personal knowledge base. Call this BEFORE answering ` +
-      `questions that might benefit from personal context — preferences, ` +
+    `Search the knowledge base. Call this BEFORE answering ` +
+      `questions that might benefit from what this store knows — preferences, ` +
       `history, relationships, medical info, work context. Returns facts ` +
       `ranked by relevance with source attribution and confidence scores.\n\n` +
       `Two fields come back. \`results\` is integrated knowledge: deduplicated, ` +
@@ -64,82 +63,14 @@ export function registerReadTools(
     },
   );
 
-  // -----------------------------------------------------------------
-  // get_profile
-  // -----------------------------------------------------------------
-  server.tool(
-    "get_profile",
-    `Get the user's core identity — who they are. Name, demographics, where ` +
-      `they live, what they do.\n\n` +
-      `Call this at the START of a conversation, before you address the user ` +
-      `personally, and before any response that reads better for knowing who ` +
-      `they are. Use this rather than search_knowledge when you want identity ` +
-      `itself rather than a specific fact — it needs no query and returns the ` +
-      `identity facts directly.\n\n` +
-      `If it returns nothing, you genuinely know nothing about this user yet: ` +
-      `say so rather than guessing, and capture what you learn.`,
-    {},
-    () => {
-      // Shared with memory://profile so the two cannot disagree about what "the
-      // profile" is. They already had: this tool ran structuredSearch's default
-      // limit of 20 ordered by created_at, so it returned the newest profile
-      // facts and never looked at importance — dropping the user's name once
-      // more than 20 profile facts existed, while the resource still showed it.
-      const facts = profileFacts(db);
-
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: JSON.stringify({ domain: "profile", facts }),
-          },
-        ],
-      };
-    },
-  );
-
-  // -----------------------------------------------------------------
-  // get_preferences
-  // -----------------------------------------------------------------
-  server.tool(
-    "get_preferences",
-    `Get what the user likes, dislikes, and habitually chooses.\n\n` +
-      `Call this BEFORE recommending, suggesting, ordering, booking, or ` +
-      `choosing anything on the user's behalf — food, drink, tools, style, ` +
-      `travel, scheduling. A recommendation made without checking is a guess, ` +
-      `and the user has already told you the answer.\n\n` +
-      `Also call it before assuming a default: if you are about to pick "the ` +
-      `usual" option for them, check what their usual actually is.`,
-    {
-      // category parameter accepted but not used for filtering until a provider
-      // populates subdomains. The heuristic provider always returns subdomain: null,
-      // so filtering by category would always return zero results.
-      category: z
-        .string()
-        .optional()
-        .describe("Preference category (reserved for future use)"),
-    },
-    (args) => {
-      const facts = structuredSearch(db, {
-        domain: "preferences",
-        // subdomain omitted: heuristic provider always returns null subdomains.
-        // Passing args.category here would silently return empty results.
-      });
-
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: JSON.stringify({
-              domain: "preferences",
-              category: args.category ?? null,
-              facts,
-            }),
-          },
-        ],
-      };
-    },
-  );
+  // get_profile and get_preferences were removed. Both selected a fixed domain
+  // ('profile', 'preferences') on an engine that ships no vocabulary — so they
+  // returned nothing for any store that does not happen to use those names, and
+  // named the engine after one use case. Their value is served universally
+  // elsewhere: the memory://briefing resource is the cue-less session-start
+  // digest (importance-ranked, vocabulary-agnostic), and search_knowledge /
+  // get_context / get_entity answer on-demand. "The user's preferences" is just
+  // search_knowledge with a domain the store actually uses.
 
   // -----------------------------------------------------------------
   // get_entity
@@ -222,12 +153,12 @@ export function registerReadTools(
     "get_context",
     `Get everything known about a topic, combining search with entity ` +
       `relationship traversal. More comprehensive than search_knowledge — it ` +
-      `follows entity connections outward (a named person → their relationship ` +
-      `to the user → their preferences and history).\n\n` +
-      `Call this when you need the COMPLETE picture of a topic, person, or ` +
-      `domain rather than a specific fact — planning something involving ` +
-      `someone, catching up on a subject, or answering an open-ended question ` +
-      `about a person or project.\n\n` +
+      `follows entity connections outward: from a named subject to the things ` +
+      `it relates to, and the facts about those in turn.\n\n` +
+      `Call this when you need the COMPLETE picture of a topic, subject, or ` +
+      `domain rather than a specific fact — planning something involving a ` +
+      `person, project or system, catching up on a subject, or answering an ` +
+      `open-ended question about any of them.\n\n` +
       `Prefer search_knowledge when you want one fact fast; prefer this when ` +
       `missing a connection would make your answer wrong.`,
     {
