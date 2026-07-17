@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.6.0](https://github.com/gordonkjlee/openmemory/compare/v0.5.0...v0.6.0) (2026-07-17)
+
+
+### Features
+
+* **cli:** add search and stats commands ([#81](https://github.com/gordonkjlee/openmemory/issues/81)) ([9196e69](https://github.com/gordonkjlee/openmemory/commit/9196e69f9fb80abbebc8115e71ff91c38a06098a))
+* **intelligence:** core domain taxonomy with an open periphery ([#85](https://github.com/gordonkjlee/openmemory/issues/85)) ([692acd8](https://github.com/gordonkjlee/openmemory/commit/692acd8c699af656682d0977bec344ddb7bbd50e))
+* **server:** add memory://briefing and memory://profile resources ([#79](https://github.com/gordonkjlee/openmemory/issues/79)) ([0147f29](https://github.com/gordonkjlee/openmemory/commit/0147f290efa768590f553e832eec97c19c4c13e0))
+* **tools:** make every tool description say when to call it ([#88](https://github.com/gordonkjlee/openmemory/issues/88)) ([2ec0074](https://github.com/gordonkjlee/openmemory/commit/2ec0074ff8e9b2e5aca529babe55c518be6a1329))
+
+
+### Bug Fixes
+
+* **intelligence:** route the third-person facts an AI actually captures ([#84](https://github.com/gordonkjlee/openmemory/issues/84)) ([6e3b322](https://github.com/gordonkjlee/openmemory/commit/6e3b322080741e95cac1a88dcb5f6416913ba8a1))
+* **search:** rank by domain instead of gating on it ([#89](https://github.com/gordonkjlee/openmemory/issues/89)) ([5b869c8](https://github.com/gordonkjlee/openmemory/commit/5b869c843e2811ed9896dfaca7204164febf290a))
+
 ## [0.5.0](https://github.com/gordonkjlee/openmemory/compare/v0.4.0...v0.5.0) (2026-07-16)
 
 
