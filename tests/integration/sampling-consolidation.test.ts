@@ -74,7 +74,7 @@ function makeSamplingStub(): { server: Server; calls: number } {
         content: { type: "text", text: JSON.stringify(classified) },
       };
     }
-    if (sys.includes("extract entities")) {
+    if (sys.includes("named things") || sys.includes("extract entities")) {
       const userText: string = params.messages[0].content.text;
       const match = userText.match(/\[.*\]/s);
       const arr: Array<{ id: string; content: string }> = match ? JSON.parse(match[0]) : [];
@@ -229,7 +229,7 @@ describe("end-to-end sampling consolidation", () => {
         throw new Error("sampling classifier unavailable");
       }
       // Other calls return safe stubs.
-      if (sys.includes("extract entities")) {
+      if (sys.includes("named things") || sys.includes("extract entities")) {
         return { content: { type: "text", text: "{}" } };
       }
       if (sys.includes("detect whether a new fact supersedes")) {

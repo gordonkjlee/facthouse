@@ -475,20 +475,22 @@ export function createCliProvider(
         }>;
       }>(
         "stage-1-extract",
-        "You extract durable facts about the user from conversation events. " +
-          "A durable fact is something worth remembering for future sessions: preferences, " +
-          "personal details, medical info, relationships, work context, opinions, decisions. " +
+        "You extract durable facts from conversation events — facts worth " +
+          "remembering across future sessions. A durable fact is a stable piece " +
+          "of knowledge about whatever this store is used for: its subjects, " +
+          "their attributes, their relationships, decisions, and context. " +
           "Ignore ephemeral statements (current tasks, transient mood). " +
           "Each fact must be a complete, self-contained sentence — rewrite from the source as needed. " +
           `${domainRoutingInstruction(vocabulary)} ` +
-          "optional subdomain, confidence 0-1, importance 0-1, and any mentioned entities " +
-          "(people, places, orgs, substances, foods). " +
+          "optional subdomain, confidence 0-1, importance 0-1, and any named " +
+          "things mentioned (people, organisations, places, projects, products, " +
+          "systems — whatever the fact concerns), each with a short lowercase type. " +
           "Only extract facts from candidate_events. " +
           "recent_events is prior conversational context for pronoun resolution and topical " +
           "flow — use it to interpret candidate_events, but DO NOT extract facts from it. " +
           "session_summary is a rolling synopsis of the conversation up to recent_events; use " +
           "it for long-range context but DO NOT re-extract facts it already covers. " +
-          "long_term_memory holds facts already known about the user across all sessions; use " +
+          "long_term_memory holds facts already known across all sessions; use " +
           "it to avoid duplicating knowledge the system already has. " +
           "If an entity matches one of the entities referenced in long_term_memory (by name or " +
           "clear reference), set existing_id to the matching id; otherwise omit existing_id " +
