@@ -76,7 +76,9 @@ describe.skipIf(!runnable)("tool descriptions are an instruction layer", () => {
   it("registers the full tool surface", () => {
     // Guards the assertions below: if registration broke, every per-tool test
     // would vacuously pass over an empty list.
-    expect(tools.length).toBeGreaterThanOrEqual(12);
+    // 10 after removing get_profile and get_preferences (domain-named tools)
+    // and renaming get_people -> get_entity.
+    expect(tools.length).toBeGreaterThanOrEqual(10);
   });
 
   it("every tool has a description", () => {
@@ -114,17 +116,22 @@ describe.skipIf(!runnable)("tool descriptions are an instruction layer", () => {
     expect(search.description).toMatch(/\bbefore\b/i);
   });
 
-  it("the recommendation path tells an assistant to check preferences first", () => {
-    // The single highest-value trigger in the product: never recommend without
-    // checking what the user already told you they like.
-    const prefs = tools.find((t) => t.name === "get_preferences")!;
-    expect(prefs.description).toMatch(/\bbefore\b/i);
-    expect(prefs.description).toMatch(/recommend|suggest|choos/i);
+  it("subject retrieval covers any named thing, not just people", () => {
+    // get_people was replaced by get_entity precisely so a store's projects,
+    // systems and suppliers are reachable — not only persons.
+    const entity = tools.find((t) => t.name === "get_entity")!;
+    expect(entity).toBeTruthy();
+    expect(entity.description).toMatch(/organisation|project|system|any/i);
   });
 
-  it("identity retrieval is anchored to the start of a conversation", () => {
-    const profile = tools.find((t) => t.name === "get_profile")!;
-    expect(profile.description).toMatch(/start|begin/i);
+  it("no tool is named after a domain the engine does not ship", () => {
+    // get_profile and get_preferences hardcoded domain='profile'/'preferences'
+    // on an engine that ships no vocabulary. Their value moved to the briefing
+    // resource and search_knowledge.
+    const names = tools.map((t) => t.name);
+    expect(names).not.toContain("get_profile");
+    expect(names).not.toContain("get_preferences");
+    expect(names).not.toContain("get_people");
   });
 
   it("no description leaks a real name into shipped text", () => {

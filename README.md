@@ -73,8 +73,6 @@ Both are read-only views over the same database the tools query, so they can't d
 - `get_session_context` — Recall facts captured in the current session (in-session working memory).
 
 ### Reading
-- `get_profile` — Core identity facts
-- `get_preferences` — Preferences by domain
 - `get_entity` — Everything known about any named subject — person, organisation, project, place, product — and how it connects
 - `get_context` — Everything relevant to a topic (search + entity traversal)
 - `search_knowledge` — Hybrid search across graduated knowledge

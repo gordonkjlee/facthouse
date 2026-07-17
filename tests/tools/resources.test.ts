@@ -97,27 +97,32 @@ describe("consolidation read helpers", () => {
 
 describe("memory://profile", () => {
   it("says so plainly when nothing is known", () => {
-    expect(buildProfile(db)).toContain("No profile facts captured yet");
+    expect(buildProfile(db)).toContain("Nothing captured yet");
   });
 
-  it("renders identity facts as markdown bullets", () => {
-    fact("The user is called Alex", "profile", null, 0.9);
+  it("renders key facts as markdown bullets", () => {
+    fact("The sev1 outage had a postmortem", "incidents", null, 0.95);
     const md = buildProfile(db);
-    expect(md).toContain("# Profile");
-    expect(md).toContain("- The user is called Alex");
+    expect(md).toContain("# Key facts");
+    expect(md).toContain("- The sev1 outage had a postmortem");
   });
 
   it("orders by importance, most important first", () => {
-    fact("Minor detail", "profile", null, 0.1);
-    fact("Core identity", "profile", null, 0.99);
+    fact("Minor detail", "general", null, 0.1);
+    fact("Core fact", "incidents", null, 0.99);
     const md = buildProfile(db);
-    expect(md.indexOf("Core identity")).toBeLessThan(md.indexOf("Minor detail"));
+    expect(md.indexOf("Core fact")).toBeLessThan(md.indexOf("Minor detail"));
   });
 
-  it("only includes profile facts, not other domains", () => {
-    fact("The user is called Alex", "profile", null, 0.9);
-    fact("Prefers dark roast", "preferences", "food", 0.5);
-    expect(buildProfile(db)).not.toContain("dark roast");
+  it("includes the most important facts from any domain, not one fixed domain", () => {
+    // The inverse of the old assertion. This used to require domain='profile'
+    // only — the hardcoded weld. A general store's key facts span whatever
+    // domains it uses; importance decides what leads, not a domain name.
+    fact("The sev1 outage had a postmortem", "incidents", null, 0.95);
+    fact("The Acme contract renews in March", "clients", null, 0.7);
+    const md = buildProfile(db);
+    expect(md).toContain("sev1 outage");
+    expect(md).toContain("Acme contract");
   });
 });
 
@@ -133,7 +138,7 @@ describe("memory://briefing", () => {
 
     const md = buildBriefing(db);
     expect(md).toContain("# OpenMemory Briefing");
-    expect(md).toContain("## Profile");
+    expect(md).toContain("## Key facts");
     expect(md).toContain("The user is called Alex");
     expect(md).toContain("## Last consolidation");
     expect(md).toContain("Learned about coffee.");
