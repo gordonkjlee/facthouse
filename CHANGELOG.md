@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.0](https://github.com/gordonkjlee/openmemory/compare/v0.6.0...v0.7.0) (2026-07-17)
+
+
+### Features
+
+* **search:** find facts that have been captured but not yet consolidated ([#90](https://github.com/gordonkjlee/openmemory/issues/90)) ([603eadc](https://github.com/gordonkjlee/openmemory/commit/603eadc080f3fa9c308a3413ce2752bd7266d67b))
+
 ## [0.6.0](https://github.com/gordonkjlee/openmemory/compare/v0.5.0...v0.6.0) (2026-07-17)
 
 
