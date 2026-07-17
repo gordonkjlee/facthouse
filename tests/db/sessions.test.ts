@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import type { Db } from "../../src/db/connection.js";
 
@@ -20,12 +22,12 @@ afterEach(() => {
 
 describe("schema", () => {
   it("applies current version", () => {
-    expect(getSchemaVersion(db)).toBe(7);
+    expect(getSchemaVersion(db)).toBe(8);
   });
 
   it("is idempotent", () => {
     applySchema(db); // second call
-    expect(getSchemaVersion(db)).toBe(7);
+    expect(getSchemaVersion(db)).toBe(8);
   });
 });
 
@@ -317,5 +319,32 @@ describe("session events", () => {
     expect(byMcp).toHaveLength(1);
     expect(byClient).toHaveLength(1);
     expect(byMcp[0].id).toBe(byClient[0].id);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Transaction mode
+// ---------------------------------------------------------------------------
+
+describe("withTransaction", () => {
+  it("takes the write lock up front so a concurrent writer waits rather than fails", () => {
+    // BEGIN IMMEDIATE, not BEGIN. A deferred transaction starts as a reader and
+    // upgrades at its first write; if another connection wrote in between,
+    // SQLite fails that upgrade with SQLITE_BUSY *immediately* and ignores
+    // busy_timeout, because waiting could deadlock. Two AI tools legitimately
+    // share one database, so under BEGIN a capture could fail with "database is
+    // locked" purely because another client's server was mid-write — surfaced to
+    // the assistant as an error result rather than raised, so the fact was lost.
+    //
+    // Asserted by source inspection because the failure needs two processes
+    // racing on one file, which a unit test cannot stage. The cross-tool
+    // integration tests exercise the real behaviour; this pins the mechanism so
+    // it cannot be quietly reverted to BEGIN.
+    const source = readFileSync(
+      fileURLToPath(new URL("../../src/db/connection.ts", import.meta.url)),
+      "utf-8",
+    );
+    expect(source).toMatch(/db\.exec\("BEGIN IMMEDIATE"\)/);
+    expect(source).not.toMatch(/db\.exec\("BEGIN"\)/);
   });
 });

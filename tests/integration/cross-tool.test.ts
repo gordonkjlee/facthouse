@@ -56,8 +56,23 @@ async function connect(name: string, dataDir: string): Promise<Client> {
 }
 
 const text = (r: any) => r.content?.[0]?.text ?? "";
-const call = (c: Client, name: string, args: Record<string, unknown> = {}) =>
-  c.callTool({ name, arguments: args });
+
+/**
+ * Call a tool and fail loudly if it reports an error.
+ *
+ * The MCP tools signal failure with `isError: true` and an error payload in the
+ * content, rather than rejecting. A test that ignores that reads the failure as
+ * a normal result and sails on: a capture returning {"error":"database is
+ * locked"} looked like success here, and the test only failed three assertions
+ * later on an empty search — pointing at retrieval for a bug in the write path.
+ */
+const call = async (c: Client, name: string, args: Record<string, unknown> = {}) => {
+  const r: any = await c.callTool({ name, arguments: args });
+  if (r.isError) {
+    throw new Error(`${name} failed: ${text(r)}`);
+  }
+  return r;
+};
 const json = async (c: Client, name: string, args: Record<string, unknown> = {}) =>
   JSON.parse(text(await call(c, name, args)));
 

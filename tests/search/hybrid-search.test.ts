@@ -4,6 +4,10 @@ import type { Db } from "../../src/db/connection.js";
 
 const dbMod = await import("../../src/db/index.js");
 const searchMod = await import("../../src/search/index.js");
+const { createSession } = await import("../../src/db/sessions.js");
+const { insertSessionFact, claimForConsolidation } = await import(
+  "../../src/db/session-facts.js"
+);
 
 let db: Db;
 
@@ -162,5 +166,85 @@ describe("hybridSearch", () => {
     expect(() =>
       searchMod.hybridSearch(db, "coffee", { domain: "nonexistent" }),
     ).not.toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Unconsolidated facts
+// ---------------------------------------------------------------------------
+
+describe("pending (unconsolidated) facts", () => {
+  // Local helpers: the ones above are scoped to the hybridSearch block.
+  function insertFact(content: string, domain: string) {
+    return dbMod.insertFact(db, { content, domain, source_type: "conversation" });
+  }
+
+  function capture(content: string) {
+    const session = createSession(db, { source_tool: "test", project: "p" });
+    return insertSessionFact(db, {
+      session_id: session.id,
+      content,
+      domain_hint: null,
+    });
+  }
+
+  it("finds a fact the assistant was just told, before consolidation runs", () => {
+    // The gap this closes: capture_fact writes session_facts, and only graduated
+    // facts reach the FTS index searched above. Until consolidation ran — by
+    // default after ten events or at session end — "I just told you that"
+    // silently returned nothing.
+    capture("The user prefers dark roast coffee");
+
+    const result = searchMod.hybridSearch(db, "coffee");
+
+    expect(result.results).toHaveLength(0); // nothing graduated yet
+    expect(result.pending).toHaveLength(1);
+    expect(result.pending[0].content).toContain("dark roast");
+  });
+
+  it("keeps pending apart from graduated results rather than merging them", () => {
+    // A pending fact has been through none of the pipeline: not deduplicated,
+    // not reconciled, possibly contradicting what is already known. It must be
+    // findable without being presented as knowledge of equal standing.
+    insertFact("I prefer instant coffee", "preferences");
+    capture("The user prefers dark roast coffee");
+
+    const result = searchMod.hybridSearch(db, "coffee");
+
+    expect(result.results).toHaveLength(1);
+    expect(result.results[0].fact.content).toContain("instant");
+    expect(result.pending).toHaveLength(1);
+    expect(result.pending[0].content).toContain("dark roast");
+  });
+
+  it("drops a fact from pending once a consolidation claims it", () => {
+    capture("The user prefers dark roast coffee");
+    expect(searchMod.hybridSearch(db, "coffee").pending).toHaveLength(1);
+
+    claimForConsolidation(db, "some-consolidation-id");
+
+    expect(searchMod.hybridSearch(db, "coffee").pending).toHaveLength(0);
+  });
+
+  it("surfaces an unconsolidated fact from a session that already ended", () => {
+    // This is the fact most at risk of being lost: get_session_context only sees
+    // the current session, so without this an orphaned capture is unreachable by
+    // any tool until something consolidates it.
+    capture("The user prefers dark roast coffee"); // its own session, never resumed
+
+    expect(searchMod.hybridSearch(db, "coffee").pending).toHaveLength(1);
+  });
+
+  it("returns an empty pending list rather than omitting the field", () => {
+    insertFact("I prefer instant coffee", "preferences");
+    expect(searchMod.hybridSearch(db, "coffee").pending).toEqual([]);
+  });
+
+  it("does not let pending facts inflate the retrieval quality signals", () => {
+    // Coverage describes how well the knowledge base answered. A pending fact is
+    // not in it yet, so counting it would claim coverage the store lacks.
+    capture("The user prefers dark roast coffee");
+    const result = searchMod.hybridSearch(db, "coffee");
+    expect(result.coverage_estimate).toBe(0);
   });
 });
