@@ -51,6 +51,16 @@ export function defaultServerConfig(): ServerConfig {
     // consistent with — schema-congruence needs a schema to pre-exist, and an
     // empty vocabulary offers nothing to match against.
     domains: CORE_DOMAINS.map((d) => ({ name: d.name, subdomains: d.subdomains })),
+    capture: {
+      ...DEFAULT_CONFIG.capture,
+      // Generated from the registry rather than hand-listed: importance is a
+      // property of a domain, and a second copy here would drift from it. This
+      // shipped as {} — so the config layer of the documented resolution order
+      // never fired, and every fact scored 0.5 regardless of domain.
+      importance_defaults: Object.fromEntries(
+        CORE_DOMAINS.map((d) => [d.name, d.importance]),
+      ),
+    },
   };
 }
 

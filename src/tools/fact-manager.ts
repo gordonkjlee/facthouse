@@ -8,7 +8,7 @@ import type { Db } from "../db/connection.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { SessionFact } from "../types/data.js";
-import { DEFAULT_IMPORTANCE, type CaptureConfig, type ServerConfig } from "../types/config.js";
+import { type CaptureConfig, type ServerConfig } from "../types/config.js";
 import type { SessionManager } from "./session-manager.js";
 import type { IntelligenceProvider } from "../intelligence/types.js";
 import {
@@ -134,7 +134,17 @@ export function createFactManager(
         source_event_id: input.source_event_id ?? null,
         domain_hint: input.domain_hint ?? null,
         confidence: input.confidence ?? defaultConfidence,
-        importance: importance ?? DEFAULT_IMPORTANCE,
+        // Left null when nothing knows yet — deliberately, and this is the
+        // whole point. Stamping DEFAULT_IMPORTANCE here made the column
+        // non-null forever, and graduation resolves
+        // `importance ?? importance_signal ?? domain default ?? baseline`.
+        // A non-null value short-circuits that chain at its first link, so both
+        // the provider's LLM judgement and the domain's default were unreachable
+        // for every explicit capture: everything scored 0.5, and "The user is
+        // called Alex Rivera" ranked level with "Minor trivial detail".
+        // resolveImportance already says "let downstream logic decide" — this
+        // lets it.
+        importance,
         source_tool: session.source_tool,
         capture_context: input.capture_context ?? null,
         // Facts captured deliberately by the AI/user via this tool are

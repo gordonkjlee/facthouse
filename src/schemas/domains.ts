@@ -46,6 +46,20 @@ export interface DomainDefinition {
    */
   patterns: RegExp[];
   subdomains: string[];
+  /**
+   * Default importance for a fact in this domain, when nothing better says.
+   *
+   * Resolution order is: the calling assistant's explicit value, then a
+   * provider's signal, then this, then 0.5. This layer existed in the spec and
+   * in the config type but shipped empty, so in practice everything scored 0.5 —
+   * "The user is called Alex Rivera" ranked exactly level with "Minor trivial
+   * detail". Ranked retrieval is the escape from gating on a label, and it is a
+   * no-op while every key is identical.
+   *
+   * Calibrated against what capture_fact already tells assistants: "High for
+   * medical/safety, low for casual preferences."
+   */
+  importance: number;
 }
 
 /** Where a fact lands when no core pattern matches and no classifier routed it. */
@@ -70,6 +84,7 @@ export const CORE_DOMAINS: DomainDefinition[] = [
       /\b(allerg|medicat|doctor|diagnosis|condition|symptom|treatment|prescription|health|hospital|clinic|vaccine|blood|surgery|therapy|illness|disease)/i,
     ],
     subdomains: [],
+    importance: 0.9, // safety information; a missed allergy is the costliest error here
   },
   {
     name: "profile",
@@ -84,6 +99,7 @@ export const CORE_DOMAINS: DomainDefinition[] = [
       /\b(the user|they) (lives?|moved|grew up|was born)\b/i,
     ],
     subdomains: [],
+    importance: 0.85, // identity is what every conversation is grounded in
   },
   {
     // Ahead of preferences deliberately: a relationship noun says who a fact is
@@ -95,6 +111,7 @@ export const CORE_DOMAINS: DomainDefinition[] = [
       /\b(partner|wife|husband|friend|colleague|boss|sister|brother|mother|father|son|daughter|neighbour|neighbor)\b/i,
     ],
     subdomains: [],
+    importance: 0.6, // relationships matter, but a given fact about someone rarely decides an answer
   },
   {
     name: "preferences",
@@ -103,6 +120,7 @@ export const CORE_DOMAINS: DomainDefinition[] = [
       /\b(prefers?|favourites?|favorites?|likes?|loves?|hates?|dislikes?|enjoys?|can't stand|would rather|rather)\b/i,
     ],
     subdomains: [],
+    importance: 0.4, // the point of the product, and individually low-stakes — a wrong coffee is recoverable
   },
   {
     name: "work",
@@ -111,6 +129,7 @@ export const CORE_DOMAINS: DomainDefinition[] = [
       /\b(project|sprint|deploy|meeting|team|company|client|deadline|standup|release|merge|repository|codebase)\b/i,
     ],
     subdomains: [],
+    importance: 0.6, // consequential in context, rarely urgent out of it
   },
   {
     name: DEFAULT_DOMAIN,
@@ -119,6 +138,7 @@ export const CORE_DOMAINS: DomainDefinition[] = [
     // something a fact matches into.
     patterns: [],
     subdomains: [],
+    importance: 0.5, // by definition uncategorised, so it gets the neutral baseline
   },
 ];
 
