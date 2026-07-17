@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.8.0](https://github.com/gordonkjlee/openmemory/compare/v0.7.0...v0.8.0) (2026-07-17)
+
+
+### Features
+
+* importance-driven retrieval; remove the domain-named read tools ([#99](https://github.com/gordonkjlee/openmemory/issues/99)) ([3eb1086](https://github.com/gordonkjlee/openmemory/commit/3eb1086d1150ef82e5bd5a8a4dc9f6f9393bda69))
+* no hardcoded categories, no hardcoded rules ([#97](https://github.com/gordonkjlee/openmemory/issues/97)) ([f6aa656](https://github.com/gordonkjlee/openmemory/commit/f6aa6568b1d0f5c8e27cd61076e9c11e27446e74))
+* the engine ships no vocabulary ([#96](https://github.com/gordonkjlee/openmemory/issues/96)) ([962ea84](https://github.com/gordonkjlee/openmemory/commit/962ea8448dd7f488a61c56e93e51addb75d70b97))
+* **tools:** get_people becomes get_entity — retrieve any subject, not just people ([#98](https://github.com/gordonkjlee/openmemory/issues/98)) ([1cbfba0](https://github.com/gordonkjlee/openmemory/commit/1cbfba036507214de0a94ee7017e69496c2f912e))
+
+
+### Bug Fixes
+
+* **intelligence:** make importance mean something ([#95](https://github.com/gordonkjlee/openmemory/issues/95)) ([0d1ab2f](https://github.com/gordonkjlee/openmemory/commit/0d1ab2fd9faad02f8ac368ec42751dfbb88b07b6))
+* **tools:** stop get_profile dropping the user's name ([#93](https://github.com/gordonkjlee/openmemory/issues/93)) ([bba394a](https://github.com/gordonkjlee/openmemory/commit/bba394a3f5d76b0744801f6b6d9462f7e5ea65d1))
+
 ## [0.7.0](https://github.com/gordonkjlee/openmemory/compare/v0.6.0...v0.7.0) (2026-07-17)
 
 
