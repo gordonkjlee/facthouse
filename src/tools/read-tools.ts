@@ -142,29 +142,43 @@ export function registerReadTools(
   );
 
   // -----------------------------------------------------------------
-  // get_people
+  // get_entity
   // -----------------------------------------------------------------
   server.tool(
-    "get_people",
-    `Get everything known about a person in the user's life — who they are, ` +
-      `their relationship to the user, facts about them, and their connections ` +
-      `to other people.\n\n` +
-      `Call this WHENEVER a person is named or alluded to and knowing them ` +
-      `would improve your answer — including indirect references like "my ` +
-      `partner", "my manager", "her birthday". Call it before advising on ` +
-      `anything involving that person: a gift, a message, a plan, a conflict.\n\n` +
-      `Look them up before asking the user who someone is — you may already ` +
-      `know.`,
+    "get_entity",
+    `Get everything known about a named thing — who or what it is, the facts ` +
+      `about it, and how it connects to other things.\n\n` +
+      `A "thing" is any subject this store holds knowledge about: a person, an ` +
+      `organisation, a project, a place, a product, a system — whatever the ` +
+      `store is used for. This is the "tell me about X" tool.\n\n` +
+      `Call this WHENEVER a named thing is mentioned or alluded to and knowing ` +
+      `it would improve your answer — including indirect references like "my ` +
+      `manager", "the Helsinki office", "the payments service". Call it before ` +
+      `advising on anything involving that thing, and before asking who or what ` +
+      `something is — you may already know.`,
     {
       name: z
         .string()
         .describe(
-          "Person's name. Resolve a relationship reference to a name first " +
+          "The thing's name. Resolve an indirect reference to a name first " +
             "if you can (e.g. via get_context or a prior fact).",
+        ),
+      type: z
+        .string()
+        .optional()
+        .describe(
+          "Optional type filter, only for disambiguation when one name refers " +
+            "to two different things (a person and a project both called " +
+            "'Mercury'). Types are whatever this store uses — omit it to match " +
+            "any type, which is almost always what you want.",
         ),
     },
     (args) => {
-      const entity = findEntity(db, args.name, "person");
+      // Type omitted matches any entity type. The engine ships no entity
+      // vocabulary either — a corporate store's subjects are systems and
+      // suppliers, not people — so defaulting to a fixed type would make most
+      // subjects invisible to the one tool meant to find them.
+      const entity = findEntity(db, args.name, args.type);
 
       if (!entity) {
         return {
