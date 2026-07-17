@@ -8,7 +8,7 @@ import type { Db } from "../db/connection.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { SessionFact } from "../types/data.js";
-import { DEFAULT_IMPORTANCE, type CaptureConfig, type ServerConfig } from "../types/config.js";
+import { type CaptureConfig, type ServerConfig } from "../types/config.js";
 import type { SessionManager } from "./session-manager.js";
 import type { IntelligenceProvider } from "../intelligence/types.js";
 import {
