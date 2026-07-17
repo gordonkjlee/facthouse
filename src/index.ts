@@ -93,6 +93,7 @@ const triggers = new Set(config.consolidation.triggers);
 // the config.json choice (kill-switch, e.g. OPENMEMORY_PROVIDER=heuristic).
 const heuristic = createHeuristicProvider();
 const intelligence = createIntelligenceProvider(config.intelligence, {
+  vocabulary: config.domains ?? [],
   server: server.server,
   heuristic,
 });

@@ -12,6 +12,32 @@ export const DEFAULT_CONFIDENCE = 0.7;
 export interface DomainDef {
   name: string;
   subdomains: string[];
+  /**
+   * What belongs here, in one short clause. Shown to a classifier so it can
+   * route accurately without guessing what a name means.
+   */
+  description?: string;
+  /**
+   * Keyword patterns for the fallback classifier, as regex source strings
+   * (matched case-insensitively). Only used when no LLM is available.
+   *
+   * Config rather than code because a vocabulary is not universal. A personal
+   * store routes on "allergic" and "partner"; a corporate one routes on
+   * "incident" and "SLA"; a research one on "dataset" and "hypothesis". The
+   * engine cannot know which, so it ships none and reads what it is given.
+   *
+   * Omit for a domain only an LLM should route to.
+   */
+  patterns?: string[];
+  /**
+   * Default importance for facts in this domain (0–1), when the assistant gives
+   * no explicit value and no provider signals one.
+   *
+   * Also not universal: a missed allergy is the costliest error in a personal
+   * store; a missed SLA breach is the costliest in a corporate one. Whoever owns
+   * the vocabulary owns its calibration.
+   */
+  importance?: number;
 }
 
 /** Temporal mode configuration. */
@@ -31,8 +57,10 @@ export type IntelligenceProviderType = "heuristic" | "sampling" | "cli" | "api";
 export interface CaptureConfig {
   /** Default confidence when the AI doesn't specify (0.0–1.0). */
   default_confidence: number;
-  /** Domain-level importance defaults. Falls back to DEFAULT_IMPORTANCE. */
-  importance_defaults: Record<string, number>;
+  // importance_defaults removed: importance is declared per-domain on DomainDef.
+  // Two homes for one value is how they drift — and the capture-side lookup keyed
+  // off a domain_hint that callers rarely pass and capture cannot know anyway,
+  // because the classifier has not run yet.
 }
 
 /** Event extraction configuration (D→I during consolidation). */
@@ -128,7 +156,6 @@ export interface ServerConfig {
 export const DEFAULT_CONFIG: Omit<ServerConfig, "storage" | "temporal"> = {
   capture: {
     default_confidence: DEFAULT_CONFIDENCE,
-    importance_defaults: {},
   },
   extraction: {
     enabled: true,

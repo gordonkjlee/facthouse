@@ -39,7 +39,7 @@ import {
   upsertEntityEdge,
 } from "../db/entities.js";
 import { ensureDomain } from "../db/domains.js";
-import { normaliseDomainName } from "../schemas/domains.js";
+import { importanceDefaults, normaliseDomainName } from "../schemas/domains.js";
 import { acquireLock, releaseLock } from "../db/consolidation-lock.js";
 
 // ---------------------------------------------------------------------------
@@ -71,8 +71,13 @@ export async function consolidate(
 ): Promise<ConsolidationResult> {
   const consolidationId = randomUUID();
   const extractionEnabled = config?.extraction?.enabled ?? false;
-  const importanceDefaults: Record<string, number> =
-    config?.capture?.importance_defaults ?? {};
+  // Read from the vocabulary the user configured, not a separate map. Importance
+  // is a property of a domain — a domain's calibration belongs with the domain,
+  // and a second list keyed by name is one more thing to drift. Whoever owns the
+  // vocabulary owns its calibration: a missed allergy is the costliest error in a
+  // personal store, a missed SLA breach in a corporate one, and the engine cannot
+  // know which it is looking at.
+  const defaultsByDomain = importanceDefaults(config?.domains ?? []);
 
   // Phase A: Acquire lock
   const locked = acquireLock(db, consolidationId);
@@ -301,7 +306,7 @@ export async function consolidate(
       const resolvedImportance =
         sessionFact.importance ??
         sessionFact.importance_signal ??
-        importanceDefaults[cf.domain] ??
+        defaultsByDomain[cf.domain] ??
         DEFAULT_IMPORTANCE;
       toGraduate.push({
         sessionFactId: cf.id,

@@ -28,6 +28,9 @@ const { applySchema } = await import("../../src/db/schema.js");
 const { createSessionManager } = await import("../../src/tools/session-manager.js");
 const { createFactManager } = await import("../../src/tools/fact-manager.js");
 const { createHeuristicProvider } = await import("../../src/intelligence/heuristic.js");
+const { STARTER_VOCABULARY } = await import(
+  "../../src/schemas/starter-vocabulary.js"
+);
 
 let db: Db;
 let root: string;
@@ -40,7 +43,7 @@ beforeEach(() => {
   const sessionManager = createSessionManager(db);
   sessionManager.startSession("latency-test", null);
   factManager = createFactManager(db, sessionManager, {
-    intelligence: createHeuristicProvider(),
+    intelligence: createHeuristicProvider(STARTER_VOCABULARY),
   });
 });
 

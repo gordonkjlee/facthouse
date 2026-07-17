@@ -7,6 +7,9 @@ const { applySchema } = await import("../../src/db/schema.js");
 const { createSession, insertEvent } = await import("../../src/db/sessions.js");
 const { consolidate } = await import("../../src/intelligence/consolidate.js");
 const { createHeuristicProvider } = await import("../../src/intelligence/heuristic.js");
+const { STARTER_VOCABULARY } = await import(
+  "../../src/schemas/starter-vocabulary.js"
+);
 
 let db: Db;
 let sessionId: string;
@@ -33,7 +36,7 @@ describe("consolidation watermark", () => {
       });
     }
 
-    const result = await consolidate(db, createHeuristicProvider(), {
+    const result = await consolidate(db, createHeuristicProvider(STARTER_VOCABULARY), {
       extraction: { enabled: true } as any,
     });
 
@@ -57,13 +60,13 @@ describe("consolidation watermark", () => {
       role: "user",
       content: "trigger event",
     });
-    await consolidate(db, createHeuristicProvider(), { extraction: { enabled: true } as any });
+    await consolidate(db, createHeuristicProvider(STARTER_VOCABULARY), { extraction: { enabled: true } as any });
 
     // Second run with NO new events. Watermark would be same as prev → skip insert.
-    await consolidate(db, createHeuristicProvider(), { extraction: { enabled: true } as any });
+    await consolidate(db, createHeuristicProvider(STARTER_VOCABULARY), { extraction: { enabled: true } as any });
 
     // Third run with NO new events — still skipped.
-    await consolidate(db, createHeuristicProvider(), { extraction: { enabled: true } as any });
+    await consolidate(db, createHeuristicProvider(STARTER_VOCABULARY), { extraction: { enabled: true } as any });
 
     const rows = db
       .prepare(`SELECT COUNT(*) AS n FROM consolidations`)
@@ -78,7 +81,7 @@ describe("consolidation watermark", () => {
       role: "user",
       content: "event one",
     });
-    await consolidate(db, createHeuristicProvider(), { extraction: { enabled: true } as any });
+    await consolidate(db, createHeuristicProvider(STARTER_VOCABULARY), { extraction: { enabled: true } as any });
 
     insertEvent(db, {
       mcp_session_id: sessionId,
@@ -92,7 +95,7 @@ describe("consolidation watermark", () => {
       role: "user",
       content: "event three",
     });
-    await consolidate(db, createHeuristicProvider(), { extraction: { enabled: true } as any });
+    await consolidate(db, createHeuristicProvider(STARTER_VOCABULARY), { extraction: { enabled: true } as any });
 
     const rows = db
       .prepare(`SELECT last_event_sequence FROM consolidations ORDER BY created_at ASC`)

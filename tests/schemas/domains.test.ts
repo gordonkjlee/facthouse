@@ -1,82 +1,84 @@
 /**
- * The domain taxonomy — core plus periphery.
+ * Domain mechanics.
  *
- * The core is defined in code and seeded on init because the read tools and the
- * fallback patterns depend on those exact names, and because a classifier needs
- * an existing vocabulary to be consistent with. Everything beyond the core is
- * open: a user's own assistant may create domains this file has never heard of,
- * and those must survive intact.
+ * This file used to assert a CORE registry — profile, preferences, medical,
+ * people, work, defined in code and called the base of the engine. It wasn't a
+ * base, it was a personal vocabulary: `medical` is meaningless to a corporate
+ * user and `work` says nothing when everything is work. The engine now ships one
+ * domain, `general`, and reads every other name from config.
  *
- * The rule these tests protect: a domain's spelling is canonicalised, but an
- * unrecognised domain is never coerced away. Coercion would discard the label
- * that made a fact distinctive — and it is precisely the facts that fit nothing
- * else which most need their own label.
+ * So these tests assert the *machinery* — canonicalisation, compiling a
+ * configured vocabulary, reading its calibration, steering a classifier toward
+ * what already exists. Not a vocabulary, because there isn't one to assert.
  */
 
 import { describe, it, expect } from "vitest";
+import type { DomainDef } from "../../src/types/config.js";
 
 const {
-  CORE_DOMAINS,
-  CORE_DOMAIN_NAMES,
-  ROUTABLE_CORE_NAMES,
   DEFAULT_DOMAIN,
-  isCoreDomain,
   normaliseDomainName,
+  routableNames,
   routableDomainList,
-  domainPromptGuide,
+  compilePatterns,
+  importanceDefaults,
   domainRoutingInstruction,
 } = await import("../../src/schemas/domains.js");
 
-describe("core registry", () => {
-  it("names every domain the read tools query", () => {
-    // get_profile, get_preferences and memory://profile query these by name; a
-    // core domain missing here is a tool that can never return anything.
-    for (const required of ["profile", "preferences", "medical", "people", "work"]) {
-      expect(CORE_DOMAIN_NAMES).toContain(required);
-    }
+/** A vocabulary that is deliberately not personal — the point of the exercise. */
+const CORPORATE: DomainDef[] = [
+  {
+    name: "incidents",
+    description: "outages, severities, postmortems",
+    subdomains: [],
+    patterns: ["\\b(incident|outage|sev\\d|postmortem)\\b"],
+    importance: 0.9,
+  },
+  {
+    name: "clients",
+    description: "accounts and their contacts",
+    subdomains: [],
+    patterns: ["\\b(client|account|contract)\\b"],
+    importance: 0.7,
+  },
+  { name: "general", subdomains: [] },
+];
+
+describe("the engine ships no vocabulary", () => {
+  it("knows exactly one domain by name, and it is the fallback", () => {
+    expect(DEFAULT_DOMAIN).toBe("general");
   });
 
-  it("includes the fallback domain but never routes to it", () => {
-    expect(CORE_DOMAIN_NAMES).toContain(DEFAULT_DOMAIN);
-    expect(ROUTABLE_CORE_NAMES).not.toContain(DEFAULT_DOMAIN);
-    expect(CORE_DOMAINS.find((d) => d.name === DEFAULT_DOMAIN)!.patterns).toEqual([]);
+  it("has no opinion about a vocabulary it was never given", () => {
+    expect(routableNames([])).toEqual([]);
+    expect(compilePatterns([])).toEqual([]);
+    expect(importanceDefaults([])).toEqual({});
   });
 
-  it("puts medical first so health facts win a first-match tie", () => {
-    expect(CORE_DOMAINS[0].name).toBe("medical");
-  });
-
-  it("ranks people above preferences so a fact about someone stays about them", () => {
-    expect(CORE_DOMAIN_NAMES.indexOf("people")).toBeLessThan(
-      CORE_DOMAIN_NAMES.indexOf("preferences"),
-    );
-  });
-
-  it("has no duplicate names", () => {
-    expect(new Set(CORE_DOMAIN_NAMES).size).toBe(CORE_DOMAIN_NAMES.length);
+  it("routes a corporate vocabulary as readily as a personal one", () => {
+    // The test that would have failed before: nothing in the engine knows what
+    // an incident is, and it does not need to.
+    expect(routableNames(CORPORATE)).toEqual(["incidents", "clients"]);
+    expect(importanceDefaults(CORPORATE)).toEqual({ incidents: 0.9, clients: 0.7 });
   });
 });
 
 describe("normaliseDomainName", () => {
-  it("passes a core domain through unchanged", () => {
-    expect(normaliseDomainName("preferences")).toBe("preferences");
-  });
-
-  it("keeps a domain outside the core rather than coercing it away", () => {
-    // The taxonomy is open beyond the core. A user's assistant knows their life
-    // better than this list does, and a fact that fits nothing else is the one
-    // whose label carries the most information — flattening it to `general`
-    // destroys exactly what made it worth keeping.
-    expect(normaliseDomainName("fitness")).toBe("fitness");
-    expect(normaliseDomainName("finance")).toBe("finance");
-    expect(isCoreDomain("fitness")).toBe(false);
+  it("passes a name through", () => {
+    expect(normaliseDomainName("incidents")).toBe("incidents");
   });
 
   it("merges spelling variants so one domain cannot exist twice", () => {
-    // Canonicalising spelling is not the same as coercing meaning.
-    expect(normaliseDomainName("Preferences")).toBe("preferences");
-    expect(normaliseDomainName("  MEDICAL  ")).toBe("medical");
+    expect(normaliseDomainName("Incidents")).toBe("incidents");
+    expect(normaliseDomainName("  CLIENTS  ")).toBe("clients");
     expect(normaliseDomainName("side projects")).toBe("side_projects");
+  });
+
+  it("keeps a domain it has never heard of", () => {
+    // With no shipped vocabulary, "never heard of" is the normal case: every
+    // domain is someone's. Coercing here would discard the only thing that made
+    // the fact distinctive.
+    expect(normaliseDomainName("sev1_postmortem")).toBe("sev1_postmortem");
   });
 
   it("falls back only when there is genuinely no value", () => {
@@ -87,59 +89,97 @@ describe("normaliseDomainName", () => {
   });
 
   it("is idempotent", () => {
-    expect(normaliseDomainName(normaliseDomainName("Fitness"))).toBe("fitness");
-    expect(normaliseDomainName(normaliseDomainName("Work"))).toBe("work");
+    expect(normaliseDomainName(normaliseDomainName("Incidents"))).toBe("incidents");
   });
 });
 
-describe("isCoreDomain", () => {
-  it("recognises core domains regardless of spelling", () => {
-    expect(isCoreDomain("work")).toBe(true);
-    expect(isCoreDomain("WORK")).toBe(true);
+describe("compilePatterns", () => {
+  it("compiles a configured vocabulary in its own order", () => {
+    // Order is precedence: whoever writes the config decides what wins a tie.
+    const compiled = compilePatterns(CORPORATE);
+    expect(compiled.map((c) => c.name)).toEqual(["incidents", "clients"]);
   });
 
-  it("does not claim a periphery domain as core", () => {
-    expect(isCoreDomain("health")).toBe(false);
+  it("skips domains with no patterns — only an LLM can route to those", () => {
+    const compiled = compilePatterns([
+      { name: "vibes", subdomains: [] },
+      ...CORPORATE,
+    ]);
+    expect(compiled.map((c) => c.name)).not.toContain("vibes");
+  });
+
+  it("never compiles the fallback — nothing routes to it", () => {
+    expect(compilePatterns(CORPORATE).map((c) => c.name)).not.toContain("general");
+  });
+
+  it("drops an invalid pattern rather than refusing to boot", () => {
+    // A typo in one domain's config must not stop the server starting. The cost
+    // is that domain routing poorly, not nothing working.
+    const compiled = compilePatterns([
+      { name: "broken", subdomains: [], patterns: ["([unclosed"] },
+      { name: "fine", subdomains: [], patterns: ["\\bworks\\b"] },
+    ]);
+    expect(compiled.map((c) => c.name)).toEqual(["fine"]);
+  });
+
+  it("matches case-insensitively", () => {
+    const [incidents] = compilePatterns(CORPORATE);
+    expect(incidents.patterns[0].test("A SEV1 OUTAGE occurred")).toBe(true);
+  });
+});
+
+describe("importanceDefaults", () => {
+  it("reads calibration from the vocabulary that declares it", () => {
+    expect(importanceDefaults(CORPORATE)).toEqual({ incidents: 0.9, clients: 0.7 });
+  });
+
+  it("omits a domain that declares none, leaving it to the baseline", () => {
+    expect(importanceDefaults([{ name: "clients", subdomains: [] }])).toEqual({});
+  });
+
+  it("keys on the canonical spelling", () => {
+    expect(
+      importanceDefaults([{ name: "Incidents", subdomains: [], importance: 0.9 }]),
+    ).toEqual({ incidents: 0.9 });
   });
 });
 
 describe("domainRoutingInstruction", () => {
-  it("names the core vocabulary so a classifier reuses rather than coins", () => {
-    const instruction = domainRoutingInstruction();
-    for (const name of CORE_DOMAIN_NAMES) expect(instruction).toContain(name);
+  it("names the vocabulary in use so a classifier reuses it", () => {
+    // The fragmentation control: a model shown "incidents" reuses it rather than
+    // coining "outages". Steering, not forbidding.
+    const instruction = domainRoutingInstruction(CORPORATE);
+    expect(instruction).toContain("incidents");
+    expect(instruction).toContain("clients");
   });
 
-  it("names domains already in use, which is what keeps the vocabulary stable", () => {
-    // Steering reuse is the fragmentation control: a model shown "medical"
-    // reuses it instead of coining "health". Nothing forbids a new label.
-    const instruction = domainRoutingInstruction(["fitness", "finance"]);
-    expect(instruction).toContain("fitness");
-    expect(instruction).toContain("finance");
+  it("includes each domain's description so it routes on meaning", () => {
+    expect(domainRoutingInstruction(CORPORATE)).toContain("outages, severities, postmortems");
   });
 
-  it("permits a genuinely new domain rather than closing the set", () => {
-    expect(domainRoutingInstruction()).toMatch(/invent a new domain|new domain/i);
+  it("says so plainly when a store has no vocabulary yet", () => {
+    // A legitimate state, not an error: the engine ships none, so the classifier
+    // is choosing this store's vocabulary from scratch.
+    expect(domainRoutingInstruction([])).toMatch(/no domains yet/i);
   });
 
-  it("does not repeat a domain already in the core", () => {
-    const instruction = domainRoutingInstruction(["medical", "fitness"]);
-    expect(instruction.match(/medical/g)!.length).toBeLessThanOrEqual(2); // list + guide
+  it("permits a new domain rather than closing the set", () => {
+    // With no shipped vocabulary, forbidding new labels would route nothing.
+    expect(domainRoutingInstruction(CORPORATE)).toMatch(/invent a new domain/i);
+  });
+
+  it("never offers the fallback as a routing destination", () => {
+    const listed = domainRoutingInstruction(CORPORATE).split("Invent")[0];
+    expect(listed).not.toContain("general (");
   });
 });
 
-describe("prompt helpers", () => {
-  it("derive from the registry rather than repeating it", () => {
-    for (const name of ROUTABLE_CORE_NAMES) {
-      expect(routableDomainList()).toContain(name);
-      expect(domainPromptGuide()).toContain(name);
-    }
+describe("routableDomainList", () => {
+  it("lists the configured names for prose", () => {
+    expect(routableDomainList(CORPORATE)).toBe("incidents, clients");
   });
 
-  it("offers the fallback to a classifier but not to callers hinting a domain", () => {
-    expect(routableDomainList()).not.toContain(DEFAULT_DOMAIN);
-  });
-
-  it("describes each core domain in the guide", () => {
-    for (const d of CORE_DOMAINS) expect(domainPromptGuide()).toContain(d.description);
+  it("is empty when nothing is configured", () => {
+    expect(routableDomainList([])).toBe("");
   });
 });

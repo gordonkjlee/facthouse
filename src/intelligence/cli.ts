@@ -34,6 +34,7 @@ import path from "node:path";
 import type { IntelligenceProvider, ExtractedFact } from "./types.js";
 import { createHeuristicProvider } from "./heuristic.js";
 import { domainRoutingInstruction } from "../schemas/domains.js";
+import type { DomainDef } from "../types/config.js";
 
 // ---------------------------------------------------------------------------
 // Config
@@ -391,6 +392,13 @@ const STAGE_4_SCHEMA = {
 export function createCliProvider(
   userOpts: CliProviderOpts = {},
   fallback: IntelligenceProvider = createHeuristicProvider(),
+  /**
+   * The store's configured vocabulary, named in the routing prompt so the model
+   * reuses "medical" rather than coining "health". Empty means the model is
+   * choosing this store's vocabulary from scratch, which is a legitimate state:
+   * the engine ships none.
+   */
+  vocabulary: DomainDef[] = [],
 ): IntelligenceProvider {
   const opts: Required<CliProviderOpts> = {
     // Resolved lazily below — kept here only to satisfy the Required shape.
@@ -472,7 +480,7 @@ export function createCliProvider(
           "personal details, medical info, relationships, work context, opinions, decisions. " +
           "Ignore ephemeral statements (current tasks, transient mood). " +
           "Each fact must be a complete, self-contained sentence — rewrite from the source as needed. " +
-          `${domainRoutingInstruction()} ` +
+          `${domainRoutingInstruction(vocabulary)} ` +
           "optional subdomain, confidence 0-1, importance 0-1, and any mentioned entities " +
           "(people, places, orgs, substances, foods). " +
           "Only extract facts from candidate_events. " +

@@ -9,10 +9,11 @@ import type {
   ExtractedEntity,
 } from "./types.js";
 import {
-  CORE_DOMAINS,
   DEFAULT_DOMAIN,
+  compilePatterns,
   normaliseDomainName,
 } from "../schemas/domains.js";
+import type { DomainDef } from "../types/config.js";
 
 // ---------------------------------------------------------------------------
 // Shared normalisation
@@ -33,8 +34,21 @@ export function normaliseForDedup(content: string): string {
 // Domain classification keywords
 // ---------------------------------------------------------------------------
 
-/** Classify a single content string into a domain. */
-function classifyContent(content: string, domainHint: string | null): { domain: string; subdomain: string | null } {
+/**
+ * Classify a single content string into a domain, using the vocabulary this
+ * store was configured with.
+ *
+ * The engine knows no domain names. `matchers` comes from the user's config —
+ * personal, corporate, whatever they wrote. With none configured, everything
+ * lands in the fallback, which is the honest answer: a keyword classifier with
+ * no keywords cannot route, and inventing a vocabulary here is what made this
+ * a personal-only product.
+ */
+function classifyContent(
+  content: string,
+  domainHint: string | null,
+  matchers: Array<{ name: string; patterns: RegExp[] }>,
+): { domain: string; subdomain: string | null } {
   // Explicit hint takes priority
   // A hint is honoured as given, including a domain outside the core — the
   // taxonomy is open. Only its spelling is canonicalised.
@@ -42,10 +56,9 @@ function classifyContent(content: string, domainHint: string | null): { domain: 
     return { domain: normaliseDomainName(domainHint), subdomain: null };
   }
 
-  // Registry order is match order; first match wins. Only core domains have
-  // patterns — the fallback cannot route to a periphery domain it has never
-  // seen, so those require an LLM classifier.
-  for (const { name, patterns } of CORE_DOMAINS) {
+  // Vocabulary order is match order; first match wins, so whoever wrote the
+  // config decides precedence.
+  for (const { name, patterns } of matchers) {
     for (const pattern of patterns) {
       if (pattern.test(content)) {
         return { domain: name, subdomain: null };
@@ -188,11 +201,15 @@ const EVENT_FACT_PATTERNS = [
 // Provider implementation
 // ---------------------------------------------------------------------------
 
-export function createHeuristicProvider(): IntelligenceProvider {
+export function createHeuristicProvider(
+  /** The store's configured vocabulary. Empty means everything routes to the fallback. */
+  vocabulary: DomainDef[] = [],
+): IntelligenceProvider {
+  const matchers = compilePatterns(vocabulary);
   return {
     async classifyFacts(facts, _sessionContext) {
       return facts.map((f) => {
-        const { domain, subdomain } = classifyContent(f.content, f.domain_hint);
+        const { domain, subdomain } = classifyContent(f.content, f.domain_hint, matchers);
         return {
           id: f.id,
           content: f.content,
@@ -234,7 +251,7 @@ export function createHeuristicProvider(): IntelligenceProvider {
           if (match) {
             // Use the matched phrase, not the full event text (reduces noise)
             const factContent = match[0];
-            const { domain } = classifyContent(factContent, null);
+            const { domain } = classifyContent(factContent, null, matchers);
             extracted.push({
               content: factContent,
               domain_hint: domain !== "general" ? domain : null,

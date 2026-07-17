@@ -296,7 +296,9 @@ async function runConsolidate() {
   // OPENMEMORY_SUBPROCESS guard at the top of main() prevents recursion when
   // this runs inside a provider subprocess.
   const config = loadConfig(dataDir);
-  const provider = createIntelligenceProvider(config.intelligence);
+  const provider = createIntelligenceProvider(config.intelligence, {
+    vocabulary: config.domains ?? [],
+  });
   await consolidateInProcess(dataDir, provider, config);
 }
 
