@@ -24,6 +24,7 @@ import type { Db } from "../db/connection.js";
 import type { Fact } from "../types/data.js";
 import { structuredSearch } from "../search/index.js";
 import { getLatestSummarised } from "../db/consolidations.js";
+import { profileFacts } from "../search/profile.js";
 
 export const PROFILE_URI = "memory://profile";
 export const BRIEFING_URI = "memory://briefing";
@@ -36,13 +37,6 @@ const THREADS_LIMIT = 5;
 // ---------------------------------------------------------------------------
 // Content
 // ---------------------------------------------------------------------------
-
-/** Identity facts, most important first. */
-function profileFacts(db: Db, limit: number): Fact[] {
-  return structuredSearch(db, { domain: "profile", limit: 200 })
-    .sort((a, b) => b.importance - a.importance)
-    .slice(0, limit);
-}
 
 function bullet(f: Fact): string {
   return `- ${f.content}`;

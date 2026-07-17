@@ -11,6 +11,7 @@ import { getFactsByEntity } from "../db/facts.js";
 import { getDomains } from "../db/domains.js";
 import { getStats } from "../db/stats.js";
 import { routableDomainList } from "../schemas/domains.js";
+import { profileFacts } from "../search/profile.js";
 
 // ---------------------------------------------------------------------------
 // Registration
@@ -79,7 +80,12 @@ export function registerReadTools(
       `say so rather than guessing, and capture what you learn.`,
     {},
     () => {
-      const facts = structuredSearch(db, { domain: "profile" });
+      // Shared with memory://profile so the two cannot disagree about what "the
+      // profile" is. They already had: this tool ran structuredSearch's default
+      // limit of 20 ordered by created_at, so it returned the newest profile
+      // facts and never looked at importance — dropping the user's name once
+      // more than 20 profile facts existed, while the resource still showed it.
+      const facts = profileFacts(db);
 
       return {
         content: [
