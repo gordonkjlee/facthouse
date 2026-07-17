@@ -17,7 +17,6 @@ import {
   linkFactSource,
 } from "../db/session-facts.js";
 import { consolidate, type ConsolidationResult } from "../intelligence/consolidate.js";
-import { routableDomainList } from "../schemas/domains.js";
 
 // ---------------------------------------------------------------------------
 // Public interface
@@ -71,22 +70,22 @@ export function createFactManager(
   sessionManager: SessionManager,
   opts?: FactManagerOpts,
 ): FactManager {
-  const importanceDefaults = opts?.captureConfig?.importance_defaults ?? {};
   const defaultConfidence = opts?.captureConfig?.default_confidence ?? 0.7;
   const linkCount = opts?.autoLinkEvents ?? 5;
   const intelligence = opts?.intelligence;
   const serverConfig = opts?.serverConfig;
 
-  /** Resolve importance from: explicit > domain default > global default. */
-  function resolveImportance(
-    explicit: number | null | undefined,
-    domainHint: string | null | undefined,
-  ): number | null {
-    if (explicit != null) return explicit;
-    if (domainHint && domainHint in importanceDefaults) {
-      return importanceDefaults[domainHint];
-    }
-    return null; // let the DB default or downstream logic decide
+  /**
+   * Importance at capture is whatever the caller stated, or nothing.
+   *
+   * Capture cannot know a fact's domain — the classifier has not run — so it
+   * cannot apply a domain's default. It used to try, keyed on the caller's
+   * `domain_hint`, which callers rarely pass. Everything else resolves at
+   * graduation, where the domain is known. Null means "not scored yet", which
+   * is true.
+   */
+  function resolveImportance(explicit: number | null | undefined): number | null {
+    return explicit ?? null;
   }
 
   /** Auto-link to the last N events in the session as contextual sources. */
@@ -125,7 +124,7 @@ export function createFactManager(
         throw new Error("Fact content must not be empty.");
       }
 
-      const importance = resolveImportance(input.importance, input.domain_hint);
+      const importance = resolveImportance(input.importance);
 
       const fact = insertSessionFact(db, {
         session_id: session.id,
@@ -217,7 +216,10 @@ export function createFactManager(
             .string()
             .optional()
             .describe(
-              `Suggested domain (${routableDomainList()}) — or any other that fits better`,
+              "Suggested domain. Domains are whatever this store uses, not a " +
+                "fixed list — call get_schemas to see them, reuse an existing one " +
+                "where it fits, and propose a new short lowercase noun when none " +
+                "does. Omit it and the server will classify.",
             ),
           confidence: z
             .number()

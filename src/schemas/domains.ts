@@ -1,172 +1,50 @@
 /**
- * The domain taxonomy — core definitions, and the rules for extending beyond them.
+ * Domain mechanics. **The engine ships no vocabulary.**
  *
- * The model is **core plus periphery**:
+ * There is exactly one built-in domain: `general`, the fallback a fact lands in
+ * when nothing routes it. Everything else — which domains exist, what they mean,
+ * how the fallback classifier recognises them, how important their facts are —
+ * is data, supplied by the user's config and grown at runtime by whatever
+ * classifies.
  *
- *   - A small **core** (profile, preferences, medical, people, work) is defined
- *     here and seeded on init. The read tools and the fallback classifier depend
- *     on these exact names, and a schema needs to pre-exist for a new fact to be
- *     judged congruent with it — an empty vocabulary gives a classifier nothing
- *     to be consistent with.
- *   - An open **periphery**: the calling LLM or a user's config may create any
- *     other domain, and the server records it. The user's own assistant knows
- *     their life better than a fixed list does, and which categories are worth
- *     having is personal — an expert's categories in their own field are as
- *     sharp as anyone's basic-level ones.
+ * This file used to hold five domains called CORE: profile, preferences,
+ * medical, people, work. That was a personal vocabulary presented as a universal
+ * base, and it does not survive the question "what does a corporate user do with
+ * `medical`, and what does `work` mean when everything is work?" It doesn't. A
+ * research store wants papers, experiments, datasets; a corporate one wants
+ * clients, incidents, contracts. There is no universal core — and the word
+ * "core" was what disguised a preset as an invariant.
  *
- * This file is the single definition of the core. Every consumer derives from
- * it: the providers' prompts, the fallback's keyword signals, and the tool
- * descriptions. The list previously lived in five places that had already
- * drifted — two called `general` a domain and three did not.
+ * The data model said so before any of this was written:
  *
- * **A domain is a hint, not a gate.** An unrecognised domain is never discarded
- * or coerced into a bucket: it is recorded as given. Labels are unstable by
- * nature — a classifier may answer "health" one run and "medical" the next,
- * exactly as human categorisers disagree with themselves on borderline items —
- * so nothing that must be retrievable may depend on the label matching exactly.
- * See docs/design/data-model.md § Domains.
+ *   > Domains are data, not code. [...] No prescribed defaults. The user's LLM
+ *   > knows their life better than we do.
+ *
+ * What stays here is the machinery that is genuinely universal: the fallback
+ * domain, canonicalisation, and the instruction that steers a classifier toward
+ * the vocabulary that already exists rather than coining a synonym for it.
  */
 
-export interface DomainDefinition {
-  name: string;
-  /** Guides a classifier's routing decision. Keep it one short clause. */
-  description: string;
-  /**
-   * Keyword signals for the heuristic fallback, which runs when no LLM is
-   * available. First match wins across domains in registry order.
-   *
-   * Patterns must match how facts are actually written. `capture_fact` is called
-   * by an assistant recording a fact about its user, so content arrives in the
-   * third person ("The user prefers dark roast"), not the first ("I prefer dark
-   * roast"). Verbs therefore need their -s form: `prefers?`, not `prefer` —
-   * `\bprefer\b` does not match "prefers".
-   *
-   * Periphery domains have no patterns: the fallback cannot invent keywords for
-   * a domain it has never heard of, so only an LLM can route to them.
-   */
-  patterns: RegExp[];
-  subdomains: string[];
-  /**
-   * Default importance for a fact in this domain, when nothing better says.
-   *
-   * Resolution order is: the calling assistant's explicit value, then a
-   * provider's signal, then this, then 0.5. This layer existed in the spec and
-   * in the config type but shipped empty, so in practice everything scored 0.5 —
-   * "The user is called Alex Rivera" ranked exactly level with "Minor trivial
-   * detail". Ranked retrieval is the escape from gating on a label, and it is a
-   * no-op while every key is identical.
-   *
-   * Calibrated against what capture_fact already tells assistants: "High for
-   * medical/safety, low for casual preferences."
-   */
-  importance: number;
-}
-
-/** Where a fact lands when no core pattern matches and no classifier routed it. */
-export const DEFAULT_DOMAIN = "general";
+import type { DomainDef } from "../types/config.js";
 
 /**
- * The core, seeded on init. Registry order is match order for the fallback.
+ * Where a fact lands when nothing routes it.
  *
- * Medical is first deliberately: health information takes priority, and a false
- * positive there is safer than a miss.
- *
- * Known limitation: first-match-wins produces false positives like "prefers
- * chatting with their doctor" → medical. A scored classifier (rank all domains,
- * tie-break by margin) would be more robust. The LLM providers are the real
- * classifier; this fallback only has to be adequate.
+ * The only domain the engine knows by name. It is a fallback, never a
+ * destination: nothing routes *to* general, facts arrive there by default.
  */
-export const CORE_DOMAINS: DomainDefinition[] = [
-  {
-    name: "medical",
-    description: "health conditions, allergies, medication, treatment",
-    patterns: [
-      /\b(allerg|medicat|doctor|diagnosis|condition|symptom|treatment|prescription|health|hospital|clinic|vaccine|blood|surgery|therapy|illness|disease)/i,
-    ],
-    subdomains: [],
-    importance: 0.9, // safety information; a missed allergy is the costliest error here
-  },
-  {
-    name: "profile",
-    description: "core identity — name, demographics, location, occupation",
-    patterns: [
-      // First person, as a user states it.
-      /\b(my name is|i am|i'm|born|nationality|age|birthday|occupation|job title)\b/i,
-      /\bi (live|lives) in\b/i,
-      // Third person, as an AI records it about its user.
-      /\bthe user('s)? (is|was|has been)? ?(called|named)\b/i,
-      /\bthe user's (name|age|birthday|nationality|occupation|job title)\b/i,
-      /\b(the user|they) (lives?|moved|grew up|was born)\b/i,
-    ],
-    subdomains: [],
-    importance: 0.85, // identity is what every conversation is grounded in
-  },
-  {
-    // Ahead of preferences deliberately: a relationship noun says who a fact is
-    // about, which outranks a preference verb saying what it mentions. "My
-    // partner Robin loves sushi" is a fact about Robin.
-    name: "people",
-    description: "relationships and the people in the user's life",
-    patterns: [
-      /\b(partner|wife|husband|friend|colleague|boss|sister|brother|mother|father|son|daughter|neighbour|neighbor)\b/i,
-    ],
-    subdomains: [],
-    importance: 0.6, // relationships matter, but a given fact about someone rarely decides an answer
-  },
-  {
-    name: "preferences",
-    description: "likes, dislikes, favourites, habits",
-    patterns: [
-      /\b(prefers?|favourites?|favorites?|likes?|loves?|hates?|dislikes?|enjoys?|can't stand|would rather|rather)\b/i,
-    ],
-    subdomains: [],
-    importance: 0.4, // the point of the product, and individually low-stakes — a wrong coffee is recoverable
-  },
-  {
-    name: "work",
-    description: "employment, projects, teams, deadlines",
-    patterns: [
-      /\b(project|sprint|deploy|meeting|team|company|client|deadline|standup|release|merge|repository|codebase)\b/i,
-    ],
-    subdomains: [],
-    importance: 0.6, // consequential in context, rarely urgent out of it
-  },
-  {
-    name: DEFAULT_DOMAIN,
-    description: "anything that doesn't fit another domain",
-    // No patterns: this is where a fact lands when nothing matches, never
-    // something a fact matches into.
-    patterns: [],
-    subdomains: [],
-    importance: 0.5, // by definition uncategorised, so it gets the neutral baseline
-  },
-];
-
-/** Core domain names, including the fallback. */
-export const CORE_DOMAIN_NAMES: string[] = CORE_DOMAINS.map((d) => d.name);
-
-/** Core domains a classifier should route *to* — excludes the fallback. */
-export const ROUTABLE_CORE_NAMES: string[] = CORE_DOMAINS.filter(
-  (d) => d.name !== DEFAULT_DOMAIN,
-).map((d) => d.name);
-
-/** Is this one of the domains the read tools and fallback patterns depend on? */
-export function isCoreDomain(name: string): boolean {
-  return CORE_DOMAIN_NAMES.includes(normaliseDomainName(name));
-}
+export const DEFAULT_DOMAIN = "general";
 
 /**
  * Canonicalise a domain's spelling — case and whitespace only.
  *
- * This deliberately does **not** coerce an unrecognised domain into `general`.
- * The taxonomy is open beyond the core: "fitness" or "finance" from a user's own
- * assistant is a domain worth keeping, and a sink that discards the label the
- * classifier produced destroys exactly the information that made the fact
- * distinctive. Novel categories are the ones worth encoding distinctly, not the
- * ones worth flattening.
+ * Deliberately does not coerce an unrecognised domain into the fallback: with no
+ * shipped vocabulary, "unrecognised" is the normal case and every domain is
+ * someone's. The label a classifier chose is the most informative thing about a
+ * fact that fits nothing else; discarding it is the lossy step.
  *
- * What it does prevent is the same domain existing twice under different
- * spellings — `Preferences` and `preferences` are one domain, not two.
+ * What it does prevent is one domain existing twice under different spellings —
+ * `Preferences` and `preferences` are one domain, not two.
  */
 export function normaliseDomainName(name: string | null | undefined): string {
   if (!name) return DEFAULT_DOMAIN;
@@ -174,37 +52,91 @@ export function normaliseDomainName(name: string | null | undefined): string {
   return cleaned === "" ? DEFAULT_DOMAIN : cleaned;
 }
 
-/** Comma-separated core names for prose: "profile, preferences, ...". */
-export function routableDomainList(): string {
-  return ROUTABLE_CORE_NAMES.join(", ");
+/** Names from a configured vocabulary, canonicalised, excluding the fallback. */
+export function routableNames(vocabulary: DomainDef[]): string[] {
+  return vocabulary
+    .map((d) => normaliseDomainName(d.name))
+    .filter((n) => n !== DEFAULT_DOMAIN);
 }
 
-/** Pipe-separated core names, including the fallback. */
-export function domainPromptList(): string {
-  return CORE_DOMAIN_NAMES.join("|");
-}
-
-/** Core domains with descriptions, for prompting a classifier to route accurately. */
-export function domainPromptGuide(): string {
-  return CORE_DOMAINS.map((d) => `${d.name} (${d.description})`).join(", ");
+/** Comma-separated routable names for prose. Empty when none are configured. */
+export function routableDomainList(vocabulary: DomainDef[]): string {
+  return routableNames(vocabulary).join(", ");
 }
 
 /**
- * The routing instruction given to an LLM.
+ * Compile a configured vocabulary into matchers for the fallback classifier.
  *
- * `known` is the vocabulary that already exists in this store — the core plus
- * anything previously created. Naming it is what keeps the vocabulary stable:
- * a classifier shown "medical" reuses it instead of coining "health", which is
- * the drift that scatters related facts. Reuse is steered by telling the model
- * what exists, not by forbidding new labels.
+ * Order is the vocabulary's order: first match wins, so whoever writes the
+ * config decides precedence. Domains without patterns are skipped — only an LLM
+ * can route to those.
+ *
+ * An invalid regex is dropped rather than thrown: a typo in one domain's config
+ * must not stop the server booting. The cost is that one domain routing poorly,
+ * rather than nothing working at all.
  */
-export function domainRoutingInstruction(known: string[] = []): string {
-  const vocabulary = Array.from(new Set([...CORE_DOMAIN_NAMES, ...known]));
+export function compilePatterns(
+  vocabulary: DomainDef[],
+): Array<{ name: string; patterns: RegExp[] }> {
+  const compiled: Array<{ name: string; patterns: RegExp[] }> = [];
+  for (const domain of vocabulary) {
+    const name = normaliseDomainName(domain.name);
+    if (name === DEFAULT_DOMAIN || !domain.patterns?.length) continue;
+    const patterns: RegExp[] = [];
+    for (const source of domain.patterns) {
+      try {
+        patterns.push(new RegExp(source, "i"));
+      } catch {
+        console.error(
+          `[openmemory] ignoring an invalid pattern for domain "${name}": ${source}`,
+        );
+      }
+    }
+    if (patterns.length) compiled.push({ name, patterns });
+  }
+  return compiled;
+}
+
+/** Importance defaults declared by a vocabulary, keyed by canonical name. */
+export function importanceDefaults(
+  vocabulary: DomainDef[],
+): Record<string, number> {
+  const defaults: Record<string, number> = {};
+  for (const domain of vocabulary) {
+    if (typeof domain.importance === "number") {
+      defaults[normaliseDomainName(domain.name)] = domain.importance;
+    }
+  }
+  return defaults;
+}
+
+/**
+ * The routing instruction given to a classifier.
+ *
+ * `known` is the vocabulary that exists in this store right now — the config's
+ * domains plus anything previously created. Naming it is what keeps the
+ * vocabulary stable: a classifier shown "medical" reuses it instead of coining
+ * "health", the drift that scatters related facts across synonyms. Reuse is
+ * steered by showing what exists, never by forbidding new labels — with no
+ * shipped vocabulary, forbidding them would mean routing nothing at all.
+ */
+export function domainRoutingInstruction(known: DomainDef[] = []): string {
+  const described = known
+    .map((d) => {
+      const name = normaliseDomainName(d.name);
+      return { name, text: d.description ? `${name} (${d.description})` : name };
+    })
+    .filter((d) => d.name !== DEFAULT_DOMAIN)
+    .map((d) => d.text);
+
+  const vocabulary = described.length
+    ? `Domains already in use — reuse the exact spelling where one fits: ${described.join(", ")}. `
+    : `This store has no domains yet; you are choosing its vocabulary. `;
+
   return (
-    `Route each fact to one domain. Prefer an existing domain — reuse the exact ` +
-    `spelling: ${vocabulary.join(", ")}. ` +
-    `Core domains are ${domainPromptGuide()}. ` +
-    `Only invent a new domain when the fact genuinely fits none of them; if you ` +
-    `do, use a short lowercase noun. Never coin a synonym for a domain above.`
+    `Route each fact to one domain. ${vocabulary}` +
+    `Invent a new domain only when the fact genuinely fits none of them; if you ` +
+    `do, use a short lowercase noun. Never coin a synonym for a domain above. ` +
+    `Use "${DEFAULT_DOMAIN}" only when a fact belongs to no domain at all.`
   );
 }

@@ -10,7 +10,6 @@ import { findEntity, getEntityEdges } from "../db/entities.js";
 import { getFactsByEntity } from "../db/facts.js";
 import { getDomains } from "../db/domains.js";
 import { getStats } from "../db/stats.js";
-import { routableDomainList } from "../schemas/domains.js";
 import { profileFacts } from "../search/profile.js";
 
 // ---------------------------------------------------------------------------
@@ -43,12 +42,13 @@ export function registerReadTools(
         .string()
         .optional()
         .describe(
-          `Prioritise a domain (${routableDomainList()}, or any other in use). ` +
-            `This biases ranking rather than filtering: facts in the domain are ` +
-            `surfaced and rank higher, but a strong match elsewhere still appears. ` +
-            `Domains are assigned by a classifier and are approximate, so a hard ` +
-            `filter would hide a fact filed under a near-synonym. Omit it to ` +
-            `search everything.`,
+          `Prioritise a domain. Domains are whatever this store uses — they are ` +
+            `not a fixed list, so call get_schemas to see them rather than ` +
+            `guessing. This biases ranking rather than filtering: facts in the ` +
+            `domain are surfaced and rank higher, but a strong match elsewhere ` +
+            `still appears. Domains are assigned by a classifier and are ` +
+            `approximate, so a hard filter would hide a fact filed under a ` +
+            `near-synonym. Omit it to search everything.`,
         ),
     },
     (args) => {

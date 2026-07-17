@@ -18,7 +18,7 @@ describe("sampling intelligence provider", () => {
       getClientCapabilities: () => ({}), // no sampling field
       createMessage: vi.fn(),
     });
-    const provider = createSamplingProvider(server);
+    const provider = createSamplingProvider(server, createHeuristicProvider(STARTER_VOCABULARY), STARTER_VOCABULARY);
 
     const decision = await provider.reconcile(
       { id: "s1", content: "I prefer coffee" } as any,
@@ -34,7 +34,7 @@ describe("sampling intelligence provider", () => {
       getClientCapabilities: () => ({ sampling: {} }),
       createMessage: vi.fn().mockRejectedValue(new Error("transport error")),
     });
-    const provider = createSamplingProvider(server);
+    const provider = createSamplingProvider(server, createHeuristicProvider(STARTER_VOCABULARY), STARTER_VOCABULARY);
 
     const decision = await provider.reconcile(
       { id: "s1", content: "something new" } as any,
@@ -51,7 +51,7 @@ describe("sampling intelligence provider", () => {
         content: { type: "text", text: "sorry I don't speak JSON" },
       }),
     });
-    const provider = createSamplingProvider(server);
+    const provider = createSamplingProvider(server, createHeuristicProvider(STARTER_VOCABULARY), STARTER_VOCABULARY);
 
     const result = await provider.classifyFacts([
       { id: "s1", content: "I'm allergic to aspirin", domain_hint: null } as any,
@@ -72,7 +72,7 @@ describe("sampling intelligence provider", () => {
         },
       }),
     });
-    const provider = createSamplingProvider(server);
+    const provider = createSamplingProvider(server, createHeuristicProvider(STARTER_VOCABULARY), STARTER_VOCABULARY);
 
     const result = await provider.classifyFacts([
       { id: "s1", content: "I like tea", domain_hint: null } as any,
@@ -81,3 +81,5 @@ describe("sampling intelligence provider", () => {
     expect(result[0].subdomain).toBe("beverage");
   });
 });
+import { STARTER_VOCABULARY } from "../../src/schemas/starter-vocabulary.js";
+import { createHeuristicProvider } from "../../src/intelligence/heuristic.js";

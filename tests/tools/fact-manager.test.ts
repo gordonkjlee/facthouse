@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import type { Db } from "../../src/db/connection.js";
+import { STARTER_VOCABULARY } from "../../src/schemas/starter-vocabulary.js";
 
 
 const dbMod = await import("../../src/db/index.js");
@@ -82,26 +83,35 @@ describe("fact manager", () => {
     expect(() => factManager.captureFact({ content: "   " })).toThrow("must not be empty");
   });
 
-  it("resolves importance from domain defaults", () => {
+  it("does not guess importance from a domain hint at capture", () => {
+    // This previously asserted capture resolved a domain default from the
+    // caller's domain_hint. Two things were wrong with that. Capture cannot know
+    // a fact's domain — the classifier has not run, and a hint is a suggestion
+    // the classifier may overrule. And writing a value here made the column
+    // non-null, which short-circuited the resolution chain at graduation
+    // (`importance ?? importance_signal ?? domain default ?? baseline`), so a
+    // provider's LLM judgement and the domain's real default both became
+    // unreachable and every fact scored 0.5.
+    //
+    // A domain's importance now travels with the domain in the configured
+    // vocabulary and is applied at graduation. See
+    // tests/intelligence/importance.test.ts.
     const sessionManager = sessionMod.createSessionManager(db);
     sessionManager.startSession("test", null);
-    const factManager = factMod.createFactManager(db, sessionManager, {
-      captureConfig: { importance_defaults: { medical: 0.95 } },
-    });
+    const factManager = factMod.createFactManager(db, sessionManager, {});
 
     const fact = factManager.captureFact({
       content: "Allergic to aspirin",
       domain_hint: "medical",
     });
 
-    expect(fact!.importance).toBe(0.95);
+    expect(fact!.importance).toBeNull();
   });
 
   it("explicit importance overrides domain default", () => {
     const sessionManager = sessionMod.createSessionManager(db);
     sessionManager.startSession("test", null);
     const factManager = factMod.createFactManager(db, sessionManager, {
-      captureConfig: { importance_defaults: { medical: 0.95 } },
     });
 
     const fact = factManager.captureFact({
@@ -245,7 +255,7 @@ describe("get_session_context", () => {
     const sessionManager = sessionMod.createSessionManager(db);
     sessionManager.startSession("test", null);
     const factManager = factMod.createFactManager(db, sessionManager, {
-      intelligence: heuristicMod.createHeuristicProvider(),
+      intelligence: heuristicMod.createHeuristicProvider(STARTER_VOCABULARY),
     });
 
     factManager.captureFact({ content: "fact A", domain_hint: "profile" });

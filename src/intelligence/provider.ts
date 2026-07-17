@@ -21,6 +21,7 @@ import type {
 import { createHeuristicProvider } from "./heuristic.js";
 import { createSamplingProvider } from "./sampling.js";
 import { createCliProvider } from "./cli.js";
+import type { DomainDef } from "../types/config.js";
 
 const VALID_TYPES: readonly IntelligenceProviderType[] = [
   "heuristic",
@@ -54,6 +55,16 @@ export interface ProviderContext {
   server?: Server | null;
   /** Shared heuristic fallback instance. Created on demand if omitted. */
   heuristic?: IntelligenceProvider;
+  /**
+   * The store's configured domain vocabulary, for the fallback classifier.
+   *
+   * The engine ships none — a keyword classifier's keywords are not universal
+   * ("allergic" is noise in a corporate store), so they travel with the
+   * vocabulary in the user's config. Omitted means the fallback routes
+   * everything to `general`, which is the honest answer for a keyword matcher
+   * with no keywords.
+   */
+  vocabulary?: DomainDef[];
   /** Override the env used for the kill-switch (tests). Defaults to process.env. */
   env?: NodeJS.ProcessEnv;
 }
@@ -67,7 +78,8 @@ export function createIntelligenceProvider(
   config: IntelligenceConfig,
   ctx: ProviderContext = {},
 ): IntelligenceProvider {
-  const heuristic = ctx.heuristic ?? createHeuristicProvider();
+  const vocabulary = ctx.vocabulary ?? [];
+  const heuristic = ctx.heuristic ?? createHeuristicProvider(vocabulary);
   const type = resolveProviderType(config.provider, ctx.env);
 
   switch (type) {
@@ -83,13 +95,14 @@ export function createIntelligenceProvider(
           debug: c.debug,
         },
         heuristic,
+        vocabulary,
       );
     }
     case "sampling":
       // Sampling needs an MCP client to sample from. When there's no server
       // (CLI contexts) it can't work — fall back to heuristic.
       return ctx.server
-        ? createSamplingProvider(ctx.server, heuristic)
+        ? createSamplingProvider(ctx.server, heuristic, vocabulary)
         : heuristic;
     case "api":
       // The 'api' provider (direct Anthropic SDK) is not implemented yet —

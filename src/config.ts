@@ -9,7 +9,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { DEFAULT_CONFIG, type ServerConfig } from "./types/config.js";
-import { CORE_DOMAINS } from "./schemas/domains.js";
+import { STARTER_VOCABULARY } from "./schemas/starter-vocabulary.js";
 
 /** Filename expected in the data dir. */
 export const CONFIG_FILENAME = "config.json";
@@ -50,17 +50,13 @@ export function defaultServerConfig(): ServerConfig {
     // exist from first run. Seeding also gives a classifier something to be
     // consistent with — schema-congruence needs a schema to pre-exist, and an
     // empty vocabulary offers nothing to match against.
-    domains: CORE_DOMAINS.map((d) => ({ name: d.name, subdomains: d.subdomains })),
-    capture: {
-      ...DEFAULT_CONFIG.capture,
-      // Generated from the registry rather than hand-listed: importance is a
-      // property of a domain, and a second copy here would drift from it. This
-      // shipped as {} — so the config layer of the documented resolution order
-      // never fired, and every fact scored 0.5 regardless of domain.
-      importance_defaults: Object.fromEntries(
-        CORE_DOMAINS.map((d) => [d.name, d.importance]),
-      ),
-    },
+    // A starting vocabulary, written into the user's config.json at init as
+    // ordinary data. Not a core, not a preset: delete it, rewrite it, replace it
+    // with clients/incidents/contracts — the engine has no opinion and knows
+    // none of these names. Importance and the fallback classifier's patterns
+    // travel with each domain, because whoever owns the vocabulary owns its
+    // calibration.
+    domains: STARTER_VOCABULARY,
   };
 }
 

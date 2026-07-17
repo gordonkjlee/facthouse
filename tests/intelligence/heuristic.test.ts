@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { createHeuristicProvider } from "../../src/intelligence/heuristic.js";
 import type { SessionFact, Fact } from "../../src/types/data.js";
 import type { ClassifiedFact } from "../../src/intelligence/types.js";
+import { STARTER_VOCABULARY } from "../../src/schemas/starter-vocabulary.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -49,7 +50,7 @@ const fakeFact2 = (content: string, domain: string): Fact => ({
 // Tests
 // ---------------------------------------------------------------------------
 
-const provider = createHeuristicProvider();
+const provider = createHeuristicProvider(STARTER_VOCABULARY);
 
 describe("classifyFacts", () => {
   it("classifies preference content as 'preferences'", async () => {

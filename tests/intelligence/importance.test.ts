@@ -27,8 +27,10 @@ const { applySchema } = await import("../../src/db/schema.js");
 const { createSessionManager } = await import("../../src/tools/session-manager.js");
 const { createFactManager } = await import("../../src/tools/fact-manager.js");
 const { createHeuristicProvider } = await import("../../src/intelligence/heuristic.js");
+const { STARTER_VOCABULARY } = await import(
+  "../../src/schemas/starter-vocabulary.js"
+);
 const { defaultServerConfig } = await import("../../src/config.js");
-const { CORE_DOMAINS } = await import("../../src/schemas/domains.js");
 
 let db: Db;
 
@@ -36,7 +38,7 @@ function manager(configOverride?: Record<string, unknown>) {
   const sessionManager = createSessionManager(db);
   sessionManager.startSession("importance-test", null);
   return createFactManager(db, sessionManager, {
-    intelligence: createHeuristicProvider(),
+    intelligence: createHeuristicProvider(STARTER_VOCABULARY),
     serverConfig: { ...defaultServerConfig(), ...configOverride },
   });
 }
@@ -114,7 +116,7 @@ describe("importance resolution", () => {
     // Layer 2 is the user's calibration, not ours. Someone who does not care
     // about preferences should be able to say so.
     const fm = manager({
-      capture: { default_confidence: 0.7, importance_defaults: { preferences: 0.1 } },
+      domains: [{ name: "preferences", subdomains: [], patterns: ["prefers?"], importance: 0.1 }],
     });
     fm.captureFact({ content: "The user prefers dark roast coffee" });
     await fm.runConsolidate();
@@ -125,7 +127,7 @@ describe("importance resolution", () => {
   it("falls back to the baseline for a domain with no default", async () => {
     // A periphery domain the registry has never heard of.
     const fm = manager({
-      capture: { default_confidence: 0.7, importance_defaults: {} },
+      domains: [{ name: "medical", subdomains: [], patterns: ["allerg"] }], // no importance declared
     });
     fm.captureFact({ content: "The user is allergic to peanuts" });
     await fm.runConsolidate();
@@ -133,20 +135,42 @@ describe("importance resolution", () => {
     expect(importanceOf("allergic")).toBe(0.5);
   });
 
-  it("ships a default for every core domain", () => {
-    // A core domain without one silently reintroduces the flat-0.5 bug for its
-    // facts alone, which is harder to spot than the original.
-    for (const domain of CORE_DOMAINS) {
+  it("the shipped starter vocabulary declares an importance for every domain", () => {
+    // Not a claim that these domains are universal — the engine knows none of
+    // them. A starter domain without an importance silently reintroduces the
+    // flat-0.5 bug for its facts alone, which is harder to spot than the
+    // original.
+    for (const domain of STARTER_VOCABULARY) {
       expect(typeof domain.importance).toBe("number");
-      expect(domain.importance).toBeGreaterThan(0);
-      expect(domain.importance).toBeLessThanOrEqual(1);
+      expect(domain.importance!).toBeGreaterThan(0);
+      expect(domain.importance!).toBeLessThanOrEqual(1);
     }
   });
 
-  it("generates the config defaults from the registry rather than a second list", () => {
-    const shipped = defaultServerConfig().capture.importance_defaults;
-    for (const domain of CORE_DOMAINS) {
-      expect(shipped[domain.name]).toBe(domain.importance);
+  it("ships the starter vocabulary into config, carrying its own calibration", () => {
+    // Importance travels with the domain rather than in a parallel map keyed by
+    // name. One definition; nothing to drift from.
+    const shipped = defaultServerConfig().domains ?? [];
+    for (const domain of STARTER_VOCABULARY) {
+      const inConfig = shipped.find((d) => d.name === domain.name);
+      expect(inConfig?.importance).toBe(domain.importance);
     }
+  });
+
+  it("routes everything to the fallback when no vocabulary is configured", async () => {
+    // The engine ships no domains. A keyword classifier with no keywords cannot
+    // route, and saying so is more honest than inventing a vocabulary — which is
+    // what made this a personal-only product.
+    const sessionManager = createSessionManager(db);
+    sessionManager.startSession("no-vocab", null);
+    const fm = createFactManager(db, sessionManager, {
+      intelligence: createHeuristicProvider([]),
+      serverConfig: { ...defaultServerConfig(), domains: [] },
+    });
+    fm.captureFact({ content: "The user is allergic to peanuts" });
+    await fm.runConsolidate();
+
+    const row = db.prepare(`SELECT domain FROM facts`).get() as { domain: string };
+    expect(row.domain).toBe("general");
   });
 });

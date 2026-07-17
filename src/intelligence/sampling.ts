@@ -24,7 +24,8 @@ import type {
 } from "./types.js";
 import type { SessionEvent } from "../types/data.js";
 import { createHeuristicProvider } from "./heuristic.js";
-import { domainRoutingInstruction, routableDomainList } from "../schemas/domains.js";
+import { domainRoutingInstruction } from "../schemas/domains.js";
+import type { DomainDef } from "../types/config.js";
 
 // Conservative token budgets. Prompts are short; responses are JSON-only.
 const DEFAULT_MAX_TOKENS = 2048;
@@ -61,6 +62,8 @@ async function withFallback<T>(
 export function createSamplingProvider(
   server: Server,
   fallback: IntelligenceProvider = createHeuristicProvider(),
+  /** The store's configured vocabulary, named in the routing prompt. */
+  vocabulary: DomainDef[] = [],
 ): IntelligenceProvider {
   // Capability is checked per call rather than at construction, because the
   // provider is instantiated before the MCP handshake completes.
@@ -95,7 +98,7 @@ export function createSamplingProvider(
           const context = sessionContext ? `\n\nSession context:\n${sessionContext}` : "";
           const raw = await ask(
             "You classify user facts into memory domains. " +
-              `${domainRoutingInstruction()} ` +
+              `${domainRoutingInstruction(vocabulary)} ` +
               "Choose the best domain per fact. Optional subdomain is a short tag. " +
               "Respond with JSON only: an array of {id, domain, subdomain} objects. " +
               "subdomain may be null. No prose.",
@@ -168,7 +171,7 @@ export function createSamplingProvider(
               "long_term_memory holds already-known facts about the user across all sessions; " +
               "use it to avoid duplicating facts the system already has. " +
               "Respond with JSON only: an array of {content, domain_hint} objects. " +
-              `domain_hint is one of ${routableDomainList()}, a domain already in use, or null. ` +
+              `domain_hint is a domain already in use, a new short lowercase noun if none fits, or null. ` +
               "Return [] if no durable facts are present. No prose.",
             JSON.stringify({
               session_summary: sessionSummary ?? null,

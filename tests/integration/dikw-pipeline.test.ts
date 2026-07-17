@@ -5,6 +5,7 @@
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import type { Db } from "../../src/db/connection.js";
+import { STARTER_VOCABULARY } from "../../src/schemas/starter-vocabulary.js";
 
 
 const dbMod = await import("../../src/db/index.js");
@@ -26,13 +27,16 @@ afterEach(() => {
 
 describe("DIKW pipeline end-to-end", () => {
   function setup() {
-    const intelligence = heuristicMod.createHeuristicProvider();
+    const intelligence = heuristicMod.createHeuristicProvider(STARTER_VOCABULARY);
     const sessionManager = sessionMod.createSessionManager(db);
     sessionManager.startSession("test-client", "test-project");
     const factManager = factMod.createFactManager(db, sessionManager, {
-      captureConfig: { importance_defaults: { medical: 0.95 } },
       autoLinkEvents: 5,
       intelligence,
+      // The vocabulary is data now: the engine ships no domains, so a test that
+      // expects routing or calibration has to configure one, exactly as a user
+      // does.
+      serverConfig: { domains: STARTER_VOCABULARY },
     });
     return { sessionManager, factManager, intelligence };
   }
@@ -237,7 +241,7 @@ describe("DIKW pipeline end-to-end", () => {
   it("importance defaults are respected through the pipeline", async () => {
     const { factManager } = setup();
 
-    // Medical domain has importance_default of 0.95
+    // The configured vocabulary declares medical at 0.9
     factManager.captureFact({
       content: "I'm allergic to aspirin",
       domain_hint: "medical",
@@ -246,7 +250,7 @@ describe("DIKW pipeline end-to-end", () => {
 
     const medFacts = searchMod.structuredSearch(db, { domain: "medical" });
     expect(medFacts).toHaveLength(1);
-    expect(medFacts[0].importance).toBe(0.95);
+    expect(medFacts[0].importance).toBe(0.9); // as declared by the configured vocabulary
   });
 
   it("consolidation record is created with stats", async () => {
