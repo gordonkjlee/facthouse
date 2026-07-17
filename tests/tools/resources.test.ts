@@ -184,7 +184,7 @@ describe("consolidation notifies subscribers", () => {
     const sessionManager = sessionMod.createSessionManager(db);
     sessionManager.startSession("test-client", null);
     const factManager = factMod.createFactManager(db, sessionManager, {
-      intelligence: heuristicMod.createHeuristicProvider(STARTER_VOCABULARY),
+      intelligence: heuristicMod.createHeuristicProvider(PERSONAL_VOCABULARY),
       onConsolidated,
     });
     return { factManager };
@@ -224,4 +224,4 @@ describe("consolidation notifies subscribers", () => {
     await expect(factManager.runConsolidate()).resolves.toBeDefined();
   });
 });
-import { STARTER_VOCABULARY } from "../../src/schemas/starter-vocabulary.js";
+import { PERSONAL_VOCABULARY } from "../fixtures/vocabulary.js";

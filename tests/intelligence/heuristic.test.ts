@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { createHeuristicProvider } from "../../src/intelligence/heuristic.js";
 import type { SessionFact, Fact } from "../../src/types/data.js";
 import type { ClassifiedFact } from "../../src/intelligence/types.js";
-import { STARTER_VOCABULARY } from "../../src/schemas/starter-vocabulary.js";
+import { PERSONAL_VOCABULARY } from "../fixtures/vocabulary.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -50,7 +50,7 @@ const fakeFact2 = (content: string, domain: string): Fact => ({
 // Tests
 // ---------------------------------------------------------------------------
 
-const provider = createHeuristicProvider(STARTER_VOCABULARY);
+const provider = createHeuristicProvider(PERSONAL_VOCABULARY);
 
 describe("classifyFacts", () => {
   it("classifies preference content as 'preferences'", async () => {
@@ -153,97 +153,40 @@ describe("classifyFacts", () => {
 });
 
 describe("extractEntities", () => {
-  it("extracts a person entity from relationship mention", async () => {
-    // Regex expects lowercase "my" at word boundary
+  // This block used to assert the fallback pulled "Robin" out of "my partner
+  // Robin loves sushi" and labelled the edge partner_of. Those rules are gone.
+  //
+  // They were a personal ontology hardcoded into a general engine: partner, wife,
+  // husband, sister, son. A corporate store's relationships are supplier, account
+  // manager, on-call, escalation contact — no fixed list covers both, and the
+  // engine cannot know which it is looking at. Guessing was the same mistake as
+  // shipping a domain vocabulary, on a different axis.
+  //
+  // So the contract is now: entity extraction requires an LLM. An honestly empty
+  // result beats a personal guess that is wrong for most stores.
+
+  it("extracts nothing — it has no rules, and that is the point", async () => {
     const result = await provider.extractEntities([
       fakeFact("my partner Robin loves sushi"),
-    ]);
-
-    expect(result.size).toBe(1);
-    const entities = result.get("test-id");
-    expect(entities).toBeDefined();
-    expect(entities!.length).toBeGreaterThanOrEqual(1);
-
-    const robin = entities!.find((e) => e.name === "Robin");
-    expect(robin).toBeDefined();
-    expect(robin!.type).toBe("person");
-  });
-
-  it("returns empty map for facts with no entities", async () => {
-    const result = await provider.extractEntities([
-      fakeFact("I prefer dark roast coffee"),
+      fakeFact("The sev1 postmortem was led by Priya"),
     ]);
 
     expect(result.size).toBe(0);
   });
 
-  it("detects relationship type from content", async () => {
+  it("does not invent a personal ontology for a corporate store", async () => {
+    // The regression this guards: reintroducing a "relationship keyword" list
+    // would match the first of these and never the second, and would be
+    // confidently wrong about what an account manager is.
     const result = await provider.extractEntities([
-      fakeFact("my partner Robin loves sushi"),
+      fakeFact("my wife Alice is a doctor"),
+      fakeFact("our supplier Acme missed the SLA"),
     ]);
 
-    const entities = result.get("test-id")!;
-    const robin = entities.find((e) => e.name === "Robin")!;
-    expect(robin.relationship).toBe("partner_of");
-  });
-
-  it("matches sentence-initial 'My' (case-insensitive)", async () => {
-    const result = await provider.extractEntities([
-      fakeFact("My partner Alice loves gardening"),
-    ]);
-
-    const entities = result.get("test-id")!;
-    expect(entities.length).toBeGreaterThan(0);
-    const alice = entities.find((e) => e.name === "Alice");
-    expect(alice).toBeDefined();
-    expect(alice!.relationship).toBe("partner_of");
-  });
-
-  it("tags parents as parent_of, not child_of (D2)", async () => {
-    const result = await provider.extractEntities([
-      fakeFact("my mother Alice loves gardening"),
-    ]);
-
-    const entities = result.get("test-id")!;
-    const alice = entities.find((e) => e.name === "Alice")!;
-    // Alice IS a parent — she is NOT a child
-    expect(alice.relationship).toBe("parent_of");
-  });
-
-  it("tags children as child_of, not parent_of (D2)", async () => {
-    const result = await provider.extractEntities([
-      fakeFact("my son Bob plays guitar"),
-    ]);
-
-    const entities = result.get("test-id")!;
-    const bob = entities.find((e) => e.name === "Bob")!;
-    // Bob IS a child
-    expect(bob.relationship).toBe("child_of");
-  });
-
-  it("extracts entity from reverse pattern (NAME is my ROLE)", async () => {
-    const result = await provider.extractEntities([
-      fakeFact("Alice is my partner and she loves hiking"),
-    ]);
-
-    const entities = result.get("test-id")!;
-    expect(entities).toBeDefined();
-    const alice = entities.find((e) => e.name === "Alice");
-    expect(alice).toBeDefined();
-    expect(alice!.relationship).toBe("partner_of");
-  });
-
-  it("extracts multiple entities from a single fact", async () => {
-    const result = await provider.extractEntities([
-      fakeFact("my friend Alice and my colleague Bob went hiking"),
-    ]);
-
-    const entities = result.get("test-id")!;
-    expect(entities.length).toBe(2);
-    const names = entities.map((e) => e.name).sort();
-    expect(names).toEqual(["Alice", "Bob"]);
+    expect(result.size).toBe(0);
   });
 });
+
 
 describe("detectSupersession", () => {
   it("detects supersession when negation signal present", async () => {

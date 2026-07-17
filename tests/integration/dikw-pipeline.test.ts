@@ -5,7 +5,7 @@
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import type { Db } from "../../src/db/connection.js";
-import { STARTER_VOCABULARY } from "../../src/schemas/starter-vocabulary.js";
+import { PERSONAL_VOCABULARY } from "../fixtures/vocabulary.js";
 
 
 const dbMod = await import("../../src/db/index.js");
@@ -25,9 +25,33 @@ afterEach(() => {
   dbMod.closeDatabase(db);
 });
 
+
+/**
+ * A provider that reports an entity for every fact.
+ *
+ * These tests used to rely on the fallback's `my partner Robin` regex. That rule
+ * is gone — a personal ontology hardcoded in a general engine — so the fallback
+ * extracts nothing. These tests are about what the *pipeline* does with entities
+ * (create, link, feed the entity search path), not about whether a regex finds
+ * one, so they supply their own.
+ */
+function withEntity(name: string, relationship = "mentioned_in") {
+  const base = heuristicMod.createHeuristicProvider(PERSONAL_VOCABULARY);
+  return {
+    ...base,
+    async extractEntities(facts: Array<{ id: string }>) {
+      const map = new Map<string, Array<Record<string, string>>>();
+      for (const f of facts) map.set(f.id, [{ name, type: "person", relationship }]);
+      return map;
+    },
+  } as never;
+}
+
 describe("DIKW pipeline end-to-end", () => {
-  function setup() {
-    const intelligence = heuristicMod.createHeuristicProvider(STARTER_VOCABULARY);
+  function setup(intelligenceOverride?: unknown) {
+    const intelligence =
+      (intelligenceOverride as never) ??
+      heuristicMod.createHeuristicProvider(PERSONAL_VOCABULARY);
     const sessionManager = sessionMod.createSessionManager(db);
     sessionManager.startSession("test-client", "test-project");
     const factManager = factMod.createFactManager(db, sessionManager, {
@@ -36,7 +60,7 @@ describe("DIKW pipeline end-to-end", () => {
       // The vocabulary is data now: the engine ships no domains, so a test that
       // expects routing or calibration has to configure one, exactly as a user
       // does.
-      serverConfig: { domains: STARTER_VOCABULARY },
+      serverConfig: { domains: PERSONAL_VOCABULARY },
     });
     return { sessionManager, factManager, intelligence };
   }
@@ -173,7 +197,7 @@ describe("DIKW pipeline end-to-end", () => {
   });
 
   it("entity path contributes to search after consolidation", async () => {
-    const { factManager } = setup();
+    const { factManager } = setup(withEntity("Robin"));
 
     factManager.captureFact({ content: "my partner Robin loves sushi" });
     factManager.captureFact({ content: "my friend Robin works at Acme" });
@@ -222,9 +246,8 @@ describe("DIKW pipeline end-to-end", () => {
   });
 
   it("consolidation creates entities and links them to facts", async () => {
-    const { factManager } = setup();
+    const { factManager } = setup(withEntity("Robin", "partner_of"));
 
-    // Use lowercase "my" to match the heuristic regex pattern
     factManager.captureFact({
       content: "Had dinner with my partner Robin",
       domain_hint: "people",

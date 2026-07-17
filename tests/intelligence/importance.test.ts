@@ -27,9 +27,7 @@ const { applySchema } = await import("../../src/db/schema.js");
 const { createSessionManager } = await import("../../src/tools/session-manager.js");
 const { createFactManager } = await import("../../src/tools/fact-manager.js");
 const { createHeuristicProvider } = await import("../../src/intelligence/heuristic.js");
-const { STARTER_VOCABULARY } = await import(
-  "../../src/schemas/starter-vocabulary.js"
-);
+import { PERSONAL_VOCABULARY } from "../fixtures/vocabulary.js";
 const { defaultServerConfig } = await import("../../src/config.js");
 
 let db: Db;
@@ -38,8 +36,14 @@ function manager(configOverride?: Record<string, unknown>) {
   const sessionManager = createSessionManager(db);
   sessionManager.startSession("importance-test", null);
   return createFactManager(db, sessionManager, {
-    intelligence: createHeuristicProvider(STARTER_VOCABULARY),
-    serverConfig: { ...defaultServerConfig(), ...configOverride },
+    intelligence: createHeuristicProvider(PERSONAL_VOCABULARY),
+    // The engine ships no vocabulary, so a test about calibration has to
+    // declare one — exactly as a user does.
+    serverConfig: {
+      ...defaultServerConfig(),
+      domains: PERSONAL_VOCABULARY,
+      ...configOverride,
+    },
   });
 }
 
@@ -135,25 +139,29 @@ describe("importance resolution", () => {
     expect(importanceOf("allergic")).toBe(0.5);
   });
 
-  it("the shipped starter vocabulary declares an importance for every domain", () => {
-    // Not a claim that these domains are universal — the engine knows none of
-    // them. A starter domain without an importance silently reintroduces the
-    // flat-0.5 bug for its facts alone, which is harder to spot than the
-    // original.
-    for (const domain of STARTER_VOCABULARY) {
+  it("a vocabulary that declares importance gets it applied", () => {
+    // The fixture is a test's own vocabulary, not a shipped one. A domain
+    // without an importance silently reintroduces the flat-0.5 bug for its facts
+    // alone, which is harder to spot than the original.
+    for (const domain of PERSONAL_VOCABULARY) {
       expect(typeof domain.importance).toBe("number");
       expect(domain.importance!).toBeGreaterThan(0);
       expect(domain.importance!).toBeLessThanOrEqual(1);
     }
   });
 
-  it("ships the starter vocabulary into config, carrying its own calibration", () => {
-    // Importance travels with the domain rather than in a parallel map keyed by
-    // name. One definition; nothing to drift from.
-    const shipped = defaultServerConfig().domains ?? [];
-    for (const domain of STARTER_VOCABULARY) {
-      const inConfig = shipped.find((d) => d.name === domain.name);
-      expect(inConfig?.importance).toBe(domain.importance);
+  it("ships no vocabulary at all — the engine has no categories", () => {
+    // The engine cannot know whether this store is a life, a company or a
+    // research programme, so it offers no domains and no calibration. Any it
+    // shipped would be wrong for someone.
+    expect(defaultServerConfig().domains).toEqual([]);
+  });
+
+  it("carries importance on the domain, not in a parallel map", () => {
+    // One definition. A separate map keyed by domain name was a second home for
+    // one value, and two homes are how they drift.
+    for (const domain of PERSONAL_VOCABULARY) {
+      expect(typeof domain.importance).toBe("number");
     }
   });
 

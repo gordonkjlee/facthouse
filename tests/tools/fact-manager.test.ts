@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import type { Db } from "../../src/db/connection.js";
-import { STARTER_VOCABULARY } from "../../src/schemas/starter-vocabulary.js";
+import { PERSONAL_VOCABULARY } from "../fixtures/vocabulary.js";
 
 
 const dbMod = await import("../../src/db/index.js");
@@ -255,7 +255,7 @@ describe("get_session_context", () => {
     const sessionManager = sessionMod.createSessionManager(db);
     sessionManager.startSession("test", null);
     const factManager = factMod.createFactManager(db, sessionManager, {
-      intelligence: heuristicMod.createHeuristicProvider(STARTER_VOCABULARY),
+      intelligence: heuristicMod.createHeuristicProvider(PERSONAL_VOCABULARY),
     });
 
     factManager.captureFact({ content: "fact A", domain_hint: "profile" });

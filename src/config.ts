@@ -9,7 +9,6 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { DEFAULT_CONFIG, type ServerConfig } from "./types/config.js";
-import { STARTER_VOCABULARY } from "./schemas/starter-vocabulary.js";
 
 /** Filename expected in the data dir. */
 export const CONFIG_FILENAME = "config.json";
@@ -50,13 +49,17 @@ export function defaultServerConfig(): ServerConfig {
     // exist from first run. Seeding also gives a classifier something to be
     // consistent with — schema-congruence needs a schema to pre-exist, and an
     // empty vocabulary offers nothing to match against.
-    // A starting vocabulary, written into the user's config.json at init as
-    // ordinary data. Not a core, not a preset: delete it, rewrite it, replace it
-    // with clients/incidents/contracts — the engine has no opinion and knows
-    // none of these names. Importance and the fallback classifier's patterns
-    // travel with each domain, because whoever owns the vocabulary owns its
-    // calibration.
-    domains: STARTER_VOCABULARY,
+    // No domains. The engine ships no categories and no rules: it cannot know
+    // whether this store is about a life, a company or a research programme, and
+    // every vocabulary it could offer would be wrong for someone.
+    //
+    // Declare your own here to give the fallback classifier something to route
+    // on and to calibrate importance — each domain takes a description, regex
+    // `patterns`, and an `importance`. With an LLM provider (the default) you do
+    // not need to: it classifies from the content, and the routing prompt names
+    // whatever domains already exist so the vocabulary grows from use and stays
+    // consistent with itself.
+    domains: [],
   };
 }
 

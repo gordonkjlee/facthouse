@@ -73,64 +73,21 @@ function classifyContent(
 // Entity extraction patterns
 // ---------------------------------------------------------------------------
 
-// Person entity patterns only. Place/org extraction requires NER or more complex patterns.
-// "[Mm]y" (not the /i flag) handles sentence-initial "My partner Alice" without
-// making [A-Z][a-z]+ case-insensitive — otherwise the name group would greedily
-// swallow trailing words (e.g. "Robin loves" instead of "Robin").
-const NAME_PATTERNS = [
-  /\b[Mm]y (?:partner|wife|husband|friend|colleague|boss|sister|brother|mother|father|son|daughter|neighbour|neighbor)\s+(?:is\s+)?([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)/g,
-  /\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)\s+is\s+[Mm]y\s+(?:partner|wife|husband|friend|colleague|boss|sister|brother|mother|father|son|daughter|neighbour|neighbor)/g,
-];
-
-// Maps a relationship keyword to the edge label describing the EXTRACTED entity.
-// "my mother Alice" → Alice is a parent, so mother → parent_of.
-// "my son Bob" → Bob is a child, so son → child_of.
-const RELATIONSHIP_MAP: Record<string, string> = {
-  partner: "partner_of",
-  wife: "partner_of",
-  husband: "partner_of",
-  friend: "friend_of",
-  colleague: "works_with",
-  boss: "reports_to",
-  sister: "sibling_of",
-  brother: "sibling_of",
-  mother: "parent_of",
-  father: "parent_of",
-  son: "child_of",
-  daughter: "child_of",
-  neighbour: "neighbour_of",
-  neighbor: "neighbour_of",
-};
-
-/** Extract entities from a single content string. */
-function extractFromContent(content: string): ExtractedEntity[] {
-  const entities: ExtractedEntity[] = [];
-  const seen = new Set<string>();
-
-  for (const pattern of NAME_PATTERNS) {
-    // Reset lastIndex for global patterns
-    pattern.lastIndex = 0;
-    let match;
-    while ((match = pattern.exec(content)) !== null) {
-      const name = match[1]?.trim();
-      if (!name || seen.has(name.toLowerCase())) continue;
-      seen.add(name.toLowerCase());
-
-      // Extract relationship from the matched text, not the full content
-      let relationship = "mentioned_in";
-      const matchText = match[0].toLowerCase();
-      for (const [keyword, rel] of Object.entries(RELATIONSHIP_MAP)) {
-        if (matchText.includes(keyword)) {
-          relationship = rel;
-          break;
-        }
-      }
-
-      entities.push({ name, type: "person", relationship });
-    }
-  }
-
-  return entities;
+/**
+ * Entity extraction needs an LLM. This provider has none, so it extracts nothing.
+ *
+ * It used to match `my (partner|wife|husband|sister|...) Alice` and map the
+ * keyword to an edge label — partner_of, parent_of, child_of. That is a personal
+ * ontology hardcoded into a general engine: a corporate store's relationships are
+ * supplier, account manager, on-call, escalation contact, and no fixed list
+ * covers both. Guessing at one was the same mistake as shipping a domain
+ * vocabulary, on a different axis.
+ *
+ * Returning nothing is the honest answer. An LLM provider — the default — does
+ * this from the content, with no list to be wrong about.
+ */
+function extractFromContent(_content: string): ExtractedEntity[] {
+  return [];
 }
 
 // ---------------------------------------------------------------------------
@@ -183,19 +140,6 @@ const NEGATION_WORDS = /\b(not|no longer|don't|doesn't|stopped|quit|now prefer|i
 // (see tests/intelligence/heuristic.test.ts for the known-limitation case).
 const SUPERSESSION_JACCARD_MIN = 0.3;
 
-// ---------------------------------------------------------------------------
-// Fact extraction from events (D→I)
-// ---------------------------------------------------------------------------
-
-const EVENT_FACT_PATTERNS = [
-  /\bmy name is\s+(.+?)(?:\.|,|$)/i,
-  /\bi(?:'m| am) allergic to\s+(.+?)(?:\.|,|$)/i,
-  /\bi prefer\s+(.+?)(?:\.|,|$)/i,
-  // "I am a/an" removed — too greedy in conversational text. "I am a bit tired"
-  // or "I'm a fan of this approach but..." would extract garbage facts.
-  /\bi live in\s+(.+?)(?:\.|,|$)/i,
-  /\bmy (?:partner|wife|husband|friend)\s+(?:is\s+)?([A-Z][a-z]+)/i,
-];
 
 // ---------------------------------------------------------------------------
 // Provider implementation
@@ -230,39 +174,16 @@ export function createHeuristicProvider(
       return result;
     },
 
-    async extractFactsFromEvents(
-      events,
-      _workingMemory,
-      _sessionSummary,
-      _longTermMemory,
-    ) {
-      const extracted: Array<{
-        content: string;
-        domain_hint: string | null;
-        source_quality: "heuristic";
-      }> = [];
-
-      for (const event of events) {
-        if (!event.content || event.content.length < 10) continue;
-        if (event.role !== "user" && event.role !== "assistant") continue;
-
-        for (const pattern of EVENT_FACT_PATTERNS) {
-          const match = pattern.exec(event.content);
-          if (match) {
-            // Use the matched phrase, not the full event text (reduces noise)
-            const factContent = match[0];
-            const { domain } = classifyContent(factContent, null, matchers);
-            extracted.push({
-              content: factContent,
-              domain_hint: domain !== "general" ? domain : null,
-              source_quality: "heuristic",
-            });
-            break; // One fact per event for the heuristic provider
-          }
-        }
-      }
-
-      return extracted;
+    async extractFactsFromEvents() {
+      // Extracting facts from raw conversation needs an LLM. This provider has
+      // none, so it extracts nothing.
+      //
+      // It used to match "my name is", "I'm allergic to", "I prefer", "I live
+      // in" — a personal ontology, in first person, hardcoded. It finds nothing
+      // in a corporate store's "the sev1 postmortem is due Friday", and any list
+      // that did would be wrong for someone else. Explicit capture_fact is
+      // unaffected; this path just requires intelligence to do intelligent work.
+      return [];
     },
 
     // Known limitation: location-change supersession ("I moved to Porto"
