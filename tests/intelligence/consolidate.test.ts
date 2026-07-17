@@ -15,9 +15,7 @@ const { findEntity } = await import("../../src/db/entities.js");
 const { ensureDomain } = await import("../../src/db/domains.js");
 const { consolidate } = await import("../../src/intelligence/consolidate.js");
 const { createHeuristicProvider } = await import("../../src/intelligence/heuristic.js");
-const { STARTER_VOCABULARY } = await import(
-  "../../src/schemas/starter-vocabulary.js"
-);
+import { PERSONAL_VOCABULARY } from "../fixtures/vocabulary.js";
 
 // ---------------------------------------------------------------------------
 // Lifecycle
@@ -50,10 +48,36 @@ function setupSession(): string {
 // Tests
 // ---------------------------------------------------------------------------
 
+
+/**
+ * A provider that reports a known entity for every fact.
+ *
+ * These tests used to lean on the heuristic's `my partner Robin` regex to
+ * produce an entity. That regex is gone — a personal ontology hardcoded in a
+ * general engine — so the fallback extracts nothing. Which is fine: these tests
+ * are about what *consolidation* does with entities it is given (create, dedup,
+ * link, edge), not about whether a regex can find one.
+ */
+function providerReturningEntity(
+  name: string,
+  relationship = "mentioned_in",
+  type = "person",
+) {
+  const base = createHeuristicProvider(PERSONAL_VOCABULARY);
+  return {
+    ...base,
+    async extractEntities(facts: Array<{ id: string }>) {
+      const map = new Map<string, Array<{ name: string; type: string; relationship: string }>>();
+      for (const f of facts) map.set(f.id, [{ name, type, relationship }]);
+      return map;
+    },
+  } as never;
+}
+
 describe("consolidation pipeline", () => {
   it("consolidates session_facts into graduated facts", async () => {
     const sessionId = setupSession();
-    const provider = createHeuristicProvider(STARTER_VOCABULARY);
+    const provider = createHeuristicProvider(PERSONAL_VOCABULARY);
 
     insertSessionFact(db, {
       session_id: sessionId,
@@ -92,9 +116,8 @@ describe("consolidation pipeline", () => {
 
   it("creates entities from facts mentioning people", async () => {
     const sessionId = setupSession();
-    const provider = createHeuristicProvider(STARTER_VOCABULARY);
+    const provider = providerReturningEntity("Robin", "partner_of");
 
-    // Entity regex expects lowercase "my" at word boundary
     insertSessionFact(db, {
       session_id: sessionId,
       content: "my partner Robin loves sushi",
@@ -112,7 +135,7 @@ describe("consolidation pipeline", () => {
 
   it("links entities to graduated facts", async () => {
     const sessionId = setupSession();
-    const provider = createHeuristicProvider(STARTER_VOCABULARY);
+    const provider = providerReturningEntity("Robin", "partner_of");
 
     insertSessionFact(db, {
       session_id: sessionId,
@@ -126,7 +149,7 @@ describe("consolidation pipeline", () => {
 
   it("deduplicates exact content matches (reconcile returns noop)", async () => {
     const sessionId = setupSession();
-    const provider = createHeuristicProvider(STARTER_VOCABULARY);
+    const provider = createHeuristicProvider(PERSONAL_VOCABULARY);
 
     // Pre-insert a graduated fact
     ensureDomain(db, "profile");
@@ -151,7 +174,7 @@ describe("consolidation pipeline", () => {
 
   it("skips when lock is held by another process", async () => {
     const sessionId = setupSession();
-    const provider = createHeuristicProvider(STARTER_VOCABULARY);
+    const provider = createHeuristicProvider(PERSONAL_VOCABULARY);
 
     insertSessionFact(db, {
       session_id: sessionId,
@@ -171,7 +194,7 @@ describe("consolidation pipeline", () => {
 
   it("is idempotent: second consolidation on same data returns 0 facts_in", async () => {
     const sessionId = setupSession();
-    const provider = createHeuristicProvider(STARTER_VOCABULARY);
+    const provider = createHeuristicProvider(PERSONAL_VOCABULARY);
 
     insertSessionFact(db, {
       session_id: sessionId,
@@ -190,7 +213,7 @@ describe("consolidation pipeline", () => {
 
   it("generates a summary", async () => {
     const sessionId = setupSession();
-    const provider = createHeuristicProvider(STARTER_VOCABULARY);
+    const provider = createHeuristicProvider(PERSONAL_VOCABULARY);
 
     insertSessionFact(db, {
       session_id: sessionId,
@@ -211,7 +234,7 @@ describe("consolidation pipeline", () => {
 
   it("creates consolidation record in consolidations table", async () => {
     const sessionId = setupSession();
-    const provider = createHeuristicProvider(STARTER_VOCABULARY);
+    const provider = createHeuristicProvider(PERSONAL_VOCABULARY);
 
     insertSessionFact(db, {
       session_id: sessionId,
@@ -232,7 +255,7 @@ describe("consolidation pipeline", () => {
 
   it("releases lock after completion", async () => {
     const sessionId = setupSession();
-    const provider = createHeuristicProvider(STARTER_VOCABULARY);
+    const provider = createHeuristicProvider(PERSONAL_VOCABULARY);
 
     insertSessionFact(db, {
       session_id: sessionId,
@@ -250,7 +273,7 @@ describe("consolidation pipeline", () => {
 
   it("sets consolidation_id on claimed session_facts", async () => {
     const sessionId = setupSession();
-    const provider = createHeuristicProvider(STARTER_VOCABULARY);
+    const provider = createHeuristicProvider(PERSONAL_VOCABULARY);
 
     insertSessionFact(db, {
       session_id: sessionId,
@@ -273,7 +296,7 @@ describe("consolidation pipeline", () => {
 
     // Provider that always throws during classification
     const failingProvider = {
-      ...createHeuristicProvider(STARTER_VOCABULARY),
+      ...createHeuristicProvider(PERSONAL_VOCABULARY),
       classifyFacts: async () => {
         throw new Error("simulated provider failure");
       },
@@ -293,7 +316,7 @@ describe("consolidation pipeline", () => {
     expect(getLockState(db)).toBeNull();
 
     // Next consolidation should pick them up
-    const retry = await consolidate(db, createHeuristicProvider(STARTER_VOCABULARY));
+    const retry = await consolidate(db, createHeuristicProvider(PERSONAL_VOCABULARY));
     expect(retry.factsIn).toBe(1);
   });
 
@@ -320,7 +343,7 @@ describe("consolidation pipeline", () => {
     });
 
     // Should not throw — dedup prevents transaction rollback
-    const result = await consolidate(db, createHeuristicProvider(STARTER_VOCABULARY));
+    const result = await consolidate(db, createHeuristicProvider(PERSONAL_VOCABULARY));
 
     expect(result.skipped).toBe(false);
     expect(result.factsGraduated).toBe(2);
@@ -335,7 +358,7 @@ describe("consolidation pipeline", () => {
     insertSessionFact(db, { session_id: s1.id, content: "fact from session 1", domain_hint: "profile" });
     insertSessionFact(db, { session_id: s2.id, content: "fact from session 2", domain_hint: "profile" });
 
-    const result = await consolidate(db, createHeuristicProvider(STARTER_VOCABULARY));
+    const result = await consolidate(db, createHeuristicProvider(PERSONAL_VOCABULARY));
     expect(result.factsIn).toBe(2);
 
     const record = db
@@ -361,7 +384,7 @@ describe("consolidation pipeline", () => {
       domain_hint: "preferences",
     });
 
-    const result = await consolidate(db, createHeuristicProvider(STARTER_VOCABULARY));
+    const result = await consolidate(db, createHeuristicProvider(PERSONAL_VOCABULARY));
     expect(result.factsIn).toBe(2);
     // Only one graduates — the second is rejected as intra-batch duplicate
     expect(result.factsGraduated).toBe(1);
@@ -389,7 +412,7 @@ describe("consolidation pipeline", () => {
       domain_hint: "preferences",
     });
 
-    const result = await consolidate(db, createHeuristicProvider(STARTER_VOCABULARY));
+    const result = await consolidate(db, createHeuristicProvider(PERSONAL_VOCABULARY));
     // Heuristic reconcile returns "noop" on exact content match
     expect(result.factsRejected).toBe(1);
     expect(result.factsGraduated).toBe(0);
@@ -403,7 +426,7 @@ describe("consolidation pipeline", () => {
       domain_hint: "preferences",
     });
 
-    const result = await consolidate(db, createHeuristicProvider(STARTER_VOCABULARY));
+    const result = await consolidate(db, createHeuristicProvider(PERSONAL_VOCABULARY));
     expect(result.factsGraduated).toBe(1);
 
     // Graduated fact should have source_id set
@@ -443,7 +466,7 @@ describe("consolidation pipeline", () => {
       confidence: 0.3,
     });
 
-    const result = await consolidate(db, createHeuristicProvider(STARTER_VOCABULARY));
+    const result = await consolidate(db, createHeuristicProvider(PERSONAL_VOCABULARY));
 
     // Supersession should fire despite confidence mismatch —
     // negation is strong belief-update evidence (see consolidate.ts comment).
@@ -480,7 +503,7 @@ describe("consolidation pipeline", () => {
       domain_hint: "preferences",
     });
 
-    const result = await consolidate(db, createHeuristicProvider(STARTER_VOCABULARY));
+    const result = await consolidate(db, createHeuristicProvider(PERSONAL_VOCABULARY));
 
     // Exactly one supersession fires — the other is a conflict
     expect(result.supersessions).toBe(1);
@@ -513,8 +536,8 @@ describe("consolidation pipeline", () => {
     }
 
     const [r1, r2] = await Promise.all([
-      consolidate(db, createHeuristicProvider(STARTER_VOCABULARY)),
-      consolidate(db, createHeuristicProvider(STARTER_VOCABULARY)),
+      consolidate(db, createHeuristicProvider(PERSONAL_VOCABULARY)),
+      consolidate(db, createHeuristicProvider(PERSONAL_VOCABULARY)),
     ]);
 
     // Exactly one succeeds, one is skipped by the advisory lock
@@ -558,7 +581,7 @@ describe("consolidation pipeline", () => {
 describe("domain handling at graduation", () => {
   /** A provider that returns whatever domain it is told to — as an LLM might. */
   function providerReturning(domain: string) {
-    const base = createHeuristicProvider(STARTER_VOCABULARY);
+    const base = createHeuristicProvider(PERSONAL_VOCABULARY);
     return {
       ...base,
       async classifyFacts(facts: Array<{ id: string; content: string }>) {

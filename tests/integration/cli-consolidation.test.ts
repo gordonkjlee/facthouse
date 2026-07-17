@@ -318,12 +318,19 @@ describe("CLI provider end-to-end consolidation", () => {
       extraction: { enabled: true } as any,
     });
 
-    // Heuristic regex catches 'allergic to aspirin' pattern.
-    expect(result.factsGraduated).toBeGreaterThanOrEqual(1);
+    // A total spawn failure degrades; it does not throw and does not corrupt.
+    //
+    // This used to assert the fallback extracted "allergic to aspirin" from the
+    // raw event. It no longer can: those first-person regexes were a personal
+    // ontology hardcoded in a general engine, and they are gone. Extracting
+    // facts from conversation requires an LLM, so with the LLM unavailable there
+    // is nothing to extract — which is the honest outcome, not a silent
+    // pretence of intelligence.
+    expect(result.skipped).toBe(false);
+    expect(result.factsGraduated).toBe(0);
 
-    const facts = db
-      .prepare(`SELECT source_quality FROM facts`)
-      .all() as Array<{ source_quality: string }>;
-    expect(facts.every((f) => f.source_quality === "heuristic")).toBe(true);
+    // Explicit captures are unaffected by the LLM being down — only inference is.
+    const facts = db.prepare(`SELECT COUNT(*) c FROM facts`).get() as { c: number };
+    expect(facts.c).toBe(0);
   });
 });

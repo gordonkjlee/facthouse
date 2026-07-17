@@ -59,6 +59,36 @@ function respondWith(envelope: Record<string, unknown>) {
 // ---------------------------------------------------------------------------
 
 describe("createCliProvider — extractFactsFromEvents", () => {
+  /**
+   * A stub fallback whose output is unmistakable.
+   *
+   * These tests used to prove the CLI provider had fallen back by checking that
+   * the heuristic's regexes matched "I'm allergic to aspirin". The heuristic no
+   * longer carries rules — that was a personal ontology hardcoded into a general
+   * engine — so it extracts nothing, and "fell back" became indistinguishable
+   * from "did nothing at all".
+   *
+   * Stubbing the fallback tests what these tests are actually for: that a failing
+   * subprocess delegates. What it delegates *to* is not their business.
+   */
+  const FALLBACK_MARKER = "__from_fallback__";
+  const stubFallback = {
+    async classifyFacts() { return []; },
+    async extractEntities() { return new Map(); },
+    async extractFactsFromEvents() {
+      return [
+        {
+          content: FALLBACK_MARKER,
+          domain_hint: null,
+          source_quality: "heuristic" as const,
+        },
+      ];
+    },
+    async detectSupersession() { return null; },
+    async reconcile() { return { kind: "add" as const }; },
+    async summarise() { return { summary: "", openThreads: [] }; },
+  };
+
   it("parses structured_output and returns typed ExtractedFact[]", async () => {
     nextMockChildBehaviour = respondWith({
       is_error: false,
@@ -140,7 +170,7 @@ describe("createCliProvider — extractFactsFromEvents", () => {
     nextMockChildBehaviour = (child) => {
       child.emit("error", new Error("ENOENT"));
     };
-    const provider = createCliProvider();
+    const provider = createCliProvider({}, stubFallback);
     const result = await provider.extractFactsFromEvents(
       [
         {
@@ -163,7 +193,7 @@ describe("createCliProvider — extractFactsFromEvents", () => {
       child.stderr.emit("data", Buffer.from("auth failed"));
       child.emit("close", 1);
     };
-    const provider = createCliProvider();
+    const provider = createCliProvider({}, stubFallback);
     const result = await provider.extractFactsFromEvents(
       [{ id: "e1", role: "user", content: "I prefer dark roast", sequence: 1 } as any],
       [],
@@ -176,7 +206,7 @@ describe("createCliProvider — extractFactsFromEvents", () => {
       is_error: true,
       result: "rate limit exceeded",
     });
-    const provider = createCliProvider();
+    const provider = createCliProvider({}, stubFallback);
     const result = await provider.extractFactsFromEvents(
       [{ id: "e1", role: "user", content: "I prefer dark roast", sequence: 1 } as any],
       [],
@@ -189,7 +219,7 @@ describe("createCliProvider — extractFactsFromEvents", () => {
       is_error: false,
       result: "sorry I don't speak JSON",
     });
-    const provider = createCliProvider();
+    const provider = createCliProvider({}, stubFallback);
     const result = await provider.extractFactsFromEvents(
       [{ id: "e1", role: "user", content: "I prefer dark roast", sequence: 1 } as any],
       [],
@@ -202,7 +232,7 @@ describe("createCliProvider — extractFactsFromEvents", () => {
     nextMockChildBehaviour = () => {
       /* never emit */
     };
-    const provider = createCliProvider({ timeoutMs: 100 });
+    const provider = createCliProvider({ timeoutMs: 100 }, stubFallback);
     const eventPromise = provider.extractFactsFromEvents(
       [{ id: "e1", role: "user", content: "I prefer dark roast", sequence: 1 } as any],
       [],
@@ -210,8 +240,8 @@ describe("createCliProvider — extractFactsFromEvents", () => {
     await vi.advanceTimersByTimeAsync(150);
     vi.useRealTimers();
     const result = await eventPromise;
-    // Fell back to heuristic.
-    expect(result[0].source_quality).toBe("heuristic");
+    // Fell back.
+    expect(result[0].content).toBe(FALLBACK_MARKER);
   });
 });
 
