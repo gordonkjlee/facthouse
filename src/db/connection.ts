@@ -108,8 +108,20 @@ export function withTransaction<T>(db: Db, fn: () => T): T {
   // Name includes the depth so nested savepoints can't collide.
   const savepoint = `om_sp_${depth}`;
 
+  // BEGIN IMMEDIATE, not BEGIN. A deferred transaction starts as a reader and
+  // upgrades at the first write — and if another connection wrote in the
+  // meantime, SQLite fails that upgrade with SQLITE_BUSY *immediately*, ignoring
+  // busy_timeout, because waiting could deadlock two transactions each holding a
+  // read lock. IMMEDIATE takes the write lock up front, where busy_timeout does
+  // apply, so a concurrent writer waits its turn instead of failing.
+  //
+  // This matters because two AI tools legitimately share one database. Under
+  // BEGIN, a capture could fail with "database is locked" purely because another
+  // client's server happened to be writing — returned to the assistant as an
+  // error result, not raised, so the fact was simply lost. Every caller of this
+  // helper writes, so there is no read-only path to penalise.
   if (nested) db.exec(`SAVEPOINT ${savepoint}`);
-  else db.exec("BEGIN");
+  else db.exec("BEGIN IMMEDIATE");
   txDepth.set(db, depth + 1);
 
   try {

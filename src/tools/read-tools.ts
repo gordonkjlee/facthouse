@@ -28,7 +28,14 @@ export function registerReadTools(
     `Search the user's personal knowledge base. Call this BEFORE answering ` +
       `questions that might benefit from personal context — preferences, ` +
       `history, relationships, medical info, work context. Returns facts ` +
-      `ranked by relevance with source attribution and confidence scores.`,
+      `ranked by relevance with source attribution and confidence scores.\n\n` +
+      `Two fields come back. \`results\` is integrated knowledge: deduplicated, ` +
+      `reconciled against everything else known, entities resolved. \`pending\` ` +
+      `is what was captured recently and not yet consolidated — real, and ` +
+      `usually the most recent thing you were told, but not yet checked against ` +
+      `existing knowledge, so it may duplicate or contradict a fact in results. ` +
+      `Trust results first; use pending to avoid forgetting something you were ` +
+      `told minutes ago.`,
     {
       query: z.string().describe("What to search for"),
       domain: z

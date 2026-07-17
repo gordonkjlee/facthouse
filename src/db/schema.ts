@@ -36,6 +36,9 @@ export function applySchema(db: Db): void {
   if (version < 7) {
     applyV7(db);
   }
+  if (version < 8) {
+    applyV8(db);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -376,4 +379,57 @@ function applyV7(db: Db): void {
   `);
   pragmaWrite(db, "foreign_keys = ON");
   pragmaWrite(db, "user_version = 7");
+}
+
+// ---------------------------------------------------------------------------
+// Schema version 8 — FTS index over session_facts (unconsolidated knowledge)
+// ---------------------------------------------------------------------------
+
+/**
+ * Makes captured-but-not-yet-consolidated facts searchable.
+ *
+ * capture_fact writes to session_facts; only graduated facts reach the `facts`
+ * table and its FTS index. Until consolidation ran — by default after 10 events
+ * or at session end — a fact the assistant had just been told was unfindable by
+ * search_knowledge. "I just told you that" failing is a bad look for a memory
+ * engine, and it was silent.
+ *
+ * Only `content` is indexed. A session fact's domain_hint is a suggestion, not a
+ * routing decision, and its entities are unresolved — keyword is the only signal
+ * that means anything before consolidation.
+ */
+function applyV8(db: Db): void {
+  db.exec(`
+    CREATE VIRTUAL TABLE IF NOT EXISTS session_facts_fts USING fts5(
+      content,
+      content=session_facts, content_rowid=rowid
+    );
+
+    -- Sync triggers. INSERT and DELETE only, deliberately:
+    -- session_facts.content is never UPDATEd — the sole update in the codebase
+    -- sets consolidation_id (claimForConsolidation, and its release on rollback),
+    -- which is not indexed here. An UPDATE trigger would fire on every claim and
+    -- rewrite the index for a column change FTS5 cannot see.
+    -- The DELETE trigger is a safety net: nothing deletes session_facts today,
+    -- but retention will, and an external-content index that silently drifts is
+    -- worse than one that costs a trigger.
+    CREATE TRIGGER IF NOT EXISTS session_facts_ai AFTER INSERT ON session_facts BEGIN
+      INSERT INTO session_facts_fts(rowid, content) VALUES (new.rowid, new.content);
+    END;
+
+    CREATE TRIGGER IF NOT EXISTS session_facts_ad AFTER DELETE ON session_facts BEGIN
+      INSERT INTO session_facts_fts(session_facts_fts, rowid, content)
+      VALUES ('delete', old.rowid, old.content);
+    END;
+  `);
+
+  // Backfill. Triggers only catch rows inserted from now on, so without this
+  // every fact captured before this migration stays invisible to search — the
+  // exact bug this migration exists to fix, preserved for existing users.
+  db.exec(`
+    INSERT INTO session_facts_fts(rowid, content)
+    SELECT rowid, content FROM session_facts;
+  `);
+
+  pragmaWrite(db, "user_version = 8");
 }

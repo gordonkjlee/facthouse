@@ -193,8 +193,44 @@ export interface SearchResult {
 }
 
 /** Search response with retrieval quality signals for calling AIs. */
+/**
+ * A fact captured but not yet consolidated — knowledge the assistant was told
+ * and has not yet integrated.
+ *
+ * Kept apart from `results` rather than merged into the same ranking, because a
+ * pending fact has been through none of the pipeline: not deduplicated, not
+ * reconciled against existing knowledge, possibly contradicting a fact already
+ * held, with a domain that is still only a hint. It is real knowledge and must
+ * be findable — but presenting it as equal to a graduated fact would overstate
+ * what is actually known.
+ */
+export interface PendingFact {
+  id: string;
+  content: string;
+  /** Where it came from: the assistant via capture_fact, or event extraction. */
+  source_origin: "explicit" | "inferred";
+  /** Suggested domain, not a routing decision — consolidation may disagree. */
+  domain_hint: string | null;
+  /**
+   * The caller's stated confidence, or the configured default applied at
+   * capture. Nullable because the column is — nothing guarantees a value until
+   * consolidation scores it properly. Treat it as the assistant's own estimate,
+   * not a corroborated score: nothing has yet checked it against what is
+   * already known.
+   */
+  confidence: number | null;
+  created_at: string;
+  session_id: string;
+}
+
 export interface SearchResponse {
   results: SearchResult[];
+  /**
+   * Matching facts captured this session or a previous one that have not been
+   * consolidated yet. Keyword-matched only — entities and domains do not exist
+   * for a fact until it graduates.
+   */
+  pending: PendingFact[];
   /** Estimated fraction of relevant knowledge surfaced (0.0–1.0). */
   coverage_estimate: number;
   /** Confidence in result quality based on score distribution (0.0–1.0). */

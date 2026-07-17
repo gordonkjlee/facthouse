@@ -246,3 +246,46 @@ export function getFactSources(
     )
     .all(sessionFactId) as unknown as SessionFactSource[];
 }
+
+// ---------------------------------------------------------------------------
+// Keyword search over unconsolidated facts
+// ---------------------------------------------------------------------------
+
+/**
+ * Keyword-search facts that have been captured but not yet consolidated.
+ *
+ * These are knowledge the assistant was told and has not yet integrated. They
+ * are deliberately kept apart from graduated facts rather than merged into the
+ * same ranking: a session fact has been through none of the pipeline. It is not
+ * deduplicated, not reconciled against existing knowledge, may contradict a fact
+ * already held, and its domain_hint is a suggestion rather than a routing
+ * decision. Presenting it as equal to graduated knowledge would overstate it.
+ *
+ * Not scoped to the current session. An unconsolidated fact from a session that
+ * ended without consolidating is exactly the fact most at risk of being lost —
+ * get_session_context cannot see it either, so this is its only route back.
+ *
+ * Keyword only: FTS5 is the sole signal that means anything before entities are
+ * resolved and domains are routed.
+ */
+export function keywordSearchPending(
+  db: Db,
+  query: string,
+  limit?: number,
+): SessionFact[] {
+  const effectiveLimit = limit ?? 20;
+
+  const rows = db
+    .prepare(
+      `SELECT sf.*
+       FROM session_facts_fts fts
+       JOIN session_facts sf ON sf.rowid = fts.rowid
+       WHERE session_facts_fts MATCH ?
+         AND sf.consolidation_id IS NULL
+       ORDER BY fts.rank
+       LIMIT ?`,
+    )
+    .all(query, effectiveLimit) as unknown as SessionFact[];
+
+  return rows;
+}

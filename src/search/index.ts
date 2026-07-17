@@ -8,7 +8,12 @@
  */
 
 import type { Db, SqlParam } from "../db/connection.js";
-import type { Fact, SearchResult, SearchResponse } from "../types/data.js";
+import type {
+  Fact,
+  SearchResult,
+  SearchResponse,
+  PendingFact,
+} from "../types/data.js";
 import {
   keywordSearch as fts5Search,
   sanitiseFtsQuery,
@@ -16,6 +21,7 @@ import {
   getFactsByEntity,
 } from "../db/facts.js";
 import { findEntity } from "../db/entities.js";
+import { keywordSearchPending } from "../db/session-facts.js";
 
 // ---------------------------------------------------------------------------
 // Structured search
@@ -359,7 +365,35 @@ export function hybridSearch(
     };
   });
 
-  // 8. Compute retrieval quality signals
+  // 8. Unconsolidated facts.
+  //
+  // capture_fact writes to session_facts; only graduated facts reach the `facts`
+  // table above. Without this a fact the assistant was told a minute ago is
+  // unfindable until consolidation runs — by default after ten events or at
+  // session end — so "I just told you that" silently failed.
+  //
+  // Returned separately rather than merged into `results`: a pending fact has
+  // been through none of the pipeline, so it is neither deduplicated against
+  // what is already known nor reconciled with a fact it may contradict. It is
+  // real knowledge and must be findable; it is not yet knowledge of the same
+  // standing.
+  const pending: PendingFact[] = (
+    sanitised ? keywordSearchPending(db, sanitised, limit) : []
+  ).map((sf) => ({
+    id: sf.id,
+    content: sf.content,
+    source_origin: sf.source_origin,
+    domain_hint: sf.domain_hint,
+    confidence: sf.confidence,
+    created_at: sf.created_at,
+    session_id: sf.session_id,
+  }));
+
+  // 9. Compute retrieval quality signals.
+  // Deliberately computed from graduated results only: these signals describe
+  // how well the knowledge base answered, and a pending fact has not been
+  // integrated into it yet. Counting it would report coverage the store does
+  // not actually have.
   const quality = computeRetrievalQuality(
     topResults.map(({ score }) => ({ score })),
     limit,
@@ -367,6 +401,7 @@ export function hybridSearch(
 
   return {
     results,
+    pending,
     ...quality,
   };
 }
