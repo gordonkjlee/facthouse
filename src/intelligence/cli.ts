@@ -256,9 +256,13 @@ function resolveCommand(opts: CliProviderOpts): string[] {
 
 function findWrapperViaNpmRoot(): string | null {
   try {
-    const r = spawnSync("npm", ["root", "-g"], {
+    // One command string rather than (command, args) — with `shell: true` an
+    // args array triggers Node's DEP0190 deprecation warning, which lands in
+    // the user's terminal during `openmemory init`. The shell is needed on
+    // Windows, where `npm` is a `.cmd` shim that cannot be spawned directly.
+    const r = spawnSync("npm root -g", {
       encoding: "utf-8",
-      shell: process.platform === "win32",
+      shell: true,
     });
     if (r.status !== 0 || !r.stdout) return null;
     const candidate = path.join(
@@ -294,6 +298,67 @@ function findWrapperViaShimPath(): string | null {
     return existsSync(candidate) ? candidate : null;
   } catch {
     return null;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Availability probe
+// ---------------------------------------------------------------------------
+
+/** How the runner reports back. Only the exit status matters. */
+export interface ProbeRun {
+  status: number | null;
+}
+
+export interface CliProbeResult {
+  /** The argv prefix the provider would spawn. */
+  command: string[];
+  /** The command answered `--version`, so the provider will really work. */
+  available: boolean;
+}
+
+/**
+ * Ask whether the CLI provider can actually run, rather than whether a path
+ * could be constructed for it.
+ *
+ * `resolveCommand` always returns *something* — its last resort is a bare
+ * `claude`, on the chance a working shim is on PATH. So a resolved command is
+ * not evidence of an installed CLI, and the difference is invisible until
+ * consolidation silently degrades: every stage falls back to the heuristic
+ * provider, which extracts no entities and does no routing. The store fills
+ * with flat facts and nothing says why.
+ *
+ * Spawning `--version` is the only answer that settles it. It costs one fast
+ * subprocess, needs no model call, and catches the case a file-existence check
+ * cannot — a Windows `.cmd` shim that is present but cannot be spawned
+ * directly (Node's CVE-2024-27980 mitigation), which is exactly how this fails
+ * on the platform most likely to hit it.
+ *
+ * @param opts provider options, as passed to `createCliProvider`
+ * @param run  injection seam for tests; defaults to a real subprocess
+ */
+export function probeCliProvider(
+  opts: CliProviderOpts = {},
+  run: (cmd: string, args: string[]) => ProbeRun = defaultProbeRun,
+): CliProbeResult {
+  const command = resolveCommand(opts);
+  const result = run(command[0], [...command.slice(1), "--version"]);
+  return { command, available: result.status === 0 };
+}
+
+function defaultProbeRun(cmd: string, args: string[]): ProbeRun {
+  try {
+    const r = spawnSync(cmd, args, {
+      encoding: "utf-8",
+      timeout: 10_000,
+      windowsHide: true,
+      env: { ...process.env, OPENMEMORY_SUBPROCESS: "1" },
+    });
+    return { status: r.status };
+  } catch {
+    // A spawn that throws (ENOENT, EINVAL) is the same answer as a non-zero
+    // exit: this command cannot be run.
+    return { status: null };
   }
 }
 

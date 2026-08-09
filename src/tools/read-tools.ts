@@ -270,7 +270,7 @@ export function registerReadTools(
       `Call this when the user asks what you know or remember about them, how ` +
       `much you have stored, or whether their memory is working. This answers ` +
       `"how much do you know", not "what do you know" — use search_knowledge, ` +
-      `get_profile or get_context for actual recall.`,
+      `get_entity or get_context for actual recall.`,
     {},
     () => {
       // Shared with `openmemory stats` so the tool and the CLI can't disagree.

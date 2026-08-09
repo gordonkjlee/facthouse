@@ -248,3 +248,38 @@ describe("pending (unconsolidated) facts", () => {
     expect(result.coverage_estimate).toBe(0);
   });
 });
+
+describe("hybridSearch surfaces the entity graph", () => {
+  /**
+   * `SearchResult.entities` was hardcoded to `[]` on the assumption that the
+   * tool layer would enrich when it cared. Nothing ever did, so the entity
+   * graph — the thing that makes this more than a text store — was invisible to
+   * every caller: `search_knowledge`, the CLI renderer, all of them. The type
+   * promised it, the CLI had a branch to render it, and it could never run.
+   */
+  function insertFact(content: string, domain: string) {
+    return dbMod.insertFact(db, { content, domain, source_type: "conversation" });
+  }
+
+  it("attaches the entities linked to a matched fact", () => {
+    const fact = insertFact("Robin at Acme leads the Atlas migration", "work");
+    const robin = dbMod.createEntity(db, { type: "person", name: "Robin" });
+    const atlas = dbMod.createEntity(db, { type: "project", name: "Atlas" });
+    dbMod.linkFactEntity(db, fact.id, robin.id, "subject");
+    dbMod.linkFactEntity(db, fact.id, atlas.id, "concerns");
+
+    const [result] = searchMod.hybridSearch(db, "Atlas").results;
+
+    expect(result.fact.id).toBe(fact.id);
+    expect(result.entities.map((e) => e.name).sort()).toEqual(["Atlas", "Robin"]);
+    // The type matters as much as the name: it is what makes "tell me about the
+    // Atlas project" answerable on an engine that is not people-only.
+    expect(result.entities.find((e) => e.name === "Atlas")!.type).toBe("project");
+  });
+
+  it("gives an unlinked fact an empty list, not a missing field", () => {
+    insertFact("The user prefers dark mode", "preferences");
+    const [result] = searchMod.hybridSearch(db, "dark mode").results;
+    expect(result.entities).toEqual([]);
+  });
+});

@@ -1,9 +1,12 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import type { Db } from "../../src/db/connection.js";
 
 
 const dbMod = await import("../../src/db/index.js");
-const { extractContentFromHookPayload } = await import("../../src/cli/log-event.js");
+const { extractContentFromHookPayload, logEvent } = await import("../../src/cli/log-event.js");
 
 let db: Db;
 
@@ -71,15 +74,91 @@ describe("extractContentFromHookPayload", () => {
 });
 
 describe("logEvent (function)", () => {
-  // Note: the logEvent function opens its own database connection from a file path,
-  // so we test extractContentFromHookPayload directly (which is the pure logic)
-  // and rely on the db/sessions tests for insertEvent correctness.
-  // End-to-end CLI testing would require a temp directory with a real SQLite file.
-
   it("getLatestSession finds the most recent session", () => {
     dbMod.createSession(db, { source_tool: "claude-code", project: null });
     const latest = dbMod.getLatestSession(db);
     expect(latest).not.toBeNull();
     expect(latest!.source_tool).toBe("claude-code");
+  });
+});
+
+describe("logEvent attributes every event to a session", () => {
+  /**
+   * An event with both session columns null is not just untidy — consolidation's
+   * event-extraction pass resolves a session from the batch it is reading and
+   * returns early when it finds none, so such an event is never read at all.
+   *
+   * That was the behaviour for any call without a session id, which includes the
+   * manual form the README documents. Events accumulated, consolidation reported
+   * zero facts, and neither end said anything was wrong. These tests assert the
+   * invariant that makes an event reachable, not the shape of the row.
+   */
+  let root: string;
+  let dataDir: string;
+
+  beforeEach(() => {
+    root = mkdtempSync(path.join(tmpdir(), "om-logevent-"));
+    dataDir = path.join(root, "store");
+  });
+
+  afterEach(() => {
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  /** Read the events back through a fresh connection, as consolidation would. */
+  function readEvents(): Array<{ mcp_session_id: string | null; client_session_id: string | null }> {
+    const conn = dbMod.openDatabase(path.join(dataDir, "memory.db"));
+    try {
+      return conn
+        .prepare(`SELECT mcp_session_id, client_session_id FROM session_events ORDER BY sequence`)
+        .all() as any[];
+    } finally {
+      dbMod.closeDatabase(conn);
+    }
+  }
+
+  it("attaches an event to a session on a store that has none", async () => {
+    await logEvent({
+      role: "user",
+      eventType: "message",
+      content: "Robin is leading the Atlas migration.",
+      dataDir,
+    });
+
+    const [event] = readEvents();
+    // The precondition consolidation checks. Null here means never extracted.
+    expect(event.mcp_session_id).not.toBeNull();
+  });
+
+  it("reuses the latest session instead of one per event", async () => {
+    for (const content of ["first message", "second message", "third message"]) {
+      await logEvent({ role: "user", eventType: "message", content, dataDir });
+    }
+
+    const events = readEvents();
+    expect(events).toHaveLength(3);
+    // All three in one conversation — otherwise working memory, which scopes to
+    // a single session, sees each event in isolation.
+    const sessions = new Set(events.map((e) => e.mcp_session_id));
+    expect(sessions.size).toBe(1);
+    // ...and one *real* session. A set of three nulls also has size 1, so
+    // without this the assertion above passes on exactly the bug it guards.
+    expect([...sessions][0]).not.toBeNull();
+  });
+
+  it("keeps a hook-supplied session id as the client's own", async () => {
+    await logEvent({
+      role: "user",
+      eventType: "message",
+      content: "from a hook",
+      sessionId: "client-abc-123",
+      dataDir,
+    });
+
+    const [event] = readEvents();
+    expect(event.client_session_id).toBe("client-abc-123");
+    // Not invented as one of ours — the client's id is opaque to us, and
+    // extraction resolves either column.
+    expect(event.mcp_session_id).toBeNull();
   });
 });

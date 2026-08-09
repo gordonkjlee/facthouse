@@ -35,6 +35,12 @@ function run(args: string[], extraEnv: Record<string, string> = {}) {
   const env: Record<string, string | undefined> = { ...process.env };
   delete env.OPENMEMORY_DATA;
   delete env.OPENMEMORY_SUBPROCESS;
+  // Default to the provider that costs nothing to report on. `init` probes for
+  // the claude CLI when `cli` is selected, and that probe spawns subprocesses —
+  // seconds per run, on a machine that may or may not have the CLI installed.
+  // Tests that care about the probe set this themselves; the branches it picks
+  // between are unit-tested in tests/cli/init.test.ts.
+  env.OPENMEMORY_PROVIDER = "heuristic";
   Object.assign(env, extraEnv);
   return spawnSync(process.execPath, [CLI, ...args], {
     encoding: "utf-8",
@@ -110,6 +116,33 @@ describe.skipIf(!runnable)("cli entry — init argument precedence", () => {
     const r = run(["init", target]);
     expect(r.status).toBe(1);
     expect(r.stderr).toMatch(/Failed to initialise/i);
+  });
+});
+
+describe.skipIf(!runnable)("cli entry — init reports the intelligence it will get", () => {
+  // The unit tests cover which message each branch produces. This covers the
+  // wiring: that init really probes, and that the warning reaches stdout rather
+  // than being composed and dropped.
+  it("warns end to end when the configured CLI cannot be run", () => {
+    const dir = path.join(root, "no-cli");
+    // A path that cannot be spawned. Resolution short-circuits on this env var,
+    // so the probe fails immediately instead of hunting the filesystem.
+    const r = run(["init", dir], {
+      OPENMEMORY_PROVIDER: "cli",
+      CLAUDE_CLI_PATH: path.join(root, "definitely-not-installed"),
+    });
+
+    expect(r.status).toBe(0);
+    expect(r.stdout).toMatch(/WARNING/);
+    expect(r.stdout).toMatch(/no domain routing/);
+  });
+
+  it("says which provider is in play when it is not the CLI one", () => {
+    const dir = path.join(root, "heuristic");
+    const r = run(["init", dir]);
+
+    expect(r.stdout).toMatch(/Consolidation intelligence: heuristic/);
+    expect(r.stdout).not.toMatch(/WARNING/);
   });
 });
 

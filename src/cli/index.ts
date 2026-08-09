@@ -10,13 +10,13 @@ import { readFileSync, existsSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 import { logEvent, extractContentFromHookPayload } from "./log-event.js";
-import { initDataDir, mcpConfigSnippet } from "./init.js";
+import { initDataDir, mcpConfigSnippet, providerStatusLines } from "./init.js";
 import { runSearch, formatSearch, formatStats, getStats } from "./query.js";
 import { openDatabase, closeDatabase } from "../db/connection.js";
 import { applySchema } from "../db/schema.js";
 import { consolidate } from "../intelligence/consolidate.js";
 import { createHeuristicProvider } from "../intelligence/heuristic.js";
-import { createIntelligenceProvider } from "../intelligence/provider.js";
+import { createIntelligenceProvider, resolveProviderType } from "../intelligence/provider.js";
 import type { IntelligenceProvider } from "../intelligence/types.js";
 import { DEFAULT_CONFIG, type ServerConfig } from "../types/config.js";
 import { loadConfig } from "../config.js";
@@ -152,10 +152,11 @@ async function runInit() {
     ``,
     snippet,
     ``,
-    `Consolidation intelligence runs the \`claude\` CLI by default (no API key needed),`,
-    `falling back to a built-in heuristic when it's unavailable. Change it via`,
-    `intelligence.provider in config.json, or set OPENMEMORY_PROVIDER=heuristic to`,
-    `turn the subprocess provider off.`,
+    // Report the provider this store will really get, rather than describing
+    // the default and leaving the user to discover which branch they landed on.
+    ...providerStatusLines(
+      resolveProviderType(loadConfig(result.dataDir).intelligence.provider),
+    ),
     ``,
   ];
   console.log(lines.join("\n"));

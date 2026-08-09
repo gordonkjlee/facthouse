@@ -33,13 +33,100 @@ Works with Claude Code, Claude Desktop, Cursor, and any MCP-compatible tool. Dat
 
 > **Disable your client's built-in memory.** OpenMemory replaces it — running both fragments your knowledge across two systems. In Claude Desktop: Settings → Memory → off. In ChatGPT: Settings → Personalisation → Memory → off. This ensures OpenMemory is the single source of truth.
 
+### What you need for the intelligence
+
+Storage works with nothing but Node. The *intelligence* — entity extraction, domain routing, contradiction detection — needs a language model, and by default OpenMemory gets one by shelling out to the [Claude Code CLI](https://github.com/anthropics/claude-code). That runs on your existing Claude subscription, so there is no API key to configure and no per-call billing.
+
+Without it, consolidation falls back to a built-in heuristic. Be clear about what that means: the fallback **stores facts but extracts no entities and does no domain routing**, so you get a flat list rather than a knowledge graph. That is a deliberate design choice — the engine ships no vocabulary of its own, and a keyword classifier with no keywords cannot honestly route anything.
+
+Run `npx -y -p @openmem/mcp openmemory init` and it tells you which of the two you have:
+
+```
+Consolidation intelligence: the claude CLI (no API key needed) — found and
+working. Set OPENMEMORY_PROVIDER=heuristic to turn the subprocess off.
+```
+
+To choose the fallback deliberately and silence the check, set `OPENMEMORY_PROVIDER=heuristic`.
+
+## See It Work in Five Minutes
+
+No MCP client needed — this runs entirely on the command line against a throwaway store, so you can watch what the server does to a conversation before you point a real tool at it.
+
+```bash
+export OPENMEMORY_DATA=/tmp/openmemory-demo
+om() { npx -y -p @openmem/mcp openmemory "$@"; }   # a function, so it works pasted into a script too
+
+om init
+
+# Three things someone might say in passing, in three different conversations.
+om log-event --role user --content "I prefer dark mode in every editor, and I never want telemetry enabled."
+om log-event --role user --content "I am allergic to shellfish, so avoid seafood restaurants when booking anything."
+om log-event --role user --content "My colleague Robin at Acme is leading the Atlas migration project this quarter."
+
+om consolidate
+```
+
+Consolidation is where the server earns its keep. It reads the raw conversation, decides what is worth keeping, and returns something like this — a language model does the reading, so the wording and the labels it picks vary between runs:
+
+```json
+{"factsIn":4,"factsGraduated":4,"factsRejected":0,"entitiesCreated":3,"entitiesLinked":3,"supersessions":0,
+ "summary":"The user works at Acme where Robin is leading the Atlas migration project this quarter. They have clear preferences for their development environment: dark mode across all editors and no telemetry enabled. They have a shellfish allergy and should avoid seafood restaurants when making reservations or attending meals."}
+```
+
+Three sentences became four facts and three entities. Now ask it things:
+
+```bash
+om search "Atlas"
+```
+
+```
+1 result for "Atlas"
+
+  Robin, a colleague at Acme, is leading the Atlas migration project this quarter.
+    work  ·  score 0.043  ·  confidence 1.00  ·  entities: Acme, Atlas, Robin
+
+  coverage 70%  ·  confidence 70%
+```
+
+Nobody said "Atlas is a project" or "Acme is an organisation". The server worked that out, gave each one a type, and linked all three to the fact — which is why asking about the project finds the person, and vice versa.
+
+```bash
+om stats
+```
+
+```
+OpenMemory statistics
+
+  Facts           4 current
+  Entities        3
+  Domains         3
+  Consolidations  1
+
+  By domain
+    preferences  2
+    work         1
+    allergies    1
+```
+
+`allergies` is not a domain OpenMemory ships. The engine has no built-in vocabulary at all — it read the conversation and decided that fact needed a home of its own. Run the demo again and it may well file the same fact under `health` instead, which is exactly why a domain **biases ranking rather than filtering** everywhere it is used: a label a classifier guesses is a useful hint and a terrible gate. A corporate store grows `incident` and `supplier` the same way, without configuration.
+
+**What this demo does not show:** search is keyword-based today (BM25 over FTS5, plus structured and entity-graph paths merged by rank). It matches words, not meanings — `search "shellfish"` finds the allergy, `search "food"` does not. Semantic search over embeddings is designed but not built; until it ships, this paragraph stays here rather than the feature list making a promise the code does not keep.
+
+Clean up with `rm -rf /tmp/openmemory-demo`, then point a real client at the config in Quick Start and the same thing happens in the background as you work.
+
+### The part that matters: it is the same store from every tool
+
+Put the Quick Start config in a second AI tool and give it no rules at all. It reads `memory://profile` on connect and can `search_knowledge` for the rest — so a preference you mentioned once, in a different application, is simply known. There is nothing to sync and nothing to export: both clients are talking to one SQLite file that you own.
+
+The server side of this is covered by tests that spawn the real binary twice against a single store: a fact captured through one connection is searchable from the other, concurrent writes survive, and two simultaneous consolidations neither duplicate work nor strand it. What those tests cannot cover is any particular pair of desktop applications and their own config quirks — so if a specific combination misbehaves, please open an issue.
+
 ## How It Works
 
 OpenMemory captures knowledge through two complementary paths:
 
 1. **Fast capture** — During conversation, the AI calls `capture_fact` whenever it learns something useful. Facts are stored immediately in a session staging buffer.
 
-2. **Batch consolidation** — Periodically, the server processes all pending facts as a batch: classifying domains, extracting entities (people, places, organisations), detecting duplicates and contradictions, and building a knowledge graph.
+2. **Batch consolidation** — Periodically, the server processes all pending facts as a batch: classifying domains, extracting and typing entities (people, organisations, projects, places — whatever the conversation is about), detecting duplicates and contradictions, and building a knowledge graph.
 
 Optionally, the server can also scan raw conversation events during consolidation to extract facts the AI missed — a safety net that ensures important knowledge isn't lost.
 
@@ -49,7 +136,7 @@ The result is a structured, evolving knowledge graph that any AI tool can query 
 
 - **Hybrid knowledge capture** — AI explicitly captures facts during conversation. Optionally, the server can also extract facts from raw events during consolidation as a safety net.
 - **Batch consolidation** — Periodic processing integrates pending captures into the long-term knowledge graph: classifies domains, extracts entities, resolves duplicates, detects contradictions.
-- **Entity graph** — People, places, organisations automatically extracted and linked. Relationship strength tracks corroboration.
+- **Entity graph** — Whatever the conversation is about — people, organisations, projects, places, products — extracted, typed and linked automatically. Relationship strength tracks corroboration.
 - **Hybrid search** — BM25 keyword + structured domain + entity-graph paths, merged via Reciprocal Rank Fusion with temporal decay.
 - **In-session memory** — Recently captured facts are immediately accessible via `get_session_context`, even before consolidation.
 - **Immutable history** — Facts are never deleted, only superseded. Full history preserved.
@@ -199,6 +286,33 @@ openmemory log-event --role user --event-type message --content "hello world"
 #   --data          Data directory (default: ~/.openmemory or $OPENMEMORY_DATA)
 ```
 
+#### `openmemory consolidate`
+
+Run consolidation in-process — the same batch pass the `consolidate` tool triggers, without a running server. Useful for a cron job, a post-session hook, or seeing what consolidation does to a store you can inspect afterwards:
+
+```bash
+openmemory consolidate
+
+# Options:
+#   --data     Data directory (default: ~/.openmemory or $OPENMEMORY_DATA)
+```
+
+It honours the configured provider, so by default this is the real LLM path (`claude -p`). It prints the consolidation result as JSON — facts graduated, entities extracted, duplicates and contradictions resolved.
+
+#### `openmemory signal [tick|flush]`
+
+Wake a *running* MCP server over its IPC socket, rather than consolidating in this process:
+
+```bash
+openmemory signal tick    # nudge the scheduler to check its triggers
+openmemory signal flush   # consolidate now — for PreCompact hooks
+
+# Options:
+#   --data     Data directory (default: ~/.openmemory or $OPENMEMORY_DATA)
+```
+
+`flush` is the one that matters: it is what a PreCompact hook calls so pending facts survive a context collapse. If no server is listening, `flush` falls back to an in-process **heuristic** consolidation — deliberately, because a compaction is time-critical and spawning `claude -p` could take 35–50 seconds. Lower quality, but the data survives and can be reprocessed later. A `tick` that finds no server simply exits; the next `session_start` recovers it.
+
 #### `openmemory search <query>`
 
 Search the knowledge base from the command line. This runs the same hybrid search the `search_knowledge` tool runs, so it answers "what does it actually know about me?" — and "why did the AI say that?" — without wiring up a client:
@@ -251,7 +365,7 @@ The `capture_fact` tool description tells the AI to "call this proactively whene
 
 | Hook Point | When | What to Call | Why It Matters |
 |---|---|---|---|
-| Session start | Conversation begins | `get_profile`, `search_knowledge` | AI knows who you are from message one |
+| Session start | Conversation begins | `memory://profile` (automatic), `search_knowledge` | AI knows who you are from message one |
 | Proactive capture | User mentions a preference, fact, or decision | `capture_fact` | Knowledge compounds across sessions |
 | Pre-response search | Before generating a reply | `search_knowledge`, `get_context` | Responses informed by personal knowledge |
 | Pre-compaction | Before context window compression | `consolidate` | Processes pending facts before context is wiped |
@@ -266,7 +380,7 @@ Create `.claude/rules/openmemory.md` in your project (or `~/.claude/rules/openme
 ```markdown
 # OpenMemory
 
-- At the start of each conversation, call `get_profile` to load identity context
+- Identity context loads automatically from the `memory://profile` resource — no tool call needed
 - Before answering questions about preferences, people, or history, call `search_knowledge`
 - When the user mentions preferences, personal details, relationships, or decisions, call `capture_fact`
 - When the conversation is getting long, call `consolidate` to process pending facts before they are lost to compaction
@@ -291,11 +405,13 @@ Add to `.cursorrules` (Cursor) or `.windsurfrules` (Windsurf) in your project ro
 
 ```
 When the openmemory MCP server is available:
-- At conversation start, call get_profile to load user context
-- Before answering questions about preferences or history, call search_knowledge
+- Before answering questions about preferences, people, or history, call search_knowledge
+- To find out everything known about a particular person, project, or thing, call get_entity
 - When the user shares preferences, facts, or decisions, call capture_fact
 - When context is getting long, call consolidate to process pending facts before they are lost
 ```
+
+Cursor and Windsurf consume tools but not resources, so `memory://profile` will not load on its own there — `search_knowledge` and `get_entity` cover the same ground on demand.
 
 ### Claude Desktop / Other MCP Clients
 
