@@ -149,6 +149,50 @@ export function linkFactEntity(
   ).run(factId, entityId, relationship);
 }
 
+/**
+ * Fetch the entities linked to each of several facts, in one query.
+ *
+ * For enriching a page of search results: a lookup per result would be an N+1
+ * over the whole page, and search is the hottest read path there is.
+ *
+ * Facts with no linked entities are simply absent from the map — callers should
+ * treat a miss as an empty list rather than expecting a key for every id.
+ */
+export function getEntitiesForFacts(
+  db: Db,
+  factIds: string[],
+): Map<string, Entity[]> {
+  const byFact = new Map<string, Entity[]>();
+  if (factIds.length === 0) return byFact;
+
+  const placeholders = factIds.map(() => "?").join(",");
+  const rows = db
+    .prepare(
+      `SELECT fe.fact_id AS fact_id, e.*
+         FROM fact_entities fe
+         JOIN entities e ON e.id = fe.entity_id
+        WHERE fe.fact_id IN (${placeholders})
+        ORDER BY e.name`,
+    )
+    .all(...(factIds as SqlParam[])) as Array<
+    Omit<Entity, "metadata"> & { fact_id: string; metadata: string | null }
+  >;
+
+  for (const { fact_id, ...row } of rows) {
+    const entity: Entity = {
+      ...row,
+      metadata: row.metadata
+        ? (JSON.parse(row.metadata) as Record<string, unknown>)
+        : null,
+    };
+    const existing = byFact.get(fact_id);
+    if (existing) existing.push(entity);
+    else byFact.set(fact_id, [entity]);
+  }
+
+  return byFact;
+}
+
 // ---------------------------------------------------------------------------
 // Entity edges
 // ---------------------------------------------------------------------------

@@ -10,6 +10,7 @@ const {
   findEntityByCanonical,
   findOrCreateEntity,
   linkFactEntity,
+  getEntitiesForFacts,
   upsertEntityEdge,
   getEntityEdges,
   updateEntityAccess,
@@ -152,6 +153,56 @@ describe("fact-entity links", () => {
 
     const facts = getFactsByEntity(db, entity.id);
     expect(facts).toHaveLength(1);
+  });
+});
+
+describe("getEntitiesForFacts", () => {
+  it("groups entities by the fact they belong to", () => {
+    const work = insertFact(db, {
+      content: "Robin at Acme leads the Atlas migration",
+      domain: "work",
+      source_type: "explicit",
+    });
+    const pref = insertFact(db, {
+      content: "The user prefers dark mode",
+      domain: "preferences",
+      source_type: "explicit",
+    });
+    const robin = createEntity(db, { type: "person", name: "Robin" });
+    const acme = createEntity(db, { type: "organisation", name: "Acme" });
+
+    linkFactEntity(db, work.id, robin.id, "subject");
+    linkFactEntity(db, work.id, acme.id, "employer");
+
+    const byFact = getEntitiesForFacts(db, [work.id, pref.id]);
+
+    expect(byFact.get(work.id)!.map((e) => e.name)).toEqual(["Acme", "Robin"]);
+    // A fact with no links is absent rather than mapped to an empty array —
+    // the documented contract, so callers default on a miss.
+    expect(byFact.has(pref.id)).toBe(false);
+  });
+
+  it("parses entity metadata rather than returning the raw JSON string", () => {
+    const fact = insertFact(db, {
+      content: "Robin joined in March",
+      domain: "work",
+      source_type: "explicit",
+    });
+    const robin = createEntity(db, {
+      type: "person",
+      name: "Robin",
+      metadata: { team: "platform" },
+    });
+    linkFactEntity(db, fact.id, robin.id, "subject");
+
+    const [entity] = getEntitiesForFacts(db, [fact.id]).get(fact.id)!;
+    expect(entity.metadata).toEqual({ team: "platform" });
+  });
+
+  it("returns an empty map for no facts without touching the database", () => {
+    // The empty-IN guard: `IN ()` is a syntax error in SQLite, so an unguarded
+    // query would throw on any search that produced no results.
+    expect(getEntitiesForFacts(db, []).size).toBe(0);
   });
 });
 

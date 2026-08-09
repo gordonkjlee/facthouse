@@ -20,7 +20,7 @@ import {
   getFactsByDomain,
   getFactsByEntity,
 } from "../db/facts.js";
-import { findEntity } from "../db/entities.js";
+import { findEntity, getEntitiesForFacts } from "../db/entities.js";
 import { keywordSearchPending } from "../db/session-facts.js";
 
 // ---------------------------------------------------------------------------
@@ -356,11 +356,21 @@ export function hybridSearch(
   // not incremented here — writing 20 UPDATEs per search for a field the ranker
   // doesn't read is unjustified write amplification. Add the increment back
   // when access_count is wired into the ranker.
+  // Entities are attached here rather than left to the caller. The field was
+  // hardcoded empty on the reasoning that the tool layer would enrich if it
+  // needed to — and no caller ever did, so every consumer of a search result,
+  // the CLI renderer and `search_knowledge` alike, saw a fact stripped of the
+  // graph it belongs to. An entity graph nothing surfaces is not a feature.
+  //
+  // One batched query for the whole page, keyed by fact, rather than a lookup
+  // per result.
+  const entitiesByFact = getEntitiesForFacts(db, topResults.map(({ fact }) => fact.id));
+
   const results: SearchResult[] = topResults.map(({ fact, score }) => {
     return {
       fact,
       score: Math.round(score * 10000) / 10000,
-      entities: [], // entity enrichment happens at tool layer if needed
+      entities: entitiesByFact.get(fact.id) ?? [],
       source: null,
     };
   });
