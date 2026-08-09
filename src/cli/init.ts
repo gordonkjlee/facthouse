@@ -21,6 +21,8 @@ import { openDatabase, closeDatabase, pragmaRead } from "../db/connection.js";
 import { applySchema } from "../db/schema.js";
 import { ensureDomain } from "../db/domains.js";
 import { CONFIG_FILENAME, defaultServerConfig, loadConfig } from "../config.js";
+import { probeCliProvider, type CliProbeResult } from "../intelligence/cli.js";
+import type { IntelligenceProviderType } from "../types/config.js";
 
 /**
  * Render a copy-pasteable MCP client config block.
@@ -46,6 +48,52 @@ export function mcpConfigSnippet(
     .split("\n")
     .map((l) => `${pad}${l}`)
     .join("\n");
+}
+
+/**
+ * Report what consolidation intelligence this store will actually get.
+ *
+ * The `cli` provider is the default, and when the CLI it shells out to is
+ * missing every stage degrades to the heuristic provider. That provider stores
+ * facts but extracts no entities and does no domain routing — deliberately, on
+ * an engine that ships no vocabulary — so the server still boots, the tools
+ * still answer, and the store quietly fills with flat facts. Nothing in the
+ * product said which of the two you were getting.
+ *
+ * `init` is the right place to say it: it is the one moment the user is
+ * watching setup output, and it is before any knowledge has been captured
+ * against the wrong provider.
+ *
+ * @param provider the effective provider, after the env kill-switch is applied
+ * @param probe    deferred so no subprocess runs unless `cli` is in play
+ */
+export function providerStatusLines(
+  provider: IntelligenceProviderType,
+  probe: () => CliProbeResult = () => probeCliProvider(),
+): string[] {
+  if (provider !== "cli") {
+    return [
+      `Consolidation intelligence: ${provider}. Change it via intelligence.provider`,
+      `in config.json.`,
+    ];
+  }
+
+  if (probe().available) {
+    return [
+      `Consolidation intelligence: the claude CLI (no API key needed) — found and`,
+      `working. Set OPENMEMORY_PROVIDER=heuristic to turn the subprocess off.`,
+    ];
+  }
+
+  return [
+    `WARNING: the claude CLI was not found, so consolidation falls back to the`,
+    `built-in heuristic. It stores facts, but extracts no entities and does`,
+    `no domain routing — your knowledge graph will be flat.`,
+    ``,
+    `  To fix:  install the Claude Code CLI, or set intelligence.cli.command in`,
+    `           config.json, or point CLAUDE_CLI_PATH at the binary.`,
+    `  To keep: set OPENMEMORY_PROVIDER=heuristic and this notice goes away.`,
+  ];
 }
 
 export interface InitArgs {

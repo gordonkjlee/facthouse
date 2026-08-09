@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 
 
-const { initDataDir, mcpConfigSnippet } = await import("../../src/cli/init.js");
+const { initDataDir, mcpConfigSnippet, providerStatusLines } = await import("../../src/cli/init.js");
 const { CONFIG_FILENAME, loadConfig, defaultServerConfig } = await import("../../src/config.js");
 
 let root: string;
@@ -145,5 +145,51 @@ describe("mcpConfigSnippet", () => {
     for (const line of snippet.split("\n")) {
       expect(line.startsWith("    ")).toBe(true);
     }
+  });
+});
+
+describe("providerStatusLines", () => {
+  // The failure being guarded: `cli` is the default provider, and when the CLI
+  // it shells out to is absent every stage silently degrades to the heuristic
+  // — which extracts no entities and does no routing. The server boots, the
+  // tools answer, and the store fills with flat facts. init is where the user
+  // finds out which of the two they actually got.
+  const found = () => ({ command: ["claude"], available: true });
+  const missing = () => ({ command: ["claude"], available: false });
+
+  it("warns, and names the consequence, when the CLI is missing", () => {
+    const text = providerStatusLines("cli", missing).join("\n");
+
+    expect(text).toMatch(/WARNING/);
+    // Naming the consequence is the point. "not found" alone tells a user
+    // nothing about why they should care.
+    expect(text).toMatch(/no entities/i);
+    expect(text).toMatch(/no domain routing/i);
+    // And both ways out.
+    expect(text).toMatch(/CLAUDE_CLI_PATH/);
+    expect(text).toMatch(/OPENMEMORY_PROVIDER=heuristic/);
+  });
+
+  it("confirms rather than warns when the CLI answers", () => {
+    const text = providerStatusLines("cli", found).join("\n");
+
+    expect(text).not.toMatch(/WARNING/);
+    expect(text).toMatch(/claude CLI/);
+  });
+
+  it("does not probe at all when another provider is configured", () => {
+    // A user who chose heuristic deliberately has nothing to be warned about,
+    // and paying for a subprocess to tell them so would be worse than useless.
+    let probed = false;
+    const spy = () => {
+      probed = true;
+      return { command: ["claude"], available: false };
+    };
+
+    const text = providerStatusLines("heuristic", spy).join("\n");
+
+    expect(probed).toBe(false);
+    expect(text).not.toMatch(/WARNING/);
+    expect(text).toMatch(/heuristic/);
   });
 });
