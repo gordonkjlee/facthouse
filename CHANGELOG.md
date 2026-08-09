@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.1](https://github.com/gordonkjlee/openmemory/compare/v0.8.0...v0.8.1) (2026-08-09)
+
+
+### Bug Fixes
+
+* make the documented onboarding path actually work ([#116](https://github.com/gordonkjlee/openmemory/issues/116)) ([d7806dc](https://github.com/gordonkjlee/openmemory/commit/d7806dc31b206c649642aa838bad81c7a2f6738d))
+
 ## [0.8.0](https://github.com/gordonkjlee/openmemory/compare/v0.7.0...v0.8.0) (2026-07-17)
 
 
