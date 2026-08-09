@@ -24,13 +24,14 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync, existsSync } from "node:fs";
+import { mkdtempSync, rmSync, existsSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const SERVER = path.resolve(fileURLToPath(new URL("../../dist/index.js", import.meta.url)));
 const CLI = path.resolve(fileURLToPath(new URL("../../dist/cli/index.js", import.meta.url)));
+const README = path.resolve(fileURLToPath(new URL("../../README.md", import.meta.url)));
 const runnable = existsSync(SERVER) && existsSync(CLI);
 
 let root: string;
@@ -134,6 +135,34 @@ describe.skipIf(!runnable)("tool descriptions are an instruction layer", () => {
     expect(names).not.toContain("get_people");
   });
 
+  it("no description points an assistant at a tool that does not exist", () => {
+    // Descriptions cross-refer constantly — "use search_knowledge or get_context
+    // for actual recall" — which is what makes them an instruction layer rather
+    // than API docs. It also means a removed tool leaves dangling pointers in
+    // the text of the tools that survive.
+    //
+    // It happened: get_stats told every connected assistant to call get_profile
+    // for recall, three releases after get_profile ceased to exist. Nothing
+    // caught it, because a cross-reference reads as ordinary prose and the
+    // existing checks only measure length and timing language.
+    const registered = new Set(tools.map((t) => t.name));
+    // Descriptions also name argument and field names (`domain_hint`), which
+    // share the underscore shape. What separates a tool reference is its leading
+    // verb — so take the verbs from the tools that actually exist rather than
+    // from a list here that would need maintaining.
+    const verbs = new Set([...registered].map((n) => n.split("_")[0]));
+    const dangling: string[] = [];
+
+    for (const t of tools) {
+      for (const [ref] of (t.description ?? "").matchAll(/\b[a-z]+(?:_[a-z]+)+\b/g)) {
+        if (!verbs.has(ref.split("_")[0])) continue; // a field name, not a tool
+        if (!registered.has(ref)) dangling.push(`${t.name} → ${ref}`);
+      }
+    }
+
+    expect(dangling).toEqual([]);
+  });
+
   it("no description leaks a real name into shipped text", () => {
     // The spec's get_context example used the owner's partner's real name. Tool
     // descriptions ship to every client — examples must be synthetic. The
@@ -141,5 +170,78 @@ describe.skipIf(!runnable)("tool descriptions are an instruction layer", () => {
     for (const t of tools) {
       expect(t.description ?? "").not.toMatch(/Maryna/i);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The README is an instruction layer too
+// ---------------------------------------------------------------------------
+
+/**
+ * The README ships with the package — npm includes it regardless of the `files`
+ * array — and its integration sections are copy-pasted straight into client
+ * rules files. So a tool name written there is an instruction, exactly like a
+ * tool description, and it rots the same way.
+ *
+ * It did. Two domain-named read tools were removed in 0.8.0, and the README
+ * kept telling users to call one of them in all three of its copy-paste blocks.
+ * That shipped to npm and sat on the GitHub landing page: anyone following
+ * Quick Start pasted rules instructing their assistant to call a tool the
+ * server does not have.
+ *
+ * Same lesson as the descriptions above, one artefact over — nothing checks
+ * prose, and no one re-reads a doc to confirm the code still matches it. These
+ * two assertions close the loop in both directions.
+ */
+
+/** Backticked all-lowercase words — the alphabet tool names are drawn from. */
+function backtickedIdentifiers(md: string): string[] {
+  return [...new Set([...md.matchAll(/`([a-z][a-z_]*)`/g)].map((m) => m[1]))];
+}
+
+/**
+ * Every tool is named `verb_noun`, so an underscore is what distinguishes a
+ * tool reference from the many other lowercase words the README backticks —
+ * domain names, provider names, CLI subcommands, signal kinds.
+ *
+ * Matching on shape rather than keeping a list of non-tools is what stops this
+ * check rotting into an inventory of README vocabulary that everyone appeases
+ * and nobody reads.
+ */
+const TOOL_SHAPED = /^[a-z]+(_[a-z]+)+$/;
+
+/**
+ * Tool names with no underscore, which the shape rule alone would miss. Kept so
+ * that removing one of these while the README still advertises it fails here
+ * rather than shipping.
+ */
+const SINGLE_WORD_TOOLS = new Set(["consolidate"]);
+
+/**
+ * Underscore-shaped identifiers that are deliberately not tools. Short by
+ * construction — anything else with an underscore must exist on the server.
+ */
+const NOT_TOOLS = new Set([
+  "session_start", // a consolidation trigger
+  "last_assistant_message", // a hook payload field
+]);
+
+describe.skipIf(!runnable)("the README names tools that exist", () => {
+  it("every tool the README names is registered on the server", () => {
+    const registered = new Set(tools.map((t) => t.name));
+    const phantom = backtickedIdentifiers(readFileSync(README, "utf-8"))
+      .filter((id) => TOOL_SHAPED.test(id) || SINGLE_WORD_TOOLS.has(id))
+      .filter((id) => !registered.has(id) && !NOT_TOOLS.has(id));
+    // A non-empty list is either a removed tool the README still advertises, or
+    // a new underscore-shaped identifier that belongs in NOT_TOOLS above.
+    expect(phantom).toEqual([]);
+  });
+
+  it("every registered tool is named in the README", () => {
+    // The reverse rot: a tool ships and no one documents it, so the only place
+    // it is described is a description the user never reads.
+    const md = readFileSync(README, "utf-8");
+    const undocumented = tools.map((t) => t.name).filter((n) => !md.includes(`\`${n}\``));
+    expect(undocumented).toEqual([]);
   });
 });
