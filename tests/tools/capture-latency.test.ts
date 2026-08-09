@@ -102,7 +102,14 @@ describe("capture_fact latency", () => {
 
     // Generous ratio: this catches O(n) behaviour, not measurement noise.
     expect(late).toBeLessThan(early * 5 + 5);
-  });
+    // 30s, because vitest's 5s default was a second assertion nobody wrote.
+    // This test performs ~2,300 real inserts against a file-backed database,
+    // and on a loaded CI runner that alone can exceed five seconds — it went
+    // red once on Node 24 and passed on re-run with no change. A timeout that
+    // trips on runner load reports a wall-clock budget, not the property under
+    // test; the ratio above is what catches a regression. Kept finite so a
+    // genuine hang still fails rather than running for ever.
+  }, 30_000);
 
   it("is synchronous — it returns a fact, not a promise", () => {
     // The latency above only means anything if the call has actually finished

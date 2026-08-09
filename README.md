@@ -66,14 +66,16 @@ om log-event --role user --content "My colleague Robin at Acme is leading the At
 om consolidate
 ```
 
-Consolidation is where the server earns its keep. It reads the raw conversation, decides what is worth keeping, and returns something like this — a language model does the reading, so the wording and the labels it picks vary between runs:
+Consolidation is where the server earns its keep. It reads the raw conversation, decides what is worth keeping, and returns something like this — a language model does the reading, so the counts, the wording and the labels all vary between runs:
 
 ```json
 {"factsIn":4,"factsGraduated":4,"factsRejected":0,"entitiesCreated":3,"entitiesLinked":3,"supersessions":0,
  "summary":"The user works at Acme where Robin is leading the Atlas migration project this quarter. They have clear preferences for their development environment: dark mode across all editors and no telemetry enabled. They have a shellfish allergy and should avoid seafood restaurants when making reservations or attending meals."}
 ```
 
-Three sentences became four facts and three entities. Now ask it things:
+Three sentences became four facts and three entities — though not always four. Across runs of this exact demo the model has produced three or four, depending on whether it reads "dark mode, and no telemetry" as one preference or two. Where one fact ends and the next begins is a judgement, so treat the counts here as typical rather than guaranteed.
+
+Now ask it things:
 
 ```bash
 om search "Atlas"
