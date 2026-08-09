@@ -7,7 +7,7 @@ import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { openDatabase, closeDatabase } from "../db/connection.js";
 import { applySchema } from "../db/schema.js";
-import { insertEvent } from "../db/sessions.js";
+import { insertEvent, getLatestSession, createSession } from "../db/sessions.js";
 import { sendSchedulerSignal } from "../ipc/scheduler-ipc.js";
 import type { SessionEvent } from "../types/data.js";
 
@@ -24,8 +24,17 @@ export interface LogEventArgs {
  * Insert an event via the CLI.
  * Opens the database, inserts the event, and closes. Stateless.
  *
- * When a sessionId is provided (e.g. from a hook payload), it is stored
- * as client_session_id. Otherwise both session columns are null.
+ * When a sessionId is provided (e.g. from a hook payload), it is stored as
+ * client_session_id. When it is not, the event is attached to the most recent
+ * session, creating one if the store has none.
+ *
+ * That fallback is load-bearing, not tidiness. Consolidation's event-extraction
+ * pass resolves a session from the events it is about to read and returns early
+ * if it cannot find one — so an event with both session columns null is not
+ * merely unattributed, it is never read at all. Events used to be stored that
+ * way whenever no session id was supplied, which meant the documented manual
+ * form (`log-event --content "..."`) wrote rows that consolidation silently
+ * skipped for ever, with nothing reported at either end.
  *
  * After insertion, best-effort signals the running MCP server to tick the
  * scheduler. If the server isn't reachable (not running, different user
@@ -47,7 +56,14 @@ export async function logEvent(args: LogEventArgs): Promise<SessionEvent> {
   try {
     applySchema(db);
 
+    // A hook-supplied id is the client's own, opaque to us — it goes in
+    // client_session_id. Our fallback resolves a row in `sessions`, so it goes
+    // in mcp_session_id, which also keeps last_activity_at current and makes
+    // "most recent" mean something on the next call.
+    const mcpSessionId = args.sessionId ? null : resolveOwnSession(db);
+
     event = insertEvent(db, {
+      mcp_session_id: mcpSessionId,
       client_session_id: args.sessionId ?? null,
       event_type: args.eventType,
       role: args.role,
@@ -61,6 +77,19 @@ export async function logEvent(args: LogEventArgs): Promise<SessionEvent> {
   // Signal the running MCP server. 500ms timeout internally; never throws.
   await sendSchedulerSignal(args.dataDir, "tick");
   return event;
+}
+
+/**
+ * The session an event belongs to when the caller named none: the most recent
+ * one, or a fresh one on a store that has never had a session.
+ *
+ * `source_tool: "cli"` records how the session came about, so a store seeded
+ * from the command line is distinguishable from one an MCP client produced.
+ */
+function resolveOwnSession(db: ReturnType<typeof openDatabase>): string {
+  const latest = getLatestSession(db);
+  if (latest) return latest.id;
+  return createSession(db, { source_tool: "cli", project: null }).id;
 }
 
 // ---------------------------------------------------------------------------
