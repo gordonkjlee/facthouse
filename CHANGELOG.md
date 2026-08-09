@@ -1,5 +1,43 @@
 # Changelog
 
+## [0.9.0](https://github.com/gordonkjlee/openmemory/compare/v0.8.0...v0.9.0) (2026-08-09)
+
+Fixes three ways the documented path silently did not work. If you captured events
+through the CLI or hooks, or relied on entity links in search results, this release
+changes what you get.
+
+### Features
+
+* **cli:** `init` now reports which consolidation intelligence the store will
+  actually get, instead of leaving you to discover it. The default provider shells
+  out to a CLI; when that is unavailable every stage falls back to a heuristic that
+  extracts no entities and does no domain routing, and nothing said so
+  ([#116](https://github.com/gordonkjlee/openmemory/issues/116))
+
+### Bug Fixes
+
+* **cli:** events logged without a session id were never consolidated. Both session
+  columns were stored null, and consolidation returns early when it cannot resolve a
+  session from a batch — so those events were not merely unattributed, they were
+  never read. This affected the documented manual form of `log-event`, which
+  reported success while writing rows that were skipped for ever. **If you have been
+  capturing via hooks or the CLI, run `openmemory consolidate` after upgrading: the
+  events are still in the database and will now be processed**
+  ([#116](https://github.com/gordonkjlee/openmemory/issues/116))
+* **search:** search results now include the entities each fact is linked to. The
+  field was always returned empty, so the entity graph was invisible to
+  `search_knowledge`, to the briefing resource, and to the CLI
+  ([#116](https://github.com/gordonkjlee/openmemory/issues/116))
+* **tools:** `get_stats` no longer directs assistants to a read tool that was removed
+  in 0.8.0, and the README no longer tells you to configure client rules that call it
+  ([#116](https://github.com/gordonkjlee/openmemory/issues/116))
+
+### Documentation
+
+* **readme:** adds a CLI-only walkthrough that needs no MCP client, and states plainly
+  what the language model the intelligence depends on is, and what you lose without it
+  ([#116](https://github.com/gordonkjlee/openmemory/issues/116))
+
 ## [0.8.0](https://github.com/gordonkjlee/openmemory/compare/v0.7.0...v0.8.0) (2026-07-17)
 
 
