@@ -1,5 +1,46 @@
 # Changelog
 
+## [0.14.0](https://github.com/gordonkjlee/openmemory/compare/v0.13.1...v0.14.0) (2026-08-10)
+
+**Five settings that did nothing now work.** If you had set any of them, they
+were silently ignored — so your store's behaviour may change on upgrade to
+whatever you asked for. Check `config.json` if you have edited it.
+
+**`intelligence.fallback` is removed.** It was written into every generated
+config as `"heuristic"` and read by nothing, so removing it changes no behaviour.
+An unknown key in your existing config is ignored; you can delete the line.
+
+**The three extraction filters are now real**, and they are the only lever over
+what the extractor reads:
+
+```jsonc
+"extraction": {
+  "event_types": ["message"],   // stop feeding tool output to the LLM
+  "roles": ["user"],            // only what you said, not what the assistant did
+  "min_content_length": 10      // skip trivial events
+}
+```
+
+Measure before you narrow these. In a store wired into an agentic client, tool
+results were the source of **267 of 293** extracted facts — that is where the
+information was, and excluding them would have starved extraction almost
+entirely.
+
+### Features
+
+* **config:** make the shipped config actually do what it says ([#137](https://github.com/gordonkjlee/openmemory/issues/137)) ([9e8f7e2](https://github.com/gordonkjlee/openmemory/commit/9e8f7e296fddb1c500a45a97006d7aaa04d50f60))
+
+  Six fields in the default config were read by no code. A setting a user can
+  change with no effect is worse than a missing setting: it reads as a working
+  control and stops anyone looking further. Three instances of this shape were
+  found by accident this week; a new guard now checks for it deliberately —
+  every value the schema permits must be written somewhere, and every field the
+  shipped config declares must be read somewhere, with exemptions requiring a
+  stated reason.
+
+  `capture.default_confidence` and `consolidation.auto_link_events` reach their
+  readers for the first time; the hardcoded defaults had always won.
+
 ## [0.13.1](https://github.com/gordonkjlee/openmemory/compare/v0.13.0...v0.13.1) (2026-08-10)
 
 **Nothing you can see changes.** Same facts, same search results, same events
