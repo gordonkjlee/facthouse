@@ -21,10 +21,17 @@ what the extractor reads:
 }
 ```
 
-Measure before you narrow these. In a store wired into an agentic client, tool
-results were the source of **267 of 293** extracted facts — that is where the
-information was, and excluding them would have starved extraction almost
-entirely.
+Measure before you narrow these. In one store wired into an agentic client, the
+extracted facts originated about evenly between conversation and tool output —
+**10 and 8** respectively — so excluding tool results would have cost roughly
+half the knowledge, despite their being 99% of the bytes. Volume and value are
+not the same axis.
+
+> **Correction.** This entry first said tool results were the source of "267 of
+> 293" facts. That counted provenance *links*, not facts, and was inflated by the
+> over-linking bug fixed in 0.13.1 — a handful of facts whose text recurred in
+> hundreds of tool results dominated the total. The per-fact figure is the one
+> above. The advice is unchanged; the evidence for it was overstated.
 
 ### Features
 
