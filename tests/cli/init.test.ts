@@ -50,7 +50,11 @@ describe("initDataDir", () => {
       readFileSync(path.join(dataDir, CONFIG_FILENAME), "utf-8"),
     );
     expect(written.intelligence.provider).toBe("cli");
-    expect(written.intelligence.fallback).toBe("heuristic");
+    // Deliberately absent. It used to be written as "heuristic" and read by
+    // nothing — the terminal fallback is not configurable, because it is the
+    // only provider that cannot itself fail. A knob that does nothing is worse
+    // than no knob, so this asserts it stays gone.
+    expect(written.intelligence).not.toHaveProperty("fallback");
     expect(written.consolidation.triggers).toBeInstanceOf(Array);
     expect(written.extraction).toHaveProperty("enabled");
     expect(written.retention).toHaveProperty("prune_keep_per_session");
