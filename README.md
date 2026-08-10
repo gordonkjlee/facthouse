@@ -434,7 +434,7 @@ openmemory prune                    # report only — nothing is deleted
 openmemory prune --apply --vacuum   # delete, then rebuild the file
 ```
 
-If most of that volume is tool output you judge to be noise rather than knowledge, you can stop it reaching the extractor at all — `extraction.event_types` and `extraction.roles` restrict what is examined, and `extraction.min_content_length` skips trivial events. Measure before you do: in a store wired into an agentic client, tool results were the source of 267 of 293 extracted facts, because that is where the information actually was.
+If most of that volume is tool output you judge to be noise rather than knowledge, you can stop it reaching the extractor at all — `extraction.event_types` and `extraction.roles` restrict what is examined, and `extraction.min_content_length` skips trivial events. Measure before you do. In one store wired into an agentic client, the facts that had been extracted originated about evenly between conversation and tool output — 10 and 8 respectively — so excluding tool results would have cost roughly half the knowledge, even though they accounted for 99% of the bytes. Volume and value are not the same axis, and only your own store can tell you the ratio.
 
 **The rule is reachability, not age.** An event is removed only when all three hold:
 
