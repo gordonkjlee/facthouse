@@ -31,9 +31,9 @@ import { spawn, spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import type { IntelligenceProvider, ExtractedFact } from "./types.js";
+import type { IntelligenceProvider, ExtractedFact, ExtractedEntity } from "./types.js";
 import { createHeuristicProvider } from "./heuristic.js";
-import { domainRoutingInstruction } from "../schemas/domains.js";
+import { domainRoutingInstruction, normaliseDomainName } from "../schemas/domains.js";
 import type { DomainDef } from "../types/config.js";
 
 // ---------------------------------------------------------------------------
@@ -410,6 +410,61 @@ const STAGE_1_SCHEMA = {
   required: ["facts"],
 };
 
+const STAGE_CLASSIFY_SCHEMA = {
+  type: "object",
+  properties: {
+    classifications: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          id: { type: "string" },
+          domain: { type: "string" },
+          subdomain: { type: ["string", "null"] },
+        },
+        required: ["id", "domain"],
+      },
+    },
+  },
+  required: ["classifications"],
+};
+
+const STAGE_ENTITIES_SCHEMA = {
+  type: "object",
+  properties: {
+    facts: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          id: { type: "string" },
+          entities: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                name: { type: "string" },
+                type: { type: "string" },
+                relationship: {
+                  type: "string",
+                  description:
+                    "How this fact relates to this thing. Use exactly " +
+                    "'subject_of' for the ONE thing the fact is about; describe " +
+                    "the connection in your own words for everything else it " +
+                    "merely mentions.",
+                },
+              },
+              required: ["name", "type", "relationship"],
+            },
+          },
+        },
+        required: ["id", "entities"],
+      },
+    },
+  },
+  required: ["facts"],
+};
+
 const STAGE_2_SCHEMA = {
   type: "object",
   properties: {
@@ -636,16 +691,121 @@ export function createCliProvider(
     },
 
     async classifyFacts(facts, sessionContext) {
-      // Classification is folded into stage 1 for inferred facts via
-      // domain_hint. For explicit facts without a hint, delegate to heuristic.
-      return fallback.classifyFacts(facts, sessionContext);
+      // Facts inferred from events are routed during stage 1 and arrive with a
+      // domain_hint, so consolidation never asks about them. What reaches here
+      // is the explicit capture path — capture_fact — which is the path every
+      // tool description tells an assistant to use.
+      //
+      // This used to delegate straight to the heuristic. That was defensible
+      // while the heuristic carried a keyword vocabulary; once the engine
+      // stopped shipping one, the delegation quietly meant "route everything to
+      // the fallback domain". Measured on the same sentence: arriving as an
+      // event it was routed to a real domain; arriving through capture_fact it
+      // landed in the default one.
+      if (facts.length === 0) return [];
+
+      const result = await runStage<{
+        classifications: Array<{
+          id: string;
+          domain: string;
+          subdomain?: string | null;
+        }>;
+      }>(
+        "stage-classify",
+        "You route already-extracted facts into domains. " +
+          `${domainRoutingInstruction(vocabulary)} ` +
+          "Also give an optional short lowercase subdomain where one is " +
+          "genuinely useful, or null. " +
+          "Return a classification for EVERY fact you are given, keyed by its " +
+          "id. Return strictly {classifications: [{id, domain, subdomain}]}.",
+        {
+          session_context: sessionContext ?? null,
+          facts: facts.map((f) => ({
+            id: f.id,
+            content: f.content,
+            domain_hint: f.domain_hint ?? null,
+          })),
+        },
+        STAGE_CLASSIFY_SCHEMA,
+      );
+
+      if (!result || !Array.isArray(result.classifications)) {
+        return fallback.classifyFacts(facts, sessionContext);
+      }
+
+      // Index the model's answers and reconcile against the input. A fact the
+      // model skipped still has to come back classified, or consolidation would
+      // silently drop it — so anything missing falls through to the heuristic
+      // rather than being invented here.
+      const byId = new Map(result.classifications.map((c) => [c.id, c]));
+      const missing = facts.filter((f) => !byId.has(f.id));
+      const heuristicForMissing = missing.length
+        ? await fallback.classifyFacts(missing, sessionContext)
+        : [];
+      const heuristicById = new Map(heuristicForMissing.map((c) => [c.id, c]));
+
+      return facts.map((f) => {
+        const c = byId.get(f.id);
+        if (!c) return heuristicById.get(f.id)!;
+        return {
+          id: f.id,
+          content: f.content,
+          domain: normaliseDomainName(c.domain),
+          subdomain: c.subdomain ?? null,
+        };
+      });
     },
 
     async extractEntities(facts) {
-      // Entities come from stage 1 via session_facts.entities_json — see
-      // consolidate.ts. For facts without pre-extracted entities (e.g. explicit
-      // capture_fact entries), fall back to heuristic.
-      return fallback.extractEntities(facts);
+      // Same story as classifyFacts. Facts inferred from events carry entities
+      // extracted during stage 1; what arrives here came through capture_fact,
+      // and the heuristic this used to delegate to extracts nothing at all by
+      // design. So the primary capture path built no graph whatsoever.
+      if (facts.length === 0) return new Map();
+
+      const result = await runStage<{
+        facts: Array<{
+          id: string;
+          entities: Array<{ name: string; type: string; relationship: string }>;
+        }>;
+      }>(
+        "stage-entities",
+        "You identify the named things each fact concerns — people, " +
+          "organisations, places, projects, products, systems, concepts — " +
+          "whatever the fact is about, each with a short lowercase type. " +
+          "For each fact, mark the ONE thing it is about by setting that " +
+          "entity's relationship to exactly 'subject_of'. Every other named " +
+          "thing in the same fact keeps a descriptive relationship of your own " +
+          "wording. If a fact is about something unnamed, or you are unsure " +
+          "which thing it is about, use no subject_of at all — a wrong subject " +
+          "is worse than none. " +
+          "Never list the user themselves as a named thing — not as 'the user', " +
+          "'user', 'me' or by their own name; the store represents them " +
+          "already. Other people, including people close to the user, ARE " +
+          "listed normally. " +
+          "Return an entry for every fact, with an empty list where a fact " +
+          "names nothing. Return strictly {facts: [{id, entities}]}.",
+        { facts: facts.map((f) => ({ id: f.id, content: f.content })) },
+        STAGE_ENTITIES_SCHEMA,
+      );
+
+      if (!result || !Array.isArray(result.facts)) {
+        return fallback.extractEntities(facts);
+      }
+
+      const map = new Map<string, ExtractedEntity[]>();
+      for (const f of result.facts) {
+        if (!Array.isArray(f.entities) || f.entities.length === 0) continue;
+        map.set(
+          f.id,
+          f.entities.map((e) => ({
+            name: e.name,
+            type: e.type,
+            relationship: e.relationship,
+          })),
+        );
+      }
+      return map;
     },
 
     async reconcile(candidate, existingFacts) {
