@@ -121,6 +121,10 @@ const factManager = createFactManager(db, sessionManager, {
   intelligence,
   embedding: embeddingProvider,
   serverConfig: { extraction: config.extraction },
+  // Both of these shipped in the default config and never reached the code that
+  // reads them, so the hardcoded defaults always won whatever a store set.
+  captureConfig: config.capture,
+  autoLinkEvents: config.consolidation.auto_link_events,
   // Consolidation is the only thing that changes graduated knowledge, so it's
   // the only thing that can change what these resources render.
   onConsolidated: () => resources.notifyUpdated(),

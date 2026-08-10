@@ -105,8 +105,11 @@ export interface CliProviderConfig {
 export interface IntelligenceConfig {
   /** Which provider to use for consolidation intelligence. */
   provider: IntelligenceProviderType;
-  /** Fallback provider when primary is unavailable. */
-  fallback: IntelligenceProviderType | null;
+  // No `fallback` field. The heuristic provider is the terminal fallback and is
+  // not configurable on purpose: it is the only one that cannot itself fail,
+  // needing neither a subprocess nor an MCP client. A configurable fallback
+  // could name a provider with the same dependency that just failed, which is
+  // the situation the fallback exists to survive.
   /** API key for the 'api' provider (when configured). */
   api_key: string | null;
   /** Options for the 'cli' provider. */
@@ -278,7 +281,6 @@ export const DEFAULT_CONFIG: Omit<ServerConfig, "storage" | "temporal"> = {
     // rate limit, timeout). Override with the OPENMEMORY_PROVIDER env var
     // (e.g. =heuristic) or intelligence.provider in config.json.
     provider: "cli",
-    fallback: "heuristic",
     api_key: null,
   },
   consolidation: {

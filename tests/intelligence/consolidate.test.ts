@@ -992,3 +992,121 @@ describe("provenance names one origin, not every repeat", () => {
     expect(links[0].type).toBe("primary");
   });
 });
+
+describe("extraction honours what a store told it to look at", () => {
+  /**
+   * `event_types`, `roles` and `min_content_length` shipped in the default
+   * config and were read by nothing: extraction examined every event whatever a
+   * store had configured. Three settings a user could change with no effect.
+   *
+   * They matter more than most, because they are the only lever over what
+   * reaches the extractor. In an agentic store tool output is the bulk of the
+   * input, and a user who judges theirs to be noise had no way to stop paying
+   * to have it read.
+   */
+  function sawContents(): string[][] {
+    return seen;
+  }
+  let seen: string[][] = [];
+
+  const recording = () => ({
+    ...createHeuristicProvider(PERSONAL_VOCABULARY),
+    async extractFactsFromEvents(events: Array<{ content: string | null }>) {
+      seen.push(events.map((e) => e.content ?? ""));
+      return { facts: [], degraded: false };
+    },
+  });
+
+  beforeEach(() => {
+    seen = [];
+  });
+
+  it("skips event types the store excluded", async () => {
+    const sessionId = setupSession();
+    insertEvent(db, {
+      mcp_session_id: sessionId,
+      event_type: "message",
+      role: "user",
+      content: "a sentence the user actually said",
+    });
+    insertEvent(db, {
+      mcp_session_id: sessionId,
+      event_type: "tool_result",
+      role: "tool",
+      content: "forty kilobytes of directory listing",
+    });
+
+    await consolidate(db, recording() as never, {
+      extraction: { enabled: true, event_types: ["message"] } as never,
+    });
+
+    expect(sawContents()[0]).toEqual(["a sentence the user actually said"]);
+  });
+
+  it("skips roles the store excluded", async () => {
+    const sessionId = setupSession();
+    insertEvent(db, {
+      mcp_session_id: sessionId,
+      event_type: "message",
+      role: "user",
+      content: "something the user said",
+    });
+    insertEvent(db, {
+      mcp_session_id: sessionId,
+      event_type: "message",
+      role: "assistant",
+      content: "something the assistant said",
+    });
+
+    await consolidate(db, recording() as never, {
+      extraction: { enabled: true, roles: ["user"] } as never,
+    });
+
+    expect(sawContents()[0]).toEqual(["something the user said"]);
+  });
+
+  it("skips events shorter than the configured minimum", async () => {
+    const sessionId = setupSession();
+    for (const content of ["ok", "a properly substantial sentence about coffee"]) {
+      insertEvent(db, {
+        mcp_session_id: sessionId,
+        event_type: "message",
+        role: "user",
+        content,
+      });
+    }
+
+    await consolidate(db, recording() as never, {
+      extraction: { enabled: true, min_content_length: 10 } as never,
+    });
+
+    expect(sawContents()[0]).toEqual(["a properly substantial sentence about coffee"]);
+  });
+
+  it("does not report degradation when everything was filtered out", async () => {
+    // A run that examined its events and found none eligible succeeded. Calling
+    // it degraded would hold the watermark back for ever and grow a backlog
+    // nothing could drain — the failure mode a previous fix in this file
+    // eliminated.
+    const sessionId = setupSession();
+    insertEvent(db, {
+      mcp_session_id: sessionId,
+      event_type: "tool_result",
+      role: "tool",
+      content: "excluded output",
+    });
+
+    const result = await consolidate(db, recording() as never, {
+      extraction: { enabled: true, event_types: ["message"] } as never,
+    });
+
+    expect(result.extractionDegraded).toBeFalsy();
+    // The extractor was never called, because nothing was eligible.
+    expect(sawContents()).toHaveLength(0);
+    // And the watermark moved, so these events are not reconsidered for ever.
+    const wm = db
+      .prepare(`SELECT COALESCE(MAX(last_event_sequence), 0) v FROM consolidations`)
+      .get() as { v: number };
+    expect(wm.v).toBeGreaterThan(0);
+  });
+});

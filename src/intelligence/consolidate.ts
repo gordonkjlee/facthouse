@@ -685,6 +685,14 @@ async function extractFactsFromEvents(
 ): Promise<boolean> {
   const workingMemorySize = config?.extraction?.working_memory_size ?? 50;
   const maxContentLength = config?.extraction?.max_content_length ?? 2000;
+  // These three shipped in the default config and were read by nothing, so
+  // extraction examined every event whatever a store had configured. They are
+  // the only lever over what reaches the extractor: a store whose tool output is
+  // noise rather than knowledge sets `event_types: ["message"]` and stops paying
+  // to have it read.
+  const eventTypes = config?.extraction?.event_types ?? null;
+  const roles = config?.extraction?.roles ?? null;
+  const minContentLength = config?.extraction?.min_content_length ?? 0;
 
   // Watermark is the highest session_events.sequence recorded on any previous
   // consolidation run. consolidate() writes this on every run (including empty
@@ -707,7 +715,19 @@ async function extractFactsFromEvents(
 
   if (candidateRows.length === 0) return false;
 
-  const newEvents = candidateRows.map((e: any) => ({
+  // Filter what the extractor sees. The watermark still advances past everything
+  // read this run, filtered or not: these events were examined and declined, not
+  // skipped by a failure, so holding the watermark back for them would grow a
+  // backlog that nothing could ever drain.
+  const eligible = candidateRows.filter((e: any) => {
+    if (eventTypes && !eventTypes.includes(e.event_type)) return false;
+    if (roles && !roles.includes(e.role)) return false;
+    return (e.content?.length ?? 0) >= minContentLength;
+  });
+  // Nothing eligible is a successful run that found nothing, not a degraded one.
+  if (eligible.length === 0) return false;
+
+  const newEvents = eligible.map((e: any) => ({
     ...e,
     metadata: e.metadata ? JSON.parse(e.metadata) : null,
   }));

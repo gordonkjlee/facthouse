@@ -434,6 +434,8 @@ openmemory prune                    # report only — nothing is deleted
 openmemory prune --apply --vacuum   # delete, then rebuild the file
 ```
 
+If most of that volume is tool output you judge to be noise rather than knowledge, you can stop it reaching the extractor at all — `extraction.event_types` and `extraction.roles` restrict what is examined, and `extraction.min_content_length` skips trivial events. Measure before you do: in a store wired into an agentic client, tool results were the source of 267 of 293 extracted facts, because that is where the information actually was.
+
 **The rule is reachability, not age.** An event is removed only when all three hold:
 
 1. Extraction has already read it. Anything ahead of the consolidation watermark is still input.
