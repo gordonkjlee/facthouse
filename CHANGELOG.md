@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.14.1](https://github.com/gordonkjlee/openmemory/compare/v0.14.0...v0.14.1) (2026-08-10)
+
+
+### Bug Fixes
+
+* **docs:** correct an overstated figure about where facts come from ([#139](https://github.com/gordonkjlee/openmemory/issues/139)) ([4602c4c](https://github.com/gordonkjlee/openmemory/commit/4602c4c9750de6f5349426ffd40c60e654cc250c))
+
 ## [0.14.0](https://github.com/gordonkjlee/openmemory/compare/v0.13.1...v0.14.0) (2026-08-10)
 
 **Five settings that did nothing now work.** If you had set any of them, they
