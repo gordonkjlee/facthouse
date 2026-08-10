@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.0](https://github.com/gordonkjlee/openmemory/compare/v0.10.0...v0.11.0) (2026-08-10)
+
+
+### Features
+
+* **search:** semantic search over stored embeddings, off by default ([#128](https://github.com/gordonkjlee/openmemory/issues/128)) ([56f3d9d](https://github.com/gordonkjlee/openmemory/commit/56f3d9d80bbb489a02f85287dacde85cfbd2c5b2))
+
 ## [0.10.0](https://github.com/gordonkjlee/openmemory/compare/v0.9.0...v0.10.0) (2026-08-10)
 
 Two of these fixes change what your existing store contains, and neither corrects
