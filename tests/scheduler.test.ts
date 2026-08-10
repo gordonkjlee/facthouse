@@ -149,7 +149,14 @@ describe("scheduler", () => {
     } catch {
       /* best effort */
     }
-  });
+    // An explicit budget, because this is the only test in the file that touches
+    // real disk — two SQLite connections against a temp file, where the rest run
+    // in memory. It takes ~114ms locally and exceeded the 5s default once on a
+    // loaded CI runner, which failed the test step that gates npm publication:
+    // an otherwise sound release did not reach users because a filesystem test
+    // was starved of I/O. Not a race — it is consistently fast and correct, just
+    // far more expensive than the default budget was set for.
+  }, 30_000);
 
   it("respects minIntervalMs between tick-driven runs", async () => {
     const runConsolidate = vi.fn().mockResolvedValue(STUB_RESULT);
