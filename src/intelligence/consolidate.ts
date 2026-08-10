@@ -61,6 +61,15 @@ export interface ConsolidationResult {
   openThreads: string[];
   skipped: boolean;
   skipReason?: string;
+  /**
+   * The configured extractor could not run, so raw events were not examined and
+   * the event watermark was held back for the next run to retry.
+   *
+   * Reported because the failure is otherwise invisible: facts captured
+   * explicitly still graduate, so the run returns healthy-looking counts while
+   * an entire batch of conversation went unread.
+   */
+  extractionDegraded?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -117,6 +126,12 @@ export async function consolidate(
     .get() as { seq: number };
   const prevWatermark = prevWatermarkRow.seq;
 
+  // Set when the configured extractor could not run. The events it was meant to
+  // read have not been examined, so the watermark must stay where it was and
+  // leave them eligible for the next run. Advancing regardless is what made a
+  // transient provider failure discard a batch of conversation for good.
+  let extractionDegraded = false;
+
   let phaseDCommitted = false;
   try {
     // Phase A: Claim pending session_facts
@@ -124,8 +139,18 @@ export async function consolidate(
 
     // Phase B: D→I event extraction (if enabled)
     if (extractionEnabled) {
-      await extractFactsFromEvents(db, intelligence, consolidationId, config);
+      extractionDegraded = await extractFactsFromEvents(
+        db,
+        intelligence,
+        consolidationId,
+        config,
+      );
     }
+
+    // Hold the watermark back rather than advancing past unexamined events.
+    // Deliberately not `prevWatermark - 1` or similar: the goal is simply that
+    // this run claims no new ground, so the next one sees the same candidates.
+    const effectiveWatermark = extractionDegraded ? prevWatermark : runWatermark;
 
     // Load all claimed facts (explicit + any newly inferred)
     const sessionFacts = getClaimedFacts(db, consolidationId);
@@ -135,18 +160,19 @@ export async function consolidate(
       // prevents session_start (and other force-flushes) from spamming the
       // consolidations table with duplicate no-op rows when nothing new has
       // landed since the last run.
-      if (runWatermark > prevWatermark) {
+      if (!extractionDegraded && runWatermark > prevWatermark) {
         db.prepare(
           `INSERT INTO consolidations
            (id, session_id, facts_in, facts_graduated, facts_rejected,
             entities_created, entities_linked, supersessions,
             summary, open_threads, last_event_sequence, created_at)
            VALUES (?, NULL, 0, 0, 0, 0, 0, 0, NULL, NULL, ?, ?)`,
-        ).run(consolidationId, runWatermark, new Date().toISOString());
+        ).run(consolidationId, effectiveWatermark, new Date().toISOString());
       }
       releaseLock(db, consolidationId);
       return {
         consolidationId,
+        extractionDegraded,
         factsIn: 0,
         factsGraduated: 0,
         factsRejected: 0,
@@ -530,7 +556,7 @@ export async function consolidate(
         supersessionCount,
         null, // summary filled below
         null,
-        runWatermark,
+        effectiveWatermark,
         new Date().toISOString(),
       );
 
@@ -592,6 +618,7 @@ export async function consolidate(
 
     return {
       consolidationId,
+      extractionDegraded,
       factsIn: sessionFacts.length,
       factsGraduated: toGraduate.length,
       factsRejected: rejected,
@@ -625,7 +652,7 @@ async function extractFactsFromEvents(
   intelligence: IntelligenceProvider,
   consolidationId: string,
   config?: Partial<ServerConfig>,
-): Promise<void> {
+): Promise<boolean> {
   const workingMemorySize = config?.extraction?.working_memory_size ?? 50;
   const maxContentLength = config?.extraction?.max_content_length ?? 2000;
 
@@ -648,7 +675,7 @@ async function extractFactsFromEvents(
     )
     .all(watermark) as any[];
 
-  if (candidateRows.length === 0) return;
+  if (candidateRows.length === 0) return false;
 
   const newEvents = candidateRows.map((e: any) => ({
     ...e,
@@ -663,7 +690,7 @@ async function extractFactsFromEvents(
     newEvents.find((e: any) => e.client_session_id)?.client_session_id ??
     null;
   if (!sessionId) {
-    return;
+    return false;
   }
 
   // Working memory: pre-watermark events from THE SAME session, capped at
@@ -722,12 +749,13 @@ async function extractFactsFromEvents(
   }));
 
   // Extract facts via intelligence provider.
-  const extracted = await intelligence.extractFactsFromEvents(
+  const outcome = await intelligence.extractFactsFromEvents(
     truncated,
     workingMemory,
     priorSummary,
     longTermMemory,
   );
+  const extracted = outcome.facts;
 
   // Attribute the extracted session_facts to the session we already
   // identified above (used for working-memory scoping). This is the same
@@ -780,5 +808,10 @@ async function extractFactsFromEvents(
       }
     }
   }
+
+  // Tell the caller whether the configured extractor actually ran. When it did
+  // not, these events have not been examined and the watermark must not move
+  // past them.
+  return outcome.degraded;
 }
 

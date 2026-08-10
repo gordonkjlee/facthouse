@@ -76,13 +76,19 @@ describe("createCliProvider — extractFactsFromEvents", () => {
     async classifyFacts() { return []; },
     async extractEntities() { return new Map(); },
     async extractFactsFromEvents() {
-      return [
-        {
-          content: FALLBACK_MARKER,
-          domain_hint: null,
-          source_quality: "heuristic" as const,
-        },
-      ];
+      // A fallback provider reports its own work as un-degraded. Whether the
+      // *configured* extractor ran is the caller's judgement, not the
+      // fallback's — the CLI provider sets degraded when it delegates here.
+      return {
+        facts: [
+          {
+            content: FALLBACK_MARKER,
+            domain_hint: null,
+            source_quality: "heuristic" as const,
+          },
+        ],
+        degraded: false,
+      };
     },
     async detectSupersession() { return null; },
     async reconcile() { return { kind: "add" as const }; },
@@ -116,12 +122,14 @@ describe("createCliProvider — extractFactsFromEvents", () => {
     ];
     const result = await provider.extractFactsFromEvents(events, []);
 
-    expect(result).toHaveLength(1);
-    expect(result[0].content).toBe("Allergic to aspirin");
-    expect(result[0].domain_hint).toBe("medical");
-    expect(result[0].confidence_signal).toBe(0.9);
-    expect(result[0].source_quality).toBe("cli");
-    expect(result[0].entities?.[0]?.name).toBe("aspirin");
+    expect(result.facts).toHaveLength(1);
+    expect(result.facts[0].content).toBe("Allergic to aspirin");
+    expect(result.facts[0].domain_hint).toBe("medical");
+    expect(result.facts[0].confidence_signal).toBe(0.9);
+    expect(result.facts[0].source_quality).toBe("cli");
+    expect(result.facts[0].entities?.[0]?.name).toBe("aspirin");
+    // The extractor ran, so the caller may advance its watermark.
+    expect(result.degraded).toBe(false);
   });
 
   it("spawns with --setting-sources user and OPENMEMORY_SUBPROCESS=1", async () => {
@@ -182,10 +190,11 @@ describe("createCliProvider — extractFactsFromEvents", () => {
       ],
       [],
     );
-    // Heuristic regex matches this and returns one fact.
-    expect(result.length).toBeGreaterThanOrEqual(1);
-    // Heuristic source_quality.
-    expect(result[0].source_quality).toBe("heuristic");
+    expect(result.facts.length).toBeGreaterThanOrEqual(1);
+    expect(result.facts[0].source_quality).toBe("heuristic");
+    // The point of the flag: these events were never examined, so the caller
+    // must not advance past them.
+    expect(result.degraded).toBe(true);
   });
 
   it("falls back to heuristic when subprocess exits non-zero", async () => {
@@ -198,7 +207,8 @@ describe("createCliProvider — extractFactsFromEvents", () => {
       [{ id: "e1", role: "user", content: "I prefer dark roast", sequence: 1 } as any],
       [],
     );
-    expect(result[0].source_quality).toBe("heuristic");
+    expect(result.facts[0].source_quality).toBe("heuristic");
+    expect(result.degraded).toBe(true);
   });
 
   it("falls back to heuristic when envelope has is_error true", async () => {
@@ -211,7 +221,8 @@ describe("createCliProvider — extractFactsFromEvents", () => {
       [{ id: "e1", role: "user", content: "I prefer dark roast", sequence: 1 } as any],
       [],
     );
-    expect(result[0].source_quality).toBe("heuristic");
+    expect(result.facts[0].source_quality).toBe("heuristic");
+    expect(result.degraded).toBe(true);
   });
 
   it("falls back to heuristic when structured_output is missing", async () => {
@@ -224,7 +235,8 @@ describe("createCliProvider — extractFactsFromEvents", () => {
       [{ id: "e1", role: "user", content: "I prefer dark roast", sequence: 1 } as any],
       [],
     );
-    expect(result[0].source_quality).toBe("heuristic");
+    expect(result.facts[0].source_quality).toBe("heuristic");
+    expect(result.degraded).toBe(true);
   });
 
   it("times out after the configured window", async () => {
@@ -241,7 +253,8 @@ describe("createCliProvider — extractFactsFromEvents", () => {
     vi.useRealTimers();
     const result = await eventPromise;
     // Fell back.
-    expect(result[0].content).toBe(FALLBACK_MARKER);
+    expect(result.facts[0].content).toBe(FALLBACK_MARKER);
+    expect(result.degraded).toBe(true);
   });
 });
 
