@@ -423,6 +423,27 @@ Cursor and Windsurf consume tools but not resources, so `memory://profile` will 
 
 No configuration needed. Tool descriptions handle integration automatically — the AI assistant reads the tool descriptions and knows when to capture and search.
 
+## Reclaiming space
+
+OpenMemory logs raw conversation and tool output to `session_events` — the data layer that extraction reads facts out of. On a store wired into an agentic client this becomes almost all of the database, because tool output is logged wholesale and dwarfs anything a person actually says. A store measured in daily use held 47,000 events and 493 MB against 21 graduated facts.
+
+`openmemory stats` reports the raw layer alongside the knowledge. To reclaim it:
+
+```bash
+openmemory prune                    # report only — nothing is deleted
+openmemory prune --apply --vacuum   # delete, then rebuild the file
+```
+
+**The rule is reachability, not age.** An event is removed only when all three hold:
+
+1. Extraction has already read it. Anything ahead of the consolidation watermark is still input.
+2. No fact's provenance cites it. A cited event is the answer to "why does it believe this?", so it stays however old it gets.
+3. It has fallen outside its own session's most recent `extraction.working_memory_size` events, which consolidation re-reads for pronoun resolution and topical flow.
+
+No fact, entity, embedding or search result is affected — only raw events that nothing can reach. Deleting rows does not shrink the file on its own, which is what `--vacuum` is for; it rewrites the whole database and needs comparable free disk space.
+
+Nothing prunes automatically. Deletion is irreversible, and a memory product that quietly discards your data on a timer is not one worth running.
+
 ## Development
 
 ```bash

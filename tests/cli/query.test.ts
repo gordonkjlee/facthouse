@@ -109,6 +109,7 @@ describe("formatStats", () => {
       consolidations: 0,
       domain_distribution: [],
       embeddings: [],
+      events: { count: 0, bytes: 0 },
       ...over,
     };
   }

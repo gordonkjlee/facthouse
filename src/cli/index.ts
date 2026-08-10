@@ -16,7 +16,8 @@ import {
   providerStatusLines,
   embeddingStatusLines,
 } from "./init.js";
-import { runSearch, formatSearch, formatStats, getStats } from "./query.js";
+import { runSearch, formatSearch, formatStats, formatPrune, getStats } from "./query.js";
+import { prunableEvents, pruneEvents, vacuum } from "../db/prune.js";
 import { openDatabase, closeDatabase } from "../db/connection.js";
 import { applySchema } from "../db/schema.js";
 import { consolidate } from "../intelligence/consolidate.js";
@@ -81,6 +82,8 @@ async function main() {
     await runSearchCmd();
   } else if (subcommand === "stats") {
     await runStatsCmd();
+  } else if (subcommand === "prune") {
+    await runPruneCmd();
   } else {
     console.error(
       `Usage: openmemory <command>\n\n` +
@@ -88,6 +91,7 @@ async function main() {
         `  init [dir]    Create the data directory, database, and default config\n` +
         `  search <q>    Search the knowledge base\n` +
         `  stats         Show knowledge base statistics\n` +
+        `  prune         Reclaim raw events nothing can reach (dry run by default)\n` +
         `  log-event     Log a session event (used by hooks)\n` +
         `  signal        Signal the running MCP server to tick or flush\n` +
         `  consolidate   Run consolidation in-process with the configured provider`,
@@ -286,6 +290,48 @@ async function runStatsCmd() {
   const stats = withDb(dataDir, (db) => getStats(db));
 
   console.log(values.json ? JSON.stringify(stats, null, 2) : formatStats(stats));
+}
+
+/**
+ * Reclaim raw events that nothing can reach.
+ *
+ * Reports by default and deletes only when asked. Pruning is irreversible and
+ * this is a memory product: the difference between "here is what would go" and
+ * "it has gone" must be a deliberate keystroke, not a default.
+ */
+async function runPruneCmd() {
+  const { values } = parseArgs({
+    args: process.argv.slice(3),
+    options: {
+      data: { type: "string", default: process.env.OPENMEMORY_DATA ?? DEFAULT_DATA_DIR },
+      apply: { type: "boolean", default: false },
+      vacuum: { type: "boolean", default: false },
+      json: { type: "boolean", default: false },
+    },
+    strict: true,
+  });
+
+  const dataDir = path.resolve(resolveTilde(values.data as string));
+  const config = loadConfig(dataDir);
+  // Defers to the setting it protects rather than repeating its default, unless
+  // a store has deliberately overridden it.
+  const keep =
+    config.retention?.prune_keep_per_session ?? config.extraction?.working_memory_size ?? 50;
+  const apply = values.apply as boolean;
+
+  const result = withDb(dataDir, (db) => {
+    const stats = apply ? pruneEvents(db, keep) : prunableEvents(db, keep);
+    // Only after a successful delete — vacuuming a database nothing was removed
+    // from is a long rewrite for no reason.
+    if (apply && (values.vacuum as boolean) && stats.events > 0) vacuum(db);
+    return stats;
+  });
+
+  if (values.json) {
+    console.log(JSON.stringify({ ...result, applied: apply }, null, 2));
+    return;
+  }
+  console.log(formatPrune(result, apply, keep, values.vacuum as boolean));
 }
 
 async function runSignal() {

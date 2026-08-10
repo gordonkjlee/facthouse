@@ -128,10 +128,72 @@ export function formatStats(stats: KnowledgeStats): string {
     }
   }
 
+  // Shown against the fact count, because the ratio is the finding. A store
+  // whose raw layer is three orders of magnitude larger than its knowledge is
+  // working correctly and still worth knowing about.
+  if (stats.events.count > 0) {
+    const mb = stats.events.bytes / 1048576;
+    lines.push("", "  Raw events");
+    lines.push(
+      `    ${stats.events.count} logged` +
+        (mb >= 0.1 ? `  (${mb.toFixed(1)} MB of content)` : ""),
+    );
+    if (mb >= 50) {
+      lines.push(`    Reclaim what nothing can reach:  openmemory prune`);
+    }
+  }
+
   if (stats.facts.total === 0) {
     lines.push("", "  Nothing captured yet.");
   }
 
+  lines.push("");
+  return lines.join("\n");
+}
+
+/**
+ * Render a prune report for a terminal.
+ *
+ * States what was spared as clearly as what would go. A user weighing an
+ * irreversible delete needs to know the rule, not just the number — and the
+ * commonest reason for a small result is that most events are still ahead of
+ * the extraction watermark, which reads as "prune is broken" without a word of
+ * explanation.
+ */
+export function formatPrune(
+  stats: { events: number; bytes: number },
+  applied: boolean,
+  keepPerSession: number,
+  vacuumed: boolean,
+): string {
+  const mb = (stats.bytes / 1048576).toFixed(1);
+  const lines: string[] = ["", applied ? "Pruned raw events" : "Prune (dry run)", ""];
+
+  if (stats.events === 0) {
+    lines.push("  Nothing to reclaim.", "");
+    lines.push("  An event is only removable once extraction has read it, no fact's");
+    lines.push("  provenance points at it, and it has fallen out of its session's most");
+    lines.push(`  recent ${keepPerSession} events. Anything newer is still in use.`, "");
+    return lines.join("\n");
+  }
+
+  lines.push(
+    `  ${applied ? "Removed" : "Removable"}  ${stats.events} events  (${mb} MB of content)`,
+  );
+  lines.push("");
+  lines.push("  These have been read by extraction, are not cited as the provenance of");
+  lines.push(`  any fact, and are older than the last ${keepPerSession} events of their session.`);
+  lines.push("  No fact, entity or search result changes.");
+  lines.push("");
+
+  if (applied && !vacuumed) {
+    lines.push("  The file will not shrink until the database is rebuilt:");
+    lines.push("    openmemory prune --apply --vacuum");
+    lines.push("  (VACUUM rewrites the whole database and needs comparable free disk.)");
+  } else if (!applied) {
+    lines.push("  Nothing has been deleted. To do it:");
+    lines.push("    openmemory prune --apply --vacuum");
+  }
   lines.push("");
   return lines.join("\n");
 }
