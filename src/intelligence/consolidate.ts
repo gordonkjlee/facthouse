@@ -879,31 +879,51 @@ async function embedGraduatedFacts(
     const { model, dimensions } = probe;
     if (!dimensions) return;
 
-    const pending = getFactsMissingEmbeddings(db, model, dimensions, batchSize);
-    if (pending.length === 0) return;
+    // Drain the queue rather than taking one batch. `batch_size` bounds the
+    // size of a request, which is a property of the provider; it must not also
+    // decide how much of the backlog a run clears, or turning semantic search
+    // on over an existing store would need one consolidation per 128 facts
+    // with no indication that more were owed. The backlog is a one-off — a
+    // steady-state run embeds the handful of facts that just graduated.
+    const attempted = new Set<string>();
+    for (;;) {
+      const pending = getFactsMissingEmbeddings(db, model, dimensions, batchSize);
+      if (pending.length === 0) return;
 
-    const result = await provider.embed(
-      pending.map((f) => f.content),
-      // Stored facts are documents. Embedding them as queries would put them in
-      // the wrong half of an asymmetrically-trained model and silently degrade
-      // every subsequent search.
-      "document",
-    );
+      // If a batch comes back entirely made of facts already written this run,
+      // the writes are not clearing the queue and another pass would repeat
+      // itself for ever. Stop rather than spin; the rows still missing are the
+      // queue, exactly as after any other failure.
+      if (pending.every((f) => attempted.has(f.id))) return;
+      for (const f of pending) attempted.add(f.id);
 
-    if (result.vectors.length !== pending.length) {
-      // Misalignment would attach each fact to a different fact's meaning —
-      // wrong in a way no downstream check could detect.
-      throw new Error(
-        `embedding returned ${result.vectors.length} vectors for ${pending.length} facts`,
+      const result = await provider.embed(
+        pending.map((f) => f.content),
+        // Stored facts are documents. Embedding them as queries would put them
+        // in the wrong half of an asymmetrically-trained model and silently
+        // degrade every subsequent search.
+        "document",
       );
-    }
 
-    insertEmbeddings(
-      db,
-      pending.map((f, i) => ({ fact_id: f.id, vector: result.vectors[i] })),
-      result.model,
-      result.dimensions,
-    );
+      if (result.vectors.length !== pending.length) {
+        // Misalignment would attach each fact to a different fact's meaning —
+        // wrong in a way no downstream check could detect.
+        throw new Error(
+          `embedding returned ${result.vectors.length} vectors for ${pending.length} facts`,
+        );
+      }
+
+      // Committed per batch, so a failure part-way through a long backlog keeps
+      // everything embedded so far instead of costing the whole run.
+      insertEmbeddings(
+        db,
+        pending.map((f, i) => ({ fact_id: f.id, vector: result.vectors[i] })),
+        result.model,
+        result.dimensions,
+      );
+
+      if (pending.length < batchSize) return;
+    }
   } catch {
     // Swallowed on purpose. The missing rows are the retry queue; the next run
     // finds exactly these facts again and tries once more.

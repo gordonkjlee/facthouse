@@ -799,6 +799,94 @@ describe("embedding never costs a fact", () => {
     expect(getFactsMissingEmbeddings(db, "test-model", 3, 100)).toHaveLength(0);
   });
 
+  it("drains a backlog larger than one batch in a single run", async () => {
+    // batch_size bounds a request, not a run. When semantic search is switched
+    // on over an existing store the whole store is backlog, and a run that
+    // stopped after one batch would leave the rest embedded only if more
+    // consolidations happened to occur — silently, since search still works.
+    const sessionId = setupSession();
+    for (let i = 0; i < 7; i++) {
+      insertSessionFact(db, {
+        session_id: sessionId,
+        content: `The user prefers beverage number ${i}`,
+        source_origin: "explicit",
+      });
+    }
+
+    // Count requests, so this asserts batching still happens rather than the
+    // limit having been removed.
+    let calls = 0;
+    const counting = {
+      model: "test-model",
+      dimensions: 3,
+      async embed(texts: string[]) {
+        calls++;
+        expect(texts.length).toBeLessThanOrEqual(2);
+        return {
+          vectors: texts.map(() => Float32Array.from([1, 1, 1])),
+          model: "test-model",
+          dimensions: 3,
+        };
+      },
+    };
+
+    const result = await consolidate(
+      db,
+      createHeuristicProvider(PERSONAL_VOCABULARY),
+      { embedding: { batch_size: 2 } as never },
+      counting as never,
+    );
+
+    // Guards the premise: if dedup collapsed these to one fact there would be
+    // no backlog and the test would pass without exercising anything.
+    expect(result.factsGraduated).toBe(7);
+    expect(countEmbeddings(db, "test-model", 3)).toBe(7);
+    expect(getFactsMissingEmbeddings(db, "test-model", 3, 100)).toHaveLength(0);
+    // One probe plus four batches of two — not one batch and a silent remainder.
+    expect(calls).toBeGreaterThan(2);
+  });
+
+  it("keeps the batches it completed when the provider dies mid-backlog", async () => {
+    // Progress must be durable per batch. Otherwise a large backlog against a
+    // flaky provider makes no headway at all: every run redoes the same first
+    // batches and loses them again at the same point.
+    const sessionId = setupSession();
+    for (let i = 0; i < 7; i++) {
+      insertSessionFact(db, {
+        session_id: sessionId,
+        content: `The user prefers beverage number ${i}`,
+        source_origin: "explicit",
+      });
+    }
+
+    let calls = 0;
+    const flaky = {
+      model: "test-model",
+      dimensions: 3,
+      async embed(texts: string[]) {
+        calls++;
+        // Probe, batch, batch, then fall over.
+        if (calls > 3) throw new Error("provider unreachable");
+        return {
+          vectors: texts.map(() => Float32Array.from([1, 1, 1])),
+          model: "test-model",
+          dimensions: 3,
+        };
+      },
+    };
+
+    await consolidate(
+      db,
+      createHeuristicProvider(PERSONAL_VOCABULARY),
+      { embedding: { batch_size: 2 } as never },
+      flaky as never,
+    );
+
+    // Some, not none and not all — the two batches that completed.
+    expect(countEmbeddings(db, "test-model", 3)).toBe(4);
+    expect(getFactsMissingEmbeddings(db, "test-model", 3, 100)).toHaveLength(3);
+  });
+
   it("embeds nothing when no provider is configured", async () => {
     // The shipped default. No call, no rows, no behaviour change.
     const sessionId = setupSession();
