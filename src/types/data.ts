@@ -151,6 +151,13 @@ export interface Entity {
   created_at: string;
   access_count: number;
   last_accessed_at: string | null;
+  /**
+   * This entity is the user of this store. At most one row may set it.
+   *
+   * Stored as 0/1 rather than a boolean because SQLite has no boolean type and
+   * the partial unique index that enforces the singleton indexes the raw value.
+   */
+  is_self: 0 | 1;
 }
 
 export interface EntityEdge {

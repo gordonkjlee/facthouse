@@ -15,6 +15,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { openDatabase, closeDatabase } from "./db/connection.js";
 import { applySchema } from "./db/schema.js";
+import { ensureSelfEntity } from "./db/entities.js";
 import { createSessionManager, registerSessionReadTools } from "./tools/session-manager.js";
 import { createFactManager } from "./tools/fact-manager.js";
 import { createHeuristicProvider } from "./intelligence/heuristic.js";
@@ -56,6 +57,10 @@ mkdirSync(dataDir, { recursive: true });
 const dbPath = path.join(dataDir, "memory.db");
 const db = openDatabase(dbPath);
 applySchema(db);
+// Also here, not only in `openmemory init` — init is optional, and a store the
+// server created on first boot needs the anchor just as much as one that was
+// set up ahead of time. Idempotent.
+ensureSelfEntity(db);
 
 // ---------------------------------------------------------------------------
 // MCP Server

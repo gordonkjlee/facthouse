@@ -11,7 +11,7 @@ const { applySchema } = await import("../../src/db/schema.js");
 const { createSession } = await import("../../src/db/sessions.js");
 const { insertSessionFact } = await import("../../src/db/session-facts.js");
 const { insertFact, getFactsByDomain } = await import("../../src/db/facts.js");
-const { findEntity } = await import("../../src/db/entities.js");
+const { findEntity, getSelfEntity, ensureSelfEntity, getFactsBySubject } = await import("../../src/db/entities.js");
 const { ensureDomain } = await import("../../src/db/domains.js");
 const { consolidate } = await import("../../src/intelligence/consolidate.js");
 const { createHeuristicProvider } = await import("../../src/intelligence/heuristic.js");
@@ -628,5 +628,90 @@ describe("domain handling at graduation", () => {
 
   it("falls back only when a provider returns no domain at all", async () => {
     expect(await graduateWith("")).toBe("general");
+  });
+});
+
+describe("subject marking at graduation", () => {
+  /**
+   * A fact→entity link says a fact *names* something. It cannot say a fact is
+   * *about* something, which is what "tell me about X" needs — and what
+   * identity retrieval needs most of all, since a fact about the user
+   * frequently names nobody at all.
+   *
+   * These assert the deterministic half of that: third-person self-reference,
+   * which is how an assistant records facts about its user.
+   */
+  it("anchors a fact about the user to the self entity", async () => {
+    const sessionId = setupSession();
+    insertSessionFact(db, {
+      session_id: sessionId,
+      content: "The user prefers dark mode in all editors",
+      source_origin: "explicit",
+    });
+
+    await consolidate(db, createHeuristicProvider(PERSONAL_VOCABULARY), {});
+
+    const self = getSelfEntity(db);
+    expect(self).not.toBeNull();
+    const subjectFacts = getFactsBySubject(db, self!.id);
+    expect(subjectFacts).toHaveLength(1);
+    expect(subjectFacts[0].content).toMatch(/dark mode/);
+  });
+
+  it("anchors a fact that names nobody, which extraction returns nothing for", async () => {
+    // The case that motivates doing this outside the entity-extraction branch.
+    // The heuristic provider extracts no entities at all, so if subject marking
+    // hung off extraction this fact would have no anchor — and it is exactly
+    // the kind of fact a profile is made of.
+    const sessionId = setupSession();
+    insertSessionFact(db, {
+      session_id: sessionId,
+      content: "The user is allergic to shellfish",
+      source_origin: "explicit",
+    });
+
+    await consolidate(db, createHeuristicProvider(PERSONAL_VOCABULARY), {});
+
+    const self = getSelfEntity(db)!;
+    expect(getFactsBySubject(db, self.id)).toHaveLength(1);
+  });
+
+  it("does not anchor a fact about somebody else", async () => {
+    // Create the anchor first, as init and server boot both do. Without this
+    // the store has no self entity, the lookup below returns null, and the
+    // assertion would pass by never running.
+    const self = ensureSelfEntity(db);
+
+    const sessionId = setupSession();
+    insertSessionFact(db, {
+      session_id: sessionId,
+      content: "Robin leads the Atlas migration this quarter",
+      source_origin: "explicit",
+    });
+
+    await consolidate(db, createHeuristicProvider(PERSONAL_VOCABULARY), {});
+
+    expect(getFactsBySubject(db, self.id)).toEqual([]);
+    // And the fact still graduated — declining to name a subject must not drop
+    // the fact along with it.
+    expect(getFactsByDomain(db, "general").length + getFactsByDomain(db, "work").length)
+      .toBeGreaterThan(0);
+  });
+
+  it("keeps one self entity across repeated consolidations", async () => {
+    for (const content of [
+      "The user prefers dark mode",
+      "The user is allergic to shellfish",
+    ]) {
+      const sessionId = setupSession();
+      insertSessionFact(db, { session_id: sessionId, content, source_origin: "explicit" });
+      await consolidate(db, createHeuristicProvider(PERSONAL_VOCABULARY), {});
+    }
+
+    const count = db
+      .prepare(`SELECT COUNT(*) AS n FROM entities WHERE is_self = 1`)
+      .get() as { n: number };
+    expect(count.n).toBe(1);
+    expect(getFactsBySubject(db, getSelfEntity(db)!.id)).toHaveLength(2);
   });
 });

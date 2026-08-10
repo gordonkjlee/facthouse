@@ -20,6 +20,7 @@ import path from "node:path";
 import { openDatabase, closeDatabase, pragmaRead } from "../db/connection.js";
 import { applySchema } from "../db/schema.js";
 import { ensureDomain } from "../db/domains.js";
+import { ensureSelfEntity } from "../db/entities.js";
 import { CONFIG_FILENAME, defaultServerConfig, loadConfig } from "../config.js";
 import { probeCliProvider, type CliProbeResult } from "../intelligence/cli.js";
 import type { IntelligenceProviderType } from "../types/config.js";
@@ -148,6 +149,11 @@ export function initDataDir(args: InitArgs): InitResult {
     for (const domain of seedDomains) {
       ensureDomain(db, domain.name, domain.subdomains);
     }
+    // The user's own entity, nameless until a fact says otherwise. Created here
+    // rather than on first use so that the very first fact captured can already
+    // be marked as being about them — there is no window in which facts arrive
+    // with nowhere to anchor. Idempotent, so re-running init is safe.
+    ensureSelfEntity(db);
   } finally {
     closeDatabase(db);
   }

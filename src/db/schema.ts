@@ -39,6 +39,9 @@ export function applySchema(db: Db): void {
   if (version < 8) {
     applyV8(db);
   }
+  if (version < 9) {
+    applyV9(db);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -432,4 +435,49 @@ function applyV8(db: Db): void {
   `);
 
   pragmaWrite(db, "user_version = 8");
+}
+
+// ---------------------------------------------------------------------------
+// Schema version 9 — a designated self entity
+//
+// Every fact→entity link is currently a mention. There is no way to distinguish
+// "this fact is about Robin" from "this fact happens to name Robin", so
+// `subject = X` cannot be asked at all — which is why "tell me about my car"
+// has no mechanism and identity retrieval has to guess at a domain label
+// instead.
+//
+// Marking subjects needs no schema change: `fact_entities.relationship` is
+// freeform text and can carry a reserved value. What does need one is the
+// harder half — knowing which entity is the user. "Alex likes coffee" is a fact
+// about the user or about a friend depending on who Alex is, and nothing in the
+// store has ever recorded that. It is chicken-and-egg, because the user's name
+// is learned *from* facts about them.
+//
+// A nameless singleton breaks it. Identity is a slot, not a value: the row
+// exists from `init`, and the name attaches later as an ordinary fact like any
+// other. Nothing has to be known about the user for the anchor to be usable.
+//
+// A column rather than a metadata key or a reserved `type`, because this is an
+// invariant the schema can enforce and the other two cannot. A partial unique
+// index makes "at most one self" a constraint rather than a convention, and
+// `type` is deliberately freeform vocabulary — spending it on a structural flag
+// would put a shipped word back into an engine that ships none.
+// ---------------------------------------------------------------------------
+function applyV9(db: Db): void {
+  // SQLite cannot add a column conditionally, and this migration must be safe
+  // to run against a store already carrying entities. DEFAULT 0 backfills every
+  // existing row as "not the user", which is correct: none of them was.
+  db.exec(`
+    ALTER TABLE entities ADD COLUMN is_self INTEGER NOT NULL DEFAULT 0;
+  `);
+
+  db.exec(`
+    -- Partial, so it constrains only the single row that claims to be the user
+    -- and leaves every other entity unaffected. A second self becomes an error
+    -- at the database rather than a duplicate nobody notices.
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_entities_self
+      ON entities(is_self) WHERE is_self = 1;
+  `);
+
+  pragmaWrite(db, "user_version = 9");
 }
