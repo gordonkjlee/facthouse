@@ -389,7 +389,14 @@ const STAGE_1_SCHEMA = {
               properties: {
                 name: { type: "string" },
                 type: { type: "string" },
-                relationship: { type: "string" },
+                relationship: {
+                  type: "string",
+                  description:
+                    "How this fact relates to this thing. Use exactly " +
+                    "'subject_of' for the ONE thing the fact is about; describe " +
+                    "the connection in your own words for everything else it " +
+                    "merely mentions.",
+                },
                 existing_id: { type: ["string", "null"] },
               },
               required: ["name", "type", "relationship"],
@@ -549,7 +556,24 @@ export function createCliProvider(
           `${domainRoutingInstruction(vocabulary)} ` +
           "optional subdomain, confidence 0-1, importance 0-1, and any named " +
           "things mentioned (people, organisations, places, projects, products, " +
-          "systems — whatever the fact concerns), each with a short lowercase type. " +
+          "systems, concepts — whatever the fact concerns), each with a short lowercase type. " +
+          // Subject marking. Retrieval ranks facts ABOUT a thing above facts that
+          // merely name it, and only the extractor can tell them apart: "Alex's
+          // transfer was approved by Robin" names both and is about Alex.
+          "For each fact, mark the ONE thing it is about by setting that entity's " +
+          "relationship to exactly 'subject_of'. Every other named thing in the same " +
+          "fact keeps a descriptive relationship of your own wording. If a fact is " +
+          "about something unnamed, or you are unsure which thing it is about, use no " +
+          "subject_of at all — a wrong subject is worse than none. " +
+          // The user is represented by a dedicated entity the store creates at setup,
+          // and facts about them are recognised without the model's help. Extracting
+          // them as an ordinary named thing produced a second, competing "user" entity.
+          "This applies to the entities list ONLY: never list the user themselves as " +
+          "a named thing — not as 'the user', 'user', 'me' or by their own name. " +
+          "The store represents them already. Facts ABOUT the user are among the most " +
+          "valuable things to extract and must still be extracted in full, exactly as " +
+          "any other fact — they simply carry no entity for the user. Other people, " +
+          "including people close to the user, ARE listed as entities normally. " +
           "Only extract facts from candidate_events. " +
           "recent_events is prior conversational context for pronoun resolution and topical " +
           "flow — use it to interpret candidate_events, but DO NOT extract facts from it. " +
