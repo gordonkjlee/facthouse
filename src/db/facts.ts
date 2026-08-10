@@ -6,7 +6,10 @@
 import { randomUUID } from "node:crypto";
 import { withTransaction } from "./connection.js";
 import type { Db, SqlParam } from "./connection.js";
-import type { Fact } from "../types/data.js";
+import type { Fact, EntityFact } from "../types/data.js";
+// The one reserved relationship value. Imported rather than repeated, because a
+// second copy of a magic string is a second definition with its own future.
+import { SUBJECT_OF } from "./entities.js";
 
 // ---------------------------------------------------------------------------
 // Input types
@@ -142,17 +145,39 @@ export function getFactsByDomain(
 export function getFactsByEntity(
   db: Db,
   entityId: string,
-): Fact[] {
+): EntityFact[] {
   const rows = db
     .prepare(
-      `SELECT f.* FROM facts f
-       JOIN fact_entities fe ON f.id = fe.fact_id
-       WHERE fe.entity_id = ? AND f.status = 'active' AND f.is_latest = 1
-         AND (f.valid_until IS NULL OR f.valid_until > datetime('now'))`,
+      // Facts *about* this entity come first, then facts that merely name it,
+      // and importance orders within each group.
+      //
+      // Ranking, not filtering. Returning subjects alone would be wrong twice
+      // over: "Robin approved Alex's transfer" is worth surfacing when asked
+      // about Robin even though it is not about him, and no provider emits
+      // subject links yet, so a subject-only query would answer almost every
+      // question with nothing. This is the same conclusion the domain gate
+      // reached the hard way — a signal that ranks degrades where one that
+      // filters fails absolutely.
+      //
+      // MAX() because an entity can be linked to one fact more than once, with
+      // different relationships; the fact is about it if any link says so.
+      `SELECT f.*, MAX(fe.relationship = ?) AS is_subject
+         FROM facts f
+         JOIN fact_entities fe ON f.id = fe.fact_id
+        WHERE fe.entity_id = ? AND f.status = 'active' AND f.is_latest = 1
+          AND (f.valid_until IS NULL OR f.valid_until > datetime('now'))
+        GROUP BY f.id
+        ORDER BY is_subject DESC, f.importance DESC, f.created_at DESC`,
     )
-    .all(entityId) as Array<Omit<Fact, "is_latest"> & { is_latest: number }>;
+    .all(SUBJECT_OF, entityId) as Array<
+    Omit<Fact, "is_latest"> & { is_latest: number; is_subject: number }
+  >;
 
-  return rows.map((row) => ({ ...row, is_latest: row.is_latest === 1 }));
+  return rows.map((row) => ({
+    ...row,
+    is_latest: row.is_latest === 1,
+    is_subject: row.is_subject === 1,
+  }));
 }
 
 /** Supersede a fact: mark old as superseded, insert new. Returns the new Fact.

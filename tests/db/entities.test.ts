@@ -543,3 +543,70 @@ describe("getFactsBySubject", () => {
     expect(getFactsBySubject(db, robin.id).map((f) => f.id)).toEqual([major.id, minor.id]);
   });
 });
+
+describe("entity retrieval ranks subjects above mentions", () => {
+  /**
+   * Ranking rather than filtering, for the same reason a domain ranks rather
+   * than gates. A subject-only query would be wrong twice: a fact naming Robin
+   * as an approver is worth surfacing when asked about Robin, and no provider
+   * emits subject links yet, so filtering on them would answer almost every
+   * question with nothing.
+   */
+  function factAbout(content: string, importance?: number) {
+    return insertFact(db, { content, domain: "work", source_type: "explicit", importance });
+  }
+
+  it("puts facts about the entity before facts that merely name it", () => {
+    const robin = createEntity(db, { type: "person", name: "Robin" });
+    // Insert the mention first so insertion order cannot produce the pass.
+    const mention = factAbout("Alex's transfer was approved by Robin", 0.9);
+    const subject = factAbout("Robin leads the Atlas migration", 0.1);
+    linkFactEntity(db, mention.id, robin.id, "approver");
+    linkFactEntity(db, subject.id, robin.id, SUBJECT_OF);
+
+    const facts = getFactsByEntity(db, robin.id);
+
+    // Subject wins despite lower importance — the relationship outranks it.
+    expect(facts.map((f) => f.id)).toEqual([subject.id, mention.id]);
+    expect(facts[0].is_subject).toBe(true);
+    expect(facts[1].is_subject).toBe(false);
+  });
+
+  it("orders by importance within each group", () => {
+    const robin = createEntity(db, { type: "person", name: "Robin" });
+    const minorSubject = factAbout("Robin prefers afternoon meetings", 0.2);
+    const majorSubject = factAbout("Robin leads the Atlas migration", 0.9);
+    linkFactEntity(db, minorSubject.id, robin.id, SUBJECT_OF);
+    linkFactEntity(db, majorSubject.id, robin.id, SUBJECT_OF);
+
+    expect(getFactsByEntity(db, robin.id).map((f) => f.id))
+      .toEqual([majorSubject.id, minorSubject.id]);
+  });
+
+  it("still returns mentions when nothing has a subject link", () => {
+    // The state every existing store is in. If this regressed to subject-only,
+    // entity retrieval would go silent for every fact captured before now.
+    const robin = createEntity(db, { type: "person", name: "Robin" });
+    const fact = factAbout("Alex's transfer was approved by Robin");
+    linkFactEntity(db, fact.id, robin.id, "approver");
+
+    const facts = getFactsByEntity(db, robin.id);
+    expect(facts).toHaveLength(1);
+    expect(facts[0].is_subject).toBe(false);
+  });
+
+  it("counts a fact once when an entity is linked to it twice", () => {
+    // fact_entities is keyed on (fact, entity, relationship), so one fact can
+    // carry both a subject link and a mention link. Without the grouping it
+    // would appear twice, and a caller would report it twice.
+    const robin = createEntity(db, { type: "person", name: "Robin" });
+    const fact = factAbout("Robin leads the Atlas migration");
+    linkFactEntity(db, fact.id, robin.id, SUBJECT_OF);
+    linkFactEntity(db, fact.id, robin.id, "lead");
+
+    const facts = getFactsByEntity(db, robin.id);
+    expect(facts).toHaveLength(1);
+    // About it if any link says so.
+    expect(facts[0].is_subject).toBe(true);
+  });
+});
