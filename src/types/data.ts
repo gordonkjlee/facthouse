@@ -192,6 +192,17 @@ export interface Inference {
   validated_at: string | null;
 }
 
+/**
+ * A fact retrieved via an entity, carrying how it relates to that entity.
+ *
+ * `is_subject` distinguishes "this fact is about Robin" from "this fact happens
+ * to name Robin" — the difference between what is known about someone and where
+ * they have been mentioned. Surfaced to callers rather than kept internal
+ * because an assistant reading these needs it too: a fact naming Robin as an
+ * approver should not be repeated back as a fact about Robin.
+ */
+export type EntityFact = Fact & { is_subject: boolean };
+
 export interface SearchResult {
   fact: Fact;
   score: number;

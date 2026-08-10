@@ -86,7 +86,13 @@ export function registerReadTools(
       `it would improve your answer — including indirect references like "my ` +
       `manager", "the Helsinki office", "the payments service". Call it before ` +
       `advising on anything involving that thing, and before asking who or what ` +
-      `something is — you may already know.`,
+      `something is — you may already know.\n\n` +
+      `Facts come back most relevant first, each flagged with is_subject. True ` +
+      `means the fact is ABOUT this thing; false means it only mentions it. ` +
+      `Treat the difference as real when you answer: "Alex's transfer was ` +
+      `approved by Robin" is worth knowing when asked about Robin, but it is a ` +
+      `fact about Alex, and reporting it as something you know about Robin ` +
+      `would be wrong.`,
     {
       name: z
         .string()
