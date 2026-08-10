@@ -389,3 +389,137 @@ describe("createCliProvider — summarise", () => {
     expect(prompt).toContain("Earlier the user shared work context.");
   });
 });
+
+describe("createCliProvider — explicit captures get real intelligence", () => {
+  /**
+   * Facts inferred from events are classified and have their entities extracted
+   * during stage 1, so consolidation never asks the provider about them. What
+   * reaches classifyFacts and extractEntities is the explicit capture path —
+   * capture_fact — which is the path every tool description tells an assistant
+   * to use.
+   *
+   * Both used to delegate straight to the heuristic. That was defensible while
+   * the heuristic carried a keyword vocabulary and a name regex; once the engine
+   * stopped shipping either, the delegation quietly became "route everything to
+   * the fallback domain and extract nothing". Measured on one sentence: as an
+   * event it produced a real domain and three typed entities; through
+   * capture_fact, the default domain and none.
+   */
+  const stubFallback = {
+    async classifyFacts(facts: any[]) {
+      return facts.map((f) => ({
+        id: f.id,
+        content: f.content,
+        domain: "__fallback__",
+        subdomain: null,
+      }));
+    },
+    async extractEntities() {
+      return new Map([["__fallback__", []]]);
+    },
+    async extractFactsFromEvents() { return { facts: [], degraded: false }; },
+    async detectSupersession() { return null; },
+    async reconcile() { return { kind: "add" as const }; },
+    async summarise() { return { summary: "", openThreads: [] }; },
+  };
+
+  const facts = [
+    { id: "f1", content: "Robin at Acme leads the Atlas migration" },
+    { id: "f2", content: "The user is allergic to shellfish" },
+  ] as any[];
+
+  it("routes explicit facts with the model rather than the fallback", async () => {
+    nextMockChildBehaviour = respondWith({
+      is_error: false,
+      result: "",
+      structured_output: {
+        classifications: [
+          { id: "f1", domain: "work", subdomain: "leadership" },
+          { id: "f2", domain: "health", subdomain: null },
+        ],
+      },
+    });
+
+    const provider = createCliProvider({}, stubFallback as any);
+    const classified = await provider.classifyFacts(facts);
+
+    expect(classified.map((c) => c.domain)).toEqual(["work", "health"]);
+    expect(classified[0].subdomain).toBe("leadership");
+    // Not a single one came from the fallback.
+    expect(classified.some((c) => c.domain === "__fallback__")).toBe(false);
+  });
+
+  it("classifies a fact the model omitted rather than dropping it", async () => {
+    // A fact that comes back unclassified would be dropped by consolidation.
+    // Anything the model skips has to fall through, not vanish.
+    nextMockChildBehaviour = respondWith({
+      is_error: false,
+      result: "",
+      structured_output: {
+        classifications: [{ id: "f1", domain: "work", subdomain: null }],
+      },
+    });
+
+    const provider = createCliProvider({}, stubFallback as any);
+    const classified = await provider.classifyFacts(facts);
+
+    expect(classified).toHaveLength(2);
+    expect(classified.find((c) => c.id === "f1")!.domain).toBe("work");
+    expect(classified.find((c) => c.id === "f2")!.domain).toBe("__fallback__");
+  });
+
+  it("falls back for every fact when the classify stage fails", async () => {
+    nextMockChildBehaviour = (child) => child.emit("close", 1);
+
+    const provider = createCliProvider({}, stubFallback as any);
+    const classified = await provider.classifyFacts(facts);
+
+    expect(classified).toHaveLength(2);
+    expect(classified.every((c) => c.domain === "__fallback__")).toBe(true);
+  });
+
+  it("extracts entities for explicit facts, marking the subject", async () => {
+    nextMockChildBehaviour = respondWith({
+      is_error: false,
+      result: "",
+      structured_output: {
+        facts: [
+          {
+            id: "f1",
+            entities: [
+              { name: "Robin", type: "person", relationship: "subject_of" },
+              { name: "Acme", type: "organisation", relationship: "employer" },
+            ],
+          },
+          { id: "f2", entities: [] },
+        ],
+      },
+    });
+
+    const provider = createCliProvider({}, stubFallback as any);
+    const map = await provider.extractEntities(facts);
+
+    expect(map.get("f1")!.map((e) => e.name)).toEqual(["Robin", "Acme"]);
+    expect(map.get("f1")![0].relationship).toBe("subject_of");
+    // A fact naming nothing is absent rather than mapped to an empty list.
+    expect(map.has("f2")).toBe(false);
+    expect(map.has("__fallback__")).toBe(false);
+  });
+
+  it("falls back when the entity stage fails", async () => {
+    nextMockChildBehaviour = (child) => child.emit("close", 1);
+
+    const provider = createCliProvider({}, stubFallback as any);
+    const map = await provider.extractEntities(facts);
+
+    expect(map.has("__fallback__")).toBe(true);
+  });
+
+  it("spawns nothing when there is nothing to classify or extract", async () => {
+    const provider = createCliProvider({}, stubFallback as any);
+
+    expect(await provider.classifyFacts([])).toEqual([]);
+    expect((await provider.extractEntities([])).size).toBe(0);
+    expect(lastSpawnArgs).toBeNull();
+  });
+});
