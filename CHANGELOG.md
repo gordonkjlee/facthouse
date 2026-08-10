@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.13.1](https://github.com/gordonkjlee/openmemory/compare/v0.13.0...v0.13.1) (2026-08-10)
+
+**Nothing you can see changes.** Same facts, same search results, same events
+linked as provenance — only the label on those links is now accurate. Worth
+reading if you ever inspect why a fact is believed.
+
+### Bug Fixes
+
+* **intelligence:** name one origin for a fact, not every repeat of it ([#135](https://github.com/gordonkjlee/openmemory/issues/135)) ([7616267](https://github.com/gordonkjlee/openmemory/commit/7616267a310b736f41791ff81805ae1c7e083311))
+
+  A fact's provenance marked *every* event containing its text as `primary` —
+  "the event that stated this". In an agentic store the same tool output recurs
+  constantly, so one fact in a measured database claimed 145 separate events as
+  its origin, another 129, another 97. A question with 145 answers has none.
+
+  The earliest occurrence is now `primary` and later ones `corroborating` — a
+  value the schema and types have defined from the start and no code had ever
+  written. A single occurrence is still `primary`.
+
 ## [0.13.0](https://github.com/gordonkjlee/openmemory/compare/v0.12.0...v0.13.0) (2026-08-10)
 
 **Nothing is deleted unless you ask.** This adds a command, changes no existing
