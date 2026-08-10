@@ -22,6 +22,7 @@ import {
 } from "../db/facts.js";
 import { findEntity, getEntitiesForFacts } from "../db/entities.js";
 import { keywordSearchPending } from "../db/session-facts.js";
+import { vectorSearch } from "./vector.js";
 
 // ---------------------------------------------------------------------------
 // Structured search
@@ -227,6 +228,21 @@ export function computeRetrievalQuality(
 export interface HybridSearchOpts {
   domain?: string;
   limit?: number;
+  /**
+   * Pre-computed embedding of the query, plus the model and dimension it came
+   * from. Omit for keyword-only search — the shipped default.
+   *
+   * Passed in rather than computed here because embedding is async and
+   * `hybridSearch` is synchronous, which is not an accident: every other recall
+   * path is a local index read, and making the whole search async to
+   * accommodate one network call would push that cost onto callers who have not
+   * enabled it.
+   */
+  semantic?: {
+    vector: Float32Array;
+    model: string;
+    dimensions: number;
+  };
 }
 
 /**
@@ -314,6 +330,27 @@ export function hybridSearch(
   }
   if (entityFacts.length > 0) {
     searchLists.push({ name: "entity", facts: entityFacts.slice(0, candidatePool) });
+  }
+
+  // 3b. Semantic path — an exact cosine scan over stored vectors.
+  //
+  // Ranks, never gates: a fact with no embedding is not excluded from search,
+  // it simply earns no credit from this list. That matters most while a store
+  // is partially embedded, which every store is immediately after semantic
+  // search is switched on.
+  //
+  // Note what RRF does with this signal. A fact ranked first here but absent
+  // from every other list scores 1/60; a fact ranked first in keyword *and*
+  // second here scores 1/60 + 1/61. Corroboration across signals wins, which is
+  // the intended behaviour — and it means semantic search moves results most
+  // where keyword returns nothing at all, which is exactly the case it exists
+  // for.
+  if (opts?.semantic) {
+    const { vector, model, dimensions } = opts.semantic;
+    const semanticFacts = vectorSearch(db, vector, model, dimensions, candidatePool);
+    if (semanticFacts.length > 0) {
+      searchLists.push({ name: "semantic", facts: semanticFacts });
+    }
   }
 
   // 4. RRF merge

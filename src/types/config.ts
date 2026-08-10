@@ -129,6 +129,46 @@ export interface RetentionConfig {
   session_facts_days: number | null;
 }
 
+/** Which embedding backend produces vectors, if any. */
+export type EmbeddingProviderType = "voyage" | "ollama";
+
+/**
+ * Semantic search configuration.
+ *
+ * Replaces a `search.embedding_provider` field that shipped for months with
+ * nowhere to record a model, a dimension, or where the key lives — and with no
+ * code reading it.
+ *
+ * `provider: null` is the default and means keyword-only search, exactly as
+ * before. Nothing is shipped enabled, because shipping a default model would be
+ * shipping an assumption about what "similar" means — the same mistake as
+ * shipping a domain vocabulary, on a different axis.
+ */
+export interface EmbeddingConfig {
+  /** null = semantic search off. Nothing downloads, nothing is called. */
+  provider: EmbeddingProviderType | null;
+  /** Provider default when null. Recorded on every vector it produces. */
+  model: string | null;
+  /**
+   * Truncate vectors to this many dimensions, on models that support it.
+   *
+   * The scaling lever, not a storage micro-optimisation: the scan reads every
+   * vector on every query, so dimension decides how many facts fit in page
+   * cache. null keeps the model's native size.
+   */
+  dimensions: number | null;
+  /**
+   * Environment variable holding the API key. The key itself is never stored
+   * in config.json — a config file that holds secrets is a config file that
+   * gets committed.
+   */
+  api_key_env: string;
+  /** Facts per embedding call during consolidation. */
+  batch_size: number;
+  /** Ollama only. */
+  host?: string;
+}
+
 /** Top-level server configuration (loaded from config.json in data dir). */
 export interface ServerConfig {
   storage: {
@@ -136,9 +176,7 @@ export interface ServerConfig {
     sqlite?: { path: string };
   };
   temporal: TemporalConfig;
-  search?: {
-    embedding_provider: "openai" | "ollama" | null;
-  };
+  embedding: EmbeddingConfig;
 
   capture: CaptureConfig;
   extraction: ExtractionConfig;
@@ -154,6 +192,13 @@ export interface ServerConfig {
 
 /** Default configuration values. */
 export const DEFAULT_CONFIG: Omit<ServerConfig, "storage" | "temporal"> = {
+  embedding: {
+    provider: null,
+    model: null,
+    dimensions: null,
+    api_key_env: "VOYAGE_API_KEY",
+    batch_size: 128,
+  },
   capture: {
     default_confidence: DEFAULT_CONFIDENCE,
   },

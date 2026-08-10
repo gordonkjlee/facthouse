@@ -44,6 +44,11 @@ import { isAboutTheUser } from "./subject.js";
 import { ensureDomain } from "../db/domains.js";
 import { importanceDefaults, normaliseDomainName } from "../schemas/domains.js";
 import { acquireLock, releaseLock } from "../db/consolidation-lock.js";
+import type { EmbeddingProvider } from "../embedding/types.js";
+import {
+  getFactsMissingEmbeddings,
+  insertEmbeddings,
+} from "../db/embeddings.js";
 
 // ---------------------------------------------------------------------------
 // Result type
@@ -80,6 +85,12 @@ export async function consolidate(
   db: Db,
   intelligence: IntelligenceProvider,
   config?: Partial<ServerConfig>,
+  /**
+   * Optional — null means semantic search is off, which is the shipped default.
+   * Passed in rather than constructed here so consolidation keeps no opinion
+   * about providers, exactly as it keeps none about intelligence providers.
+   */
+  embeddingProvider: EmbeddingProvider | null = null,
 ): Promise<ConsolidationResult> {
   const consolidationId = randomUUID();
   const extractionEnabled = config?.extraction?.enabled ?? false;
@@ -169,6 +180,14 @@ export async function consolidate(
            VALUES (?, NULL, 0, 0, 0, 0, 0, 0, NULL, NULL, ?, ?)`,
         ).run(consolidationId, effectiveWatermark, new Date().toISOString());
       }
+      // Backfill on the empty path too. This branch is "nothing new graduated",
+      // which is exactly the state a store is in when it has a backlog and no
+      // fresh input — semantic search switched on over an existing store, or a
+      // previous run whose provider was down. Returning here without embedding
+      // would mean the backlog only ever drains on runs that happen to have new
+      // facts, which for a quiet store is never.
+      await embedGraduatedFacts(db, embeddingProvider, config);
+
       releaseLock(db, consolidationId);
       return {
         consolidationId,
@@ -564,6 +583,17 @@ export async function consolidate(
     });
     phaseDCommitted = true;
 
+    // Phase E: embed the facts that just graduated, if semantic search is on.
+    //
+    // After the commit, deliberately. An embedding is derived data, and no
+    // failure here may cost a fact: the provider is a network call or a local
+    // service, and both fail in ways consolidation must survive. Facts are
+    // already durable at this point, so the worst case is that they carry no
+    // vector until the next run picks them up.
+    //
+    // Also outside the lock — like summarise() below, and for the same reason.
+    await embedGraduatedFacts(db, embeddingProvider, config);
+
     // Release lock before summary generation. summarise() is async on the
     // IntelligenceProvider interface — LLM-based providers make calls that
     // should not hold the advisory lock. If the process crashes between release
@@ -815,3 +845,67 @@ async function extractFactsFromEvents(
   return outcome.degraded;
 }
 
+
+// ---------------------------------------------------------------------------
+// Phase E: embedding
+// ---------------------------------------------------------------------------
+
+/**
+ * Embed facts that have no vector for the configured model.
+ *
+ * Works from *the store*, not from what this run happened to graduate. That is
+ * what makes it a backfill as well as a write: a run whose provider was down, a
+ * store where semantic search was switched on later, and a model change all
+ * present identically — facts with no row for the current model — and all drain
+ * through this one path with no separate retry bookkeeping.
+ *
+ * Never throws. Semantic search is an enhancement to retrieval; losing it for a
+ * run costs recall until the next consolidation, and the alternative — failing
+ * a consolidation that has already committed its facts — costs far more.
+ */
+async function embedGraduatedFacts(
+  db: Db,
+  provider: EmbeddingProvider | null,
+  config?: Partial<ServerConfig>,
+): Promise<void> {
+  if (!provider) return;
+
+  const batchSize = config?.embedding?.batch_size ?? 128;
+
+  try {
+    // Dimension is only known after the provider's first call on some backends,
+    // so probe with a trivial embed rather than assuming a configured value.
+    const probe = await provider.embed(["dimension probe"], "document");
+    const { model, dimensions } = probe;
+    if (!dimensions) return;
+
+    const pending = getFactsMissingEmbeddings(db, model, dimensions, batchSize);
+    if (pending.length === 0) return;
+
+    const result = await provider.embed(
+      pending.map((f) => f.content),
+      // Stored facts are documents. Embedding them as queries would put them in
+      // the wrong half of an asymmetrically-trained model and silently degrade
+      // every subsequent search.
+      "document",
+    );
+
+    if (result.vectors.length !== pending.length) {
+      // Misalignment would attach each fact to a different fact's meaning —
+      // wrong in a way no downstream check could detect.
+      throw new Error(
+        `embedding returned ${result.vectors.length} vectors for ${pending.length} facts`,
+      );
+    }
+
+    insertEmbeddings(
+      db,
+      pending.map((f, i) => ({ fact_id: f.id, vector: result.vectors[i] })),
+      result.model,
+      result.dimensions,
+    );
+  } catch {
+    // Swallowed on purpose. The missing rows are the retry queue; the next run
+    // finds exactly these facts again and tries once more.
+  }
+}

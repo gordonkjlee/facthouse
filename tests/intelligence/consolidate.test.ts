@@ -13,6 +13,7 @@ const { insertSessionFact } = await import("../../src/db/session-facts.js");
 const { insertFact, getFactsByDomain } = await import("../../src/db/facts.js");
 const { findEntity, getSelfEntity, ensureSelfEntity, getFactsBySubject } = await import("../../src/db/entities.js");
 const { ensureDomain } = await import("../../src/db/domains.js");
+const { getFactsMissingEmbeddings, countEmbeddings } = await import("../../src/db/embeddings.js");
 const { consolidate } = await import("../../src/intelligence/consolidate.js");
 const { createHeuristicProvider } = await import("../../src/intelligence/heuristic.js");
 import { PERSONAL_VOCABULARY } from "../fixtures/vocabulary.js";
@@ -713,5 +714,105 @@ describe("subject marking at graduation", () => {
       .get() as { n: number };
     expect(count.n).toBe(1);
     expect(getFactsBySubject(db, getSelfEntity(db)!.id)).toHaveLength(2);
+  });
+});
+
+describe("embedding never costs a fact", () => {
+  /**
+   * Semantic search is an enhancement to retrieval. A provider that is down,
+   * rate-limited, or misconfigured must cost recall until the next run — never
+   * a fact. Facts are already committed when embedding runs, so the only way to
+   * get this wrong is to let the failure propagate.
+   *
+   * The retry mechanism is deliberately not a flag: a fact with no vector row
+   * *is* the queue, so a failed run leaves the work correctly scheduled with no
+   * bookkeeping that could drift out of step with it.
+   */
+  const failing = {
+    model: "broken",
+    dimensions: 3,
+    async embed(): Promise<never> {
+      throw new Error("provider unreachable");
+    },
+  };
+
+  const working = (dims = 3) => ({
+    model: "test-model",
+    dimensions: dims,
+    async embed(texts: string[]) {
+      return {
+        vectors: texts.map(() => Float32Array.from(Array(dims).fill(1))),
+        model: "test-model",
+        dimensions: dims,
+      };
+    },
+  });
+
+  it("graduates facts even when the embedding provider throws", async () => {
+    const sessionId = setupSession();
+    insertSessionFact(db, {
+      session_id: sessionId,
+      content: "The user prefers dark roast coffee",
+      source_origin: "explicit",
+    });
+
+    const result = await consolidate(
+      db,
+      createHeuristicProvider(PERSONAL_VOCABULARY),
+      {},
+      failing as never,
+    );
+
+    expect(result.factsGraduated).toBe(1);
+    expect(result.skipped).toBe(false);
+  });
+
+  it("leaves the unembedded fact queued for the next run", async () => {
+    const sessionId = setupSession();
+    insertSessionFact(db, {
+      session_id: sessionId,
+      content: "The user prefers dark roast coffee",
+      source_origin: "explicit",
+    });
+    await consolidate(db, createHeuristicProvider(PERSONAL_VOCABULARY), {}, failing as never);
+
+    // The queue is the absence of a row, so a later working run finds it with
+    // nothing to reset and no state to reconcile.
+    expect(getFactsMissingEmbeddings(db, "test-model", 3, 100)).toHaveLength(1);
+  });
+
+  it("a later working run backfills what the failed one missed", async () => {
+    const sessionId = setupSession();
+    insertSessionFact(db, {
+      session_id: sessionId,
+      content: "The user prefers dark roast coffee",
+      source_origin: "explicit",
+    });
+    await consolidate(db, createHeuristicProvider(PERSONAL_VOCABULARY), {}, failing as never);
+    expect(countEmbeddings(db, "test-model", 3)).toBe(0);
+
+    // Second run graduates nothing new — the backfill must come from the store,
+    // not from what this run happened to produce.
+    await consolidate(db, createHeuristicProvider(PERSONAL_VOCABULARY), {}, working() as never);
+
+    expect(countEmbeddings(db, "test-model", 3)).toBe(1);
+    expect(getFactsMissingEmbeddings(db, "test-model", 3, 100)).toHaveLength(0);
+  });
+
+  it("embeds nothing when no provider is configured", async () => {
+    // The shipped default. No call, no rows, no behaviour change.
+    const sessionId = setupSession();
+    insertSessionFact(db, {
+      session_id: sessionId,
+      content: "The user prefers dark roast coffee",
+      source_origin: "explicit",
+    });
+
+    await consolidate(db, createHeuristicProvider(PERSONAL_VOCABULARY), {});
+
+    const rows = db
+      .prepare(`SELECT COUNT(*) AS n FROM fact_embeddings`)
+      .get() as { n: number };
+    expect(rows.n).toBe(0);
   });
 });

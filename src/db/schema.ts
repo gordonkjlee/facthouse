@@ -42,6 +42,9 @@ export function applySchema(db: Db): void {
   if (version < 9) {
     applyV9(db);
   }
+  if (version < 10) {
+    applyV10(db);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -480,4 +483,51 @@ function applyV9(db: Db): void {
   `);
 
   pragmaWrite(db, "user_version = 9");
+}
+
+// ---------------------------------------------------------------------------
+// Schema version 10 — fact embeddings, for semantic retrieval
+//
+// Search matches words, not meanings: `shellfish` finds the allergy fact,
+// `food` does not. FTS5 cannot close that gap — it is lexical by construction.
+//
+// A separate table rather than columns on `facts`, for two reasons. Facts are
+// immutable, and an embedding is not part of the fact — it is a derived view of
+// it under one particular model. And re-embedding (a model change, or a
+// backfill after a failed run) becomes a delete and insert here, instead of a
+// rewrite of a row the whole design says is never rewritten.
+//
+// No sqlite-vec, no ANN index. The extension is loadable — `node:sqlite`
+// supports `allowExtension` — but it is a per-platform native binary, and this
+// project deliberately removed its last native dependency when it moved off
+// better-sqlite3. At the scale this store operates at, an index also buys
+// nothing: a brute-force scan is exact, and the binding constraint is bytes
+// read per query rather than arithmetic. 4,000 facts at 512 dimensions is under
+// 8 MB — page-cache resident. The scan stops being viable when the working set
+// stops fitting there, which is why `dimensions` is configurable: halving it
+// doubles the facts that fit in the same budget.
+// ---------------------------------------------------------------------------
+function applyV10(db: Db): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS fact_embeddings (
+      fact_id TEXT PRIMARY KEY,
+      -- The model and dimension that produced this vector. NOT metadata:
+      -- vectors from different models occupy different spaces and comparing
+      -- them yields confident nonsense with no error anywhere. Every read
+      -- filters on both, so a model change is a detectable state with a
+      -- re-embed path rather than silent corruption.
+      model TEXT NOT NULL,
+      dimensions INTEGER NOT NULL,
+      -- Float32Array, little-endian. 4 bytes per dimension.
+      vector BLOB NOT NULL,
+      created_at TEXT NOT NULL
+    );
+
+    -- The scan filters on (model, dimensions) before touching any vector, so
+    -- a store mid-migration between models reads only the rows it can use.
+    CREATE INDEX IF NOT EXISTS idx_fact_embeddings_model
+      ON fact_embeddings(model, dimensions);
+  `);
+
+  pragmaWrite(db, "user_version = 10");
 }
