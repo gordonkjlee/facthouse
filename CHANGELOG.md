@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.14.0](https://github.com/gordonkjlee/openmemory/compare/v0.13.1...v0.14.0) (2026-08-10)
+
+
+### Features
+
+* **config:** make the shipped config actually do what it says ([#137](https://github.com/gordonkjlee/openmemory/issues/137)) ([9e8f7e2](https://github.com/gordonkjlee/openmemory/commit/9e8f7e296fddb1c500a45a97006d7aaa04d50f60))
+
 ## [0.13.1](https://github.com/gordonkjlee/openmemory/compare/v0.13.0...v0.13.1) (2026-08-10)
 
 **Nothing you can see changes.** Same facts, same search results, same events
