@@ -2,6 +2,19 @@
 
 ## [0.10.0](https://github.com/gordonkjlee/openmemory/compare/v0.9.0...v0.10.0) (2026-08-10)
 
+Two of these fixes change what your existing store contains, and neither corrects
+itself — facts are immutable, so nothing already stored is rewritten.
+
+**Facts captured before this release are under-classified.** `capture_fact` was
+routing everything to the default domain and extracting no entities, so anything
+captured through it — the path most assistants use — has no domain and no place in
+the entity graph. New captures get both. Old ones stay as they are; there is no
+reprocessing pass yet.
+
+**Conversation events skipped by a failed extraction are still in the database, but
+will not be picked up automatically.** A transient model failure used to advance the
+consolidation watermark past events it never read. That no longer happens, but any
+events already passed over remain unread, because the watermark has moved on.
 
 ### Features
 
