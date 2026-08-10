@@ -37,7 +37,10 @@ import {
   getEntityById,
   linkFactEntity,
   upsertEntityEdge,
+  ensureSelfEntity,
+  SUBJECT_OF,
 } from "../db/entities.js";
+import { isAboutTheUser } from "./subject.js";
 import { ensureDomain } from "../db/domains.js";
 import { importanceDefaults, normaliseDomainName } from "../schemas/domains.js";
 import { acquireLock, releaseLock } from "../db/consolidation-lock.js";
@@ -482,6 +485,21 @@ export async function consolidate(
               upsertEntityEdge(db, a, b, "co_mentioned");
             }
           }
+        }
+
+        // Mark the subject, where it can be known without guessing.
+        //
+        // Outside the `extractedEntities` branch above deliberately: a fact can
+        // be about the user and name nobody at all ("The user prefers dark
+        // mode"), which is precisely the fact that most needs an anchor and the
+        // one an extractor returns nothing for.
+        //
+        // Only the deterministic case is handled here. Subject identification
+        // in general is a model's job, and no provider emits it yet — a fact
+        // about Robin will still carry only mention links until they do.
+        if (isAboutTheUser(graduatedFact.content)) {
+          linkFactEntity(db, graduatedFact.id, ensureSelfEntity(db).id, SUBJECT_OF);
+          entitiesLinked++;
         }
       }
 

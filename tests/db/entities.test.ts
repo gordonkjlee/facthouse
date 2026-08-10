@@ -11,6 +11,10 @@ const {
   findOrCreateEntity,
   linkFactEntity,
   getEntitiesForFacts,
+  getSelfEntity,
+  ensureSelfEntity,
+  getFactsBySubject,
+  SUBJECT_OF,
   upsertEntityEdge,
   getEntityEdges,
   updateEntityAccess,
@@ -417,5 +421,125 @@ describe("consolidation lock", () => {
 
     const newState = getLockState(db);
     expect(newState!.holder).toBe("fresh-worker");
+  });
+});
+
+describe("the self entity", () => {
+  /**
+   * Identity is a slot, not a value. The singleton exists before anything is
+   * known about the user, because the user's name is learned *from* facts about
+   * them — so an anchor that waits for a name never gets created.
+   */
+  it("creates a nameless singleton on a store that has none", () => {
+    expect(getSelfEntity(db)).toBeNull();
+
+    const self = ensureSelfEntity(db);
+
+    expect(self.is_self).toBe(1);
+    expect(getSelfEntity(db)!.id).toBe(self.id);
+  });
+
+  it("is idempotent — a second call returns the same row", () => {
+    const first = ensureSelfEntity(db);
+    const second = ensureSelfEntity(db);
+    expect(second.id).toBe(first.id);
+
+    const count = db
+      .prepare(`SELECT COUNT(*) AS n FROM entities WHERE is_self = 1`)
+      .get() as { n: number };
+    expect(count.n).toBe(1);
+  });
+
+  it("cannot be duplicated, because the schema forbids it", () => {
+    // The invariant is enforced by a partial unique index rather than by
+    // callers remembering to check. A convention that only ensureSelfEntity
+    // respects is not an invariant.
+    ensureSelfEntity(db);
+    expect(() => createEntity(db, { type: "person", name: "impostor", is_self: true }))
+      .toThrow();
+  });
+
+  it("does not constrain ordinary entities", () => {
+    // The index is partial. Without that, every entity with is_self = 0 would
+    // collide with every other.
+    ensureSelfEntity(db);
+    createEntity(db, { type: "person", name: "Robin" });
+    createEntity(db, { type: "person", name: "Alex" });
+    createEntity(db, { type: "organisation", name: "Acme" });
+
+    const count = db.prepare(`SELECT COUNT(*) AS n FROM entities`).get() as { n: number };
+    expect(count.n).toBe(4);
+  });
+
+  it("leaves entities created before the migration marked as not-self", () => {
+    // The column is added to a store that may already hold entities. Defaulting
+    // them to 0 is the correct backfill — none of them was the user — and
+    // getting it wrong would silently make some arbitrary person the anchor.
+    const robin = createEntity(db, { type: "person", name: "Robin" });
+    expect(robin.is_self).toBe(0);
+    expect(getSelfEntity(db)).toBeNull();
+  });
+});
+
+describe("getFactsBySubject", () => {
+  it("returns facts about an entity, not facts that merely name it", () => {
+    // The distinction the whole subject apparatus exists for. Both facts link
+    // to Robin; only one is about him.
+    const about = insertFact(db, {
+      content: "Robin leads the Atlas migration",
+      domain: "work",
+      source_type: "explicit",
+    });
+    const mentions = insertFact(db, {
+      content: "Alex's transfer was approved by Robin",
+      domain: "work",
+      source_type: "explicit",
+    });
+    const robin = createEntity(db, { type: "person", name: "Robin" });
+
+    linkFactEntity(db, about.id, robin.id, SUBJECT_OF);
+    linkFactEntity(db, mentions.id, robin.id, "approver");
+
+    const subjects = getFactsBySubject(db, robin.id);
+    expect(subjects.map((f) => f.id)).toEqual([about.id]);
+    // getFactsByEntity answers the other question, and still sees both.
+    expect(getFactsByEntity(db, robin.id)).toHaveLength(2);
+  });
+
+  it("excludes superseded facts", () => {
+    const fact = insertFact(db, {
+      content: "Robin leads the Atlas migration",
+      domain: "work",
+      source_type: "explicit",
+    });
+    const robin = createEntity(db, { type: "person", name: "Robin" });
+    linkFactEntity(db, fact.id, robin.id, SUBJECT_OF);
+    expect(getFactsBySubject(db, robin.id)).toHaveLength(1);
+
+    db.prepare(`UPDATE facts SET status = 'superseded', is_latest = 0 WHERE id = ?`)
+      .run(fact.id);
+
+    expect(getFactsBySubject(db, robin.id)).toEqual([]);
+  });
+
+  it("returns the most important facts first", () => {
+    // A subject's facts are a list someone will truncate.
+    const robin = createEntity(db, { type: "person", name: "Robin" });
+    const minor = insertFact(db, {
+      content: "Robin prefers afternoon meetings",
+      domain: "work",
+      source_type: "explicit",
+      importance: 0.2,
+    });
+    const major = insertFact(db, {
+      content: "Robin leads the Atlas migration",
+      domain: "work",
+      source_type: "explicit",
+      importance: 0.9,
+    });
+    linkFactEntity(db, minor.id, robin.id, SUBJECT_OF);
+    linkFactEntity(db, major.id, robin.id, SUBJECT_OF);
+
+    expect(getFactsBySubject(db, robin.id).map((f) => f.id)).toEqual([major.id, minor.id]);
   });
 });

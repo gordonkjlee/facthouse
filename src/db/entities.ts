@@ -6,7 +6,7 @@
 import { randomUUID } from "node:crypto";
 import { withTransaction } from "./connection.js";
 import type { Db, SqlParam } from "./connection.js";
-import type { Entity, EntityEdge } from "../types/data.js";
+import type { Entity, EntityEdge, Fact } from "../types/data.js";
 
 // ---------------------------------------------------------------------------
 // Input types
@@ -16,7 +16,22 @@ export interface NewEntity {
   type: string;
   name: string;
   metadata?: Record<string, unknown> | null;
+  /** Mark this entity as the user of the store. At most one may be. */
+  is_self?: boolean;
 }
+
+/**
+ * The reserved `fact_entities.relationship` value meaning "this fact is *about*
+ * that entity", as opposed to merely naming it.
+ *
+ * Every other relationship value is freeform — extraction invents whatever the
+ * content calls for, because a corporate store's relationships are supplier and
+ * escalation contact and no fixed list covers both. This one value is reserved,
+ * because the distinction between subject and mention is structural rather than
+ * vocabulary: without it, "Robin approved Alex's transfer" is indistinguishable
+ * from a fact about Alex, and `subject = X` cannot be asked.
+ */
+export const SUBJECT_OF = "subject_of";
 
 // ---------------------------------------------------------------------------
 // Entities
@@ -100,11 +115,13 @@ export function createEntity(
   const canonical = entity.name.toLowerCase().trim();
   const metadata = entity.metadata ? JSON.stringify(entity.metadata) : null;
 
+  const isSelf: 0 | 1 = entity.is_self ? 1 : 0;
+
   db.prepare(
     `INSERT INTO entities
-       (id, type, name, canonical_name, metadata, created_at, access_count, last_accessed_at)
-     VALUES (?, ?, ?, ?, ?, ?, 0, NULL)`,
-  ).run(id, entity.type, entity.name, canonical, metadata, now);
+       (id, type, name, canonical_name, metadata, created_at, access_count, last_accessed_at, is_self)
+     VALUES (?, ?, ?, ?, ?, ?, 0, NULL, ?)`,
+  ).run(id, entity.type, entity.name, canonical, metadata, now, isSelf);
 
   return {
     id,
@@ -115,6 +132,7 @@ export function createEntity(
     created_at: now,
     access_count: 0,
     last_accessed_at: null,
+    is_self: isSelf,
   };
 }
 
@@ -147,6 +165,69 @@ export function linkFactEntity(
     `INSERT OR IGNORE INTO fact_entities (fact_id, entity_id, relationship)
      VALUES (?, ?, ?)`,
   ).run(factId, entityId, relationship);
+}
+
+/**
+ * The entity representing the user of this store, or null if none exists.
+ *
+ * Nameless is the normal state, not a defect: the singleton is created before
+ * anything is known, and the user's name arrives later as an ordinary fact.
+ */
+export function getSelfEntity(db: Db): Entity | null {
+  const row = db
+    .prepare(`SELECT * FROM entities WHERE is_self = 1`)
+    .get() as (Omit<Entity, "metadata"> & { metadata: string | null }) | undefined;
+  if (!row) return null;
+  return {
+    ...row,
+    metadata: row.metadata
+      ? (JSON.parse(row.metadata) as Record<string, unknown>)
+      : null,
+  };
+}
+
+/**
+ * Get the self entity, creating it if this store has none. Idempotent.
+ *
+ * The placeholder name is a display fallback, not an identity claim — nothing
+ * matches on it, and `findEntity` resolves by canonical name, so it cannot
+ * collide with a real person called anything. When the user's name is learned
+ * it attaches as a fact about this entity; the row does not need renaming for
+ * the anchor to work, because the anchor is the id.
+ */
+export function ensureSelfEntity(db: Db): Entity {
+  return getSelfEntity(db) ?? createEntity(db, {
+    type: "person",
+    name: "the user",
+    is_self: true,
+  });
+}
+
+/**
+ * Facts whose *subject* is this entity — what is known about it, as opposed to
+ * every fact that happens to name it.
+ *
+ * This is the query the whole self/subject apparatus exists to make possible.
+ * `getFactsByEntity` answers "where is this mentioned", which is a superset and
+ * a different question: a fact naming Robin as an approver is not a fact about
+ * Robin.
+ */
+export function getFactsBySubject(db: Db, entityId: string): Fact[] {
+  const rows = db
+    .prepare(
+      // Same currency filters as getFactsByEntity — active, latest, and still
+      // within its validity window. Ordered by importance because that is what
+      // ranked retrieval reads; a subject's facts are a list someone will
+      // truncate, so the useful ones have to come first.
+      `SELECT f.* FROM facts f
+         JOIN fact_entities fe ON fe.fact_id = f.id
+        WHERE fe.entity_id = ? AND fe.relationship = ?
+          AND f.status = 'active' AND f.is_latest = 1
+          AND (f.valid_until IS NULL OR f.valid_until > datetime('now'))
+        ORDER BY f.importance DESC, f.created_at DESC`,
+    )
+    .all(entityId, SUBJECT_OF) as Array<Omit<Fact, "is_latest"> & { is_latest: number }>;
+  return rows.map((row) => ({ ...row, is_latest: row.is_latest === 1 }));
 }
 
 /**
