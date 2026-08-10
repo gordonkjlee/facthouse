@@ -11,6 +11,7 @@ import type { SessionFact } from "../types/data.js";
 import { type CaptureConfig, type ServerConfig } from "../types/config.js";
 import type { SessionManager } from "./session-manager.js";
 import type { IntelligenceProvider } from "../intelligence/types.js";
+import type { EmbeddingProvider } from "../embedding/types.js";
 import {
   insertSessionFact,
   getUnconsolidatedSessionFacts,
@@ -51,6 +52,8 @@ export interface FactManagerOpts {
   captureConfig?: Partial<CaptureConfig>;
   autoLinkEvents?: number;
   intelligence?: IntelligenceProvider;
+  /** Null when semantic search is off — the shipped default. */
+  embedding?: EmbeddingProvider | null;
   serverConfig?: Partial<ServerConfig>;
   /**
    * Called after a consolidation run commits, for runs that did work. Used to
@@ -73,6 +76,7 @@ export function createFactManager(
   const defaultConfidence = opts?.captureConfig?.default_confidence ?? 0.7;
   const linkCount = opts?.autoLinkEvents ?? 5;
   const intelligence = opts?.intelligence;
+  const embedding = opts?.embedding ?? null;
   const serverConfig = opts?.serverConfig;
 
   /**
@@ -180,7 +184,7 @@ export function createFactManager(
       if (!intelligence) {
         throw new Error("No intelligence provider configured for consolidation.");
       }
-      const result = await consolidate(db, intelligence, serverConfig);
+      const result = await consolidate(db, intelligence, serverConfig, embedding);
 
       // Skipped runs (lock contention, nothing pending) changed no knowledge,
       // so there is nothing for subscribers to re-read.

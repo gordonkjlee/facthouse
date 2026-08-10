@@ -23,7 +23,8 @@ import { ensureDomain } from "../db/domains.js";
 import { ensureSelfEntity } from "../db/entities.js";
 import { CONFIG_FILENAME, defaultServerConfig, loadConfig } from "../config.js";
 import { probeCliProvider, type CliProbeResult } from "../intelligence/cli.js";
-import type { IntelligenceProviderType } from "../types/config.js";
+import { createEmbeddingProvider } from "../embedding/provider.js";
+import type { IntelligenceProviderType, EmbeddingConfig } from "../types/config.js";
 
 /**
  * Render a copy-pasteable MCP client config block.
@@ -94,6 +95,52 @@ export function providerStatusLines(
     `  To fix:  install the Claude Code CLI, or set intelligence.cli.command in`,
     `           config.json, or point CLAUDE_CLI_PATH at the binary.`,
     `  To keep: set OPENMEMORY_PROVIDER=heuristic and this notice goes away.`,
+  ];
+}
+
+/**
+ * Report what semantic search this store will get.
+ *
+ * Same reasoning as `providerStatusLines`: the difference between "deliberately
+ * keyword-only" and "configured but not working" is invisible from the outside,
+ * and a store that thinks it has semantic search and does not will simply
+ * return fewer results for ever without saying why.
+ *
+ * Off is a first-class answer here, not a warning. Keyword-only is the shipped
+ * default and a legitimate choice — the failure worth shouting about is the
+ * configured-but-unusable one.
+ */
+export function embeddingStatusLines(
+  config: EmbeddingConfig | undefined,
+  env: NodeJS.ProcessEnv = process.env,
+): string[] {
+  const reasons: string[] = [];
+  const provider = createEmbeddingProvider(config, {
+    env,
+    onUnavailable: (r) => reasons.push(r),
+  });
+
+  if (reasons.length > 0) {
+    return [
+      `WARNING: ${reasons[0]}.`,
+      `Semantic search is off; search will match words rather than meanings.`,
+      `Set the variable, or set embedding.provider to null in config.json to`,
+      `choose keyword-only deliberately.`,
+    ];
+  }
+
+  if (!provider) {
+    return [
+      `Semantic search: off. Search matches words, not meanings — "shellfish"`,
+      `finds a shellfish fact, "food" does not. Set embedding.provider in`,
+      `config.json to "ollama" (local, no API key) or "voyage" (hosted) to`,
+      `turn it on.`,
+    ];
+  }
+
+  return [
+    `Semantic search: on, via ${config?.provider} (${provider.model}). Facts are`,
+    `embedded at consolidation, so an existing store fills in on the next run.`,
   ];
 }
 

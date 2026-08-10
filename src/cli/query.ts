@@ -11,7 +11,9 @@
  */
 
 import type { Db } from "../db/connection.js";
-import { hybridSearch } from "../search/index.js";
+import { searchWithProvider } from "../search/index.js";
+import type { VectorSearchOpts } from "../search/vector.js";
+import type { EmbeddingProvider } from "../embedding/types.js";
 import { getStats, type KnowledgeStats } from "../db/stats.js";
 import type { SearchResponse } from "../types/data.js";
 
@@ -26,10 +28,19 @@ export interface SearchArgs {
 }
 
 /** Run a hybrid search — the same call `search_knowledge` makes. */
-export function runSearch(db: Db, args: SearchArgs): SearchResponse {
-  return hybridSearch(db, args.query, {
+export async function runSearch(
+  db: Db,
+  args: SearchArgs,
+  /** Null when semantic search is off — the shipped default. */
+  embedding: EmbeddingProvider | null = null,
+  tuning?: VectorSearchOpts,
+): Promise<SearchResponse> {
+  // Same entry point the MCP tool uses, so the command line and an assistant
+  // cannot get different answers to the same question.
+  return searchWithProvider(db, args.query, embedding, {
     domain: args.domain,
     limit: args.limit,
+    tuning,
   });
 }
 
@@ -101,6 +112,19 @@ export function formatStats(stats: KnowledgeStats): string {
     const width = Math.max(...stats.domain_distribution.map((d) => d.domain.length));
     for (const d of stats.domain_distribution) {
       lines.push(`    ${d.domain.padEnd(width)}  ${d.count}`);
+    }
+  }
+
+  // Coverage, not just presence. A store can hold vectors for some of its
+  // facts and search will still work — the semantic path ranks rather than
+  // gates — so the number that matters is how many of the current facts are
+  // reachable by meaning, which is only visible against the fact count.
+  if (stats.embeddings.length) {
+    lines.push("", "  Semantic coverage");
+    for (const e of stats.embeddings) {
+      const of = stats.facts.active_latest;
+      const pct = of > 0 ? ` (${Math.round((e.count / of) * 100)}%)` : "";
+      lines.push(`    ${e.model} @ ${e.dimensions}d  ${e.count}/${of}${pct}`);
     }
   }
 

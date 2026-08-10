@@ -13,6 +13,7 @@ const { insertSessionFact } = await import("../../src/db/session-facts.js");
 const { insertFact, getFactsByDomain } = await import("../../src/db/facts.js");
 const { findEntity, getSelfEntity, ensureSelfEntity, getFactsBySubject } = await import("../../src/db/entities.js");
 const { ensureDomain } = await import("../../src/db/domains.js");
+const { getFactsMissingEmbeddings, countEmbeddings } = await import("../../src/db/embeddings.js");
 const { consolidate } = await import("../../src/intelligence/consolidate.js");
 const { createHeuristicProvider } = await import("../../src/intelligence/heuristic.js");
 import { PERSONAL_VOCABULARY } from "../fixtures/vocabulary.js";
@@ -713,5 +714,193 @@ describe("subject marking at graduation", () => {
       .get() as { n: number };
     expect(count.n).toBe(1);
     expect(getFactsBySubject(db, getSelfEntity(db)!.id)).toHaveLength(2);
+  });
+});
+
+describe("embedding never costs a fact", () => {
+  /**
+   * Semantic search is an enhancement to retrieval. A provider that is down,
+   * rate-limited, or misconfigured must cost recall until the next run — never
+   * a fact. Facts are already committed when embedding runs, so the only way to
+   * get this wrong is to let the failure propagate.
+   *
+   * The retry mechanism is deliberately not a flag: a fact with no vector row
+   * *is* the queue, so a failed run leaves the work correctly scheduled with no
+   * bookkeeping that could drift out of step with it.
+   */
+  const failing = {
+    model: "broken",
+    dimensions: 3,
+    async embed(): Promise<never> {
+      throw new Error("provider unreachable");
+    },
+  };
+
+  const working = (dims = 3) => ({
+    model: "test-model",
+    dimensions: dims,
+    async embed(texts: string[]) {
+      return {
+        vectors: texts.map(() => Float32Array.from(Array(dims).fill(1))),
+        model: "test-model",
+        dimensions: dims,
+      };
+    },
+  });
+
+  it("graduates facts even when the embedding provider throws", async () => {
+    const sessionId = setupSession();
+    insertSessionFact(db, {
+      session_id: sessionId,
+      content: "The user prefers dark roast coffee",
+      source_origin: "explicit",
+    });
+
+    const result = await consolidate(
+      db,
+      createHeuristicProvider(PERSONAL_VOCABULARY),
+      {},
+      failing as never,
+    );
+
+    expect(result.factsGraduated).toBe(1);
+    expect(result.skipped).toBe(false);
+  });
+
+  it("leaves the unembedded fact queued for the next run", async () => {
+    const sessionId = setupSession();
+    insertSessionFact(db, {
+      session_id: sessionId,
+      content: "The user prefers dark roast coffee",
+      source_origin: "explicit",
+    });
+    await consolidate(db, createHeuristicProvider(PERSONAL_VOCABULARY), {}, failing as never);
+
+    // The queue is the absence of a row, so a later working run finds it with
+    // nothing to reset and no state to reconcile.
+    expect(getFactsMissingEmbeddings(db, "test-model", 3, 100)).toHaveLength(1);
+  });
+
+  it("a later working run backfills what the failed one missed", async () => {
+    const sessionId = setupSession();
+    insertSessionFact(db, {
+      session_id: sessionId,
+      content: "The user prefers dark roast coffee",
+      source_origin: "explicit",
+    });
+    await consolidate(db, createHeuristicProvider(PERSONAL_VOCABULARY), {}, failing as never);
+    expect(countEmbeddings(db, "test-model", 3)).toBe(0);
+
+    // Second run graduates nothing new — the backfill must come from the store,
+    // not from what this run happened to produce.
+    await consolidate(db, createHeuristicProvider(PERSONAL_VOCABULARY), {}, working() as never);
+
+    expect(countEmbeddings(db, "test-model", 3)).toBe(1);
+    expect(getFactsMissingEmbeddings(db, "test-model", 3, 100)).toHaveLength(0);
+  });
+
+  it("drains a backlog larger than one batch in a single run", async () => {
+    // batch_size bounds a request, not a run. When semantic search is switched
+    // on over an existing store the whole store is backlog, and a run that
+    // stopped after one batch would leave the rest embedded only if more
+    // consolidations happened to occur — silently, since search still works.
+    const sessionId = setupSession();
+    for (let i = 0; i < 7; i++) {
+      insertSessionFact(db, {
+        session_id: sessionId,
+        content: `The user prefers beverage number ${i}`,
+        source_origin: "explicit",
+      });
+    }
+
+    // Count requests, so this asserts batching still happens rather than the
+    // limit having been removed.
+    let calls = 0;
+    const counting = {
+      model: "test-model",
+      dimensions: 3,
+      async embed(texts: string[]) {
+        calls++;
+        expect(texts.length).toBeLessThanOrEqual(2);
+        return {
+          vectors: texts.map(() => Float32Array.from([1, 1, 1])),
+          model: "test-model",
+          dimensions: 3,
+        };
+      },
+    };
+
+    const result = await consolidate(
+      db,
+      createHeuristicProvider(PERSONAL_VOCABULARY),
+      { embedding: { batch_size: 2 } as never },
+      counting as never,
+    );
+
+    // Guards the premise: if dedup collapsed these to one fact there would be
+    // no backlog and the test would pass without exercising anything.
+    expect(result.factsGraduated).toBe(7);
+    expect(countEmbeddings(db, "test-model", 3)).toBe(7);
+    expect(getFactsMissingEmbeddings(db, "test-model", 3, 100)).toHaveLength(0);
+    // One probe plus four batches of two — not one batch and a silent remainder.
+    expect(calls).toBeGreaterThan(2);
+  });
+
+  it("keeps the batches it completed when the provider dies mid-backlog", async () => {
+    // Progress must be durable per batch. Otherwise a large backlog against a
+    // flaky provider makes no headway at all: every run redoes the same first
+    // batches and loses them again at the same point.
+    const sessionId = setupSession();
+    for (let i = 0; i < 7; i++) {
+      insertSessionFact(db, {
+        session_id: sessionId,
+        content: `The user prefers beverage number ${i}`,
+        source_origin: "explicit",
+      });
+    }
+
+    let calls = 0;
+    const flaky = {
+      model: "test-model",
+      dimensions: 3,
+      async embed(texts: string[]) {
+        calls++;
+        // Probe, batch, batch, then fall over.
+        if (calls > 3) throw new Error("provider unreachable");
+        return {
+          vectors: texts.map(() => Float32Array.from([1, 1, 1])),
+          model: "test-model",
+          dimensions: 3,
+        };
+      },
+    };
+
+    await consolidate(
+      db,
+      createHeuristicProvider(PERSONAL_VOCABULARY),
+      { embedding: { batch_size: 2 } as never },
+      flaky as never,
+    );
+
+    // Some, not none and not all — the two batches that completed.
+    expect(countEmbeddings(db, "test-model", 3)).toBe(4);
+    expect(getFactsMissingEmbeddings(db, "test-model", 3, 100)).toHaveLength(3);
+  });
+
+  it("embeds nothing when no provider is configured", async () => {
+    // The shipped default. No call, no rows, no behaviour change.
+    const sessionId = setupSession();
+    insertSessionFact(db, {
+      session_id: sessionId,
+      content: "The user prefers dark roast coffee",
+      source_origin: "explicit",
+    });
+
+    await consolidate(db, createHeuristicProvider(PERSONAL_VOCABULARY), {});
+
+    const rows = db
+      .prepare(`SELECT COUNT(*) AS n FROM fact_embeddings`)
+      .get() as { n: number };
+    expect(rows.n).toBe(0);
   });
 });

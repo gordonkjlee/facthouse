@@ -129,6 +129,82 @@ export interface RetentionConfig {
   session_facts_days: number | null;
 }
 
+/** Which embedding backend produces vectors, if any. */
+export type EmbeddingProviderType = "voyage" | "ollama";
+
+/**
+ * Semantic search configuration.
+ *
+ * Replaces a `search.embedding_provider` field that shipped for months with
+ * nowhere to record a model, a dimension, or where the key lives — and with no
+ * code reading it.
+ *
+ * `provider: null` is the default and means keyword-only search, exactly as
+ * before. Nothing is shipped enabled, because shipping a default model would be
+ * shipping an assumption about what "similar" means — the same mistake as
+ * shipping a domain vocabulary, on a different axis.
+ */
+export interface EmbeddingConfig {
+  /** null = semantic search off. Nothing downloads, nothing is called. */
+  provider: EmbeddingProviderType | null;
+  /** Provider default when null. Recorded on every vector it produces. */
+  model: string | null;
+  /**
+   * Truncate vectors to this many dimensions, on models that support it.
+   *
+   * The scaling lever, not a storage micro-optimisation: the scan reads every
+   * vector on every query, so dimension decides how many facts fit in page
+   * cache. null keeps the model's native size.
+   */
+  dimensions: number | null;
+  /**
+   * Environment variable holding the API key. The key itself is never stored
+   * in config.json — a config file that holds secrets is a config file that
+   * gets committed.
+   */
+  api_key_env: string;
+  /** Facts per embedding call during consolidation. */
+  batch_size: number;
+  /**
+   * How close to the best match a semantic result must be to count as one,
+   * as a ratio of the best score. Default 0.85.
+   *
+   * Cosine similarity has no natural zero: every stored vector scores against
+   * every query, and unrelated facts land near the model's floor rather than
+   * near 0. Some cut is therefore unavoidable, or semantic search returns the
+   * whole store for every query.
+   *
+   * Tunable because **the floor is a property of the model, not of relevance**.
+   * The default was measured against `nomic-embed-text`, where unrelated facts
+   * sit around 0.45; a model with a tighter or wider spread wants a different
+   * ratio. This is the same reason `dimensions` is configurable rather than
+   * fixed.
+   *
+   * Lower keeps more and recalls more loosely; higher keeps fewer and demands
+   * closer matches. The extremes are meaningful rather than invalid: 0 keeps
+   * everything and leaves the ranking entirely to the merge, 1 keeps only
+   * results tied with the best. Values outside 0–1 are clamped.
+   */
+  min_similarity_ratio: number;
+  /**
+   * Absolute cosine floor for a semantic hit. Null (the default) defers to the
+   * provider's own measured value; `0` disables the floor entirely.
+   *
+   * `min_similarity_ratio` asks whether a result is comparable to the best
+   * result. It cannot ask whether the best result is any good — so a query the
+   * store knows nothing about produces a tight cluster of noise in which every
+   * ratio passes, and the whole store comes back. This is the cut that answers
+   * it, and it is off by default because the right value is a property of the
+   * embedding model rather than of relevance — which is why the number lives
+   * on the provider and this field only overrides it. Measure your own by
+   * embedding a query your store genuinely cannot answer and reading the top
+   * score: anything at or below it is noise.
+   */
+  min_similarity: number | null;
+  /** Ollama only. */
+  host?: string;
+}
+
 /** Top-level server configuration (loaded from config.json in data dir). */
 export interface ServerConfig {
   storage: {
@@ -136,9 +212,7 @@ export interface ServerConfig {
     sqlite?: { path: string };
   };
   temporal: TemporalConfig;
-  search?: {
-    embedding_provider: "openai" | "ollama" | null;
-  };
+  embedding: EmbeddingConfig;
 
   capture: CaptureConfig;
   extraction: ExtractionConfig;
@@ -154,6 +228,15 @@ export interface ServerConfig {
 
 /** Default configuration values. */
 export const DEFAULT_CONFIG: Omit<ServerConfig, "storage" | "temporal"> = {
+  embedding: {
+    provider: null,
+    model: null,
+    dimensions: null,
+    api_key_env: "VOYAGE_API_KEY",
+    batch_size: 128,
+    min_similarity_ratio: 0.85,
+    min_similarity: null,
+  },
   capture: {
     default_confidence: DEFAULT_CONFIDENCE,
   },

@@ -16,6 +16,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { openDatabase, closeDatabase } from "./db/connection.js";
 import { applySchema } from "./db/schema.js";
 import { ensureSelfEntity } from "./db/entities.js";
+import { createEmbeddingProvider } from "./embedding/provider.js";
 import { createSessionManager, registerSessionReadTools } from "./tools/session-manager.js";
 import { createFactManager } from "./tools/fact-manager.js";
 import { createHeuristicProvider } from "./intelligence/heuristic.js";
@@ -103,6 +104,14 @@ const intelligence = createIntelligenceProvider(config.intelligence, {
   heuristic,
 });
 
+// Semantic search, if this store has opted in. Null is the shipped default and
+// means keyword-only retrieval — nothing is downloaded and nothing is called.
+// Built once at boot: resolution reads config and the environment, neither of
+// which changes mid-process.
+const embeddingProvider = createEmbeddingProvider(config.embedding, {
+  onUnavailable: (reason) => console.error(`[openmemory] ${reason}`),
+});
+
 // Resources are automatically-loaded context (memory://briefing, memory://profile).
 // Registered before connect(), because registering one registers the resources
 // capability and capabilities are frozen once the transport attaches.
@@ -110,13 +119,22 @@ const resources = registerResources(server, db);
 
 const factManager = createFactManager(db, sessionManager, {
   intelligence,
+  embedding: embeddingProvider,
   serverConfig: { extraction: config.extraction },
   // Consolidation is the only thing that changes graduated knowledge, so it's
   // the only thing that can change what these resources render.
   onConsolidated: () => resources.notifyUpdated(),
 });
 factManager.registerTools(server);
-registerReadTools(server, db);
+registerReadTools(
+  server,
+  db,
+  embeddingProvider,
+  {
+    minSimilarityRatio: config.embedding?.min_similarity_ratio,
+    minSimilarity: config.embedding?.min_similarity ?? undefined,
+  },
+);
 
 const scheduler: Scheduler = startScheduler({
   db,

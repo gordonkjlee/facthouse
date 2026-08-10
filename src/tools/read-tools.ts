@@ -5,7 +5,9 @@
 import type { Db } from "../db/connection.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { hybridSearch } from "../search/index.js";
+import { hybridSearch, searchWithProvider } from "../search/index.js";
+import type { VectorSearchOpts } from "../search/vector.js";
+import type { EmbeddingProvider } from "../embedding/types.js";
 import { findEntity, getEntityEdges } from "../db/entities.js";
 import { getFactsByEntity } from "../db/facts.js";
 import { getDomains } from "../db/domains.js";
@@ -18,6 +20,10 @@ import { getStats } from "../db/stats.js";
 export function registerReadTools(
   server: McpServer,
   db: Db,
+  /** Null when semantic search is off, which is the shipped default. */
+  embedding: EmbeddingProvider | null = null,
+  /** How much of the semantic ranking survives. Store-configured. */
+  tuning?: VectorSearchOpts,
 ): void {
   // -----------------------------------------------------------------
   // search_knowledge
@@ -34,7 +40,14 @@ export function registerReadTools(
       `usually the most recent thing you were told, but not yet checked against ` +
       `existing knowledge, so it may duplicate or contradict a fact in results. ` +
       `Trust results first; use pending to avoid forgetting something you were ` +
-      `told minutes ago.`,
+      `told minutes ago.
+
+` +
+      `When semantic search is enabled, \`results\` also matches on meaning, so a ` +
+      `query can surface a fact that shares none of its words. \`pending\` never ` +
+      `does — it is keyword-only, because a fact is embedded when it is ` +
+      `consolidated, not when it is captured. So a just-captured fact is findable ` +
+      `by its own words but not yet by a paraphrase of them.`,
     {
       query: z.string().describe("What to search for"),
       domain: z
@@ -50,9 +63,13 @@ export function registerReadTools(
             `near-synonym. Omit it to search everything.`,
         ),
     },
-    (args) => {
-      const response = hybridSearch(db, args.query, {
+    async (args) => {
+      // Async only because embedding the query is a network or subprocess
+      // call. With no provider configured this resolves without one, and the
+      // search itself stays a synchronous index read.
+      const response = await searchWithProvider(db, args.query, embedding, {
         domain: args.domain,
+        tuning,
       });
 
       return {
@@ -276,7 +293,14 @@ export function registerReadTools(
       `Call this when the user asks what you know or remember about them, how ` +
       `much you have stored, or whether their memory is working. This answers ` +
       `"how much do you know", not "what do you know" — use search_knowledge, ` +
-      `get_entity or get_context for actual recall.`,
+      `get_entity or get_context for actual recall.
+
+` +
+      `\`embeddings\` reports semantic-search coverage per model. An empty list ` +
+      `means this store searches by keyword only, which is the default. A count ` +
+      `well below the current fact count means some facts are findable by ` +
+      `wording but not by meaning — worth mentioning if the user asks why ` +
+      `something was not recalled.`,
     {},
     () => {
       // Shared with `openmemory stats` so the tool and the CLI can't disagree.

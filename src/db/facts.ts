@@ -112,6 +112,30 @@ export function getFact(db: Db, id: string): Fact | null {
   return { ...row, is_latest: row.is_latest === 1 };
 }
 
+/**
+ * Retrieve several facts by id, currently-true only.
+ *
+ * For hydrating the winners of a ranked scan: the semantic path scores every
+ * stored vector but only needs the top handful of fact rows, and one query
+ * beats N round trips through `getFact`.
+ *
+ * Returns in arbitrary order and silently omits ids that are missing or no
+ * longer current — callers hold their own ranking and re-project through it.
+ */
+export function getFactsByIds(db: Db, ids: string[]): Fact[] {
+  if (ids.length === 0) return [];
+  const placeholders = ids.map(() => "?").join(",");
+  const rows = db
+    .prepare(
+      `SELECT * FROM facts
+        WHERE id IN (${placeholders})
+          AND status = 'active' AND is_latest = 1
+          AND (valid_until IS NULL OR valid_until > datetime('now'))`,
+    )
+    .all(...(ids as SqlParam[])) as Array<Omit<Fact, "is_latest"> & { is_latest: number }>;
+  return rows.map((row) => ({ ...row, is_latest: row.is_latest === 1 }));
+}
+
 /** Get all active, latest facts for a domain. */
 export function getFactsByDomain(
   db: Db,
