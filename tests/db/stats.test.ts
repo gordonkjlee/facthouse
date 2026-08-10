@@ -14,6 +14,7 @@ const { insertFact } = await import("../../src/db/facts.js");
 const { createSource } = await import("../../src/db/sources.js");
 const { ensureDomain } = await import("../../src/db/domains.js");
 const { getStats } = await import("../../src/db/stats.js");
+const { insertEmbeddings } = await import("../../src/db/embeddings.js");
 
 let db: Db;
 let sourceId: string;
@@ -129,5 +130,53 @@ describe("getStats", () => {
     const s = getStats(db);
     expect(s.domains).toBe(2);
     expect(s.domain_distribution).toEqual([{ domain: "work", count: 1 }]);
+  });
+});
+
+describe("getStats semantic coverage", () => {
+  const vec = (...xs: number[]) => Float32Array.from(xs);
+
+  it("is empty on a store that has never embedded anything", () => {
+    insertFact(db, { content: "a fact", domain: "general", source_type: "explicit" });
+    // Not `[{count: 0}]` — keyword-only is the default, and a zero row would
+    // report a configured-and-failing provider on a store with no provider.
+    expect(getStats(db).embeddings).toEqual([]);
+  });
+
+  it("reports each model and dimension separately", () => {
+    // The state a single number hides: search reads one pair, so a store with
+    // 3 vectors under the configured model and 3 under an abandoned one has
+    // half the coverage a total of 6 would suggest.
+    const a = insertFact(db, { content: "a", domain: "general", source_type: "explicit" });
+    const b = insertFact(db, { content: "b", domain: "general", source_type: "explicit" });
+    insertEmbeddings(db, [{ fact_id: a.id, vector: vec(1, 0) }], "model-a", 2);
+    insertEmbeddings(db, [{ fact_id: b.id, vector: vec(1, 0, 0) }], "model-b", 3);
+
+    expect(getStats(db).embeddings).toEqual([
+      { model: "model-a", dimensions: 2, count: 1 },
+      { model: "model-b", dimensions: 3, count: 1 },
+    ]);
+  });
+
+  it("counts only currently-true facts, so coverage compares like with like", () => {
+    // An embedding outlives its fact's currency: the row stays when the fact is
+    // superseded. Counting it would let coverage exceed the fact count and read
+    // as over 100% — the ratio is only meaningful against the same population.
+    const live = insertFact(db, { content: "live", domain: "general", source_type: "explicit" });
+    const old = insertFact(db, { content: "old", domain: "general", source_type: "explicit" });
+    insertEmbeddings(
+      db,
+      [
+        { fact_id: live.id, vector: vec(1, 0) },
+        { fact_id: old.id, vector: vec(0, 1) },
+      ],
+      "m",
+      2,
+    );
+    db.prepare(`UPDATE facts SET status = 'superseded', is_latest = 0 WHERE id = ?`).run(old.id);
+
+    const stats = getStats(db);
+    expect(stats.facts.active_latest).toBe(1);
+    expect(stats.embeddings).toEqual([{ model: "m", dimensions: 2, count: 1 }]);
   });
 });

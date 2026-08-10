@@ -114,6 +114,19 @@ export function formatStats(stats: KnowledgeStats): string {
     }
   }
 
+  // Coverage, not just presence. A store can hold vectors for some of its
+  // facts and search will still work — the semantic path ranks rather than
+  // gates — so the number that matters is how many of the current facts are
+  // reachable by meaning, which is only visible against the fact count.
+  if (stats.embeddings.length) {
+    lines.push("", "  Semantic coverage");
+    for (const e of stats.embeddings) {
+      const of = stats.facts.active_latest;
+      const pct = of > 0 ? ` (${Math.round((e.count / of) * 100)}%)` : "";
+      lines.push(`    ${e.model} @ ${e.dimensions}d  ${e.count}/${of}${pct}`);
+    }
+  }
+
   if (stats.facts.total === 0) {
     lines.push("", "  Nothing captured yet.");
   }

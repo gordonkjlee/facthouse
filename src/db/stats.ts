@@ -19,11 +19,35 @@ export interface KnowledgeStats {
   domains: number;
   consolidations: number;
   domain_distribution: Array<{ domain: string; count: number }>;
+  /**
+   * Semantic-search coverage, one entry per model+dimension pair the store
+   * holds vectors for. Empty when semantic search has never run.
+   *
+   * Grouped by model rather than counted against the configured one, because
+   * the two disagreements worth seeing are both invisible otherwise: partial
+   * coverage (a provider that failed mid-run, or a store consolidated before
+   * embeddings were switched on), and vectors left behind by a model the store
+   * no longer uses. Comparing `count` against `facts.active_latest` gives the
+   * first; a pair that isn't the configured one gives the second.
+   */
+  embeddings: Array<{ model: string; dimensions: number; count: number }>;
 }
 
-/** The filter defining a "currently true" fact — kept identical everywhere. */
-const CURRENT = `status = 'active' AND is_latest = 1
-  AND (valid_until IS NULL OR valid_until > datetime('now'))`;
+/**
+ * The filter defining a "currently true" fact — one definition, used everywhere.
+ *
+ * Takes a table alias because one query below joins `facts`, where the bare
+ * column names are ambiguous. Writing the qualified form out a second time
+ * would be a copy with an independent future: the two would agree today and
+ * silently disagree the first time the definition of "current" changed.
+ */
+const current = (alias = "") => {
+  const c = alias ? `${alias}.` : "";
+  return `${c}status = 'active' AND ${c}is_latest = 1
+    AND (${c}valid_until IS NULL OR ${c}valid_until > datetime('now'))`;
+};
+
+const CURRENT = current();
 
 function count(db: Db, sql: string): number {
   const row = db.prepare(sql).get() as { count: number } | undefined;
@@ -42,6 +66,17 @@ export function getStats(db: Db): KnowledgeStats {
     )
     .all() as Array<{ domain: string; count: number }>;
 
+  const embeddingCoverage = db
+    .prepare(
+      `SELECT e.model AS model, e.dimensions AS dimensions, COUNT(*) AS count
+         FROM fact_embeddings e
+         JOIN facts f ON f.id = e.fact_id
+        WHERE ${current("f")}
+        GROUP BY e.model, e.dimensions
+        ORDER BY count DESC`,
+    )
+    .all() as Array<{ model: string; dimensions: number; count: number }>;
+
   return {
     facts: {
       active_latest: count(db, `SELECT COUNT(*) as count FROM facts WHERE ${CURRENT}`),
@@ -51,5 +86,6 @@ export function getStats(db: Db): KnowledgeStats {
     domains: count(db, `SELECT COUNT(*) as count FROM domains`),
     consolidations: count(db, `SELECT COUNT(*) as count FROM consolidations`),
     domain_distribution: domainDistribution,
+    embeddings: embeddingCoverage,
   };
 }

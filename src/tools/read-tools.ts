@@ -292,7 +292,14 @@ export function registerReadTools(
       `Call this when the user asks what you know or remember about them, how ` +
       `much you have stored, or whether their memory is working. This answers ` +
       `"how much do you know", not "what do you know" — use search_knowledge, ` +
-      `get_entity or get_context for actual recall.`,
+      `get_entity or get_context for actual recall.
+
+` +
+      `\`embeddings\` reports semantic-search coverage per model. An empty list ` +
+      `means this store searches by keyword only, which is the default. A count ` +
+      `well below the current fact count means some facts are findable by ` +
+      `wording but not by meaning — worth mentioning if the user asks why ` +
+      `something was not recalled.`,
     {},
     () => {
       // Shared with `openmemory stats` so the tool and the CLI can't disagree.

@@ -108,6 +108,7 @@ describe("formatStats", () => {
       domains: 0,
       consolidations: 0,
       domain_distribution: [],
+      embeddings: [],
       ...over,
     };
   }
@@ -130,6 +131,43 @@ describe("formatStats", () => {
     );
     const out = formatStats(stats({ facts: { active_latest: 4, total: 6 } }));
     expect(out).toContain("6 total (2 superseded)");
+  });
+
+  it("reports semantic coverage against the current fact count, not alone", () => {
+    // A bare vector count says nothing: 40 embeddings is full coverage of 40
+    // facts and a failed run over 100. The proportion is the whole signal.
+    const out = formatStats(
+      stats({
+        facts: { active_latest: 100, total: 100 },
+        embeddings: [{ model: "nomic-embed-text", dimensions: 768, count: 40 }],
+      }),
+    );
+    expect(out).toContain("nomic-embed-text @ 768d  40/100 (40%)");
+  });
+
+  it("lists every model the store holds vectors for", () => {
+    // Two pairs means a model or dimension changed. Search only reads one of
+    // them, so a store that looks fully embedded may have almost no reachable
+    // vectors — visible here and nowhere else.
+    const out = formatStats(
+      stats({
+        facts: { active_latest: 10, total: 10 },
+        embeddings: [
+          { model: "voyage-3.5-lite", dimensions: 512, count: 10 },
+          { model: "nomic-embed-text", dimensions: 768, count: 3 },
+        ],
+      }),
+    );
+    expect(out).toContain("voyage-3.5-lite @ 512d  10/10");
+    expect(out).toContain("nomic-embed-text @ 768d  3/10");
+  });
+
+  it("says nothing about semantics when the store has no vectors", () => {
+    // Keyword-only is the shipped default, not a fault. An empty section
+    // reading "0%" would look like breakage on a store working as configured.
+    expect(formatStats(stats({ facts: { active_latest: 4, total: 4 } }))).not.toContain(
+      "Semantic coverage",
+    );
   });
 
   it("renders the domain distribution aligned", () => {

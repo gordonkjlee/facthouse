@@ -112,7 +112,7 @@ OpenMemory statistics
 
 `allergies` is not a domain OpenMemory ships. The engine has no built-in vocabulary at all — it read the conversation and decided that fact needed a home of its own. Run the demo again and it may well file the same fact under `health` instead, which is exactly why a domain **biases ranking rather than filtering** everywhere it is used: a label a classifier guesses is a useful hint and a terrible gate. A corporate store grows `incident` and `supplier` the same way, without configuration.
 
-**What this demo does not show:** search is keyword-based today (BM25 over FTS5, plus structured and entity-graph paths merged by rank). It matches words, not meanings — `search "shellfish"` finds the allergy, `search "food"` does not. Semantic search over embeddings is designed but not built; until it ships, this paragraph stays here rather than the feature list making a promise the code does not keep.
+**What this demo does not show:** the demo store searches by keyword, so it matches words rather than meanings — `search "shellfish"` finds the allergy, `search "food"` does not. Semantic search over embeddings now exists and fixes exactly that, but it is off unless you turn it on, because switching it on means choosing an embedding model and a model is an opinion about what "similar" means. Set `embedding.provider` in `config.json` to `"ollama"` (local, no API key) or `"voyage"` (hosted), run `openmemory consolidate`, and `search "food"` starts returning the allergy. Facts are embedded when they are consolidated, so an existing store fills in on its next run rather than needing a rebuild.
 
 Clean up with `rm -rf /tmp/openmemory-demo`, then point a real client at the config in Quick Start and the same thing happens in the background as you work.
 
@@ -139,7 +139,7 @@ The result is a structured, evolving knowledge graph that any AI tool can query 
 - **Hybrid knowledge capture** — AI explicitly captures facts during conversation. Optionally, the server can also extract facts from raw events during consolidation as a safety net.
 - **Batch consolidation** — Periodic processing integrates pending captures into the long-term knowledge graph: classifies domains, extracts entities, resolves duplicates, detects contradictions.
 - **Entity graph** — Whatever the conversation is about — people, organisations, projects, places, products — extracted, typed and linked automatically. Relationship strength tracks corroboration.
-- **Hybrid search** — BM25 keyword + structured domain + entity-graph paths, merged via Reciprocal Rank Fusion with temporal decay.
+- **Hybrid search** — BM25 keyword + structured domain + entity-graph paths, merged via Reciprocal Rank Fusion with temporal decay. Add an embedding provider and semantic similarity joins the merge as a fourth path: it ranks, it does not gate, so a fact with no embedding is still found by its words.
 - **In-session memory** — Recently captured facts are immediately accessible via `get_session_context`, even before consolidation.
 - **Immutable history** — Facts are never deleted, only superseded. Full history preserved.
 - **Source traceability** — Every fact links back to the conversation events that produced it.
