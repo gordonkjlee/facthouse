@@ -165,6 +165,27 @@ export interface EmbeddingConfig {
   api_key_env: string;
   /** Facts per embedding call during consolidation. */
   batch_size: number;
+  /**
+   * How close to the best match a semantic result must be to count as one,
+   * as a ratio of the best score. Default 0.85.
+   *
+   * Cosine similarity has no natural zero: every stored vector scores against
+   * every query, and unrelated facts land near the model's floor rather than
+   * near 0. Some cut is therefore unavoidable, or semantic search returns the
+   * whole store for every query.
+   *
+   * Tunable because **the floor is a property of the model, not of relevance**.
+   * The default was measured against `nomic-embed-text`, where unrelated facts
+   * sit around 0.45; a model with a tighter or wider spread wants a different
+   * ratio. This is the same reason `dimensions` is configurable rather than
+   * fixed.
+   *
+   * Lower keeps more and recalls more loosely; higher keeps fewer and demands
+   * closer matches. The extremes are meaningful rather than invalid: 0 keeps
+   * everything and leaves the ranking entirely to the merge, 1 keeps only
+   * results tied with the best. Values outside 0–1 are clamped.
+   */
+  min_similarity_ratio: number;
   /** Ollama only. */
   host?: string;
 }
@@ -198,6 +219,7 @@ export const DEFAULT_CONFIG: Omit<ServerConfig, "storage" | "temporal"> = {
     dimensions: null,
     api_key_env: "VOYAGE_API_KEY",
     batch_size: 128,
+    min_similarity_ratio: 0.85,
   },
   capture: {
     default_confidence: DEFAULT_CONFIDENCE,

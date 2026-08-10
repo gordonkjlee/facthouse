@@ -20,14 +20,18 @@ import { getEmbeddings } from "../db/embeddings.js";
 import { getFactsByIds } from "../db/facts.js";
 
 /**
- * How close to the best hit a result must be to count as one.
+ * Default for how close to the best hit a result must be to count as one.
  *
  * Not a relevance threshold — a *comparability* one. See the reasoning in
  * `vectorSearch`: cosine has no zero, so the only honest question is "is this
- * result in the same league as the best one", and the answer has to be
- * expressed relative to that best.
+ * result in the same league as the best one", and that has to be expressed
+ * relative to the best.
+ *
+ * A default rather than a constant, because the floor it compensates for
+ * belongs to the embedding model. Measured against `nomic-embed-text`;
+ * overridable via `embedding.min_similarity_ratio`.
  */
-const RELATIVE_CUTOFF = 0.85;
+export const DEFAULT_MIN_SIMILARITY_RATIO = 0.85;
 
 /**
  * Cosine similarity of two equal-length vectors.
@@ -72,6 +76,12 @@ export function vectorSearch(
   model: string,
   dimensions: number,
   limit: number,
+  /**
+   * Ratio of the best score a hit must reach. Clamped to 0–1: above 1 nothing
+   * could ever qualify, which would silently disable the path rather than
+   * tighten it.
+   */
+  minSimilarityRatio: number = DEFAULT_MIN_SIMILARITY_RATIO,
 ): Fact[] {
   if (queryVector.length !== dimensions) {
     throw new Error(
@@ -106,11 +116,12 @@ export function vectorSearch(
   // 0.482 for the next, a ratio of 0.83; "dark mode" scores 0.729 then 0.432,
   // a ratio of 0.59. A genuinely ambiguous query clusters near 1.0 and keeps
   // its whole cluster, which is the intended behaviour.
+  const ratio = Math.min(1, Math.max(0, minSimilarityRatio));
   const best = scored[0]?.score ?? 0;
   const kept =
     best <= 0
       ? [] // Nothing positively similar; a negative-cosine "match" is noise.
-      : scored.filter((s) => s.score >= best * RELATIVE_CUTOFF);
+      : scored.filter((s) => s.score >= best * ratio);
 
   // Hydrate only the winners. The scan touches every vector; it must not also
   // load every fact row.

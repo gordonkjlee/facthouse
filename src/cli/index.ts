@@ -256,7 +256,12 @@ async function runSearchCmd() {
     onUnavailable: (reason) => console.error(`[openmemory] ${reason}`),
   });
   const response = await withDbAsync(dataDir, (db) =>
-    runSearch(db, { query, domain: values.domain as string | undefined, limit }, embedding),
+    runSearch(
+      db,
+      { query, domain: values.domain as string | undefined, limit },
+      embedding,
+      config.embedding?.min_similarity_ratio,
+    ),
   );
 
   console.log(

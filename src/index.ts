@@ -126,7 +126,12 @@ const factManager = createFactManager(db, sessionManager, {
   onConsolidated: () => resources.notifyUpdated(),
 });
 factManager.registerTools(server);
-registerReadTools(server, db, embeddingProvider);
+registerReadTools(
+  server,
+  db,
+  embeddingProvider,
+  config.embedding?.min_similarity_ratio,
+);
 
 const scheduler: Scheduler = startScheduler({
   db,

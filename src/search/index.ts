@@ -246,7 +246,7 @@ export async function searchWithProvider(
   db: Db,
   query: string,
   provider: EmbeddingProvider | null,
-  opts?: HybridSearchOpts,
+  opts?: HybridSearchOpts & { minSimilarityRatio?: number },
 ): Promise<SearchResponse> {
   if (!provider) return hybridSearch(db, query, opts);
 
@@ -258,7 +258,12 @@ export async function searchWithProvider(
     if (r.vectors.length !== 1 || !r.dimensions) return hybridSearch(db, query, opts);
     return hybridSearch(db, query, {
       ...opts,
-      semantic: { vector: r.vectors[0], model: r.model, dimensions: r.dimensions },
+      semantic: {
+        vector: r.vectors[0],
+        model: r.model,
+        dimensions: r.dimensions,
+        minSimilarityRatio: opts?.minSimilarityRatio,
+      },
     });
   } catch {
     return hybridSearch(db, query, opts);
@@ -286,6 +291,11 @@ export interface HybridSearchOpts {
     vector: Float32Array;
     model: string;
     dimensions: number;
+    /**
+     * How close to the best hit a result must be. Omit for the default —
+     * see `embedding.min_similarity_ratio`.
+     */
+    minSimilarityRatio?: number;
   };
 }
 
@@ -390,8 +400,15 @@ export function hybridSearch(
   // where keyword returns nothing at all, which is exactly the case it exists
   // for.
   if (opts?.semantic) {
-    const { vector, model, dimensions } = opts.semantic;
-    const semanticFacts = vectorSearch(db, vector, model, dimensions, candidatePool);
+    const { vector, model, dimensions, minSimilarityRatio } = opts.semantic;
+    const semanticFacts = vectorSearch(
+      db,
+      vector,
+      model,
+      dimensions,
+      candidatePool,
+      minSimilarityRatio,
+    );
     if (semanticFacts.length > 0) {
       searchLists.push({ name: "semantic", facts: semanticFacts });
     }

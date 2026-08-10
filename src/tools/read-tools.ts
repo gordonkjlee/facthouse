@@ -21,6 +21,8 @@ export function registerReadTools(
   db: Db,
   /** Null when semantic search is off, which is the shipped default. */
   embedding: EmbeddingProvider | null = null,
+  /** Ratio of the best score a semantic hit must reach. Store-configured. */
+  minSimilarityRatio?: number,
 ): void {
   // -----------------------------------------------------------------
   // search_knowledge
@@ -66,6 +68,7 @@ export function registerReadTools(
       // search itself stays a synchronous index read.
       const response = await searchWithProvider(db, args.query, embedding, {
         domain: args.domain,
+        minSimilarityRatio,
       });
 
       return {

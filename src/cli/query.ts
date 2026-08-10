@@ -32,12 +32,14 @@ export async function runSearch(
   args: SearchArgs,
   /** Null when semantic search is off — the shipped default. */
   embedding: EmbeddingProvider | null = null,
+  minSimilarityRatio?: number,
 ): Promise<SearchResponse> {
   // Same entry point the MCP tool uses, so the command line and an assistant
   // cannot get different answers to the same question.
   return searchWithProvider(db, args.query, embedding, {
     domain: args.domain,
     limit: args.limit,
+    minSimilarityRatio,
   });
 }
 

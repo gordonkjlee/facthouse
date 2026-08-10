@@ -353,3 +353,64 @@ describe("the relative cutoff", () => {
     expect(vectorSearch(db, vec(1, 0), "m", 2, 10)).toEqual([]);
   });
 });
+
+describe("the cutoff is configurable", () => {
+  /**
+   * The default was measured against one model, and the value it compensates
+   * for — where unrelated facts sit — belongs to the model rather than to
+   * relevance. A store on a different provider needs a different ratio, which
+   * is the same reason `dimensions` is configurable.
+   */
+  function twoHits() {
+    const near = addFact("close");
+    const far = addFact("further");
+    insertEmbeddings(
+      db,
+      [
+        { fact_id: near.id, vector: vec(1, 0) },        // cos = 1.00
+        { fact_id: far.id, vector: vec(0.8, 0.6) },     // cos = 0.80
+      ],
+      "m",
+      2,
+    );
+    return { near, far };
+  }
+
+  it("excludes at the default and includes at a looser ratio", () => {
+    const { near, far } = twoHits();
+
+    // 0.80 < 0.85 of 1.00 — dropped by default.
+    expect(vectorSearch(db, vec(1, 0), "m", 2, 10).map((f) => f.id)).toEqual([near.id]);
+
+    // A store that wants broader recall says so.
+    expect(vectorSearch(db, vec(1, 0), "m", 2, 10, 0.7).map((f) => f.id)).toEqual([
+      near.id,
+      far.id,
+    ]);
+  });
+
+  it("keeps only the best at a ratio of 1", () => {
+    const { near } = twoHits();
+    expect(vectorSearch(db, vec(1, 0), "m", 2, 10, 1).map((f) => f.id)).toEqual([near.id]);
+  });
+
+  it("keeps everything positively similar at a ratio of 0", () => {
+    // A meaningful extreme, not a misconfiguration: it hands ranking entirely
+    // to the merge.
+    twoHits();
+    expect(vectorSearch(db, vec(1, 0), "m", 2, 10, 0)).toHaveLength(2);
+  });
+
+  it("clamps a ratio above 1 rather than silently disabling the path", () => {
+    // Nothing can exceed 100% of the best score, so an unclamped 1.5 would
+    // return nothing at all — tightening the knob past its end would look
+    // like semantic search had stopped working.
+    const { near } = twoHits();
+    expect(vectorSearch(db, vec(1, 0), "m", 2, 10, 1.5).map((f) => f.id)).toEqual([near.id]);
+  });
+
+  it("clamps a negative ratio", () => {
+    twoHits();
+    expect(vectorSearch(db, vec(1, 0), "m", 2, 10, -3)).toHaveLength(2);
+  });
+});
