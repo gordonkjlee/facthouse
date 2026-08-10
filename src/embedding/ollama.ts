@@ -48,7 +48,15 @@ export function createOllamaProvider(opts: OllamaOpts = {}): EmbeddingProvider {
   // resolved lazily and then frozen — see the check in `embed`.
   let dimensions = opts.dimensions ?? 0;
 
+  // Measured, not assumed, and only for the family it was measured on. Against
+  // a seeded store, queries with a real answer scored 0.54 and 0.73 while
+  // queries the store knew nothing about topped out at 0.48 and 0.42. Anything
+  // at or below 0.5 is noise for this family; a different model would need its
+  // own measurement, so it gets no number rather than this one.
+  const defaultMinSimilarity = model.startsWith("nomic-embed") ? 0.5 : undefined;
+
   return {
+    defaultMinSimilarity,
     get model() {
       return model;
     },

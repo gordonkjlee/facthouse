@@ -114,6 +114,8 @@ OpenMemory statistics
 
 **What this demo does not show:** the demo store searches by keyword, so it matches words rather than meanings — `search "shellfish"` finds the allergy, `search "food"` does not. Semantic search over embeddings now exists and fixes exactly that, but it is off unless you turn it on, because switching it on means choosing an embedding model and a model is an opinion about what "similar" means. Set `embedding.provider` in `config.json` to `"ollama"` (local, no API key) or `"voyage"` (hosted), run `openmemory consolidate`, and `search "food"` starts returning the allergy. Facts are embedded when they are consolidated, so an existing store fills in on its next run rather than needing a rebuild.
 
+One thing to know if you use a model OpenMemory has not measured: cosine similarity has no natural zero, so a query your store cannot answer still scores every fact in it — searching a personal store for `"quantum physics"` will happily return your four most vaguely-related facts unless something says where noise begins. That number is a property of the embedding model, so it ships with the model rather than as a global constant, and models nobody has measured get no floor rather than a guessed one. If yours is one of them, embed a query your store genuinely cannot answer, read the top score, and put it in `embedding.min_similarity`.
+
 Clean up with `rm -rf /tmp/openmemory-demo`, then point a real client at the config in Quick Start and the same thing happens in the background as you work.
 
 ### The part that matters: it is the same store from every tool

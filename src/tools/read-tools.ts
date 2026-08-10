@@ -6,6 +6,7 @@ import type { Db } from "../db/connection.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { hybridSearch, searchWithProvider } from "../search/index.js";
+import type { VectorSearchOpts } from "../search/vector.js";
 import type { EmbeddingProvider } from "../embedding/types.js";
 import { findEntity, getEntityEdges } from "../db/entities.js";
 import { getFactsByEntity } from "../db/facts.js";
@@ -21,8 +22,8 @@ export function registerReadTools(
   db: Db,
   /** Null when semantic search is off, which is the shipped default. */
   embedding: EmbeddingProvider | null = null,
-  /** Ratio of the best score a semantic hit must reach. Store-configured. */
-  minSimilarityRatio?: number,
+  /** How much of the semantic ranking survives. Store-configured. */
+  tuning?: VectorSearchOpts,
 ): void {
   // -----------------------------------------------------------------
   // search_knowledge
@@ -68,7 +69,7 @@ export function registerReadTools(
       // search itself stays a synchronous index read.
       const response = await searchWithProvider(db, args.query, embedding, {
         domain: args.domain,
-        minSimilarityRatio,
+        tuning,
       });
 
       return {

@@ -260,7 +260,10 @@ async function runSearchCmd() {
       db,
       { query, domain: values.domain as string | undefined, limit },
       embedding,
-      config.embedding?.min_similarity_ratio,
+      {
+        minSimilarityRatio: config.embedding?.min_similarity_ratio,
+        minSimilarity: config.embedding?.min_similarity ?? undefined,
+      },
     ),
   );
 

@@ -12,6 +12,7 @@
 
 import type { Db } from "../db/connection.js";
 import { searchWithProvider } from "../search/index.js";
+import type { VectorSearchOpts } from "../search/vector.js";
 import type { EmbeddingProvider } from "../embedding/types.js";
 import { getStats, type KnowledgeStats } from "../db/stats.js";
 import type { SearchResponse } from "../types/data.js";
@@ -32,14 +33,14 @@ export async function runSearch(
   args: SearchArgs,
   /** Null when semantic search is off — the shipped default. */
   embedding: EmbeddingProvider | null = null,
-  minSimilarityRatio?: number,
+  tuning?: VectorSearchOpts,
 ): Promise<SearchResponse> {
   // Same entry point the MCP tool uses, so the command line and an assistant
   // cannot get different answers to the same question.
   return searchWithProvider(db, args.query, embedding, {
     domain: args.domain,
     limit: args.limit,
-    minSimilarityRatio,
+    tuning,
   });
 }
 

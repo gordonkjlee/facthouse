@@ -46,4 +46,20 @@ export interface EmbeddingProvider {
   readonly model: string;
   /** Configured output dimension. */
   readonly dimensions: number;
+
+  /**
+   * Cosine score below which this model's output is noise rather than a match,
+   * or undefined when nobody has measured it for this model.
+   *
+   * Lives on the provider because it is a property of the model and nowhere
+   * else knows which model is in play. Cosine has no natural zero: a query a
+   * store cannot answer still scores every fact in a tight band — measured at
+   * 0.42–0.48 for `nomic-embed-text` — so without a floor, search answers
+   * questions it has no answer to. A comparison against the best result cannot
+   * catch this, because in that band everything is close to the best.
+   *
+   * Undefined rather than a guessed number for an unmeasured model. Overridden
+   * by `embedding.min_similarity`, which a store sets after measuring its own.
+   */
+  readonly defaultMinSimilarity?: number;
 }

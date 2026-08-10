@@ -130,7 +130,10 @@ registerReadTools(
   server,
   db,
   embeddingProvider,
-  config.embedding?.min_similarity_ratio,
+  {
+    minSimilarityRatio: config.embedding?.min_similarity_ratio,
+    minSimilarity: config.embedding?.min_similarity ?? undefined,
+  },
 );
 
 const scheduler: Scheduler = startScheduler({

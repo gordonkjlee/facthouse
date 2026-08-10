@@ -263,3 +263,24 @@ describe("provider selection", () => {
       .toBe("voyage");
   });
 });
+
+describe("the provider carries its own noise floor", () => {
+  /**
+   * Cosine has no natural zero, so a query a store cannot answer still scores
+   * every fact — measured at 0.42–0.48 against nomic-embed-text, against 0.54
+   * and 0.73 for queries that did have an answer. The number that separates
+   * them belongs to the model, so it lives with the model rather than in a
+   * constant applied to whichever model happens to be configured.
+   */
+  it("ships the measured value for the family it was measured on", () => {
+    expect(createOllamaProvider({ model: "nomic-embed-text" }).defaultMinSimilarity).toBe(0.5);
+  });
+
+  it("offers no floor for a model nobody has measured", () => {
+    // Not 0.5 "because it is probably similar". A wrong floor silently deletes
+    // correct results, which is worse than the flooding it would prevent.
+    expect(createOllamaProvider({ model: "mxbai-embed-large" }).defaultMinSimilarity)
+      .toBeUndefined();
+    expect(createVoyageProvider({ apiKey: "k" }).defaultMinSimilarity).toBeUndefined();
+  });
+});

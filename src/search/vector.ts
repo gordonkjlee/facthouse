@@ -30,8 +30,40 @@ import { getFactsByIds } from "../db/facts.js";
  * A default rather than a constant, because the floor it compensates for
  * belongs to the embedding model. Measured against `nomic-embed-text`;
  * overridable via `embedding.min_similarity_ratio`.
+ *
+ * **It cannot detect that nothing is relevant.** Measured on a seeded store:
+ * `"food"` scores 0.540 for the right fact against a 0.449 floor, while
+ * `"quantum physics"` — about which the store knows nothing — scores 0.480
+ * down to 0.419. The second is a tight cluster of noise, and every ratio in it
+ * clears 0.85, so the whole store survives. A relative cut separates one clear
+ * winner from a cluster; it cannot tell a cluster of good matches from a
+ * cluster of nothing. That needs `minSimilarity` below, which needs a number
+ * measured against the model in use.
  */
 export const DEFAULT_MIN_SIMILARITY_RATIO = 0.85;
+
+/** Tuning for how much of the ranked list survives. */
+export interface VectorSearchOpts {
+  /**
+   * How close to the best hit a result must be, 0–1. Defaults to
+   * {@link DEFAULT_MIN_SIMILARITY_RATIO}.
+   */
+  minSimilarityRatio?: number;
+  /**
+   * Absolute cosine floor, below which a hit is not a hit however well it
+   * compares to its neighbours.
+   *
+   * Off by default, because the useful value is a property of the embedding
+   * model and no single number is right for the two this ships with — the same
+   * reason the ratio is configurable, one step further. A default guessed from
+   * one model would be a constant silently applied to models it was never
+   * measured against.
+   *
+   * To find yours: embed a query your store genuinely knows nothing about and
+   * read the top score. Anything at or below it is noise.
+   */
+  minSimilarity?: number;
+}
 
 /**
  * Cosine similarity of two equal-length vectors.
@@ -76,12 +108,7 @@ export function vectorSearch(
   model: string,
   dimensions: number,
   limit: number,
-  /**
-   * Ratio of the best score a hit must reach. Clamped to 0–1: above 1 nothing
-   * could ever qualify, which would silently disable the path rather than
-   * tighten it.
-   */
-  minSimilarityRatio: number = DEFAULT_MIN_SIMILARITY_RATIO,
+  opts: VectorSearchOpts = {},
 ): Fact[] {
   if (queryVector.length !== dimensions) {
     throw new Error(
@@ -116,12 +143,19 @@ export function vectorSearch(
   // 0.482 for the next, a ratio of 0.83; "dark mode" scores 0.729 then 0.432,
   // a ratio of 0.59. A genuinely ambiguous query clusters near 1.0 and keeps
   // its whole cluster, which is the intended behaviour.
-  const ratio = Math.min(1, Math.max(0, minSimilarityRatio));
-  const best = scored[0]?.score ?? 0;
+  //
+  // The ratio cannot report that nothing is relevant — see the constant above.
+  // `minSimilarity` is the cut that can, and it is applied first: a store that
+  // sets it is asking for silence on queries it has no answer to, and the ratio
+  // must not then re-admit the best of a bad field.
+  const ratio = Math.min(1, Math.max(0, opts.minSimilarityRatio ?? DEFAULT_MIN_SIMILARITY_RATIO));
+  const floor = opts.minSimilarity ?? 0;
+  const above = scored.filter((s) => s.score >= floor);
+  const best = above[0]?.score ?? 0;
   const kept =
     best <= 0
       ? [] // Nothing positively similar; a negative-cosine "match" is noise.
-      : scored.filter((s) => s.score >= best * ratio);
+      : above.filter((s) => s.score >= best * ratio);
 
   // Hydrate only the winners. The scan touches every vector; it must not also
   // load every fact row.

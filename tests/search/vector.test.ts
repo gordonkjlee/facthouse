@@ -383,7 +383,7 @@ describe("the cutoff is configurable", () => {
     expect(vectorSearch(db, vec(1, 0), "m", 2, 10).map((f) => f.id)).toEqual([near.id]);
 
     // A store that wants broader recall says so.
-    expect(vectorSearch(db, vec(1, 0), "m", 2, 10, 0.7).map((f) => f.id)).toEqual([
+    expect(vectorSearch(db, vec(1, 0), "m", 2, 10, { minSimilarityRatio: 0.7 }).map((f) => f.id)).toEqual([
       near.id,
       far.id,
     ]);
@@ -391,14 +391,14 @@ describe("the cutoff is configurable", () => {
 
   it("keeps only the best at a ratio of 1", () => {
     const { near } = twoHits();
-    expect(vectorSearch(db, vec(1, 0), "m", 2, 10, 1).map((f) => f.id)).toEqual([near.id]);
+    expect(vectorSearch(db, vec(1, 0), "m", 2, 10, { minSimilarityRatio: 1 }).map((f) => f.id)).toEqual([near.id]);
   });
 
   it("keeps everything positively similar at a ratio of 0", () => {
     // A meaningful extreme, not a misconfiguration: it hands ranking entirely
     // to the merge.
     twoHits();
-    expect(vectorSearch(db, vec(1, 0), "m", 2, 10, 0)).toHaveLength(2);
+    expect(vectorSearch(db, vec(1, 0), "m", 2, 10, { minSimilarityRatio: 0 })).toHaveLength(2);
   });
 
   it("clamps a ratio above 1 rather than silently disabling the path", () => {
@@ -406,11 +406,85 @@ describe("the cutoff is configurable", () => {
     // return nothing at all — tightening the knob past its end would look
     // like semantic search had stopped working.
     const { near } = twoHits();
-    expect(vectorSearch(db, vec(1, 0), "m", 2, 10, 1.5).map((f) => f.id)).toEqual([near.id]);
+    expect(vectorSearch(db, vec(1, 0), "m", 2, 10, { minSimilarityRatio: 1.5 }).map((f) => f.id)).toEqual([near.id]);
   });
 
   it("clamps a negative ratio", () => {
     twoHits();
-    expect(vectorSearch(db, vec(1, 0), "m", 2, 10, -3)).toHaveLength(2);
+    expect(vectorSearch(db, vec(1, 0), "m", 2, 10, { minSimilarityRatio: -3 })).toHaveLength(2);
+  });
+});
+
+describe("the absolute floor", () => {
+  /**
+   * The case the ratio provably cannot handle, found by running real queries
+   * against a real model rather than by reasoning about the code.
+   *
+   * A query the store knows nothing about does not score near zero — it scores
+   * a tight band of noise. Measured on a seeded store with nomic-embed-text,
+   * "quantum physics" scored 0.480 down to 0.419 across four unrelated facts.
+   * Every one of those ratios clears 0.85, so the relative cut kept all four
+   * and search answered a question it had no answer to.
+   */
+  function noiseBand() {
+    // Four facts within 13% of each other, none of them a real match — the
+    // shape an unrelated query actually produces.
+    const ids = ["a", "b", "c", "d"].map((n) => addFact(`fact ${n}`));
+    insertEmbeddings(
+      db,
+      [
+        { fact_id: ids[0].id, vector: vec(0.48, 0.877) },  // cos ≈ 0.48
+        { fact_id: ids[1].id, vector: vec(0.455, 0.89) },  // cos ≈ 0.455
+        { fact_id: ids[2].id, vector: vec(0.426, 0.905) }, // cos ≈ 0.426
+        { fact_id: ids[3].id, vector: vec(0.419, 0.908) }, // cos ≈ 0.419
+      ],
+      "m",
+      2,
+    );
+    return ids;
+  }
+
+  it("keeps the whole noise band when only the ratio is set", () => {
+    // Not the desired behaviour — the shipped default, asserted so the gap is
+    // recorded rather than assumed fixed.
+    noiseBand();
+    expect(vectorSearch(db, vec(1, 0), "m", 2, 10)).toHaveLength(4);
+  });
+
+  it("returns nothing when the whole field is below the floor", () => {
+    noiseBand();
+    expect(vectorSearch(db, vec(1, 0), "m", 2, 10, { minSimilarity: 0.5 })).toEqual([]);
+  });
+
+  it("still returns a genuine match above the floor", () => {
+    // The floor must not make the feature silent — the same store, a query
+    // that does have an answer.
+    const real = addFact("the real match");
+    noiseBand();
+    insertEmbeddings(db, [{ fact_id: real.id, vector: vec(1, 0) }], "m", 2);
+
+    const hits = vectorSearch(db, vec(1, 0), "m", 2, 10, { minSimilarity: 0.5 });
+    expect(hits.map((f) => f.id)).toEqual([real.id]);
+  });
+
+  it("does not let the ratio re-admit what the floor rejected", () => {
+    // Order matters. Applying the ratio to the unfiltered list first would
+    // compute "close to the best" from a best that is itself noise, and the
+    // floor would then have nothing left to reject.
+    const real = addFact("the real match");
+    noiseBand();
+    insertEmbeddings(db, [{ fact_id: real.id, vector: vec(1, 0) }], "m", 2);
+
+    const hits = vectorSearch(db, vec(1, 0), "m", 2, 10, {
+      minSimilarity: 0.5,
+      minSimilarityRatio: 0, // keep everything the floor allows
+    });
+    expect(hits.map((f) => f.id)).toEqual([real.id]);
+  });
+
+  it("is off by default, so an unconfigured store behaves exactly as before", () => {
+    const real = addFact("the real match");
+    insertEmbeddings(db, [{ fact_id: real.id, vector: vec(1, 0) }], "m", 2);
+    expect(vectorSearch(db, vec(1, 0), "m", 2, 10).map((f) => f.id)).toEqual([real.id]);
   });
 });

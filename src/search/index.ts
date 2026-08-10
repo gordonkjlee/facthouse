@@ -22,7 +22,7 @@ import {
 } from "../db/facts.js";
 import { findEntity, getEntitiesForFacts } from "../db/entities.js";
 import { keywordSearchPending } from "../db/session-facts.js";
-import { vectorSearch } from "./vector.js";
+import { vectorSearch, type VectorSearchOpts } from "./vector.js";
 import type { EmbeddingProvider } from "../embedding/types.js";
 
 // ---------------------------------------------------------------------------
@@ -246,7 +246,7 @@ export async function searchWithProvider(
   db: Db,
   query: string,
   provider: EmbeddingProvider | null,
-  opts?: HybridSearchOpts & { minSimilarityRatio?: number },
+  opts?: HybridSearchOpts & { tuning?: VectorSearchOpts },
 ): Promise<SearchResponse> {
   if (!provider) return hybridSearch(db, query, opts);
 
@@ -262,7 +262,13 @@ export async function searchWithProvider(
         vector: r.vectors[0],
         model: r.model,
         dimensions: r.dimensions,
-        minSimilarityRatio: opts?.minSimilarityRatio,
+        // The store's setting wins; the provider's measured value is the
+        // fallback. Resolved here because this is the only place that knows
+        // both — `vectorSearch` sees a number, not a model.
+        tuning: {
+          ...opts?.tuning,
+          minSimilarity: opts?.tuning?.minSimilarity ?? provider.defaultMinSimilarity,
+        },
       },
     });
   } catch {
@@ -292,10 +298,10 @@ export interface HybridSearchOpts {
     model: string;
     dimensions: number;
     /**
-     * How close to the best hit a result must be. Omit for the default —
-     * see `embedding.min_similarity_ratio`.
+     * How much of the ranked list survives. Omit for the defaults — see
+     * `embedding.min_similarity_ratio` and `embedding.min_similarity`.
      */
-    minSimilarityRatio?: number;
+    tuning?: VectorSearchOpts;
   };
 }
 
@@ -400,14 +406,14 @@ export function hybridSearch(
   // where keyword returns nothing at all, which is exactly the case it exists
   // for.
   if (opts?.semantic) {
-    const { vector, model, dimensions, minSimilarityRatio } = opts.semantic;
+    const { vector, model, dimensions, tuning } = opts.semantic;
     const semanticFacts = vectorSearch(
       db,
       vector,
       model,
       dimensions,
       candidatePool,
-      minSimilarityRatio,
+      tuning,
     );
     if (semanticFacts.length > 0) {
       searchLists.push({ name: "semantic", facts: semanticFacts });

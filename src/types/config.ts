@@ -186,6 +186,21 @@ export interface EmbeddingConfig {
    * results tied with the best. Values outside 0–1 are clamped.
    */
   min_similarity_ratio: number;
+  /**
+   * Absolute cosine floor for a semantic hit. Null (the default) defers to the
+   * provider's own measured value; `0` disables the floor entirely.
+   *
+   * `min_similarity_ratio` asks whether a result is comparable to the best
+   * result. It cannot ask whether the best result is any good — so a query the
+   * store knows nothing about produces a tight cluster of noise in which every
+   * ratio passes, and the whole store comes back. This is the cut that answers
+   * it, and it is off by default because the right value is a property of the
+   * embedding model rather than of relevance — which is why the number lives
+   * on the provider and this field only overrides it. Measure your own by
+   * embedding a query your store genuinely cannot answer and reading the top
+   * score: anything at or below it is noise.
+   */
+  min_similarity: number | null;
   /** Ollama only. */
   host?: string;
 }
@@ -220,6 +235,7 @@ export const DEFAULT_CONFIG: Omit<ServerConfig, "storage" | "temporal"> = {
     api_key_env: "VOYAGE_API_KEY",
     batch_size: 128,
     min_similarity_ratio: 0.85,
+    min_similarity: null,
   },
   capture: {
     default_confidence: DEFAULT_CONFIDENCE,
