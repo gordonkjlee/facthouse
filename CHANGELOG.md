@@ -2,10 +2,46 @@
 
 ## [0.11.0](https://github.com/gordonkjlee/openmemory/compare/v0.10.0...v0.11.0) (2026-08-10)
 
+**Upgrading changes nothing until you opt in.** Semantic search ships disabled, so
+this release behaves exactly like 0.10.0 on an existing store. That is deliberate:
+enabling it means choosing an embedding model, and a model is an opinion about what
+"similar" means — not a choice the engine should make on your behalf.
+
+**To turn it on**, set `embedding.provider` in `config.json` to `"ollama"` (local,
+no API key) or `"voyage"` (hosted), then run `openmemory consolidate`. Facts are
+embedded when they are consolidated, so an existing store fills in on its next run
+rather than needing a rebuild — and `openmemory stats` now reports how far that has
+got, per model.
+
+**Pending facts stay keyword-only.** A fact is embedded at consolidation, not at
+capture, so something captured minutes ago is findable by its own words but not yet
+by a paraphrase of them. `search_knowledge` returns those separately and its
+description says so.
 
 ### Features
 
-* **search:** semantic search over stored embeddings, off by default ([#128](https://github.com/gordonkjlee/openmemory/issues/128)) ([56f3d9d](https://github.com/gordonkjlee/openmemory/commit/56f3d9d80bbb489a02f85287dacde85cfbd2c5b2))
+* **search:** semantic search over stored embeddings, off by default
+  ([#128](https://github.com/gordonkjlee/openmemory/issues/128))
+  ([56f3d9d](https://github.com/gordonkjlee/openmemory/commit/56f3d9d80bbb489a02f85287dacde85cfbd2c5b2))
+
+  `search "shellfish"` found the allergy fact and `search "food"` did not. With a
+  provider configured, both do. Semantic similarity joins keyword, structured and
+  entity-graph results as a fourth list in the same rank fusion — it ranks rather
+  than gates, so a fact with no embedding is still found by its words.
+
+  Vectors are stored as BLOBs and scanned exactly, with no vector extension and no
+  index: the extension is a per-platform native binary, and this project has no
+  native dependencies. `embedding.dimensions` is what keeps that viable as a store
+  grows, since the cost of a query is bytes read rather than arithmetic.
+
+  Every vector records the model and dimension that produced it, and every read
+  filters on both — vectors from different models are not comparable, and comparing
+  them would return a confident number that means nothing.
+
+* **stats:** `get_stats` and `openmemory stats` report semantic coverage per model,
+  against the current fact count. Partial coverage is otherwise silent: search keeps
+  working, so a store where embedding failed halfway looks healthy while finding less
+  by meaning than you would expect.
 
 ## [0.10.0](https://github.com/gordonkjlee/openmemory/compare/v0.9.0...v0.10.0) (2026-08-10)
 
