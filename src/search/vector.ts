@@ -20,6 +20,16 @@ import { getEmbeddings } from "../db/embeddings.js";
 import { getFactsByIds } from "../db/facts.js";
 
 /**
+ * How close to the best hit a result must be to count as one.
+ *
+ * Not a relevance threshold — a *comparability* one. See the reasoning in
+ * `vectorSearch`: cosine has no zero, so the only honest question is "is this
+ * result in the same league as the best one", and the answer has to be
+ * expressed relative to that best.
+ */
+const RELATIVE_CUTOFF = 0.85;
+
+/**
  * Cosine similarity of two equal-length vectors.
  *
  * Normalises rather than assuming unit vectors. Most providers return
@@ -78,9 +88,33 @@ export function vectorSearch(
   }
   scored.sort((a, b) => b.score - a.score);
 
+  // Keep only hits close to the best one.
+  //
+  // Cosine similarity has no natural zero: every stored vector scores against
+  // every query, and unrelated facts still land around 0.45 rather than near 0.
+  // Without a cut, this path returns the entire store on every query — which
+  // makes "nothing is known about that" unreportable, and floods an assistant
+  // with the whole knowledge base whatever it asked.
+  //
+  // The cut is relative rather than absolute because the floor is a property of
+  // the model, not of relevance: an absolute threshold would be a constant
+  // tuned to one embedding model and silently wrong for the next. A ratio
+  // adapts, and asks only that a result be comparable to the best result — the
+  // question cosine can actually answer.
+  //
+  // Measured on the demo store: "food" scores 0.582 for the shellfish fact and
+  // 0.482 for the next, a ratio of 0.83; "dark mode" scores 0.729 then 0.432,
+  // a ratio of 0.59. A genuinely ambiguous query clusters near 1.0 and keeps
+  // its whole cluster, which is the intended behaviour.
+  const best = scored[0]?.score ?? 0;
+  const kept =
+    best <= 0
+      ? [] // Nothing positively similar; a negative-cosine "match" is noise.
+      : scored.filter((s) => s.score >= best * RELATIVE_CUTOFF);
+
   // Hydrate only the winners. The scan touches every vector; it must not also
   // load every fact row.
-  const topIds = scored.slice(0, limit).map((s) => s.id);
+  const topIds = kept.slice(0, limit).map((s) => s.id);
   const byId = new Map(getFactsByIds(db, topIds).map((f) => [f.id, f]));
 
   // Re-project through the ranked id list so similarity order survives, and

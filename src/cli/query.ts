@@ -11,7 +11,8 @@
  */
 
 import type { Db } from "../db/connection.js";
-import { hybridSearch } from "../search/index.js";
+import { searchWithProvider } from "../search/index.js";
+import type { EmbeddingProvider } from "../embedding/types.js";
 import { getStats, type KnowledgeStats } from "../db/stats.js";
 import type { SearchResponse } from "../types/data.js";
 
@@ -26,8 +27,15 @@ export interface SearchArgs {
 }
 
 /** Run a hybrid search — the same call `search_knowledge` makes. */
-export function runSearch(db: Db, args: SearchArgs): SearchResponse {
-  return hybridSearch(db, args.query, {
+export async function runSearch(
+  db: Db,
+  args: SearchArgs,
+  /** Null when semantic search is off — the shipped default. */
+  embedding: EmbeddingProvider | null = null,
+): Promise<SearchResponse> {
+  // Same entry point the MCP tool uses, so the command line and an assistant
+  // cannot get different answers to the same question.
+  return searchWithProvider(db, args.query, embedding, {
     domain: args.domain,
     limit: args.limit,
   });

@@ -23,6 +23,7 @@ import {
 import { findEntity, getEntitiesForFacts } from "../db/entities.js";
 import { keywordSearchPending } from "../db/session-facts.js";
 import { vectorSearch } from "./vector.js";
+import type { EmbeddingProvider } from "../embedding/types.js";
 
 // ---------------------------------------------------------------------------
 // Structured search
@@ -219,6 +220,49 @@ export function computeRetrievalQuality(
       : null;
 
   return { coverage_estimate, result_confidence, suggested_refinement };
+}
+
+// ---------------------------------------------------------------------------
+// Semantic entry point
+// ---------------------------------------------------------------------------
+
+/**
+ * Search with semantic recall when a provider is configured, keyword-only when
+ * not.
+ *
+ * The async wrapper exists so `hybridSearch` can stay synchronous. Every other
+ * recall path is a local index read; only this one is a network or subprocess
+ * call, and it is optional. Callers that have not enabled it should not pay for
+ * an async boundary, and the tool and CLI should not each grow their own copy
+ * of "embed the query, then search".
+ *
+ * **A failed embedding degrades to keyword search rather than failing the
+ * search.** Retrieval is a read path: returning fewer results is recoverable,
+ * returning an error to an assistant mid-answer is not. The failure is silent
+ * here by design — `openmemory init` is where a broken provider is reported,
+ * because that is a moment someone is watching.
+ */
+export async function searchWithProvider(
+  db: Db,
+  query: string,
+  provider: EmbeddingProvider | null,
+  opts?: HybridSearchOpts,
+): Promise<SearchResponse> {
+  if (!provider) return hybridSearch(db, query, opts);
+
+  try {
+    // Embedded as a query, not a document. Retrieval models are trained
+    // asymmetrically; using the wrong side degrades every result and raises
+    // nothing.
+    const r = await provider.embed([query], "query");
+    if (r.vectors.length !== 1 || !r.dimensions) return hybridSearch(db, query, opts);
+    return hybridSearch(db, query, {
+      ...opts,
+      semantic: { vector: r.vectors[0], model: r.model, dimensions: r.dimensions },
+    });
+  } catch {
+    return hybridSearch(db, query, opts);
+  }
 }
 
 // ---------------------------------------------------------------------------

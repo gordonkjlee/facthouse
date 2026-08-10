@@ -10,14 +10,21 @@ import { readFileSync, existsSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 import { logEvent, extractContentFromHookPayload } from "./log-event.js";
-import { initDataDir, mcpConfigSnippet, providerStatusLines } from "./init.js";
+import {
+  initDataDir,
+  mcpConfigSnippet,
+  providerStatusLines,
+  embeddingStatusLines,
+} from "./init.js";
 import { runSearch, formatSearch, formatStats, getStats } from "./query.js";
 import { openDatabase, closeDatabase } from "../db/connection.js";
 import { applySchema } from "../db/schema.js";
 import { consolidate } from "../intelligence/consolidate.js";
 import { createHeuristicProvider } from "../intelligence/heuristic.js";
 import { createIntelligenceProvider, resolveProviderType } from "../intelligence/provider.js";
+import { createEmbeddingProvider } from "../embedding/provider.js";
 import type { IntelligenceProvider } from "../intelligence/types.js";
+import type { EmbeddingProvider } from "../embedding/types.js";
 import { DEFAULT_CONFIG, type ServerConfig } from "../types/config.js";
 import { loadConfig } from "../config.js";
 import { sendSchedulerSignal, type SignalKind } from "../ipc/scheduler-ipc.js";
@@ -158,8 +165,37 @@ async function runInit() {
       resolveProviderType(loadConfig(result.dataDir).intelligence.provider),
     ),
     ``,
+    ...embeddingStatusLines(loadConfig(result.dataDir).embedding),
+    ``,
   ];
   console.log(lines.join("\n"));
+}
+
+/**
+ * Async twin of `withDb`, for commands that await inside the connection.
+ *
+ * Separate rather than making `withDb` async: `stats` and the other read
+ * commands are pure index reads and should not become promise-returning just
+ * because search embeds its query.
+ */
+async function withDbAsync<T>(
+  dataDir: string,
+  fn: (db: ReturnType<typeof openDatabase>) => Promise<T>,
+): Promise<T> {
+  if (!existsSync(path.join(dataDir, "memory.db"))) {
+    console.error(
+      `No database at ${dataDir}. Run 'openmemory init ${dataDir}' first, ` +
+        `or point at another directory with --data.`,
+    );
+    process.exit(1);
+  }
+  const db = openDatabase(path.join(dataDir, "memory.db"));
+  try {
+    applySchema(db);
+    return await fn(db);
+  } finally {
+    closeDatabase(db);
+  }
 }
 
 /**
@@ -212,8 +248,15 @@ async function runSearchCmd() {
   }
 
   const dataDir = path.resolve(resolveTilde(values.data as string));
-  const response = withDb(dataDir, (db) =>
-    runSearch(db, { query, domain: values.domain as string | undefined, limit }),
+  // Semantic recall if this store configured it. Reported when configured but
+  // unusable, rather than silently searching keyword-only — from the command
+  // line there is a person to tell.
+  const config = loadConfig(dataDir);
+  const embedding = createEmbeddingProvider(config.embedding, {
+    onUnavailable: (reason) => console.error(`[openmemory] ${reason}`),
+  });
+  const response = await withDbAsync(dataDir, (db) =>
+    runSearch(db, { query, domain: values.domain as string | undefined, limit }, embedding),
   );
 
   console.log(
@@ -300,7 +343,13 @@ async function runConsolidate() {
   const provider = createIntelligenceProvider(config.intelligence, {
     vocabulary: config.domains ?? [],
   });
-  await consolidateInProcess(dataDir, provider, config);
+  // Embeddings are written here too, not only by the server. `openmemory
+  // consolidate` is the documented way to process a store by hand, and a store
+  // consolidated that way would otherwise never gain a vector.
+  const embedding = createEmbeddingProvider(config.embedding, {
+    onUnavailable: (reason) => console.error(`[openmemory] ${reason}`),
+  });
+  await consolidateInProcess(dataDir, provider, config, embedding);
 }
 
 /**
@@ -317,13 +366,14 @@ export async function consolidateInProcess(
   dataDir: string,
   provider: IntelligenceProvider,
   config: Partial<ServerConfig> = DEFAULT_CONFIG,
+  embedding: EmbeddingProvider | null = null,
 ): Promise<void> {
   const dbPath = path.join(dataDir, "memory.db");
   const db = openDatabase(dbPath);
 
   try {
     applySchema(db);
-    const result = await consolidate(db, provider, config);
+    const result = await consolidate(db, provider, config, embedding);
     console.log(JSON.stringify(result));
   } catch (err: any) {
     console.error(err.message);

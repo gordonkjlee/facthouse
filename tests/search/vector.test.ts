@@ -163,15 +163,20 @@ describe("model and dimension isolation", () => {
 
 describe("vectorSearch", () => {
   it("ranks by similarity, most similar first", () => {
+    // Three vectors deliberately within the relative cutoff of each other, so
+    // this test observes *ordering* only. Exclusion is the cutoff's job and is
+    // covered separately — a fixture spread wide enough to be dropped would
+    // conflate the two and pass for the wrong reason.
     const near = addFact("near");
     const mid = addFact("mid");
-    const far = addFact("far");
+    const farther = addFact("farther");
     insertEmbeddings(
       db,
       [
-        { fact_id: far.id, vector: vec(-1, 0) },
-        { fact_id: near.id, vector: vec(1, 0) },
-        { fact_id: mid.id, vector: vec(1, 1) },
+        // Inserted out of order so a stable sort cannot fake the result.
+        { fact_id: farther.id, vector: vec(0.9, 0.436) },  // cos ≈ 0.90
+        { fact_id: near.id, vector: vec(1, 0) },           // cos = 1.00
+        { fact_id: mid.id, vector: vec(0.98, 0.199) },     // cos ≈ 0.98
       ],
       "m",
       2,
@@ -180,7 +185,7 @@ describe("vectorSearch", () => {
     expect(vectorSearch(db, vec(1, 0), "m", 2, 10).map((f) => f.id)).toEqual([
       near.id,
       mid.id,
-      far.id,
+      farther.id,
     ]);
   });
 
@@ -290,5 +295,61 @@ describe("the backfill queue", () => {
 
     expect(countEmbeddings(db, "m", 2)).toBe(1);
     expect(Array.from(getEmbeddings(db, "m", 2)[0].vector)).toEqual([0, 1]);
+  });
+});
+
+describe("the relative cutoff", () => {
+  /**
+   * Cosine has no natural zero: every stored vector scores against every query,
+   * and unrelated facts land near the model's floor rather than near 0. Without
+   * a cut, this path hands back the entire store on every query — which floods
+   * an assistant with the whole knowledge base whatever it asked for.
+   *
+   * The cut is relative because that floor is a property of the model, not of
+   * relevance. An absolute threshold would be tuned to one embedding model and
+   * silently wrong for the next.
+   */
+  it("drops hits that are not comparable to the best one", () => {
+    const near = addFact("clearly relevant");
+    const far = addFact("clearly not");
+    insertEmbeddings(
+      db,
+      [
+        { fact_id: near.id, vector: vec(1, 0) },
+        // ~0.6 similarity to (1,0) — well under 85% of 1.0.
+        { fact_id: far.id, vector: vec(0.6, 0.8) },
+      ],
+      "m",
+      2,
+    );
+
+    expect(vectorSearch(db, vec(1, 0), "m", 2, 10).map((f) => f.id)).toEqual([near.id]);
+  });
+
+  it("keeps a genuine cluster of comparable hits", () => {
+    // An ambiguous query should return its whole cluster, not an arbitrary one
+    // of them — the cut asks "comparable to the best", not "the single best".
+    const a = addFact("one of two equally good answers");
+    const b = addFact("the other");
+    insertEmbeddings(
+      db,
+      [
+        { fact_id: a.id, vector: vec(1, 0) },
+        { fact_id: b.id, vector: vec(0.99, 0.14) },
+      ],
+      "m",
+      2,
+    );
+
+    expect(vectorSearch(db, vec(1, 0), "m", 2, 10)).toHaveLength(2);
+  });
+
+  it("returns nothing when the best hit is not positively similar", () => {
+    // Every stored vector points away from the query. A negative-cosine "match"
+    // is noise, and a ratio of negatives is meaningless.
+    const f = addFact("opposite");
+    insertEmbeddings(db, [{ fact_id: f.id, vector: vec(-1, 0) }], "m", 2);
+
+    expect(vectorSearch(db, vec(1, 0), "m", 2, 10)).toEqual([]);
   });
 });
