@@ -10,6 +10,7 @@ const { openDatabase, closeDatabase } = await import("../../src/db/connection.js
 const { applySchema } = await import("../../src/db/schema.js");
 const { createSession } = await import("../../src/db/sessions.js");
 const { insertSessionFact } = await import("../../src/db/session-facts.js");
+const { insertEvent } = await import("../../src/db/sessions.js");
 const { insertFact, getFactsByDomain } = await import("../../src/db/facts.js");
 const { findEntity, getSelfEntity, ensureSelfEntity, getFactsBySubject } = await import("../../src/db/entities.js");
 const { ensureDomain } = await import("../../src/db/domains.js");
@@ -902,5 +903,92 @@ describe("embedding never costs a fact", () => {
       .prepare(`SELECT COUNT(*) AS n FROM fact_embeddings`)
       .get() as { n: number };
     expect(rows.n).toBe(0);
+  });
+});
+
+describe("provenance names one origin, not every repeat", () => {
+  /**
+   * `extraction_type` distinguishes the event that stated a fact from the ones
+   * that merely repeat it. The schema, the type and its doc comment have all
+   * carried `corroborating` ("mentioned again") since the beginning, and no
+   * code ever wrote it — every matching event was recorded as primary.
+   *
+   * That is not cosmetic in an agentic store, where the same tool output
+   * recurs constantly: one fact in a real database claimed 145 separate events
+   * as the one it came from. "Why do you believe this?" with 145 answers has
+   * none.
+   */
+  /**
+   * An extractor that returns one fact, verbatim.
+   *
+   * The heuristic provider deliberately extracts nothing from raw events —
+   * that needs an LLM — so a test using it would assert against an empty list
+   * for ever. Wrapping it keeps every other stage of the pipeline real.
+   */
+  const extracting = (content: string) => ({
+    ...createHeuristicProvider(PERSONAL_VOCABULARY),
+    async extractFactsFromEvents() {
+      return { facts: [{ content, domain_hint: "preferences" }], degraded: false };
+    },
+  });
+
+  const sources = (factContent: string) =>
+    db
+      .prepare(
+        `SELECT s.extraction_type AS type, e.sequence AS seq
+           FROM session_fact_sources s
+           JOIN session_events e ON e.id = s.event_id
+           JOIN session_facts sf ON sf.id = s.session_fact_id
+          WHERE sf.content = ?
+          ORDER BY e.sequence ASC`,
+      )
+      .all(factContent) as Array<{ type: string; seq: number }>;
+
+  it("marks the earliest occurrence primary and later ones corroborating", async () => {
+    const sessionId = setupSession();
+    const fact = "The user prefers dark roast coffee";
+    // The same sentence three times, as repeated tool output would produce.
+    for (let i = 0; i < 3; i++) {
+      insertEvent(db, {
+        mcp_session_id: sessionId,
+        event_type: "tool_result",
+        role: "tool",
+        content: `some surrounding output. ${fact}. more output.`,
+      });
+    }
+
+    await consolidate(db, extracting(fact) as never, {
+      extraction: { enabled: true } as never,
+    });
+
+    const links = sources(fact);
+    // Guards the premise: if extraction produced nothing, the assertions below
+    // would pass vacuously on an empty list.
+    expect(links.length).toBeGreaterThan(1);
+    expect(links[0].type).toBe("primary");
+    expect(links.slice(1).every((l) => l.type === "corroborating")).toBe(true);
+    // Exactly one origin, whatever the number of repeats.
+    expect(links.filter((l) => l.type === "primary")).toHaveLength(1);
+  });
+
+  it("still records a single occurrence as primary", async () => {
+    // The common case must not become corroborating-only, which would leave a
+    // fact with repeats but no stated origin.
+    const sessionId = setupSession();
+    const fact = "The user prefers dark roast coffee";
+    insertEvent(db, {
+      mcp_session_id: sessionId,
+      event_type: "message",
+      role: "user",
+      content: `${fact}.`,
+    });
+
+    await consolidate(db, extracting(fact) as never, {
+      extraction: { enabled: true } as never,
+    });
+
+    const links = sources(fact);
+    expect(links).toHaveLength(1);
+    expect(links[0].type).toBe("primary");
   });
 });

@@ -809,19 +809,29 @@ async function extractFactsFromEvents(
     });
 
     if (fact) {
-      // Primary link: events whose content literally contains the fact text.
-      // Works for heuristic (which extracts substrings) but not for LLM
-      // providers that paraphrase. If substring matching finds nothing, fall
-      // through to a contextual link against every new event in the window —
-      // lossy but preserves provenance so the fact isn't orphaned.
+      // Link events whose content literally contains the fact text. Works for
+      // heuristic extraction (which lifts substrings) but not for LLM providers
+      // that paraphrase. If substring matching finds nothing, fall through to a
+      // contextual link against every new event in the window — lossy but
+      // preserves provenance so the fact isn't orphaned.
+      //
+      // Only the FIRST match is primary. `newEvents` is ordered by sequence, so
+      // that is the earliest occurrence — the point the information actually
+      // arrived. Later matches are the same text appearing again, which is what
+      // `corroborating` means ("mentioned again"), and repeated tool output
+      // makes that common: one fact in a real store claimed 145 separate events
+      // as the one it came from. Provenance answers "where did this come from",
+      // and a question with 145 answers has none.
       let linkedPrimary = false;
       for (const event of newEvents) {
         if (event.content && event.content.includes(item.content)) {
           linkFactSource(db, {
             session_fact_id: fact.id,
             event_id: event.id,
-            relevance: 0.8,
-            extraction_type: "primary",
+            // A repeat is weaker evidence of origin than the first statement,
+            // and the relevance ordering should say so.
+            relevance: linkedPrimary ? 0.5 : 0.8,
+            extraction_type: linkedPrimary ? "corroborating" : "primary",
           });
           linkedPrimary = true;
         }
