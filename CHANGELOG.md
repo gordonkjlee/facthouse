@@ -1,5 +1,42 @@
 # Changelog
 
+## [0.13.0](https://github.com/gordonkjlee/openmemory/compare/v0.12.0...v0.13.0) (2026-08-10)
+
+**Nothing is deleted unless you ask.** This adds a command, changes no existing
+behaviour, and prunes nothing on its own.
+
+**Worth running `openmemory stats` after upgrading.** It now reports the raw event
+layer beneath your facts, which nothing previously showed. If OpenMemory is wired
+into an agentic client, expect that number to dwarf everything else — logged tool
+output is not knowledge, but it is stored like it. A store measured in daily use
+held 47,000 events and 493 MB against 21 graduated facts, all of it healthy and
+none of it visible.
+
+**`retention.session_facts_days` is gone.** It was read by no code, so removing it
+changes nothing that was happening; if you set it, it never did anything. It is
+replaced by `retention.prune_keep_per_session`, which defaults to null and defers
+to `extraction.working_memory_size`.
+
+### Features
+
+* **cli:** reclaim raw events that nothing can reach ([#133](https://github.com/gordonkjlee/openmemory/issues/133)) ([9dbcd82](https://github.com/gordonkjlee/openmemory/commit/9dbcd826037b79660dd69d3ceb71c2289f7a22c5))
+
+  ```bash
+  openmemory prune                    # report only
+  openmemory prune --apply --vacuum   # delete, then rebuild the file
+  ```
+
+  An event is removed only once extraction has read it, no fact's provenance cites
+  it, and it has fallen outside its own session's working-memory window — which
+  consolidation re-reads for pronoun resolution. Reachability rather than age: an
+  event's value has nothing to do with how old it is, and a store left quiet for a
+  month must not lose events it has not extracted yet.
+
+  No fact, entity, embedding or search result is affected. On the measured store
+  the rule cleared 84.7% of event content and spared everything still in use.
+
+* **stats:** `get_stats` and `openmemory stats` report the raw event layer.
+
 ## [0.12.0](https://github.com/gordonkjlee/openmemory/compare/v0.11.0...v0.12.0) (2026-08-10)
 
 **Only affects stores using Voyage embeddings.** If semantic search is off (the
