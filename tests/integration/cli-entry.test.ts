@@ -380,3 +380,50 @@ describe.skipIf(!runnable)("cli entry — search and stats", () => {
     },
   );
 });
+
+describe.skipIf(!runnable)("prune", () => {
+  /**
+   * The safety property, asserted against the real binary: the command that
+   * deletes data must not delete data unless asked. A default that applied
+   * would be irreversible, and the only place the default lives is argument
+   * parsing — which unit tests of the query layer never reach.
+   */
+  it("is listed as a command", () => {
+    const r = run([]);
+    expect(r.stderr).toContain("prune");
+  });
+
+  it("reports without deleting by default", () => {
+    run(["init", root]);
+    const r = run(["prune", "--data", root, "--json"]);
+    expect(r.status).toBe(0);
+
+    const out = JSON.parse(r.stdout);
+    expect(out.applied).toBe(false);
+    // A fresh store has no consolidations, so the watermark is 0 and nothing
+    // has been read yet — the correct answer is zero, and it must be reached
+    // by the rule rather than by the command failing.
+    expect(out.events).toBe(0);
+  });
+
+  it("explains the rule when there is nothing to reclaim", () => {
+    // A bare "0 events" reads as broken. On a fresh store the answer is zero
+    // because nothing has been extracted yet, and saying so is the difference
+    // between a working command and an apparently useless one.
+    run(["init", root]);
+    const r = run(["prune", "--data", root]);
+    expect(r.stdout).toContain("dry run");
+    expect(r.stdout).toContain("Nothing to reclaim");
+    expect(r.stdout).toContain("provenance");
+    // Nothing to apply, so it must not advertise the destructive flag here.
+    expect(r.stdout).not.toContain("--apply");
+  });
+
+  it("rejects an unknown flag rather than ignoring it", () => {
+    // strict parsing: `--force` silently doing nothing on a delete command is
+    // exactly the misunderstanding that costs data.
+    run(["init", root]);
+    const r = run(["prune", "--data", root, "--force"]);
+    expect(r.status).not.toBe(0);
+  });
+});

@@ -53,7 +53,7 @@ describe("initDataDir", () => {
     expect(written.intelligence.fallback).toBe("heuristic");
     expect(written.consolidation.triggers).toBeInstanceOf(Array);
     expect(written.extraction).toHaveProperty("enabled");
-    expect(written.retention).toHaveProperty("session_facts_days");
+    expect(written.retention).toHaveProperty("prune_keep_per_session");
   });
 
   it("is idempotent — a second run preserves an edited config", () => {

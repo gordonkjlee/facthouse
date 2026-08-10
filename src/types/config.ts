@@ -123,10 +123,29 @@ export interface ConsolidationConfig {
   auto_link_events: number;
 }
 
-/** Retention policy for staging data. */
+/**
+ * Retention policy for the raw event layer.
+ *
+ * Deliberately holds no schedule. The previous field here — days to keep
+ * staging data — was read by nothing, which is worse than absent: a setting
+ * that looks like a safeguard and is not stops anyone looking further.
+ *
+ * What replaced it is not a clock but `openmemory prune`, which removes events
+ * nothing can reach — read by extraction, cited by no fact's provenance, and
+ * outside the working-memory window. Age is the wrong instrument: an event's
+ * value has nothing to do with how old it is, and a store that sits quiet for a
+ * month should not lose events it has not extracted yet.
+ *
+ * Explicit rather than scheduled, because deletion is irreversible and this is
+ * a memory product. If automatic pruning is ever added, it belongs here.
+ */
 export interface RetentionConfig {
-  /** Days to keep session_facts after graduation. Null = forever. */
-  session_facts_days: number | null;
+  /**
+   * Events per session spared as working memory when pruning. Null defers to
+   * `extraction.working_memory_size`, which is the setting it protects — the
+   * two must not drift, so there is normally no reason to set this.
+   */
+  prune_keep_per_session: number | null;
 }
 
 /** Which embedding backend produces vectors, if any. */
@@ -268,6 +287,6 @@ export const DEFAULT_CONFIG: Omit<ServerConfig, "storage" | "temporal"> = {
     auto_link_events: 5,
   },
   retention: {
-    session_facts_days: 30,
+    prune_keep_per_session: null,
   },
 };

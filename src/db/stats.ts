@@ -31,6 +31,16 @@ export interface KnowledgeStats {
    * first; a pair that isn't the configured one gives the second.
    */
   embeddings: Array<{ model: string; dimensions: number; count: number }>;
+  /**
+   * The raw event layer beneath the facts.
+   *
+   * Reported because it is invisible everywhere else and routinely dwarfs
+   * everything above it: a store in daily use was measured at 47,000 events and
+   * 493 MB against 21 graduated facts, almost all of it logged tool output. The
+   * facts were healthy, so no other number in this object hinted at it. See
+   * `openmemory prune`.
+   */
+  events: { count: number; bytes: number };
 }
 
 /**
@@ -77,6 +87,13 @@ export function getStats(db: Db): KnowledgeStats {
     )
     .all() as Array<{ model: string; dimensions: number; count: number }>;
 
+  const eventVolume = db
+    .prepare(
+      `SELECT COUNT(*) AS count, COALESCE(SUM(LENGTH(COALESCE(content, ''))), 0) AS bytes
+         FROM session_events`,
+    )
+    .get() as { count: number; bytes: number };
+
   return {
     facts: {
       active_latest: count(db, `SELECT COUNT(*) as count FROM facts WHERE ${CURRENT}`),
@@ -87,5 +104,6 @@ export function getStats(db: Db): KnowledgeStats {
     consolidations: count(db, `SELECT COUNT(*) as count FROM consolidations`),
     domain_distribution: domainDistribution,
     embeddings: embeddingCoverage,
+    events: eventVolume,
   };
 }

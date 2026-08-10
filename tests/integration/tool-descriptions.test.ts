@@ -224,6 +224,7 @@ const SINGLE_WORD_TOOLS = new Set(["consolidate"]);
 const NOT_TOOLS = new Set([
   "session_start", // a consolidation trigger
   "last_assistant_message", // a hook payload field
+  "session_events", // the raw event table, named by the prune documentation
 ]);
 
 describe.skipIf(!runnable)("the README names tools that exist", () => {
