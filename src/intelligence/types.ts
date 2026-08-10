@@ -26,6 +26,31 @@ export interface ExtractedEntity {
   existing_id?: string;
 }
 
+/**
+ * What came back from an extraction attempt, and whether the attempt happened.
+ *
+ * An empty `facts` list has two very different causes: a batch of small talk
+ * that genuinely holds nothing worth keeping, and an extractor that could not
+ * run. Both used to be reported as `[]`, so consolidation could not tell them
+ * apart — and it advances its event watermark on an empty run, deliberately, to
+ * avoid stalling for ever on a batch that will never yield anything.
+ *
+ * The result was that a transient model failure permanently discarded a batch of
+ * conversation: the events stayed in the database, the watermark moved past
+ * them, and nothing ever looked at them again. Silently, behind a
+ * successful-looking result.
+ *
+ * `degraded` separates the two. It means "the configured provider could not do
+ * its job", not "the provider found nothing" — a store deliberately configured
+ * to use the zero-dependency heuristic is working as intended and must not be
+ * treated as failing, or its watermark would never advance at all.
+ */
+export interface ExtractionOutcome {
+  facts: ExtractedFact[];
+  /** The configured extractor could not run, and this is a fallback result. */
+  degraded: boolean;
+}
+
 /** Rich per-fact output from holistic D→I extraction. */
 export interface ExtractedFact {
   content: string;
@@ -108,7 +133,7 @@ export interface IntelligenceProvider {
     workingMemory: SessionEvent[],
     sessionSummary?: string | null,
     longTermMemory?: Fact[],
-  ): Promise<ExtractedFact[]>;
+  ): Promise<ExtractionOutcome>;
 
   /** Detect if a new fact supersedes an existing one. */
   detectSupersession(

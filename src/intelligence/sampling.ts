@@ -17,7 +17,7 @@ import type {
   IntelligenceProvider,
   ClassifiedFact,
   ExtractedEntity,
-  ExtractedFact,
+  ExtractionOutcome,
   SupersessionCandidate,
   ReconcileDecision,
   SessionSummary,
@@ -153,8 +153,8 @@ export function createSamplingProvider(
     },
 
     async extractFactsFromEvents(events, workingMemory, sessionSummary, longTermMemory) {
-      if (events.length === 0) return [];
-      return withFallback<ExtractedFact[]>(
+      if (events.length === 0) return { facts: [], degraded: false };
+      return withFallback<ExtractionOutcome>(
         async () => {
           const trim = (e: SessionEvent) => ({
             role: e.role,
@@ -188,14 +188,29 @@ export function createSamplingProvider(
             }),
           );
           const parsed = parseJson<Array<{ content: string; domain_hint: string | null }>>(raw);
-          if (!Array.isArray(parsed)) return [];
-          return parsed.map((p) => ({
-            content: p.content,
-            domain_hint: p.domain_hint,
-            source_quality: "sampling" as const,
-          }));
+          // Unparseable output means the model answered but not usably — the
+          // same situation as a failed call, and the events are equally
+          // unexamined. Raising rather than returning empty routes it to the
+          // fallback below, which marks the outcome degraded.
+          if (!Array.isArray(parsed)) throw new Error("sampling: unparseable extraction output");
+          return {
+            facts: parsed.map((p) => ({
+              content: p.content,
+              domain_hint: p.domain_hint,
+              source_quality: "sampling" as const,
+            })),
+            degraded: false,
+          };
         },
-        () => fallback.extractFactsFromEvents(events, workingMemory, sessionSummary, longTermMemory),
+        async () => {
+          const fell = await fallback.extractFactsFromEvents(
+            events,
+            workingMemory,
+            sessionSummary,
+            longTermMemory,
+          );
+          return { facts: fell.facts, degraded: true };
+        },
       );
     },
 

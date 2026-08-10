@@ -527,7 +527,8 @@ export function createCliProvider(
 
   return {
     async extractFactsFromEvents(events, workingMemory, sessionSummary, longTermMemory) {
-      if (events.length === 0) return [];
+      // Nothing to examine is not a failure — there is no watermark to hold back.
+      if (events.length === 0) return { facts: [], degraded: false };
       const result = await runStage<{
         facts: Array<{
           content: string;
@@ -599,12 +600,17 @@ export function createCliProvider(
       );
 
       if (!result || !Array.isArray(result.facts)) {
-        return fallback.extractFactsFromEvents(
+        // The subprocess failed, timed out, or returned something unusable.
+        // Falling back keeps consolidation moving, but the caller must know the
+        // configured extractor never ran: these events have NOT been examined,
+        // and advancing past them would discard them permanently.
+        const fell = await fallback.extractFactsFromEvents(
           events,
           workingMemory,
           sessionSummary,
           longTermMemory,
         );
+        return { facts: fell.facts, degraded: true };
       }
 
       const extracted: ExtractedFact[] = result.facts.map((f) => ({
@@ -626,7 +632,7 @@ export function createCliProvider(
           : [],
         source_quality: "cli",
       }));
-      return extracted;
+      return { facts: extracted, degraded: false };
     },
 
     async classifyFacts(facts, sessionContext) {

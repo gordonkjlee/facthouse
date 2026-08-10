@@ -178,12 +178,17 @@ export function createHeuristicProvider(
       // Extracting facts from raw conversation needs an LLM. This provider has
       // none, so it extracts nothing.
       //
+      // Reported as NOT degraded, which is the whole point of the flag. A store
+      // configured to use this provider is working as designed; treating it as
+      // a failure would hold the event watermark back for ever and grow an
+      // unbounded backlog that nothing can ever drain.
+      //
       // It used to match "my name is", "I'm allergic to", "I prefer", "I live
       // in" — a personal ontology, in first person, hardcoded. It finds nothing
       // in a corporate store's "the sev1 postmortem is due Friday", and any list
       // that did would be wrong for someone else. Explicit capture_fact is
       // unaffected; this path just requires intelligence to do intelligent work.
-      return [];
+      return { facts: [], degraded: false };
     },
 
     // Known limitation: location-change supersession ("I moved to Porto"
