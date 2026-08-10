@@ -431,6 +431,18 @@ npm run build
 npm test
 ```
 
+`npm test` skips the semantic-recall eval, because that one needs a real
+embedding model rather than a stub — it drives the built server over stdio and
+asks whether a query sharing no words with a fact actually finds it. To run it,
+start Ollama with `ollama pull nomic-embed-text` and:
+
+```bash
+npm run test:semantic
+```
+
+That fails rather than skips when no model is reachable, so a green run means
+semantic search was genuinely verified rather than quietly stepped over.
+
 ## License
 
 MIT
