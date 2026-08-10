@@ -39,7 +39,25 @@ export function createVoyageProvider(opts: VoyageOpts): EmbeddingProvider {
   const doFetch = opts.fetchImpl ?? fetch;
   let dimensions = opts.dimensions ?? 0;
 
+  // Measured against a seeded store, the same way the Ollama floor was: queries
+  // with a real answer topped out at 0.401–0.622, queries the store knew nothing
+  // about at 0.124–0.252. A wide, clean gap — Voyage scores unrelated text much
+  // lower than nomic does, where the same measurement left barely 0.06 between
+  // signal and noise.
+  //
+  // 0.30 rather than the midpoint: it clears every observed noise score while
+  // sitting well under every observed signal one, and the sample is small enough
+  // that erring towards keeping results is the right direction. A larger store
+  // gives noise more chances to score high, so this is a permissive estimate.
+  //
+  // Measured on voyage-4-lite and applied to the voyage-4 family it shares
+  // training with. An older or newer generation gets no floor rather than this
+  // one — a number carried across a model it was never measured on is exactly
+  // what putting it on the provider is meant to prevent.
+  const defaultMinSimilarity = model.startsWith("voyage-4") ? 0.3 : undefined;
+
   return {
+    defaultMinSimilarity,
     get model() {
       return model;
     },
