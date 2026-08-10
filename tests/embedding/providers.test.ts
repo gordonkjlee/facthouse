@@ -276,11 +276,25 @@ describe("the provider carries its own noise floor", () => {
     expect(createOllamaProvider({ model: "nomic-embed-text" }).defaultMinSimilarity).toBe(0.5);
   });
 
+  it("ships a separately measured value for Voyage, not a copy of the other one", () => {
+    // The two numbers differ by design. The same measurement put Voyage's noise
+    // ceiling at 0.252 and nomic's at 0.480 — a floor that suited one would be
+    // wrong for the other in both directions, which is the entire reason this
+    // lives on the provider instead of in a shared constant.
+    const voyage = createVoyageProvider({ apiKey: "k" }).defaultMinSimilarity;
+    const ollama = createOllamaProvider({ model: "nomic-embed-text" }).defaultMinSimilarity;
+    expect(voyage).toBe(0.3);
+    expect(voyage).not.toBe(ollama);
+  });
+
   it("offers no floor for a model nobody has measured", () => {
-    // Not 0.5 "because it is probably similar". A wrong floor silently deletes
-    // correct results, which is worse than the flooding it would prevent.
+    // Not a nearby number "because it is probably similar". A wrong floor
+    // silently deletes correct results, which is worse than the flooding it
+    // would prevent.
     expect(createOllamaProvider({ model: "mxbai-embed-large" }).defaultMinSimilarity)
       .toBeUndefined();
-    expect(createVoyageProvider({ apiKey: "k" }).defaultMinSimilarity).toBeUndefined();
+    // An older generation than the one that was measured.
+    expect(createVoyageProvider({ apiKey: "k", model: "voyage-3.5-lite" }).defaultMinSimilarity)
+      .toBeUndefined();
   });
 });
