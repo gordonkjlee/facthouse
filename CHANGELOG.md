@@ -1,5 +1,41 @@
 # Changelog
 
+## [0.12.0](https://github.com/gordonkjlee/openmemory/compare/v0.11.0...v0.12.0) (2026-08-10)
+
+**Only affects stores using Voyage embeddings.** If semantic search is off (the
+default) or running on Ollama, nothing changes.
+
+**If you are on Voyage, unrelated queries will now return nothing instead of your
+nearest few facts.** That is the intended behaviour and it is new: Voyage shipped
+in 0.11.0 without a noise floor, so `search "quantum physics"` against a store that
+knows nothing about it returned whatever scored highest anyway. If you had set
+`embedding.min_similarity` yourself to work around that, your value still wins —
+this only supplies a default where there was none.
+
+### Features
+
+* **embedding:** give Voyage its own measured noise floor
+  ([#131](https://github.com/gordonkjlee/openmemory/issues/131))
+  ([ae31d95](https://github.com/gordonkjlee/openmemory/commit/ae31d952bf0f8064a33e549de80d4bb51810d91d))
+
+  Cosine similarity has no natural zero, so a query your store cannot answer still
+  scores every fact in it. Measured against a synthetic store, Voyage put queries
+  with a real answer at 0.401–0.622 and queries about nothing at 0.124–0.252; the
+  default sits at 0.30, between the two and biased towards keeping results.
+
+  The number lives on the provider rather than in a shared constant because the
+  providers genuinely differ — Voyage's noise ceiling is 0.252 against
+  `nomic-embed-text`'s 0.480. It applies to the `voyage-4` family it was measured
+  on; older generations get no floor rather than a number measured elsewhere.
+
+### Documentation
+
+* Voyage rate-limits to **3 requests per minute** until a payment method is added to
+  the account. The 200M free tokens still apply once one is, so this is a signup
+  step rather than a cost — but without it, embedding a large existing store
+  advances a batch at a time across several consolidation runs, with nothing to
+  explain the delay.
+
 ## [0.11.0](https://github.com/gordonkjlee/openmemory/compare/v0.10.0...v0.11.0) (2026-08-10)
 
 **Upgrading changes nothing until you opt in.** Semantic search ships disabled, so
