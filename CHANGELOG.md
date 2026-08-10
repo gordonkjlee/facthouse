@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.13.1](https://github.com/gordonkjlee/openmemory/compare/v0.13.0...v0.13.1) (2026-08-10)
+
+
+### Bug Fixes
+
+* **intelligence:** name one origin for a fact, not every repeat of it ([#135](https://github.com/gordonkjlee/openmemory/issues/135)) ([7616267](https://github.com/gordonkjlee/openmemory/commit/7616267a310b736f41791ff81805ae1c7e083311))
+
 ## [0.13.0](https://github.com/gordonkjlee/openmemory/compare/v0.12.0...v0.13.0) (2026-08-10)
 
 **Nothing is deleted unless you ask.** This adds a command, changes no existing
