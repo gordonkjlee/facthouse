@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.0](https://github.com/gordonkjlee/openmemory/compare/v0.11.0...v0.12.0) (2026-08-10)
+
+
+### Features
+
+* **embedding:** give Voyage its own measured noise floor ([#131](https://github.com/gordonkjlee/openmemory/issues/131)) ([ae31d95](https://github.com/gordonkjlee/openmemory/commit/ae31d952bf0f8064a33e549de80d4bb51810d91d))
+
 ## [0.11.0](https://github.com/gordonkjlee/openmemory/compare/v0.10.0...v0.11.0) (2026-08-10)
 
 **Upgrading changes nothing until you opt in.** Semantic search ships disabled, so
