@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.10.0](https://github.com/gordonkjlee/openmemory/compare/v0.9.0...v0.10.0) (2026-08-10)
+
+
+### Features
+
+* **graph:** designate the user, and record what a fact is about ([#122](https://github.com/gordonkjlee/openmemory/issues/122)) ([910d006](https://github.com/gordonkjlee/openmemory/commit/910d0061bb4e33361cfd3740ed8374639d1865c0))
+* **graph:** rank facts about a thing above facts that merely name it ([#123](https://github.com/gordonkjlee/openmemory/issues/123)) ([de4c258](https://github.com/gordonkjlee/openmemory/commit/de4c2580f73603fb38d98065dd87c1628a0e1812))
+* **intelligence:** teach extraction which thing a fact is about ([#124](https://github.com/gordonkjlee/openmemory/issues/124)) ([b093a8b](https://github.com/gordonkjlee/openmemory/commit/b093a8b33924c7d2b48628f8230731e81a7e3299))
+
+
+### Bug Fixes
+
+* **deps:** clear the three open security advisories ([#119](https://github.com/gordonkjlee/openmemory/issues/119)) ([adc929d](https://github.com/gordonkjlee/openmemory/commit/adc929d467835ad6b12434ffd536655477b919d4))
+* **intelligence:** give the primary capture path real intelligence ([#126](https://github.com/gordonkjlee/openmemory/issues/126)) ([44a2e8b](https://github.com/gordonkjlee/openmemory/commit/44a2e8b0dda7748e32f5012c6833751cb7484853))
+* **intelligence:** stop a failed extraction discarding events for good ([#125](https://github.com/gordonkjlee/openmemory/issues/125)) ([934ea23](https://github.com/gordonkjlee/openmemory/commit/934ea2327e02f1b4e2df3e5b8a2d609e405729ac))
+
 ## [0.9.0](https://github.com/gordonkjlee/openmemory/compare/v0.8.0...v0.9.0) (2026-08-09)
 
 Fixes three ways the documented path silently did not work. If you captured events
