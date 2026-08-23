@@ -45,6 +45,9 @@ export function applySchema(db: Db): void {
   if (version < 10) {
     applyV10(db);
   }
+  if (version < 11) {
+    applyV11(db);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -530,4 +533,33 @@ function applyV10(db: Db): void {
   `);
 
   pragmaWrite(db, "user_version = 10");
+}
+
+// ---------------------------------------------------------------------------
+// Schema version 11 — per-file watermarks for client-agnostic capture
+//
+// Pull tails named transcript files into session_events. A crash mid-file
+// must not re-insert lines already written, and a file that was truncated
+// or replaced must not be tailed from a now-invalid offset. Consolidation
+// already has a watermark (`consolidations.last_event_sequence`); that is
+// "how far extraction has read", not "how far a source file has been
+// consumed". Stuffing file offsets into consolidations would couple two
+// clocks that move independently.
+//
+// One row per absolute path. `fingerprint` is prefix-hash + suffix-hash +
+// size, so a rewrite (compaction) that keeps the same header is still
+// detected rather than tailed from a now-invalid offset.
+// ---------------------------------------------------------------------------
+function applyV11(db: Db): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS source_watermarks (
+      path TEXT PRIMARY KEY,
+      byte_offset INTEGER NOT NULL,
+      line_number INTEGER NOT NULL,
+      fingerprint TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+  `);
+
+  pragmaWrite(db, "user_version = 11");
 }

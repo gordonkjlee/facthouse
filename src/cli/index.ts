@@ -2,7 +2,7 @@
 
 /**
  * OpenMemory CLI entry point.
- * Subcommands: log-event, consolidate
+ * Subcommands: log-event, consolidate, pull
  */
 
 import { parseArgs } from "node:util";
@@ -27,8 +27,30 @@ import { createEmbeddingProvider } from "../embedding/provider.js";
 import type { IntelligenceProvider } from "../intelligence/types.js";
 import type { EmbeddingProvider } from "../embedding/types.js";
 import { DEFAULT_CONFIG, type ServerConfig } from "../types/config.js";
+import type { SessionEvent } from "../types/data.js";
 import { loadConfig } from "../config.js";
 import { sendSchedulerSignal, type SignalKind } from "../ipc/scheduler-ipc.js";
+import { pullSources } from "../sources/pull.js";
+
+const SESSION_ROLES = ["user", "assistant", "system", "tool"] as const;
+const SESSION_EVENT_TYPES = ["message", "tool_call", "tool_result", "artifact"] as const;
+const SESSION_CONTENT_TYPES = ["text", "json", "image", "audio", "binary"] as const;
+
+function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
+function isSessionRole(value: string): value is SessionEvent["role"] {
+  return (SESSION_ROLES as readonly string[]).includes(value);
+}
+
+function isSessionEventType(value: string): value is SessionEvent["event_type"] {
+  return (SESSION_EVENT_TYPES as readonly string[]).includes(value);
+}
+
+function isSessionContentType(value: string): value is SessionEvent["content_type"] {
+  return (SESSION_CONTENT_TYPES as readonly string[]).includes(value);
+}
 
 const DEFAULT_DATA_DIR = path.join(homedir(), ".openmemory");
 
@@ -84,6 +106,8 @@ async function main() {
     await runStatsCmd();
   } else if (subcommand === "prune") {
     await runPruneCmd();
+  } else if (subcommand === "pull") {
+    await runPull();
   } else {
     console.error(
       `Usage: openmemory <command>\n\n` +
@@ -92,6 +116,7 @@ async function main() {
         `  search <q>    Search the knowledge base\n` +
         `  stats         Show knowledge base statistics\n` +
         `  prune         Reclaim raw events nothing can reach (dry run by default)\n` +
+        `  pull          Ingest new events from named capture sources\n` +
         `  log-event     Log a session event (used by hooks)\n` +
         `  signal        Signal the running MCP server to tick or flush\n` +
         `  consolidate   Run consolidation in-process with the configured provider`,
@@ -137,8 +162,8 @@ async function runInit() {
   let result;
   try {
     result = initDataDir({ dataDir, force: values.force as boolean });
-  } catch (err: any) {
-    console.error(`Failed to initialise ${dataDir}: ${err.message}`);
+  } catch (err: unknown) {
+    console.error(`Failed to initialise ${dataDir}: ${errorMessage(err)}`);
     process.exit(1);
   }
 
@@ -334,6 +359,33 @@ async function runPruneCmd() {
   console.log(formatPrune(result, apply, keep, values.vacuum as boolean));
 }
 
+/**
+ * Primary entry for client-agnostic capture: read `config.sources` and tail
+ * each named home into session_events. Empty sources is a successful no-op.
+ * The MCP server runs this same function once at session start; do not add
+ * a third path.
+ */
+async function runPull() {
+  const { values } = parseArgs({
+    args: process.argv.slice(3),
+    options: {
+      data: { type: "string", default: process.env.OPENMEMORY_DATA ?? DEFAULT_DATA_DIR },
+    },
+    strict: true,
+  });
+
+  const dataDir = path.resolve(resolveTilde(values.data as string));
+  const config = loadConfig(dataDir);
+
+  try {
+    const result = withDb(dataDir, (db) => pullSources(db, config.sources));
+    console.log(JSON.stringify(result));
+  } catch (err: unknown) {
+    console.error(errorMessage(err));
+    process.exit(1);
+  }
+}
+
 async function runSignal() {
   const kindArg = process.argv[3] ?? "tick";
   const { values } = parseArgs({
@@ -429,8 +481,8 @@ export async function consolidateInProcess(
     applySchema(db);
     const result = await consolidate(db, provider, config, embedding);
     console.log(JSON.stringify(result));
-  } catch (err: any) {
-    console.error(err.message);
+  } catch (err: unknown) {
+    console.error(errorMessage(err));
     process.exit(1);
   } finally {
     closeDatabase(db);
@@ -455,27 +507,21 @@ async function runLogEvent() {
   const eventType = values["event-type"] as string;
   const contentType = values["content-type"] as string;
 
-  // Validate role.
-  const validRoles = ["user", "assistant", "system", "tool"];
-  if (!validRoles.includes(role)) {
-    console.error(`Invalid --role: ${role}. Must be one of: ${validRoles.join(", ")}`);
+  if (!isSessionRole(role)) {
+    console.error(`Invalid --role: ${role}. Must be one of: ${SESSION_ROLES.join(", ")}`);
     process.exit(1);
   }
 
-  // Validate event-type.
-  const validEventTypes = ["message", "tool_call", "tool_result", "artifact"];
-  if (!validEventTypes.includes(eventType)) {
+  if (!isSessionEventType(eventType)) {
     console.error(
-      `Invalid --event-type: ${eventType}. Must be one of: ${validEventTypes.join(", ")}`,
+      `Invalid --event-type: ${eventType}. Must be one of: ${SESSION_EVENT_TYPES.join(", ")}`,
     );
     process.exit(1);
   }
 
-  // Validate content-type.
-  const validContentTypes = ["text", "json", "image", "audio", "binary"];
-  if (!validContentTypes.includes(contentType)) {
+  if (!isSessionContentType(contentType)) {
     console.error(
-      `Invalid --content-type: ${contentType}. Must be one of: ${validContentTypes.join(", ")}`,
+      `Invalid --content-type: ${contentType}. Must be one of: ${SESSION_CONTENT_TYPES.join(", ")}`,
     );
     process.exit(1);
   }
@@ -500,22 +546,22 @@ async function runLogEvent() {
 
   try {
     const event = await logEvent({
-      role: role as any,
-      eventType: eventType as any,
+      role,
+      eventType,
       content,
-      contentType: contentType as any,
+      contentType,
       sessionId,
       dataDir: resolveTilde(values.data as string),
     });
 
     console.log(JSON.stringify({ event_id: event.id, sequence: event.sequence }));
-  } catch (err: any) {
-    console.error(err.message);
+  } catch (err: unknown) {
+    console.error(errorMessage(err));
     process.exit(1);
   }
 }
 
-main().catch((err) => {
-  console.error(err.message);
+main().catch((err: unknown) => {
+  console.error(errorMessage(err));
   process.exit(1);
 });

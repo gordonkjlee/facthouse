@@ -31,6 +31,109 @@ Add to your AI tool's MCP configuration:
 
 Works with Claude Code, Claude Desktop, Cursor, and any MCP-compatible tool. Data is stored at `~/.openmemory` by default. To change this, add `"env": { "OPENMEMORY_DATA": "/absolute/path" }` to the config above.
 
+### Claude Code
+
+Two capture mechanisms. Choose one.
+
+**Recommended:** name a source and pull. After `openmemory init`, put this in that store's `config.json`. Set `cwd` — a bare `home` walks every project group and a first pull can ingest years of transcripts:
+
+```json
+{
+  "sources": [
+    {
+      "kind": "claude-code",
+      "home": "~/.claude",
+      "cwd": "C:\\dev\\app"
+    }
+  ]
+}
+```
+
+`home` is the Claude Code config dir (`CLAUDE_CONFIG_DIR` is an example of that path, not extra discovery). Then add Claude Code hooks that **only** pull and consolidate — never `log-event`:
+
+```json
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "openmemory pull"
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "openmemory signal flush"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+Stop tails new transcript lines. PreCompact consolidates; it does not insert `session_events`. The MCP server also pulls once at session start. Empty `sources` means pull is off.
+
+**Alternative:** leave `sources` empty (the default — pull is off) and use `log-event` hooks. Do not add a `sources` entry on this store:
+
+```json
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "openmemory log-event --role user --event-type message"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "openmemory log-event --role assistant --event-type message"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "^(?!mcp__openmemory__)",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "openmemory log-event --role tool --event-type tool_result"
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "openmemory signal flush"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+`UserPromptSubmit` / `Stop` / `PostToolUse` write `session_events`. PreCompact still consolidates; it does not insert events and is safe with either mechanism. Install the CLI (`npm install -g @openmem/mcp`) or replace `openmemory` with `npx -y @openmem/mcp` in the commands above.
+
+**Hard rule:** do not run `log-event` hooks and pull on the same store. Both write the same conversation into `session_events`.
+
 > **Disable your client's built-in memory.** OpenMemory replaces it — running both fragments your knowledge across two systems. In Claude Desktop: Settings → Memory → off. In ChatGPT: Settings → Personalisation → Memory → off. This ensures OpenMemory is the single source of truth.
 
 ### What you need for the intelligence
@@ -128,19 +231,21 @@ The server side of this is covered by tests that spawn the real binary twice aga
 
 ## How It Works
 
-OpenMemory captures knowledge through two complementary paths:
+For Claude Code, the D-layer is **pull**. You name a source; transcripts land in `session_events`; consolidation graduates facts from those events. The model does not have to call `capture_fact` for a conversation to be remembered.
 
-1. **Fast capture** — During conversation, the AI calls `capture_fact` whenever it learns something useful. Facts are stored immediately in a session staging buffer.
+1. **Pull** — A named `sources` entry (`kind: "claude-code"`, `home`, and `cwd` — set it) is tailed into `session_events` by `openmemory pull` (Stop hook or CLI) or by the MCP server at session start. Empty `sources` means pull is off.
 
-2. **Batch consolidation** — Periodically, the server processes all pending facts as a batch: classifying domains, extracting and typing entities (people, organisations, projects, places — whatever the conversation is about), detecting duplicates and contradictions, and building a knowledge graph.
+2. **Batch consolidation** — Periodically, the server reads those events (and any staged facts): classifying domains, extracting and typing entities (people, organisations, projects, places — whatever the conversation is about), detecting duplicates and contradictions, and building a knowledge graph.
 
-Optionally, the server can also scan raw conversation events during consolidation to extract facts the AI missed — a safety net that ensures important knowledge isn't lost.
+3. **Optional correction** — `capture_fact` remains available when the assistant should store a judgement that is not in the transcript, or a fact extraction missed. It is a correction, not the Claude Code capture path.
+
+Other MCP clients that have no pull adapter yet still use `log_event` / `openmemory log-event` or `capture_fact`. Grok, Codex, and Cursor are later adapters.
 
 The result is a structured, evolving knowledge graph that any AI tool can query via MCP.
 
 ## Features
 
-- **Hybrid knowledge capture** — AI explicitly captures facts during conversation. Optionally, the server can also extract facts from raw events during consolidation as a safety net.
+- **Pull, then consolidate** — Claude Code conversations are pulled from a named source into `session_events`. Consolidation extracts and graduates facts from that D-layer. `capture_fact` is an optional correction, not how those conversations get in.
 - **Batch consolidation** — Periodic processing integrates pending captures into the long-term knowledge graph: classifies domains, extracts entities, resolves duplicates, detects contradictions.
 - **Entity graph** — Whatever the conversation is about — people, organisations, projects, places, products — extracted, typed and linked automatically. Relationship strength tracks corroboration.
 - **Hybrid search** — BM25 keyword + structured domain + entity-graph paths, merged via Reciprocal Rank Fusion with temporal decay. Add an embedding provider and semantic similarity joins the merge as a fourth path: it ranks, it does not gate, so a fact with no embedding is still found by its words.
@@ -171,7 +276,7 @@ Both are read-only views over the same database the tools query, so they can't d
 - `search_knowledge` — Hybrid search across graduated knowledge
 
 ### Writing
-- `capture_fact` — Store a fact. Fast append with session tagging. Full intelligence deferred to consolidation.
+- `capture_fact` — Optional correction: store a fact pull-plus-extraction missed. Fast append with session tagging. Full intelligence deferred to consolidation.
 - `consolidate` — Integrate pending facts into long-term knowledge. Extracts entities, resolves duplicates, detects contradictions, builds the knowledge graph. Call at natural breakpoints or before context compaction.
 
 ### Meta
@@ -184,71 +289,23 @@ OpenMemory captures every interaction as a `SessionEvent` — the DIKW Data laye
 
 ### How events are captured
 
-All events are captured via the `log_event` MCP tool or the `openmemory log-event` CLI command. The calling AI logs conversation messages; Claude Code hooks can automate this:
+Choose one mechanism.
 
-### Claude Code Hooks
+**Recommended — pull.** Name a `claude-code` source (set `cwd`; a bare `home` walks every project group) and run `openmemory pull`. The recommended Claude Code hooks call `openmemory pull` on Stop and `openmemory signal flush` on PreCompact. The MCP server also pulls once at session start. Grok, Codex, and Cursor are later adapters. Unknown `kind` values are rejected with a clear error.
 
-For Claude Code, hooks provide deterministic capture — they fire every time, regardless of whether the AI "remembers" the tool description.
-
-#### Available hooks
-
-| Hook | Fires when | What it captures |
-|------|-----------|-----------------|
-| `UserPromptSubmit` | User sends a message | Full prompt text |
-| `Stop` | Assistant finishes responding | Last assistant message |
-| `PostToolUse` | Tool call completes | Tool name, input, and response |
-
-#### Setup
-
-Install the CLI for hooks:
-
-    npm install -g @openmem/mcp
-
-Alternatively, replace `openmemory` with `npx -y @openmem/mcp` in the hook commands below (no install needed, but adds ~2-3s latency per hook).
-
-Add to `.claude/settings.json` (project-level) or `~/.claude/settings.json` (global):
-
-```json
-{
-  "hooks": {
-    "UserPromptSubmit": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "openmemory log-event --role user --event-type message"
-          }
-        ]
-      }
-    ],
-    "Stop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "openmemory log-event --role assistant --event-type message"
-          }
-        ]
-      }
-    ],
-    "PostToolUse": [
-      {
-        "matcher": "^(?!mcp__openmemory__)",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "openmemory log-event --role tool --event-type tool_result"
-          }
-        ]
-      }
-    ]
-  }
-}
+```bash
+openmemory pull
+# Options:
+#   --data     Data directory (default: ~/.openmemory or $OPENMEMORY_DATA)
 ```
 
-The CLI reads the hook JSON payload from stdin and extracts the relevant content field (`prompt` for `UserPromptSubmit`, `last_assistant_message` for `Stop`, full JSON for `PostToolUse`). Events are appended to the most recently active session in the database.
+A second run against unchanged files inserts nothing — progress is a durable per-file watermark. A first pull that inserts more than 50 events does not auto-consolidate at session start (run `openmemory consolidate` when ready).
 
-The `PostToolUse` matcher excludes OpenMemory's own tools (`^(?!mcp__openmemory__)`) to avoid capturing internal operations.
+**Alternative — `log-event` hooks, no sources.** Leave `sources` empty. Pipe UserPromptSubmit / Stop / PostToolUse into `openmemory log-event` — the Quick Start alternative block is the recipe. MCP `log_event` / `capture_fact` keep working.
+
+**Hard rule:** do not run `log-event` hooks and pull on the same store. OpenMemory does not detect or rewrite existing hook configs.
+
+PreCompact `openmemory signal flush` is consolidation, not capture. It does not insert `session_events` and is part of the recommended recipe.
 
 ### CLI Reference
 
@@ -274,7 +331,7 @@ The generated `config.json` is where you change consolidation behaviour — most
 
 #### `openmemory log-event`
 
-The `openmemory log-event` command inserts events directly into the database (no running server needed):
+Inserts events directly into the database (no running server needed). Supported for demos and for stores that have no `claude-code` source. Not the Claude Code default — that is `sources` plus `openmemory pull`.
 
 ```bash
 # From a hook (reads JSON payload from stdin):
@@ -291,6 +348,19 @@ openmemory log-event --role user --event-type message --content "hello world"
 #   --session-id    Target session (default: most recent)
 #   --data          Data directory (default: ~/.openmemory or $OPENMEMORY_DATA)
 ```
+
+#### `openmemory pull`
+
+Ingest new session events from `config.sources`. This is the primary entry for client-agnostic capture — empty `sources` is a successful no-op:
+
+```bash
+openmemory pull
+
+# Options:
+#   --data     Data directory (default: ~/.openmemory or $OPENMEMORY_DATA)
+```
+
+It walks each named Claude Code `home`, tails JSONL transcripts that are new since the last watermark, and inserts them into `session_events`. Prints a JSON summary. Unknown source kinds exit non-zero with an error rather than being skipped silently. Set `cwd` on the source unless you intend to ingest every project group. Do not also run `log-event` hooks on this store.
 
 #### `openmemory consolidate`
 
@@ -317,7 +387,7 @@ openmemory signal flush   # consolidate now — for PreCompact hooks
 #   --data     Data directory (default: ~/.openmemory or $OPENMEMORY_DATA)
 ```
 
-`flush` is the one that matters: it is what a PreCompact hook calls so pending facts survive a context collapse. If no server is listening, `flush` falls back to an in-process **heuristic** consolidation — deliberately, because a compaction is time-critical and spawning `claude -p` could take 35–50 seconds. Lower quality, but the data survives and can be reprocessed later. A `tick` that finds no server simply exits; the next `session_start` recovers it.
+`flush` is the one that matters: it is what a PreCompact hook calls so pending facts survive a context collapse. That hook consolidates; it does not insert `session_events` and it does not duplicate a `claude-code` pull. If no server is listening, `flush` falls back to an in-process **heuristic** consolidation — deliberately, because a compaction is time-critical and spawning `claude -p` could take 35–50 seconds. Lower quality, but the data survives and can be reprocessed later. A `tick` that finds no server simply exits; the next `session_start` recovers it.
 
 #### `openmemory search <query>`
 
@@ -361,23 +431,25 @@ Facts are immutable — superseded facts are kept, never deleted — so the curr
 
 ## Integration Patterns
 
-OpenMemory's tool descriptions are the primary integration layer — they tell AI assistants when to capture facts and search knowledge, working with every MCP client out of the box. For deeper integration, clients can add **rules-based hooks** (instructions loaded into the AI's context) at key moments in the conversation lifecycle. These are optional but make capture and retrieval more reliable.
+OpenMemory's tool descriptions tell assistants when to search and when a correction is worth staging. They are not how Claude Code conversations enter the store — that is pull from a named source. For deeper integration, clients can add **rules** (instructions loaded into context) at key moments. These are optional.
 
 ### Without Configuration
 
-The `capture_fact` tool description tells the AI to "call this proactively whenever you learn something useful." The `search_knowledge` description says "call this BEFORE answering questions that might benefit from personal context." These descriptions ship with the server and drive behaviour without any client setup.
+Claude Code: name a `sources` entry (set `cwd`) and pull — Stop hook or MCP session start. The `search_knowledge` description still says to search before answering questions that might benefit from personal context. `capture_fact` is there if the assistant needs to correct or add something pull-plus-extraction will not produce.
+
+Clients with no pull adapter still rely on `log_event` / `capture_fact` until their adapter exists.
 
 ### Hook Points
 
 | Hook Point | When | What to Call | Why It Matters |
 |---|---|---|---|
 | Session start | Conversation begins | `memory://profile` (automatic), `search_knowledge` | AI knows who you are from message one |
-| Proactive capture | User mentions a preference, fact, or decision | `capture_fact` | Knowledge compounds across sessions |
+| Correction | A durable fact is missing from the store | `capture_fact` | Optional; Claude Code conversations are already in `session_events` via pull |
 | Pre-response search | Before generating a reply | `search_knowledge`, `get_context` | Responses informed by personal knowledge |
-| Pre-compaction | Before context window compression | `consolidate` | Processes pending facts before context is wiped |
+| Pre-compaction | Before context window compression | `consolidate` or `openmemory signal flush` | Processes pending facts before context is wiped — does not insert events |
 | Natural breakpoints | Topic change, task completion | `consolidate` (optional) | Keeps knowledge graph current |
 
-**On pre-compaction:** This is the highest-value hook point — without it, knowledge is silently lost when the client compresses context. Calling `consolidate` before compaction processes all pending facts into long-term knowledge. If event extraction is enabled, the server also scans the raw conversation events to extract facts the AI missed.
+**On pre-compaction:** This is the highest-value consolidation hook — without it, staged facts are silently lost when the client compresses context. `openmemory signal flush` (or the `consolidate` tool) graduates what pull already wrote. It is not a `log-event` hook and does not duplicate `session_events`.
 
 ### Claude Code
 
@@ -386,10 +458,12 @@ Create `.claude/rules/openmemory.md` in your project (or `~/.claude/rules/openme
 ```markdown
 # OpenMemory
 
+- Conversations are pulled from the named Claude Code source (Stop hook runs openmemory pull)
+- Do not install log-event hooks on this store
 - Identity context loads automatically from the `memory://profile` resource — no tool call needed
 - Before answering questions about preferences, people, or history, call `search_knowledge`
-- When the user mentions preferences, personal details, relationships, or decisions, call `capture_fact`
-- When the conversation is getting long, call `consolidate` to process pending facts before they are lost to compaction
+- Call `capture_fact` only to correct or add something that is not in the transcript
+- When the conversation is getting long, call `consolidate` (or rely on PreCompact `openmemory signal flush`)
 - At natural breakpoints (topic change, task completion), call `consolidate` to keep the knowledge graph current
 ```
 
@@ -413,7 +487,7 @@ Add to `.cursorrules` (Cursor) or `.windsurfrules` (Windsurf) in your project ro
 When the openmemory MCP server is available:
 - Before answering questions about preferences, people, or history, call search_knowledge
 - To find out everything known about a particular person, project, or thing, call get_entity
-- When the user shares preferences, facts, or decisions, call capture_fact
+- Call capture_fact only to correct or add something pull or extraction missed
 - When context is getting long, call consolidate to process pending facts before they are lost
 ```
 
@@ -421,7 +495,7 @@ Cursor and Windsurf consume tools but not resources, so `memory://profile` will 
 
 ### Claude Desktop / Other MCP Clients
 
-No configuration needed. Tool descriptions handle integration automatically — the AI assistant reads the tool descriptions and knows when to capture and search.
+No pull adapter yet. Tool descriptions handle search and optional `capture_fact`; conversations are not tailed until a later adapter exists.
 
 ## Reclaiming space
 

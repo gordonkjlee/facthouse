@@ -87,4 +87,26 @@ describe("config loader", () => {
     const cfg = loadConfig(dir);
     expect(cfg.extraction.roles).toEqual(["user"]);
   });
+
+  it("defaults sources to an empty list — pull is off", () => {
+    const cfg = loadConfig(dir);
+    expect(cfg.sources).toEqual([]);
+  });
+
+  it("replaces sources with a named claude-code home", () => {
+    writeFileSync(
+      path.join(dir, "config.json"),
+      JSON.stringify({
+        sources: [{ kind: "claude-code", home: "~/.claude", cwd: "C:\\dev\\app" }],
+      }),
+    );
+    const cfg = loadConfig(dir);
+    expect(cfg.sources).toEqual([
+      { kind: "claude-code", home: "~/.claude", cwd: "C:\\dev\\app" },
+    ]);
+    // Untouched fields keep defaults — a source list is not a licence to
+    // change how capture_fact works.
+    expect(cfg.extraction.enabled).toBe(true);
+    expect(cfg.consolidation.threshold).toBe(10);
+  });
 });

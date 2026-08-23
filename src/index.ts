@@ -26,6 +26,7 @@ import { registerResources } from "./tools/resources.js";
 import { startScheduler, type Scheduler } from "./scheduler.js";
 import { loadConfig } from "./config.js";
 import { startSchedulerListener, type SchedulerListener } from "./ipc/scheduler-ipc.js";
+import { pullSources, shouldFlushAfterSessionStartPull } from "./sources/pull.js";
 
 // ---------------------------------------------------------------------------
 // Parse arguments
@@ -196,9 +197,34 @@ async function main() {
       }
     }
 
-    // session_start: process any events left over from a prior session.
+    // Pull named sources before session_start flush so a small incremental
+    // ingest can graduate in the same pass. Empty sources is a no-op. Errors
+    // are logged rather than fatal — a bad source must not take down log_event.
+    let eventsInserted = 0;
+    try {
+      const pulled = pullSources(db, config.sources);
+      eventsInserted = pulled.events_inserted;
+      if (pulled.events_inserted > 0) {
+        console.error(
+          `[openmemory] Pulled ${pulled.events_inserted} event(s) from ${pulled.files} source file(s).`,
+        );
+      }
+    } catch (err) {
+      console.error(`[openmemory] Source pull failed: ${(err as Error).message}`);
+    }
+
+    // session_start: leftovers when nothing new was pulled, or a handful of
+    // new lines. A large first-backfill must not spawn consolidation here.
     if (triggers.has("session_start")) {
-      void scheduler.flush();
+      if (shouldFlushAfterSessionStartPull(eventsInserted)) {
+        void scheduler.flush();
+      } else {
+        console.error(
+          `[openmemory] Pulled ${eventsInserted} event(s) — skipping session_start ` +
+            `consolidation so a first-run backfill does not spawn claude -p on the lot. ` +
+            `Run openmemory consolidate when ready, or wait for a later incremental pull.`,
+        );
+      }
     }
   };
 

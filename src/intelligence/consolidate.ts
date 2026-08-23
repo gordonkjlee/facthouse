@@ -12,7 +12,7 @@
 import { randomUUID } from "node:crypto";
 import { withTransaction } from "../db/connection.js";
 import type { Db } from "../db/connection.js";
-import type { Fact, SessionFact } from "../types/data.js";
+import type { Fact, SessionEvent, SessionFact } from "../types/data.js";
 import { DEFAULT_CONFIDENCE, DEFAULT_IMPORTANCE, type ServerConfig } from "../types/config.js";
 import type {
   IntelligenceProvider,
@@ -677,6 +677,18 @@ export async function consolidate(
 // Phase B: D→I event extraction
 // ---------------------------------------------------------------------------
 
+/** session_events row as SQLite returns it — metadata is still a JSON string. */
+type SessionEventRow = Omit<SessionEvent, "metadata"> & { metadata: string | null };
+
+function parseEventRow(row: SessionEventRow): SessionEvent {
+  return {
+    ...row,
+    metadata: row.metadata
+      ? (JSON.parse(row.metadata) as Record<string, unknown>)
+      : null,
+  };
+}
+
 async function extractFactsFromEvents(
   db: Db,
   intelligence: IntelligenceProvider,
@@ -711,7 +723,7 @@ async function extractFactsFromEvents(
        WHERE sequence > ?
        ORDER BY sequence ASC`,
     )
-    .all(watermark) as any[];
+    .all(watermark) as SessionEventRow[];
 
   if (candidateRows.length === 0) return false;
 
@@ -719,7 +731,7 @@ async function extractFactsFromEvents(
   // read this run, filtered or not: these events were examined and declined, not
   // skipped by a failure, so holding the watermark back for them would grow a
   // backlog that nothing could ever drain.
-  const eligible = candidateRows.filter((e: any) => {
+  const eligible = candidateRows.filter((e) => {
     if (eventTypes && !eventTypes.includes(e.event_type)) return false;
     if (roles && !roles.includes(e.role)) return false;
     return (e.content?.length ?? 0) >= minContentLength;
@@ -727,17 +739,14 @@ async function extractFactsFromEvents(
   // Nothing eligible is a successful run that found nothing, not a degraded one.
   if (eligible.length === 0) return false;
 
-  const newEvents = eligible.map((e: any) => ({
-    ...e,
-    metadata: e.metadata ? JSON.parse(e.metadata) : null,
-  }));
+  const newEvents = eligible.map(parseEventRow);
 
   // Determine the session id for attribution and working-memory scoping.
   // Prefer mcp_session_id (our own MCP connection); fall back to
   // client_session_id (hook-originated events from chat-only sessions).
   const sessionId =
-    newEvents.find((e: any) => e.mcp_session_id)?.mcp_session_id ??
-    newEvents.find((e: any) => e.client_session_id)?.client_session_id ??
+    newEvents.find((e) => e.mcp_session_id)?.mcp_session_id ??
+    newEvents.find((e) => e.client_session_id)?.client_session_id ??
     null;
   if (!sessionId) {
     return false;
@@ -754,13 +763,8 @@ async function extractFactsFromEvents(
        ORDER BY sequence DESC
        LIMIT ?`,
     )
-    .all(watermark, sessionId, sessionId, workingMemorySize) as any[];
-  const workingMemory = workingMemoryRows
-    .map((e: any) => ({
-      ...e,
-      metadata: e.metadata ? JSON.parse(e.metadata) : null,
-    }))
-    .reverse(); // chronological order
+    .all(watermark, sessionId, sessionId, workingMemorySize) as SessionEventRow[];
+  const workingMemory = workingMemoryRows.map(parseEventRow).reverse(); // chronological order
 
   // Session summary: the rolling summary from the latest prior consolidation
   // for THIS session. Long-range conversational memory that survives beyond
@@ -780,17 +784,18 @@ async function extractFactsFromEvents(
   // background knowledge that helps the LLM avoid re-extracting facts the
   // system already has and resolve references not established in this
   // session. Empty when the K-layer hasn't been seeded yet.
-  const longTermMemory = db
-    .prepare(
-      `SELECT * FROM facts
+  const longTermMemory = (
+    db
+      .prepare(
+        `SELECT * FROM facts
        WHERE status = 'active' AND is_latest = 1
          AND (valid_until IS NULL OR valid_until > datetime('now'))`,
-    )
-    .all()
-    .map((row: any) => ({ ...row, is_latest: row.is_latest === 1 })) as Fact[];
+      )
+      .all() as Array<Omit<Fact, "is_latest"> & { is_latest: number }>
+  ).map((row) => ({ ...row, is_latest: row.is_latest === 1 }));
 
   // Truncate long content for extraction.
-  const truncated = newEvents.map((e: any) => ({
+  const truncated = newEvents.map((e) => ({
     ...e,
     content:
       e.content && e.content.length > maxContentLength

@@ -13,7 +13,7 @@
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync, existsSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -64,7 +64,7 @@ describe.skipIf(!runnable)("cli entry — dispatch and usage", () => {
   it("prints usage listing every command and exits non-zero with no subcommand", () => {
     const r = run([]);
     expect(r.status).toBe(1);
-    for (const cmd of ["init", "log-event", "signal", "consolidate"]) {
+    for (const cmd of ["init", "log-event", "signal", "consolidate", "pull"]) {
       expect(r.stderr).toContain(cmd);
     }
   });
@@ -367,7 +367,7 @@ describe.skipIf(!runnable)("cli entry — search and stats", () => {
     expect(r.status).toBe(1);
   });
 
-  it.each(["search", "stats"])(
+  it.each(["search", "stats", "pull"])(
     "%s points at init rather than leaking a raw SQLite error when there is no database",
     (cmd) => {
       const dir = path.join(root, "uninitialised");
@@ -379,6 +379,62 @@ describe.skipIf(!runnable)("cli entry — search and stats", () => {
       expect(r.stderr).not.toMatch(/SQLITE_|unable to open database/i);
     },
   );
+});
+
+describe.skipIf(!runnable)("cli entry — pull", () => {
+  it("is a no-op when sources is empty", () => {
+    const dir = path.join(root, "pull-empty");
+    run(["init", dir]);
+    const r = run(["pull", "--data", dir]);
+    expect(r.status).toBe(0);
+    const parsed = JSON.parse(r.stdout);
+    expect(parsed.sources).toBe(0);
+    expect(parsed.events_inserted).toBe(0);
+  });
+
+  it("ingests a fixture transcript without capture_fact", () => {
+    const dir = path.join(root, "pull-fixture");
+    run(["init", dir]);
+
+    const home = path.join(root, "claude-home");
+    const file = path.join(home, "projects", "C--dev-app", "sess-cli.jsonl");
+    mkdirSync(path.dirname(file), { recursive: true });
+    writeFileSync(
+      file,
+      JSON.stringify({
+        type: "user",
+        sessionId: "sess-cli",
+        message: { role: "user", content: "The demo store prefers dark mode." },
+      }) + "\n",
+      "utf-8",
+    );
+
+    const configPath = path.join(dir, "config.json");
+    const config = JSON.parse(readFileSync(configPath, "utf-8"));
+    config.sources = [{ kind: "claude-code", home, cwd: "C:\\dev\\app" }];
+    writeFileSync(configPath, JSON.stringify(config, null, 2), "utf-8");
+
+    const r = run(["pull", "--data", dir]);
+    expect(r.status).toBe(0);
+    expect(JSON.parse(r.stdout).events_inserted).toBe(1);
+
+    const again = run(["pull", "--data", dir]);
+    expect(again.status).toBe(0);
+    expect(JSON.parse(again.stdout).events_inserted).toBe(0);
+  });
+
+  it("exits non-zero on an unknown source kind", () => {
+    const dir = path.join(root, "pull-unknown");
+    run(["init", dir]);
+    const configPath = path.join(dir, "config.json");
+    const config = JSON.parse(readFileSync(configPath, "utf-8"));
+    config.sources = [{ kind: "grok", home: path.join(root, "nope") }];
+    writeFileSync(configPath, JSON.stringify(config, null, 2), "utf-8");
+
+    const r = run(["pull", "--data", dir]);
+    expect(r.status).toBe(1);
+    expect(r.stderr).toMatch(/Unknown source kind "grok"/);
+  });
 });
 
 describe.skipIf(!runnable)("prune", () => {
