@@ -34,9 +34,9 @@ export function resolveUserPath(p: string): string {
 
 /**
  * Claude Code's on-disk project group name: every non-alphanumeric character
- * becomes `-`. `C:\\dev\\investment` → `C--dev-investment`; `/home/me/app`
- * → `-home-me-app`. Trailing slashes are stripped so `C:\\dev\\investment\\`
- * does not become a different group.
+ * becomes `-`. `C:\dev\investment` → `C--dev-investment`; `/home/me/app`
+ * → `-home-me-app`. Trailing slashes are stripped so they do not become a
+ * different group.
  */
 export function encodeProjectDir(cwd: string): string {
   const trimmed = cwd.replace(/[\\/]+$/, "");
@@ -52,7 +52,9 @@ export function resolveSources(sources: unknown): ResolvedCaptureSource[] {
   if (sources == null) return [];
   if (!Array.isArray(sources)) {
     throw new Error(
-      `config.sources must be an array of { kind, home, cwd? } (got ${typeof sources}).`,
+      "config.sources must be an array of { kind, home, cwd? } (got " +
+        typeof sources +
+        ").",
     );
   }
 
@@ -60,26 +62,33 @@ export function resolveSources(sources: unknown): ResolvedCaptureSource[] {
   for (const [index, raw] of sources.entries()) {
     if (raw === null || typeof raw !== "object" || Array.isArray(raw)) {
       throw new Error(
-        `config.sources[${index}] must be an object with kind and home.`,
+        "config.sources[" + index + "] must be an object with kind and home.",
       );
     }
     const entry = raw as Record<string, unknown>;
     const kind = entry.kind;
     if (kind !== SUPPORTED_SOURCE_KIND) {
       throw new Error(
-        `Unknown source kind ${JSON.stringify(kind)} at sources[${index]}. ` +
-          `This version only supports "${SUPPORTED_SOURCE_KIND}".`,
+        "Unknown source kind " +
+          JSON.stringify(kind) +
+          " at sources[" +
+          index +
+          ']. This version only supports "' +
+          SUPPORTED_SOURCE_KIND +
+          '".',
       );
     }
     if (typeof entry.home !== "string" || entry.home.trim() === "") {
       throw new Error(
-        `config.sources[${index}] is missing "home" (a Claude Code config dir, ` +
-          `e.g. ~/.claude — the directory CLAUDE_CONFIG_DIR would point at).`,
+        "config.sources[" +
+          index +
+          '] is missing "home" (a Claude Code config dir, ' +
+          "e.g. ~/.claude - the directory CLAUDE_CONFIG_DIR would point at).",
       );
     }
     if (entry.cwd !== undefined && typeof entry.cwd !== "string") {
       throw new Error(
-        `config.sources[${index}].cwd must be a string when set.`,
+        "config.sources[" + index + "].cwd must be a string when set.",
       );
     }
 
@@ -89,8 +98,8 @@ export function resolveSources(sources: unknown): ResolvedCaptureSource[] {
     };
     if (typeof entry.cwd === "string" && entry.cwd.trim() !== "") {
       // Encode the path Claude Code itself would have used. Do not
-      // path.resolve it: a Windows cwd in config (`C:\\dev\\investment`)
-      // must still become `C--dev-investment` when this process is on
+      // path.resolve it: a Windows cwd in config (C:\dev\investment)
+      // must still become C--dev-investment when this process is on
       // Linux, and resolve() would prefix the local working directory.
       source.cwd = expandTilde(entry.cwd);
     }

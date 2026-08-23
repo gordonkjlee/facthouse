@@ -214,7 +214,7 @@ openmemory pull
 #   --data     Data directory (default: ~/.openmemory or $OPENMEMORY_DATA)
 ```
 
-It prints a JSON summary (`sources`, `files`, `events_inserted`). A second run against unchanged files inserts nothing — progress is a durable per-file watermark in the store.
+It prints a JSON summary of sources walked, files seen, and events inserted. A second run against unchanged files inserts nothing — progress is a durable per-file watermark in the store.
 
 ### Claude Code Hooks
 
