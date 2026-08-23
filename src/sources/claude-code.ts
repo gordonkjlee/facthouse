@@ -9,6 +9,7 @@
  *   home/projects/<encoded-cwd>/<session-id>.jsonl
  *   home/projects/<encoded-cwd>/sessions/<session-id>.jsonl
  *
+ * `<session-id>/subagents/*.jsonl` agent transcripts are not walked.
  * Nothing outside `projects/` is walked. Optional `cwd` restricts discovery
  * to that one encoded group.
  */
@@ -40,10 +41,20 @@ const SKIP_TYPES = new Set([
   "progress",
   "attachment",
   "file-history-snapshot",
+  "file-history-delta",
   "queue-operation",
   "summary",
   "custom-title",
   "compact",
+  // UI / resume snapshots observed on Claude Code JSONL. Skipped rather
+  // than forced into a role they are not. Fallthrough would skip them
+  // anyway (no role/message); listing them keeps that honest.
+  "last-prompt",
+  "mode",
+  "permission-mode",
+  "ai-title",
+  "agent-name",
+  "atis-latch",
 ]);
 
 export interface ClaudeCodeFilePull {
@@ -100,8 +111,9 @@ export function ingestClaudeCodeFile(db: Db, filePath: string): ClaudeCodeFilePu
 
     const { lines, endOffset } = readCompleteLines(fd, startOffset, size);
     if (lines.length === 0 && resume) {
-      // File unchanged (or only an incomplete last line). Refresh fingerprint
-      // in case this is a first observation of a rewrite that matched by size.
+      // File unchanged, or only an incomplete last line past the watermark.
+      // Leave the watermark where it is: a later append that completes the
+      // line is detected as growth and resumed from this offset.
       return { path: abs, inserted: 0, skipped: 0 };
     }
 
@@ -166,6 +178,10 @@ export function mapTranscriptLine(
   const row = parsed as Record<string, unknown>;
   const type = typeof row.type === "string" ? row.type : undefined;
   if (type && SKIP_TYPES.has(type)) return [];
+  // Claude Code marks hook output, caveats, and system-reminders with
+  // isMeta. Those are not user turns — ingesting them as role:user is
+  // the same class of error as labelling a tool_result a user message.
+  if (row.isMeta === true) return [];
 
   const sessionId =
     (typeof row.sessionId === "string" && row.sessionId) ||
@@ -303,9 +319,13 @@ export function parseFingerprint(encoded: string): {
 }
 
 /**
- * Unchanged file: resume. Append (same prefix, grew, old tail still at the
- * previous end): resume. Anything else — including a compacted body behind
- * the same header — reset.
+ * Unchanged file: resume. Append (header still in place, grew, old tail
+ * still at the previous end): resume. Anything else — including a compacted
+ * body behind the same header — reset.
+ *
+ * Do not compare `current.prefix` to `prev.prefix` when the file is shorter
+ * than the fingerprint window: that hash covers the whole file, so a one-byte
+ * append changes the prefix and looks like a rewrite.
  */
 export function shouldResumeFromWatermark(
   fd: number,
@@ -316,8 +336,9 @@ export function shouldResumeFromWatermark(
   if (stored === current.encoded && byteOffset <= current.size) return true;
   const prev = parseFingerprint(stored);
   if (!prev) return false;
-  if (prev.prefix !== current.prefix) return false;
   if (current.size < prev.size || byteOffset > current.size) return false;
+  const prefixLen = Math.min(FINGERPRINT_BYTES, prev.size);
+  if (hashWindow(fd, 0, prefixLen) !== prev.prefix) return false;
   if (current.size === prev.size) return prev.suffix === current.suffix;
   // Grew: only treat as an append if the previous tail is still where it was.
   const oldWindow = Math.min(FINGERPRINT_BYTES, prev.size);

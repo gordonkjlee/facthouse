@@ -80,7 +80,57 @@ Two capture mechanisms. Choose one.
 
 Stop tails new transcript lines. PreCompact consolidates; it does not insert `session_events`. The MCP server also pulls once at session start. Empty `sources` means pull is off.
 
-**Alternative:** leave `sources` empty and use `log-event` hooks (UserPromptSubmit / Stop / PostToolUse). See Session Event Logging.
+**Alternative:** leave `sources` empty (the default — pull is off) and use `log-event` hooks. Do not add a `sources` entry on this store:
+
+```json
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "openmemory log-event --role user --event-type message"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "openmemory log-event --role assistant --event-type message"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "^(?!mcp__openmemory__)",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "openmemory log-event --role tool --event-type tool_result"
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "openmemory signal flush"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+`UserPromptSubmit` / `Stop` / `PostToolUse` write `session_events`. PreCompact still consolidates; it does not insert events and is safe with either mechanism. Install the CLI (`npm install -g @openmem/mcp`) or replace `openmemory` with `npx -y @openmem/mcp` in the commands above.
 
 **Hard rule:** do not run `log-event` hooks and pull on the same store. Both write the same conversation into `session_events`.
 
@@ -251,7 +301,7 @@ openmemory pull
 
 A second run against unchanged files inserts nothing — progress is a durable per-file watermark. A first pull that inserts more than 50 events does not auto-consolidate at session start (run `openmemory consolidate` when ready).
 
-**Alternative — `log-event` hooks, no sources.** Leave `sources` empty. Claude Code can pipe UserPromptSubmit / Stop / PostToolUse into `openmemory log-event` the way the five-minute demo does by hand. MCP `log_event` / `capture_fact` keep working.
+**Alternative — `log-event` hooks, no sources.** Leave `sources` empty. Pipe UserPromptSubmit / Stop / PostToolUse into `openmemory log-event` — the Quick Start alternative block is the recipe. MCP `log_event` / `capture_fact` keep working.
 
 **Hard rule:** do not run `log-event` hooks and pull on the same store. OpenMemory does not detect or rewrite existing hook configs.
 

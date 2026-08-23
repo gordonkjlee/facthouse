@@ -20,7 +20,7 @@ import { encodeProjectDir } from "../../src/sources/resolve.js";
 /**
  * Synthetic Claude Code transcript — not real user data.
  * One user line, one assistant line with text + tool_use, one tool_result,
- * plus a system line the adapter must skip.
+ * plus a system line and an isMeta user line the adapter must skip.
  */
 function fixtureLines(sessionId: string): string[] {
   return [
@@ -58,6 +58,15 @@ function fixtureLines(sessionId: string): string[] {
       type: "system",
       subtype: "init",
       sessionId,
+    }),
+    JSON.stringify({
+      type: "user",
+      isMeta: true,
+      sessionId,
+      message: {
+        role: "user",
+        content: "<system-reminder>Synthetic meta line, not a user turn.</system-reminder>",
+      },
     }),
   ];
 }
@@ -108,7 +117,7 @@ describe("pullSources", () => {
     expect(events(db)).toHaveLength(0);
   });
 
-  it("ingests a fixture JSONL into session_events and skips system lines", () => {
+  it("ingests a fixture JSONL into session_events and skips system and isMeta lines", () => {
     const home = path.join(root, "claude-home");
     const group = encodeProjectDir("C:\\dev\\investment");
     const file = path.join(home, "projects", group, "sess-aaa.jsonl");
@@ -118,7 +127,7 @@ describe("pullSources", () => {
     expect(result.sources).toBe(1);
     expect(result.files).toBe(1);
     expect(result.events_inserted).toBe(4);
-    expect(result.events_skipped).toBe(1);
+    expect(result.events_skipped).toBe(2);
 
     const rows = events(db);
     expect(rows.map((r) => [r.role, r.event_type])).toEqual([
@@ -227,6 +236,61 @@ describe("pullSources", () => {
       pullSources(db, [{ kind: "cursor", home: path.join(root, "nope") }]),
     ).toThrow(/Unknown source kind "cursor"/);
     expect(events(db)).toHaveLength(0);
+  });
+
+  it("does not consume an incomplete last line, then inserts it once completed", () => {
+    const home = path.join(root, "claude-home");
+    const file = path.join(
+      home,
+      "projects",
+      encodeProjectDir("C:\\dev\\investment"),
+      "sess-aaa.jsonl",
+    );
+    const complete =
+      JSON.stringify({
+        type: "user",
+        sessionId: "sess-aaa",
+        message: { role: "user", content: "Complete line one." },
+      }) + "\n";
+    const incomplete = JSON.stringify({
+      type: "assistant",
+      sessionId: "sess-aaa",
+      message: { role: "assistant", content: "Partial assistant line that is still being written." },
+    });
+    mkdirSync(path.dirname(file), { recursive: true });
+    writeFileSync(file, complete + incomplete, "utf-8");
+    // Shorter than the 256-byte fingerprint window — an append used to
+    // change the prefix hash and look like a rewrite.
+    expect(Buffer.byteLength(complete + incomplete, "utf-8")).toBeLessThan(256);
+
+    const first = pullSources(db, [{ kind: "claude-code", home }]);
+    expect(first.events_inserted).toBe(1);
+    expect(events(db)).toHaveLength(1);
+    expect(events(db)[0].content).toContain("Complete line one");
+
+    writeFileSync(file, complete + incomplete + "\n", "utf-8");
+    const second = pullSources(db, [{ kind: "claude-code", home }]);
+    expect(second.events_inserted).toBe(1);
+    const rows = events(db);
+    expect(rows).toHaveLength(2);
+    expect(rows[1].content).toContain("Partial assistant line");
+  });
+
+  it("does not walk subagents/ nests under a session id", () => {
+    const home = path.join(root, "claude-home");
+    const group = encodeProjectDir("C:\\dev\\investment");
+    writeJsonl(
+      path.join(home, "projects", group, "sess-parent.jsonl"),
+      fixtureLines("sess-parent"),
+    );
+    writeJsonl(
+      path.join(home, "projects", group, "sess-parent", "subagents", "agent-aaa.jsonl"),
+      fixtureLines("agent-aaa"),
+    );
+
+    const result = pullSources(db, [{ kind: "claude-code", home }]);
+    expect(result.files).toBe(1);
+    expect(events(db).every((r) => r.client_session_id === "sess-parent")).toBe(true);
   });
 
   it("re-reads a rewrite that keeps the same header prefix", () => {

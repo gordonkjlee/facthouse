@@ -546,9 +546,9 @@ function applyV10(db: Db): void {
 // consumed". Stuffing file offsets into consolidations would couple two
 // clocks that move independently.
 //
-// One row per absolute path. `fingerprint` is a hash of the file's first
-// bytes, so a rewrite is detectable even when the new file is longer than
-// the stored offset.
+// One row per absolute path. `fingerprint` is prefix-hash + suffix-hash +
+// size, so a rewrite (compaction) that keeps the same header is still
+// detected rather than tailed from a now-invalid offset.
 // ---------------------------------------------------------------------------
 function applyV11(db: Db): void {
   db.exec(`
