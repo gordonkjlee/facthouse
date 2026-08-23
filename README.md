@@ -184,7 +184,7 @@ OpenMemory captures every interaction as a `SessionEvent` — the DIKW Data laye
 
 ### How events are captured
 
-Events reach `session_events` in two ways: the calling AI (or a hook) writes them through `log_event` / `openmemory log-event`, or this store **pulls** them from named client sources. Pull is off until you name a source — empty `sources` (the default) changes nothing about MCP `log_event` or `capture_fact`.
+Events reach `session_events` in two ways: the calling AI (or a hook) writes them through `log_event` / `openmemory log-event`, or this store **pulls** them from named client sources. Those paths are alternatives, not both-on — see below. Pull is off until you name a source; empty `sources` (the default) changes nothing about MCP `log_event` or `capture_fact`.
 
 ### Client-agnostic capture
 
@@ -216,9 +216,11 @@ openmemory pull
 
 It prints a JSON summary of sources walked, files seen, and events inserted. A second run against unchanged files inserts nothing — progress is a durable per-file watermark in the store.
 
+**Pull and hooks are alternatives, not both-on.** If `sources` includes a `claude-code` home, drop the `log-event` hooks on that store — both write the same conversation into `session_events`, and running them together duplicates rows. Keep the hooks only if you have not configured pull.
+
 ### Claude Code Hooks
 
-For Claude Code, hooks provide deterministic capture — they fire every time, regardless of whether the AI "remembers" the tool description. They remain available; pull from a named `claude-code` source is the path that does not require the model or a hook to remember to write.
+For Claude Code, hooks provide deterministic capture — they fire every time, regardless of whether the AI "remembers" the tool description. Use them only when this store has no `claude-code` source. Once you name a source and pull, remove the hook commands below so the same lines are not inserted twice.
 
 #### Available hooks
 
@@ -333,7 +335,7 @@ openmemory pull
 #   --data     Data directory (default: ~/.openmemory or $OPENMEMORY_DATA)
 ```
 
-It walks each named Claude Code `home`, tails JSONL transcripts that are new since the last watermark, and inserts them via the same `session_events` path as `log-event`. Prints a JSON summary. Unknown source kinds exit non-zero with an error rather than being skipped silently.
+It walks each named Claude Code `home`, tails JSONL transcripts that are new since the last watermark, and inserts them via the same `session_events` path as `log-event`. Prints a JSON summary. Unknown source kinds exit non-zero with an error rather than being skipped silently. If this store names a `claude-code` source, do not also run `log-event` hooks against it.
 
 #### `openmemory consolidate`
 
