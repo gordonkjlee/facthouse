@@ -2,7 +2,7 @@
 
 /**
  * OpenMemory CLI entry point.
- * Subcommands: log-event, consolidate
+ * Subcommands: log-event, consolidate, pull
  */
 
 import { parseArgs } from "node:util";
@@ -29,6 +29,7 @@ import type { EmbeddingProvider } from "../embedding/types.js";
 import { DEFAULT_CONFIG, type ServerConfig } from "../types/config.js";
 import { loadConfig } from "../config.js";
 import { sendSchedulerSignal, type SignalKind } from "../ipc/scheduler-ipc.js";
+import { pullSources } from "../sources/pull.js";
 
 const DEFAULT_DATA_DIR = path.join(homedir(), ".openmemory");
 
@@ -84,6 +85,8 @@ async function main() {
     await runStatsCmd();
   } else if (subcommand === "prune") {
     await runPruneCmd();
+  } else if (subcommand === "pull") {
+    await runPull();
   } else {
     console.error(
       `Usage: openmemory <command>\n\n` +
@@ -92,6 +95,7 @@ async function main() {
         `  search <q>    Search the knowledge base\n` +
         `  stats         Show knowledge base statistics\n` +
         `  prune         Reclaim raw events nothing can reach (dry run by default)\n` +
+        `  pull          Ingest new events from named capture sources\n` +
         `  log-event     Log a session event (used by hooks)\n` +
         `  signal        Signal the running MCP server to tick or flush\n` +
         `  consolidate   Run consolidation in-process with the configured provider`,
@@ -332,6 +336,33 @@ async function runPruneCmd() {
     return;
   }
   console.log(formatPrune(result, apply, keep, values.vacuum as boolean));
+}
+
+/**
+ * Primary entry for client-agnostic capture: read `config.sources` and tail
+ * each named home into session_events. Empty sources is a successful no-op.
+ * The MCP server runs this same function once at session start; do not add
+ * a third path.
+ */
+async function runPull() {
+  const { values } = parseArgs({
+    args: process.argv.slice(3),
+    options: {
+      data: { type: "string", default: process.env.OPENMEMORY_DATA ?? DEFAULT_DATA_DIR },
+    },
+    strict: true,
+  });
+
+  const dataDir = path.resolve(resolveTilde(values.data as string));
+  const config = loadConfig(dataDir);
+
+  try {
+    const result = withDb(dataDir, (db) => pullSources(db, config.sources));
+    console.log(JSON.stringify(result));
+  } catch (err: any) {
+    console.error(err.message);
+    process.exit(1);
+  }
 }
 
 async function runSignal() {

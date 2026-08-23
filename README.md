@@ -184,11 +184,41 @@ OpenMemory captures every interaction as a `SessionEvent` — the DIKW Data laye
 
 ### How events are captured
 
-All events are captured via the `log_event` MCP tool or the `openmemory log-event` CLI command. The calling AI logs conversation messages; Claude Code hooks can automate this:
+Events reach `session_events` in two ways: the calling AI (or a hook) writes them through `log_event` / `openmemory log-event`, or this store **pulls** them from named client sources. Pull is off until you name a source — empty `sources` (the default) changes nothing about MCP `log_event` or `capture_fact`.
+
+### Client-agnostic capture
+
+OpenMemory does not depend on the model remembering to call `capture_fact`. A store can pull raw conversation events from clients you point it at; once those events are in `session_events`, the existing extraction pipeline graduates them as it does today.
+
+A source is explicit and scoped to this store: `{ kind, home, cwd? }`. This version implements `kind: "claude-code"` only. Grok, Codex, and Cursor are later adapters — they are not discovered and not implied. OpenMemory will not auto-glob `~/.claude*` or treat `CLAUDE_CONFIG_DIR` as extra discovery for a long-lived process; that variable is just an example of what `home` is (the Claude Code config dir).
+
+```json
+{
+  "sources": [
+    {
+      "kind": "claude-code",
+      "home": "~/.claude",
+      "cwd": "C:\\dev\\investment"
+    }
+  ]
+}
+```
+
+`home` is the config directory transcripts live under (`home/projects/<encoded-cwd>/` as JSONL). Omit `cwd` to ingest every project group in that home; set it to restrict pull to one group (`C:\\dev\\investment` encodes as `C--dev-investment`). Unknown `kind` values are rejected with a clear error.
+
+The primary command is `openmemory pull`. The MCP server runs the same pull once when a session starts, so a long-lived process with sources configured does not need a separate invocation.
+
+```bash
+openmemory pull
+# Options:
+#   --data     Data directory (default: ~/.openmemory or $OPENMEMORY_DATA)
+```
+
+It prints a JSON summary (`sources`, `files`, `events_inserted`). A second run against unchanged files inserts nothing — progress is a durable per-file watermark in the store.
 
 ### Claude Code Hooks
 
-For Claude Code, hooks provide deterministic capture — they fire every time, regardless of whether the AI "remembers" the tool description.
+For Claude Code, hooks provide deterministic capture — they fire every time, regardless of whether the AI "remembers" the tool description. They remain available; pull from a named `claude-code` source is the path that does not require the model or a hook to remember to write.
 
 #### Available hooks
 
@@ -291,6 +321,19 @@ openmemory log-event --role user --event-type message --content "hello world"
 #   --session-id    Target session (default: most recent)
 #   --data          Data directory (default: ~/.openmemory or $OPENMEMORY_DATA)
 ```
+
+#### `openmemory pull`
+
+Ingest new session events from `config.sources`. This is the primary entry for client-agnostic capture — empty `sources` is a successful no-op:
+
+```bash
+openmemory pull
+
+# Options:
+#   --data     Data directory (default: ~/.openmemory or $OPENMEMORY_DATA)
+```
+
+It walks each named Claude Code `home`, tails JSONL transcripts that are new since the last watermark, and inserts them via the same `session_events` path as `log-event`. Prints a JSON summary. Unknown source kinds exit non-zero with an error rather than being skipped silently.
 
 #### `openmemory consolidate`
 

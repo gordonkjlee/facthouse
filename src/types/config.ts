@@ -227,6 +227,38 @@ export interface EmbeddingConfig {
   host?: string;
 }
 
+/**
+ * A named capture source for this store.
+ *
+ * Empty `sources` (the default) means pull is off: nothing is discovered, and
+ * MCP `log_event` / `capture_fact` keep working as they do today. A source is
+ * explicit — `{ kind, home, cwd? }` — and scoped to this store. OpenMemory
+ * does not auto-glob `~/.claude*` or honour `CLAUDE_CONFIG_DIR` as implicit
+ * discovery; that variable is only useful as an example of what `home` is
+ * (the Claude Code config dir).
+ *
+ * This slice understands `kind: "claude-code"` only. Other clients (Grok,
+ * Codex, Cursor) are later adapters.
+ */
+export type CaptureSourceKind = "claude-code";
+
+export interface CaptureSource {
+  /** Adapter to run. Only `"claude-code"` is implemented in this version. */
+  kind: CaptureSourceKind;
+  /**
+   * Claude Code config dir — the directory `CLAUDE_CONFIG_DIR` would point
+   * at, e.g. `~/.claude` or `C:\\Users\\gordo\\.claude-investment`.
+   * Transcripts are read from `home/projects/<encoded-cwd>/` only.
+   */
+  home: string;
+  /**
+   * When set, ingest only that project's transcript group. Encoded on disk
+   * as a sanitised directory name (`C:\\dev\\investment` → `C--dev-investment`).
+   * Omitted means every project group under this `home`.
+   */
+  cwd?: string;
+}
+
 /** Top-level server configuration (loaded from config.json in data dir). */
 export interface ServerConfig {
   storage: {
@@ -241,6 +273,13 @@ export interface ServerConfig {
   intelligence: IntelligenceConfig;
   consolidation: ConsolidationConfig;
   retention: RetentionConfig;
+
+  /**
+   * Named capture sources to pull into `session_events`. Default `[]` — pull
+   * is off until the user names a source. Replaced (not merged) like every
+   * other config array: a user-supplied list is the whole list.
+   */
+  sources: CaptureSource[];
 
   /** Optional seed domains with suggested subdomains, created on init.
    *  New domains can also be created at runtime by the calling LLM or server.
@@ -291,4 +330,5 @@ export const DEFAULT_CONFIG: Omit<ServerConfig, "storage" | "temporal"> = {
   retention: {
     prune_keep_per_session: null,
   },
+  sources: [],
 };

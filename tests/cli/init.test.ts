@@ -58,6 +58,9 @@ describe("initDataDir", () => {
     expect(written.consolidation.triggers).toBeInstanceOf(Array);
     expect(written.extraction).toHaveProperty("enabled");
     expect(written.retention).toHaveProperty("prune_keep_per_session");
+    // Pull is off until the user names a source. The empty list must be
+    // written so the knob is discoverable rather than invisible.
+    expect(written.sources).toEqual([]);
   });
 
   it("is idempotent — a second run preserves an edited config", () => {

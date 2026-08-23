@@ -26,6 +26,7 @@ import { registerResources } from "./tools/resources.js";
 import { startScheduler, type Scheduler } from "./scheduler.js";
 import { loadConfig } from "./config.js";
 import { startSchedulerListener, type SchedulerListener } from "./ipc/scheduler-ipc.js";
+import { pullSources } from "./sources/pull.js";
 
 // ---------------------------------------------------------------------------
 // Parse arguments
@@ -194,6 +195,20 @@ async function main() {
             `Threshold / compaction triggers will not fire.`,
         );
       }
+    }
+
+    // Pull named sources before session_start flush so newly tailed events
+    // can graduate in the same pass. Empty sources is a no-op. Errors are
+    // logged rather than fatal — a bad source must not take down log_event.
+    try {
+      const pulled = pullSources(db, config.sources);
+      if (pulled.events_inserted > 0) {
+        console.error(
+          `[openmemory] Pulled ${pulled.events_inserted} event(s) from ${pulled.files} source file(s).`,
+        );
+      }
+    } catch (err) {
+      console.error(`[openmemory] Source pull failed: ${(err as Error).message}`);
     }
 
     // session_start: process any events left over from a prior session.

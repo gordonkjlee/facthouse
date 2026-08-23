@@ -22,12 +22,12 @@ afterEach(() => {
 
 describe("schema", () => {
   it("applies current version", () => {
-    expect(getSchemaVersion(db)).toBe(10);
+    expect(getSchemaVersion(db)).toBe(11);
   });
 
   it("is idempotent", () => {
     applySchema(db); // second call
-    expect(getSchemaVersion(db)).toBe(10);
+    expect(getSchemaVersion(db)).toBe(11);
   });
 });
 
