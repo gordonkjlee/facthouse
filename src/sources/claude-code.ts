@@ -31,7 +31,8 @@ import { getWatermark, upsertWatermark } from "../db/watermarks.js";
 import type { NewSessionEvent } from "../db/sessions.js";
 import { encodeProjectDir, type ResolvedCaptureSource } from "./resolve.js";
 
-/** First N bytes hashed so a rewritten file is detected even if it grew. */
+/** Window hashed at each end of the file. Prefix alone misses a rewrite
+ *  (compaction) that keeps the same header. */
 const FINGERPRINT_BYTES = 256;
 
 const SKIP_TYPES = new Set([
@@ -85,14 +86,15 @@ export function ingestClaudeCodeFile(db: Db, filePath: string): ClaudeCodeFilePu
   const fd = openSync(abs, "r");
   try {
     const size = fstatSync(fd).size;
-    const fingerprint = hashPrefix(fd, size);
+    const current = fileFingerprint(fd, size);
     const existing = getWatermark(db, abs);
     const resume =
       existing &&
-      existing.fingerprint === fingerprint &&
-      existing.byte_offset <= size
+      existing.byte_offset <= size &&
+      shouldResumeFromWatermark(fd, existing.fingerprint, existing.byte_offset, current)
         ? existing
         : null;
+    const fingerprint = current.encoded;
     const startOffset = resume?.byte_offset ?? 0;
     const startLine = resume?.line_number ?? 0;
 
@@ -266,11 +268,61 @@ function sessionIdFromPath(filePath: string): string {
 // Byte-accurate tail
 // ---------------------------------------------------------------------------
 
-function hashPrefix(fd: number, size: number): string {
-  const n = Math.min(FINGERPRINT_BYTES, size);
-  const buf = Buffer.alloc(n);
-  if (n > 0) readSync(fd, buf, 0, n, 0);
+export interface FileFingerprint {
+  prefix: string;
+  suffix: string;
+  size: number;
+  encoded: string;
+}
+
+function hashWindow(fd: number, position: number, length: number): string {
+  const buf = Buffer.alloc(length);
+  if (length > 0) readSync(fd, buf, 0, length, position);
   return createHash("sha256").update(buf).digest("hex");
+}
+
+/** Prefix + suffix + size. Compaction that keeps a stable header still
+ *  changes the tail or the length, so the watermark resets. */
+export function fileFingerprint(fd: number, size: number): FileFingerprint {
+  const n = Math.min(FINGERPRINT_BYTES, size);
+  const prefix = hashWindow(fd, 0, n);
+  const suffix = hashWindow(fd, Math.max(0, size - n), n);
+  return { prefix, suffix, size, encoded: `${prefix}:${suffix}:${size}` };
+}
+
+export function parseFingerprint(encoded: string): {
+  prefix: string;
+  suffix: string;
+  size: number;
+} | null {
+  const parts = encoded.split(":");
+  if (parts.length !== 3) return null;
+  const size = Number(parts[2]);
+  if (!Number.isFinite(size)) return null;
+  return { prefix: parts[0], suffix: parts[1], size };
+}
+
+/**
+ * Unchanged file: resume. Append (same prefix, grew, old tail still at the
+ * previous end): resume. Anything else — including a compacted body behind
+ * the same header — reset.
+ */
+export function shouldResumeFromWatermark(
+  fd: number,
+  stored: string,
+  byteOffset: number,
+  current: FileFingerprint,
+): boolean {
+  if (stored === current.encoded && byteOffset <= current.size) return true;
+  const prev = parseFingerprint(stored);
+  if (!prev) return false;
+  if (prev.prefix !== current.prefix) return false;
+  if (current.size < prev.size || byteOffset > current.size) return false;
+  if (current.size === prev.size) return prev.suffix === current.suffix;
+  // Grew: only treat as an append if the previous tail is still where it was.
+  const oldWindow = Math.min(FINGERPRINT_BYTES, prev.size);
+  const stillThere = hashWindow(fd, Math.max(0, prev.size - oldWindow), oldWindow);
+  return stillThere === prev.suffix;
 }
 
 /**

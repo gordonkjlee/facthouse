@@ -252,9 +252,10 @@ export interface CaptureSource {
    */
   home: string;
   /**
-   * When set, ingest only that project's transcript group. Encoded on disk
-   * as a sanitised directory name (`C:\\dev\\investment` → `C--dev-investment`).
-   * Omitted means every project group under this `home`.
+   * Strongly recommended. Restricts ingest to that project's transcript
+   * group (`C:\\dev\\investment` encodes as `C--dev-investment`). A bare
+   * `home` walks every project group under `projects/` — a first pull of a
+   * shared Claude home can be thousands of files.
    */
   cwd?: string;
 }

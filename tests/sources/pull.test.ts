@@ -10,7 +10,11 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { closeDatabase, openDatabase, type Db } from "../../src/db/connection.js";
 import { applySchema } from "../../src/db/schema.js";
-import { pullSources } from "../../src/sources/pull.js";
+import {
+  SESSION_START_FLUSH_MAX_INSERTED,
+  pullSources,
+  shouldFlushAfterSessionStartPull,
+} from "../../src/sources/pull.js";
 import { encodeProjectDir } from "../../src/sources/resolve.js";
 
 /**
@@ -225,6 +229,53 @@ describe("pullSources", () => {
     expect(events(db)).toHaveLength(0);
   });
 
+  it("re-reads a rewrite that keeps the same header prefix", () => {
+    // Compaction often leaves the opening user line intact and replaces the
+    // body. A prefix-only fingerprint would miss that and skip the new lines.
+    const header =
+      JSON.stringify({
+        type: "user",
+        sessionId: "sess-aaa",
+        message: {
+          role: "user",
+          content: "Stable header line. " + "x".repeat(280),
+        },
+      }) + "\n";
+    const originalBody =
+      JSON.stringify({
+        type: "assistant",
+        sessionId: "sess-aaa",
+        message: { role: "assistant", content: "Original body before compaction." },
+      }) + "\n";
+    const compactedBody =
+      JSON.stringify({
+        type: "assistant",
+        sessionId: "sess-aaa",
+        message: { role: "assistant", content: "Compacted summary of the session." },
+      }) + "\n";
+
+    const home = path.join(root, "claude-home");
+    const file = path.join(
+      home,
+      "projects",
+      encodeProjectDir("C:\\dev\\investment"),
+      "sess-aaa.jsonl",
+    );
+    mkdirSync(path.dirname(file), { recursive: true });
+    writeFileSync(file, header + originalBody, "utf-8");
+    expect(Buffer.byteLength(header, "utf-8")).toBeGreaterThan(256);
+
+    pullSources(db, [{ kind: "claude-code", home }]);
+    expect(events(db)).toHaveLength(2);
+
+    writeFileSync(file, header + compactedBody, "utf-8");
+    const again = pullSources(db, [{ kind: "claude-code", home }]);
+    expect(again.events_inserted).toBe(2);
+    const rows = events(db);
+    expect(rows).toHaveLength(4);
+    expect(rows[3].content).toContain("Compacted summary");
+  });
+
   it("re-reads a replaced file when the fingerprint no longer matches", () => {
     const home = path.join(root, "claude-home");
     const file = path.join(
@@ -249,5 +300,25 @@ describe("pullSources", () => {
     const rows = events(db);
     expect(rows).toHaveLength(5);
     expect(rows[4].content).toContain("Replacement transcript");
+  });
+});
+
+describe("shouldFlushAfterSessionStartPull", () => {
+  it("flushes leftovers when the pull inserted nothing", () => {
+    expect(shouldFlushAfterSessionStartPull(0)).toBe(true);
+  });
+
+  it("flushes a handful of new lines from a normal session", () => {
+    expect(shouldFlushAfterSessionStartPull(1)).toBe(true);
+    expect(shouldFlushAfterSessionStartPull(SESSION_START_FLUSH_MAX_INSERTED)).toBe(
+      true,
+    );
+  });
+
+  it("skips flush after a large first-run backfill", () => {
+    expect(shouldFlushAfterSessionStartPull(SESSION_START_FLUSH_MAX_INSERTED + 1)).toBe(
+      false,
+    );
+    expect(shouldFlushAfterSessionStartPull(5000)).toBe(false);
   });
 });
