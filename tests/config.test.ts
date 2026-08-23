@@ -97,12 +97,12 @@ describe("config loader", () => {
     writeFileSync(
       path.join(dir, "config.json"),
       JSON.stringify({
-        sources: [{ kind: "claude-code", home: "~/.claude", cwd: "C:\\dev\\investment" }],
+        sources: [{ kind: "claude-code", home: "~/.claude", cwd: "C:\\dev\\app" }],
       }),
     );
     const cfg = loadConfig(dir);
     expect(cfg.sources).toEqual([
-      { kind: "claude-code", home: "~/.claude", cwd: "C:\\dev\\investment" },
+      { kind: "claude-code", home: "~/.claude", cwd: "C:\\dev\\app" },
     ]);
     // Untouched fields keep defaults — a source list is not a licence to
     // change how capture_fact works.

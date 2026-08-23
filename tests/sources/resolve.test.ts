@@ -9,7 +9,7 @@ import {
 
 describe("encodeProjectDir", () => {
   it("encodes a Windows cwd the way Claude Code does on disk", () => {
-    expect(encodeProjectDir("C:\\dev\\investment")).toBe("C--dev-investment");
+    expect(encodeProjectDir("C:\\dev\\app")).toBe("C--dev-app");
   });
 
   it("encodes a POSIX cwd", () => {
@@ -17,7 +17,7 @@ describe("encodeProjectDir", () => {
   });
 
   it("strips trailing slashes so they do not become a different group", () => {
-    expect(encodeProjectDir("C:\\dev\\investment\\")).toBe("C--dev-investment");
+    expect(encodeProjectDir("C:\\dev\\app\\")).toBe("C--dev-app");
     expect(encodeProjectDir("/home/me/app/")).toBe("-home-me-app");
   });
 });
@@ -31,22 +31,22 @@ describe("resolveSources", () => {
 
   it("resolves a claude-code source and expands home", () => {
     const resolved = resolveSources([
-      { kind: "claude-code", home: "~/.claude-investment" },
+      { kind: "claude-code", home: "~/.claude" },
     ]);
     expect(resolved).toEqual([
       {
         kind: "claude-code",
-        home: path.join(homedir(), ".claude-investment"),
+        home: path.join(homedir(), ".claude"),
       },
     ]);
   });
 
   it("keeps a Windows cwd intact so encoding still matches Claude Code", () => {
     const resolved = resolveSources([
-      { kind: "claude-code", home: "/tmp/claude-home", cwd: "C:\\dev\\investment" },
+      { kind: "claude-code", home: "/tmp/claude-home", cwd: "C:\\dev\\app" },
     ]);
-    expect(resolved[0].cwd).toBe("C:\\dev\\investment");
-    expect(encodeProjectDir(resolved[0].cwd!)).toBe("C--dev-investment");
+    expect(resolved[0].cwd).toBe("C:\\dev\\app");
+    expect(encodeProjectDir(resolved[0].cwd!)).toBe("C--dev-app");
   });
 
   it("rejects an unknown kind with a clear error", () => {

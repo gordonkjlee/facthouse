@@ -119,7 +119,7 @@ describe("pullSources", () => {
 
   it("ingests a fixture JSONL into session_events and skips system and isMeta lines", () => {
     const home = path.join(root, "claude-home");
-    const group = encodeProjectDir("C:\\dev\\investment");
+    const group = encodeProjectDir("C:\\dev\\app");
     const file = path.join(home, "projects", group, "sess-aaa.jsonl");
     writeJsonl(file, fixtureLines("sess-aaa"));
 
@@ -148,7 +148,7 @@ describe("pullSources", () => {
     const file = path.join(
       home,
       "projects",
-      encodeProjectDir("C:\\dev\\investment"),
+      encodeProjectDir("C:\\dev\\app"),
       "sess-aaa.jsonl",
     );
     writeJsonl(file, fixtureLines("sess-aaa"));
@@ -164,7 +164,7 @@ describe("pullSources", () => {
     const file = path.join(
       home,
       "projects",
-      encodeProjectDir("C:\\dev\\investment"),
+      encodeProjectDir("C:\\dev\\app"),
       "sess-aaa.jsonl",
     );
     writeJsonl(file, fixtureLines("sess-aaa"));
@@ -189,7 +189,7 @@ describe("pullSources", () => {
 
   it("cwd filter excludes another project group, including sessions/ layout", () => {
     const home = path.join(root, "claude-home");
-    const keep = encodeProjectDir("C:\\dev\\investment");
+    const keep = encodeProjectDir("C:\\dev\\app");
     const other = encodeProjectDir("C:\\dev\\other");
     writeJsonl(
       path.join(home, "projects", keep, "sess-keep.jsonl"),
@@ -201,7 +201,7 @@ describe("pullSources", () => {
     );
 
     const filtered = pullSources(db, [
-      { kind: "claude-code", home, cwd: "C:\\dev\\investment" },
+      { kind: "claude-code", home, cwd: "C:\\dev\\app" },
     ]);
     expect(filtered.files).toBe(1);
     expect(filtered.events_inserted).toBe(4);
@@ -243,7 +243,7 @@ describe("pullSources", () => {
     const file = path.join(
       home,
       "projects",
-      encodeProjectDir("C:\\dev\\investment"),
+      encodeProjectDir("C:\\dev\\app"),
       "sess-aaa.jsonl",
     );
     const complete =
@@ -278,7 +278,7 @@ describe("pullSources", () => {
 
   it("does not walk subagents/ nests under a session id", () => {
     const home = path.join(root, "claude-home");
-    const group = encodeProjectDir("C:\\dev\\investment");
+    const group = encodeProjectDir("C:\\dev\\app");
     writeJsonl(
       path.join(home, "projects", group, "sess-parent.jsonl"),
       fixtureLines("sess-parent"),
@@ -322,7 +322,7 @@ describe("pullSources", () => {
     const file = path.join(
       home,
       "projects",
-      encodeProjectDir("C:\\dev\\investment"),
+      encodeProjectDir("C:\\dev\\app"),
       "sess-aaa.jsonl",
     );
     mkdirSync(path.dirname(file), { recursive: true });
@@ -345,7 +345,7 @@ describe("pullSources", () => {
     const file = path.join(
       home,
       "projects",
-      encodeProjectDir("C:\\dev\\investment"),
+      encodeProjectDir("C:\\dev\\app"),
       "sess-aaa.jsonl",
     );
     writeJsonl(file, fixtureLines("sess-aaa"));

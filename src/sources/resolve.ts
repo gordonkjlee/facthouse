@@ -34,7 +34,7 @@ export function resolveUserPath(p: string): string {
 
 /**
  * Claude Code's on-disk project group name: every non-alphanumeric character
- * becomes `-`. `C:\dev\investment` → `C--dev-investment`; `/home/me/app`
+ * becomes `-`. `C:\dev\app` → `C--dev-app`; `/home/me/app`
  * → `-home-me-app`. Trailing slashes are stripped so they do not become a
  * different group.
  */
@@ -98,8 +98,8 @@ export function resolveSources(sources: unknown): ResolvedCaptureSource[] {
     };
     if (typeof entry.cwd === "string" && entry.cwd.trim() !== "") {
       // Encode the path Claude Code itself would have used. Do not
-      // path.resolve it: a Windows cwd in config (C:\dev\investment)
-      // must still become C--dev-investment when this process is on
+      // path.resolve it: a Windows cwd in config (C:\dev\app)
+      // must still become C--dev-app when this process is on
       // Linux, and resolve() would prefix the local working directory.
       source.cwd = expandTilde(entry.cwd);
     }

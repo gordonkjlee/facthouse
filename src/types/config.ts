@@ -247,13 +247,13 @@ export interface CaptureSource {
   kind: CaptureSourceKind;
   /**
    * Claude Code config dir — the directory `CLAUDE_CONFIG_DIR` would point
-   * at, e.g. `~/.claude` or `C:\\Users\\gordo\\.claude-investment`.
+   * at, e.g. `~/.claude` or `C:\\Users\\alex\\.claude`.
    * Transcripts are read from `home/projects/<encoded-cwd>/` only.
    */
   home: string;
   /**
    * Strongly recommended. Restricts ingest to that project's transcript
-   * group (`C:\\dev\\investment` encodes as `C--dev-investment`). A bare
+   * group (`C:\\dev\\app` encodes as `C--dev-app`). A bare
    * `home` walks every project group under `projects/` — a first pull of a
    * shared Claude home can be thousands of files.
    */

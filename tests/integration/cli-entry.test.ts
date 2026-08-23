@@ -397,7 +397,7 @@ describe.skipIf(!runnable)("cli entry — pull", () => {
     run(["init", dir]);
 
     const home = path.join(root, "claude-home");
-    const file = path.join(home, "projects", "C--dev-investment", "sess-cli.jsonl");
+    const file = path.join(home, "projects", "C--dev-app", "sess-cli.jsonl");
     mkdirSync(path.dirname(file), { recursive: true });
     writeFileSync(
       file,
@@ -411,7 +411,7 @@ describe.skipIf(!runnable)("cli entry — pull", () => {
 
     const configPath = path.join(dir, "config.json");
     const config = JSON.parse(readFileSync(configPath, "utf-8"));
-    config.sources = [{ kind: "claude-code", home, cwd: "C:\\dev\\investment" }];
+    config.sources = [{ kind: "claude-code", home, cwd: "C:\\dev\\app" }];
     writeFileSync(configPath, JSON.stringify(config, null, 2), "utf-8");
 
     const r = run(["pull", "--data", dir]);

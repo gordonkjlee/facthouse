@@ -43,7 +43,7 @@ Two capture mechanisms. Choose one.
     {
       "kind": "claude-code",
       "home": "~/.claude",
-      "cwd": "C:\\dev\\investment"
+      "cwd": "C:\\dev\\app"
     }
   ]
 }
