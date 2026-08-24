@@ -207,7 +207,10 @@ describe("sourcesStatusLines", () => {
     expect(text).toMatch(/pull is off/i);
     expect(text).toMatch(/claude-code/);
     expect(text).toMatch(/cwd/);
+    expect(text).toContain("C:\\dev\\app");
     expect(text).toMatch(/openmemory pull/);
+    expect(text).toMatch(/more than 50/);
+    expect(text).toMatch(/openmemory consolidate/);
   });
 
   it("names an already-configured source", () => {
@@ -216,6 +219,7 @@ describe("sourcesStatusLines", () => {
     ]).join("\n");
     expect(text).toMatch(/1 source/);
     expect(text).toMatch(/openmemory pull/);
+    expect(text).toMatch(/more than 50/);
     expect(text).not.toMatch(/pull is off/i);
   });
 

@@ -43,6 +43,25 @@ export function shouldFlushAfterSessionStartPull(
 }
 
 /**
+ * Whether the CLI pull should wake a running server with `tick`.
+ *
+ * Same band as session_start flush: a handful of new lines may graduate
+ * (threshold permitting). A first-run backfill above the cap must not.
+ * Zero inserts send nothing — leftovers are session_start's job.
+ *
+ * `tick` is not `flush`: it honours the consolidation threshold so a Stop
+ * hook that pulls every turn does not spawn `claude -p` on every reply.
+ * A pull with no server listening cannot tick; the CLI then tells the
+ * user to run `openmemory consolidate`.
+ */
+export function shouldTickAfterCliPull(
+  eventsInserted: number,
+  threshold: number = SESSION_START_FLUSH_MAX_INSERTED,
+): boolean {
+  return eventsInserted > 0 && eventsInserted <= threshold;
+}
+
+/**
  * Resolve `config.sources` and ingest every new transcript line.
  *
  * Throws on an unknown kind or a malformed source — a typo must not look

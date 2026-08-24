@@ -238,6 +238,27 @@ describe.skipIf(!runnable)("the README names tools that exist", () => {
     expect(phantom).toEqual([]);
   });
 
+  it("hook and CLI examples invoke the CLI, not the MCP server", () => {
+    // bin.mcp is first and is dist/index.js. `npx -y @openmem/mcp` therefore
+    // starts the stdio server and hangs a hook. The CLI is
+    // `npx -y -p @openmem/mcp openmemory …`. MCP config uses command "npx"
+    // with args; that is the server, on purpose.
+    const md = readFileSync(README, "utf-8");
+    const hookCmds = [...md.matchAll(/"command":\s*"([^"]+)"/g)].map((m) => m[1]);
+    for (const cmd of hookCmds) {
+      if (cmd === "npx") continue;
+      expect(cmd).toMatch(/openmemory/);
+      expect(cmd).not.toMatch(/^npx -y @openmem\/mcp(?:@[\w.-]+)?$/);
+      expect(cmd).not.toMatch(/^npx -y @openmem\/mcp(?:@[\w.-]+)? /);
+    }
+    for (const line of md.split("\n")) {
+      const trimmed = line.trim();
+      if (!trimmed.startsWith("npx ")) continue;
+      expect(trimmed).toMatch(/-p @openmem\/mcp/);
+      expect(trimmed).toMatch(/\bopenmemory\b/);
+    }
+  });
+
   it("every registered tool is named in the README", () => {
     // The reverse rot: a tool ships and no one documents it, so the only place
     // it is described is a description the user never reads.

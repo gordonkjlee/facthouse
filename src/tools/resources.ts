@@ -47,11 +47,28 @@ function bullet(f: Fact): string {
   return `- ${f.content}`;
 }
 
+function emptyStoreNextStep(db: Db): string {
+  const events = (
+    db.prepare(`SELECT COUNT(*) AS n FROM session_events`).get() as { n: number }
+  ).n;
+  if (events > 0) {
+    return (
+      "Nothing captured yet. Conversation events are waiting — run " +
+      "`openmemory consolidate`. A first pull of more than 50 events does not " +
+      "auto-flush; a later session start will flush a smaller leftover."
+    );
+  }
+  return (
+    "Nothing captured yet. If this store has a claude-code source, run " +
+    "`openmemory pull`, then `openmemory consolidate`."
+  );
+}
+
 /** `memory://profile` — the store's most important facts as markdown. */
 export function buildProfile(db: Db): string {
   const facts = keyFacts(db, 200);
   if (facts.length === 0) {
-    return "# Key facts\n\nNothing captured yet.\n";
+    return `# Key facts\n\n${emptyStoreNextStep(db)}\n`;
   }
   return `# Key facts\n\n${facts.map(bullet).join("\n")}\n`;
 }
@@ -69,7 +86,7 @@ export function buildBriefing(db: Db): string {
     "\n## Key facts\n",
     key.length
       ? key.map(bullet).join("\n")
-      : "Nothing captured yet.",
+      : emptyStoreNextStep(db),
   );
 
   // The narrative comes from the last run that actually produced one: a run

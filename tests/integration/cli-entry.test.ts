@@ -427,6 +427,11 @@ describe.skipIf(!runnable)("cli entry — pull", () => {
     const r = run(["pull", "--data", dir]);
     expect(r.status).toBe(0);
     expect(JSON.parse(r.stdout).events_inserted).toBe(1);
+    // No MCP server in this process — a small pull must not look successful
+    // and then leave search empty. Tick is attempted; when it cannot land,
+    // the CLI names the next command.
+    expect(r.stderr).toMatch(/openmemory consolidate/);
+    expect(r.stderr).not.toMatch(/skipping auto-consolidate/);
 
     const again = run(["pull", "--data", dir]);
     expect(again.status).toBe(0);

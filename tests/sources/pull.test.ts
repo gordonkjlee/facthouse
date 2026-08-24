@@ -14,6 +14,7 @@ import {
   SESSION_START_FLUSH_MAX_INSERTED,
   pullSources,
   shouldFlushAfterSessionStartPull,
+  shouldTickAfterCliPull,
 } from "../../src/sources/pull.js";
 import { encodeProjectDir } from "../../src/sources/resolve.js";
 
@@ -364,6 +365,22 @@ describe("pullSources", () => {
     const rows = events(db);
     expect(rows).toHaveLength(5);
     expect(rows[4].content).toContain("Replacement transcript");
+  });
+});
+
+describe("shouldTickAfterCliPull", () => {
+  it("does not tick when nothing new was inserted", () => {
+    expect(shouldTickAfterCliPull(0)).toBe(false);
+  });
+
+  it("ticks a handful of new lines so a Stop pull can graduate", () => {
+    expect(shouldTickAfterCliPull(1)).toBe(true);
+    expect(shouldTickAfterCliPull(SESSION_START_FLUSH_MAX_INSERTED)).toBe(true);
+  });
+
+  it("does not tick a large first-run backfill", () => {
+    expect(shouldTickAfterCliPull(SESSION_START_FLUSH_MAX_INSERTED + 1)).toBe(false);
+    expect(shouldTickAfterCliPull(5000)).toBe(false);
   });
 });
 
