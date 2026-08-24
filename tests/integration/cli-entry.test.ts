@@ -147,13 +147,23 @@ describe.skipIf(!runnable)("cli entry — init reports the intelligence it will 
 });
 
 describe.skipIf(!runnable)("cli entry — init output", () => {
+  it("tells a tester that pull is off until they name a source", () => {
+    const dir = path.join(root, "sources-hint");
+    const r = run(["init", dir]);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toMatch(/pull is off/i);
+    expect(r.stdout).toMatch(/claude-code/);
+    expect(r.stdout).toMatch(/openmemory pull/);
+  });
+
   it("prints an MCP snippet that parses as JSON, with the data dir escaped", () => {
     const dir = path.join(root, "snippet");
     const r = run(["init", dir]);
     expect(r.status).toBe(0);
 
-    // Extract the JSON block from the human-readable output.
-    const match = r.stdout.match(/\{[\s\S]*\}/);
+    // Extract the MCP snippet only — later status lines must not be swallowed
+    // into this parse (a second JSON object in the output used to break it).
+    const match = r.stdout.match(/\{\s*"mcpServers"[\s\S]*?\n  \}/);
     expect(match).not.toBeNull();
     const parsed = JSON.parse(match![0]); // throws if the path wasn't escaped
     const entry = parsed.mcpServers.openmemory;

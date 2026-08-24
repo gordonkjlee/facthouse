@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 
 
-const { initDataDir, mcpConfigSnippet, providerStatusLines } = await import("../../src/cli/init.js");
+const { initDataDir, mcpConfigSnippet, providerStatusLines, sourcesStatusLines } = await import("../../src/cli/init.js");
 const { CONFIG_FILENAME, loadConfig, defaultServerConfig } = await import("../../src/config.js");
 
 let root: string;
@@ -198,5 +198,30 @@ describe("providerStatusLines", () => {
     expect(probed).toBe(false);
     expect(text).not.toMatch(/WARNING/);
     expect(text).toMatch(/heuristic/);
+  });
+});
+
+describe("sourcesStatusLines", () => {
+  it("tells a fresh store how to turn pull on", () => {
+    const text = sourcesStatusLines([]).join("\n");
+    expect(text).toMatch(/pull is off/i);
+    expect(text).toMatch(/claude-code/);
+    expect(text).toMatch(/cwd/);
+    expect(text).toMatch(/openmemory pull/);
+  });
+
+  it("names an already-configured source", () => {
+    const text = sourcesStatusLines([
+      { kind: "claude-code", home: "~/.claude", cwd: "C:\\dev\\app" },
+    ]).join("\n");
+    expect(text).toMatch(/1 source/);
+    expect(text).toMatch(/openmemory pull/);
+    expect(text).not.toMatch(/pull is off/i);
+  });
+
+  it("does not swallow an unknown kind", () => {
+    const text = sourcesStatusLines([{ kind: "grok", home: "~/.grok" }]).join("\n");
+    expect(text).toMatch(/invalid/i);
+    expect(text).toMatch(/grok/);
   });
 });

@@ -15,6 +15,7 @@ import {
   mcpConfigSnippet,
   providerStatusLines,
   embeddingStatusLines,
+  sourcesStatusLines,
 } from "./init.js";
 import { runSearch, formatSearch, formatStats, formatPrune, getStats } from "./query.js";
 import { prunableEvents, pruneEvents, vacuum } from "../db/prune.js";
@@ -195,6 +196,8 @@ async function runInit() {
     ),
     ``,
     ...embeddingStatusLines(loadConfig(result.dataDir).embedding),
+    ``,
+    ...sourcesStatusLines(loadConfig(result.dataDir).sources),
     ``,
   ];
   console.log(lines.join("\n"));
