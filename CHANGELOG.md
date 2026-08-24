@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.15.0](https://github.com/gordonkjlee/openmemory/compare/v0.14.1...v0.15.0) (2026-08-23)
+
+
+### Features
+
+* client-agnostic capture — Claude Code pull into session_events ([#144](https://github.com/gordonkjlee/openmemory/issues/144)) ([2a4346b](https://github.com/gordonkjlee/openmemory/commit/2a4346bb7660644bdbcccb397535a613fdb1e4b8))
+
 ## [0.14.1](https://github.com/gordonkjlee/openmemory/compare/v0.14.0...v0.14.1) (2026-08-10)
 
 
