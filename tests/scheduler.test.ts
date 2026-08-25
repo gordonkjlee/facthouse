@@ -71,6 +71,7 @@ describe("scheduler", () => {
     const result = await scheduler.tick();
     expect(result).not.toBeNull();
     expect(runConsolidate).toHaveBeenCalledTimes(1);
+    expect(runConsolidate).toHaveBeenCalledWith("extract");
 
     scheduler.stop();
   });
@@ -208,6 +209,15 @@ describe("scheduler", () => {
 
     await scheduler.flush();
     expect(runConsolidate).toHaveBeenCalledTimes(1);
+    expect(runConsolidate).toHaveBeenCalledWith("graduate");
+    scheduler.stop();
+  });
+
+  it("full forces extract then graduate", async () => {
+    const runConsolidate = vi.fn().mockResolvedValue(STUB_RESULT);
+    const scheduler = startScheduler({ db, runConsolidate, threshold: 100 });
+    await scheduler.full();
+    expect(runConsolidate).toHaveBeenCalledWith("full");
     scheduler.stop();
   });
 });

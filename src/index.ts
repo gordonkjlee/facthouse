@@ -147,7 +147,7 @@ registerReadTools(
 
 const scheduler: Scheduler = startScheduler({
   db,
-  runConsolidate: () => factManager.runConsolidate(),
+  runConsolidate: (phase) => factManager.runConsolidate(phase),
   threshold: config.consolidation.threshold,
 });
 
@@ -201,9 +201,10 @@ async function main() {
       }
     }
 
-    // Pull named sources before session_start flush so a small incremental
-    // ingest can graduate in the same pass. Empty sources is a no-op. Errors
-    // are logged rather than fatal — a bad source must not take down log_event.
+    // Pull named sources before session_start full() so a small incremental
+    // ingest can extract then graduate in the same pass. Empty sources is a
+    // no-op. Errors are logged rather than fatal — a bad source must not take
+    // down log_event.
     let eventsInserted = 0;
     try {
       const pulled = pullSources(db, config.sources);
@@ -218,10 +219,11 @@ async function main() {
     }
 
     // session_start: leftovers when nothing new was pulled, or a handful of
-    // new lines. A large first-backfill must not spawn consolidation here.
+    // new lines. Full pipeline (extract then graduate). A large first-backfill
+    // must not spawn that here. PreCompact flush is graduate-only.
     if (triggers.has("session_start")) {
       if (shouldFlushAfterSessionStartPull(eventsInserted)) {
-        void scheduler.flush();
+        void scheduler.full();
       } else {
         console.error(
           `[openmemory] Pulled ${eventsInserted} event(s) — skipping session_start ` +

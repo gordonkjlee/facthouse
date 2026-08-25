@@ -83,6 +83,7 @@ describe("IPC → scheduler integration", () => {
       // Give the listener's async callback time to reach runConsolidate.
       await new Promise((r) => setTimeout(r, 100));
       expect(runConsolidate).toHaveBeenCalledTimes(1);
+      expect(runConsolidate).toHaveBeenCalledWith("extract");
     } finally {
       listener.close();
       scheduler.stop();
@@ -145,6 +146,7 @@ describe("IPC → scheduler integration", () => {
       expect(delivered).toBe(true);
       await new Promise((r) => setTimeout(r, 100));
       expect(runConsolidate).toHaveBeenCalledTimes(1);
+      expect(runConsolidate).toHaveBeenCalledWith("graduate");
     } finally {
       listener.close();
       scheduler.stop();

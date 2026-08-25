@@ -30,11 +30,12 @@ export interface PullResult {
  * A first pull of a whole Claude home can insert thousands of events.
  * Flushing those at session_start would spawn `claude -p` on the lot.
  * Incremental pulls of a handful of new lines still match session_start
- * intent and may flush. Zero inserts keep today's leftover-flush behaviour.
+ * intent and may run extract-then-graduate. Zero inserts keep leftover
+ * recovery (scheduler.full()).
  */
 export const SESSION_START_FLUSH_MAX_INSERTED = 50;
 
-/** Whether session_start should call scheduler.flush() after this pull. */
+/** Whether session_start should call scheduler.full() after this pull. */
 export function shouldFlushAfterSessionStartPull(
   eventsInserted: number,
   threshold: number = SESSION_START_FLUSH_MAX_INSERTED,
@@ -45,11 +46,11 @@ export function shouldFlushAfterSessionStartPull(
 /**
  * Whether the CLI pull should wake a running server with `tick`.
  *
- * Same band as session_start flush: a handful of new lines may graduate
+ * Same band as session_start: a handful of new lines may extract
  * (threshold permitting). A first-run backfill above the cap must not.
  * Zero inserts send nothing — leftovers are session_start's job.
  *
- * `tick` is not `flush`: it honours the consolidation threshold so a Stop
+ * `tick` is D→I, not I→K: it honours the consolidation threshold so a Stop
  * hook that pulls every turn does not spawn `claude -p` on every reply.
  * A pull with no server listening cannot tick; the CLI then tells the
  * user to run `openmemory consolidate`.

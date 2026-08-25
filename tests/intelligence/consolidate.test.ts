@@ -1110,3 +1110,185 @@ describe("extraction honours what a store told it to look at", () => {
     expect(wm.v).toBeGreaterThan(0);
   });
 });
+
+describe("extract and graduate can run separately", () => {
+  const FACT = "The user prefers oat milk at Acme";
+
+  function eventWatermark(): number {
+    return (
+      db
+        .prepare(
+          `SELECT COALESCE(MAX(last_event_sequence), 0) AS seq FROM consolidations`,
+        )
+        .get() as { seq: number }
+    ).seq;
+  }
+
+  function sessionFactRows() {
+    return db
+      .prepare(
+        `SELECT content, consolidation_id FROM session_facts ORDER BY created_at ASC`,
+      )
+      .all() as Array<{ content: string; consolidation_id: string | null }>;
+  }
+
+  function extractingProvider(hooks: {
+    onExtract?: () => void;
+    onClassify?: () => void;
+  } = {}) {
+    const base = createHeuristicProvider(PERSONAL_VOCABULARY);
+    return {
+      ...base,
+      async extractFactsFromEvents() {
+        hooks.onExtract?.();
+        return {
+          // No domain_hint: graduate must call classifyFacts. Extract-only must not.
+          facts: [{ content: FACT }],
+          degraded: false,
+          now: "talking about milk",
+        };
+      },
+      async classifyFacts(
+        facts: Array<{ id: string; content: string; domain_hint?: string | null }>,
+      ) {
+        hooks.onClassify?.();
+        return base.classifyFacts(facts);
+      },
+    };
+  }
+
+  it("extract-only writes unclaimed session_facts, no K, and advances the watermark", async () => {
+    const sessionId = setupSession();
+    insertEvent(db, {
+      mcp_session_id: sessionId,
+      event_type: "message",
+      role: "user",
+      content: FACT,
+    });
+
+    let classifyCalls = 0;
+    const result = await consolidate(
+      db,
+      extractingProvider({ onClassify: () => classifyCalls++ }) as never,
+      { extraction: { enabled: true } as never },
+      null,
+      "extract",
+    );
+
+    expect(result.factsGraduated).toBe(0);
+    expect(result.factsIn).toBe(1);
+    expect(classifyCalls).toBe(0);
+    expect(
+      (db.prepare(`SELECT COUNT(*) AS n FROM facts`).get() as { n: number }).n,
+    ).toBe(0);
+
+    const staged = sessionFactRows();
+    expect(staged).toHaveLength(1);
+    expect(staged[0].content).toBe(FACT);
+    expect(staged[0].consolidation_id).toBeNull();
+    expect(eventWatermark()).toBe(1);
+  });
+
+  it("graduate-only does not re-read events or advance the watermark past them", async () => {
+    const sessionId = setupSession();
+    insertEvent(db, {
+      mcp_session_id: sessionId,
+      event_type: "message",
+      role: "user",
+      content: FACT,
+    });
+    await consolidate(
+      db,
+      extractingProvider() as never,
+      { extraction: { enabled: true } as never },
+      null,
+      "extract",
+    );
+    expect(eventWatermark()).toBe(1);
+
+    insertEvent(db, {
+      mcp_session_id: sessionId,
+      event_type: "message",
+      role: "user",
+      content: "a later line that must stay unextracted",
+    });
+
+    let extractCalls = 0;
+    const result = await consolidate(
+      db,
+      extractingProvider({ onExtract: () => extractCalls++ }) as never,
+      { extraction: { enabled: true } as never },
+      null,
+      "graduate",
+    );
+
+    expect(extractCalls).toBe(0);
+    expect(result.factsGraduated).toBe(1);
+    expect(eventWatermark()).toBe(1);
+
+    const graduated = db
+      .prepare(`SELECT content FROM facts`)
+      .all() as Array<{ content: string }>;
+    expect(graduated).toHaveLength(1);
+    expect(graduated[0].content).toBe(FACT);
+
+    const staged = sessionFactRows();
+    expect(staged).toHaveLength(1);
+    expect(staged[0].consolidation_id).toBe(result.consolidationId);
+  });
+
+  it("graduate-only with nothing pending does not pretend events were read", async () => {
+    const sessionId = setupSession();
+    insertEvent(db, {
+      mcp_session_id: sessionId,
+      event_type: "message",
+      role: "user",
+      content: "unextracted chatter",
+    });
+
+    let extractCalls = 0;
+    await consolidate(
+      db,
+      extractingProvider({ onExtract: () => extractCalls++ }) as never,
+      { extraction: { enabled: true } as never },
+      null,
+      "graduate",
+    );
+
+    expect(extractCalls).toBe(0);
+    expect(eventWatermark()).toBe(0);
+    expect(
+      (db.prepare(`SELECT COUNT(*) AS n FROM consolidations`).get() as { n: number })
+        .n,
+    ).toBe(0);
+    expect(sessionFactRows()).toHaveLength(0);
+  });
+
+  it("full still extracts and graduates in one run", async () => {
+    const sessionId = setupSession();
+    insertEvent(db, {
+      mcp_session_id: sessionId,
+      event_type: "message",
+      role: "user",
+      content: FACT,
+    });
+
+    const result = await consolidate(
+      db,
+      extractingProvider() as never,
+      { extraction: { enabled: true } as never },
+      null,
+      "full",
+    );
+
+    expect(result.factsGraduated).toBe(1);
+    const graduated = db
+      .prepare(`SELECT content FROM facts`)
+      .all() as Array<{ content: string }>;
+    expect(graduated).toHaveLength(1);
+    expect(graduated[0].content).toBe(FACT);
+    const staged = sessionFactRows();
+    expect(staged).toHaveLength(1);
+    expect(staged[0].consolidation_id).toBe(result.consolidationId);
+  });
+});
