@@ -22,7 +22,7 @@ import { createFactManager } from "./tools/fact-manager.js";
 import { createHeuristicProvider } from "./intelligence/heuristic.js";
 import { createIntelligenceProvider } from "./intelligence/provider.js";
 import { registerReadTools } from "./tools/read-tools.js";
-import { registerResources } from "./tools/resources.js";
+import { registerResources, SESSION_BOOTSTRAP_INSTRUCTIONS } from "./tools/resources.js";
 import { startScheduler, type Scheduler } from "./scheduler.js";
 import { loadConfig } from "./config.js";
 import { startSchedulerListener, type SchedulerListener } from "./ipc/scheduler-ipc.js";
@@ -81,6 +81,9 @@ const server = new McpServer(
   },
   {
     capabilities: { resources: { subscribe: true, listChanged: true } },
+    // Tools-only clients never fetch memory://briefing. This is the session-start
+    // result that tells them to call get_session_context instead — same briefing.
+    instructions: SESSION_BOOTSTRAP_INSTRUCTIONS,
   },
 );
 

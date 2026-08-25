@@ -29,6 +29,13 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { captureFactDescription } from "../../src/tools/capture-fact-description.js";
+import {
+  SESSION_BOOTSTRAP_INSTRUCTIONS,
+  sessionContextDescription,
+  buildBriefing,
+} from "../../src/tools/resources.js";
+import { openDatabase, closeDatabase } from "../../src/db/connection.js";
+import { applySchema } from "../../src/db/schema.js";
 
 const SERVER = path.resolve(fileURLToPath(new URL("../../dist/index.js", import.meta.url)));
 const CLI = path.resolve(fileURLToPath(new URL("../../dist/cli/index.js", import.meta.url)));
@@ -117,6 +124,30 @@ describe.skipIf(!runnable)("tool descriptions are an instruction layer", () => {
 
     const search = tools.find((t) => t.name === "search_knowledge")!;
     expect(search.description).toMatch(/\bbefore\b/i);
+    expect(search.description).toMatch(/get_session_context/);
+
+    const sessionCtx = tools.find((t) => t.name === "get_session_context")!;
+    expect(sessionCtx.description).toBe(sessionContextDescription());
+    expect(sessionCtx.description).toContain(SESSION_BOOTSTRAP_INSTRUCTIONS);
+  });
+
+  it("initialize instructions tell a tools-only client to load the briefing", () => {
+    expect(client.getInstructions()).toBe(SESSION_BOOTSTRAP_INSTRUCTIONS);
+  });
+
+  it("get_session_context returns the same briefing as memory://briefing", async () => {
+    const r: any = await client.callTool({
+      name: "get_session_context",
+      arguments: {},
+    });
+    const body = JSON.parse(r.content?.[0]?.text ?? "{}");
+    const store = openDatabase(path.join(root, "memory.db"));
+    applySchema(store);
+    try {
+      expect(body.briefing).toBe(buildBriefing(store));
+    } finally {
+      closeDatabase(store);
+    }
   });
 
   it("subject retrieval covers any named thing, not just people", () => {
