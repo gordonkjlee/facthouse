@@ -38,16 +38,19 @@ import type { IntelligenceProviderType, EmbeddingConfig } from "../types/config.
  * @param dataDir  when set, adds an OPENMEMORY_DATA env override (omit for the
  *                 default location, which needs no env entry)
  * @param indent   spaces to prefix each line with, for console output
+ * @param name     MCP server key. A second brain needs a second name —
+ *                 two entries both called `openmemory` overwrite each other.
  */
 export function mcpConfigSnippet(
   spec: string,
   dataDir?: string,
   indent = 2,
+  name = "openmemory",
 ): string {
   const entry: Record<string, unknown> = { command: "npx", args: ["-y", spec] };
   if (dataDir) entry.env = { OPENMEMORY_DATA: dataDir };
   const pad = " ".repeat(indent);
-  return JSON.stringify({ mcpServers: { openmemory: entry } }, null, 2)
+  return JSON.stringify({ mcpServers: { [name]: entry } }, null, 2)
     .split("\n")
     .map((l) => `${pad}${l}`)
     .join("\n");
