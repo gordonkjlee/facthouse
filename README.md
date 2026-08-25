@@ -243,7 +243,7 @@ The result is a structured, evolving knowledge graph that any AI tool can query 
 - **Batch consolidation** — Periodic processing integrates pending captures into the long-term knowledge graph: classifies domains, extracts entities, resolves duplicates, detects contradictions.
 - **Entity graph** — Whatever the conversation is about — people, organisations, projects, places, products — extracted, typed and linked automatically. Relationship strength tracks corroboration.
 - **Hybrid search** — BM25 keyword + structured domain + entity-graph paths, merged via Reciprocal Rank Fusion with temporal decay. Add an embedding provider and semantic similarity joins the merge as a fourth path: it ranks, it does not gate, so a fact with no embedding is still found by its words. When no graduated fact matches, a short raw-log window around a keyword hit is returned separately as `episodes` — not knowledge, not mixed into `results`.
-- **In-session memory** — Recently captured facts are immediately accessible via `get_session_context`, even before consolidation.
+- **In-session memory** — `get_session_context` returns the working briefing (same markdown as `memory://briefing`) plus facts captured this session, even before consolidation. Tools-only clients are told to call it at session start.
 - **Immutable history** — Facts are never deleted, only superseded. Full history preserved.
 - **Source traceability** — Every fact links back to the conversation events that produced it.
 - **Manual consolidation** — Call `consolidate` at natural breakpoints (topic change, task completion, pre-compaction). No reliance on session boundaries.
@@ -255,14 +255,14 @@ Resources are context the client loads **automatically** — no tool call, no de
 - `memory://briefing` — Everything worth knowing right now: profile, what was learned in the last consolidation, open threads, and recent knowledge. Markdown, kept to roughly a screenful.
 - `memory://profile` — Core identity facts, most important first.
 
-Both are read-only views over the same database the tools query, so they can't drift from it. They're regenerated on read, and clients that subscribe are notified when a consolidation changes what they'd say. Clients without resource support lose no capability — the read tools below cover the same ground on demand.
+Both are read-only views over the same database the tools query, so they can't drift from it. They're regenerated on read, and clients that subscribe are notified when a consolidation changes what they'd say. Clients that never load resources (Cursor, Windsurf, Grok) get the same briefing by calling `get_session_context` at the start of a conversation — the server's initialize instructions and that tool's description both say so. No second profile schema.
 
 ## MCP Tools
 
 ### Session
 - `log_event` — Log conversation events (messages, artifacts).
 - `get_events` — Retrieve events from current or previous session.
-- `get_session_context` — Recall facts captured in the current session (in-session working memory).
+- `get_session_context` — Working briefing (the same markdown as `memory://briefing`) plus facts captured in this session. Call at the start of every conversation if the client does not load resources.
 
 ### Reading
 - `get_entity` — Everything known about any named subject — person, organisation, project, place, product — and how it connects

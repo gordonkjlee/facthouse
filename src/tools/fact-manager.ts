@@ -19,6 +19,10 @@ import {
 } from "../db/session-facts.js";
 import { consolidate, type ConsolidationResult } from "../intelligence/consolidate.js";
 import { captureFactDescription } from "./capture-fact-description.js";
+import {
+  buildBriefing,
+  sessionContextDescription,
+} from "./resources.js";
 
 // ---------------------------------------------------------------------------
 // Public interface
@@ -301,11 +305,7 @@ export function createFactManager(
       // ---------------------------------------------------------------
       server.tool(
         "get_session_context",
-        `Recall what you've captured in this conversation. Returns facts from the ` +
-          `current session that haven't been consolidated yet.\n\n` +
-          `Call this before re-capturing a fact you may have already stored this ` +
-          `session — avoids duplicate capture. Also useful to review session state ` +
-          `before calling consolidate.`,
+        sessionContextDescription(),
         {
           session_id: z
             .string()
@@ -326,6 +326,7 @@ export function createFactManager(
                     args.session_id ??
                     sessionManager.getActiveSession()?.id ??
                     null,
+                  briefing: buildBriefing(db),
                   count: facts.length,
                   facts: facts.map((f) => ({
                     id: f.id,

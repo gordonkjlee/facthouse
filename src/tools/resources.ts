@@ -34,6 +34,30 @@ import { keyFacts } from "../search/key-facts.js";
 export const PROFILE_URI = "memory://profile";
 export const BRIEFING_URI = "memory://briefing";
 
+/**
+ * How a tools-only client gets the briefing.
+ *
+ * `memory://briefing` is the right artefact. Cursor, Windsurf, and Grok never
+ * fetch resources, so a session starts with no working set. This string is the
+ * one instruction that closes the gap: MCP initialize `instructions`, and the
+ * lead of `get_session_context`. Do not paste a third copy.
+ */
+export const SESSION_BOOTSTRAP_INSTRUCTIONS =
+  "At the start of every conversation, before answering, call get_session_context " +
+  "unless you already loaded the memory://briefing resource. That call returns the " +
+  "same working briefing the resource would have injected. Tools-only clients never " +
+  "fetch resources.";
+
+/** Tool description for get_session_context. Lead is SESSION_BOOTSTRAP_INSTRUCTIONS. */
+export function sessionContextDescription(): string {
+  return (
+    SESSION_BOOTSTRAP_INSTRUCTIONS +
+    "\n\nAlso returns facts captured in this session that have not been " +
+    "consolidated yet. Call it before re-capturing a fact you may have already " +
+    "stored this session."
+  );
+}
+
 /** Keep the briefing near the ~100 line budget it is specified to fit in. */
 const KEY_FACTS_LIMIT = 15;
 const RECENT_LIMIT = 20;

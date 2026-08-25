@@ -32,7 +32,9 @@ export function registerReadTools(
     "search_knowledge",
     `Search the knowledge base. Call this BEFORE answering ` +
       `questions that might benefit from what this store knows — preferences, ` +
-      `history, relationships, medical info, work context. Returns facts ` +
+      `history, relationships, medical info, work context. If you have not ` +
+      `called get_session_context (or loaded memory://briefing) this conversation, ` +
+      `do that first — otherwise you start not knowing the user. Returns facts ` +
       `ranked by relevance with source attribution and confidence scores.\n\n` +
       `Three fields come back. \`results\` is integrated knowledge: deduplicated, ` +
       `reconciled against everything else known, entities resolved. \`pending\` ` +
