@@ -17,21 +17,30 @@ import type { Db } from "../../src/db/connection.js";
 interface MockChild extends EventEmitter {
   stdout: EventEmitter;
   stderr: EventEmitter;
-  stdin: { end: () => void; write: () => void };
+  stdin: EventEmitter & { end: (chunk?: string) => void; write: (chunk: string) => boolean };
   kill: (sig?: string) => void;
 }
 
-let behaviour: (args: string[]) => Record<string, unknown> | null = () => null;
+let behaviour: (prompt: string) => Record<string, unknown> | null = () => null;
 
 vi.mock("node:child_process", () => ({
-  spawn: (_cmd: string, args: string[]) => {
+  spawn: () => {
     const child = new EventEmitter() as MockChild;
     child.stdout = new EventEmitter();
     child.stderr = new EventEmitter();
-    child.stdin = { end: () => {}, write: () => {} };
+    const stdin = new EventEmitter() as MockChild["stdin"];
+    let prompt = "";
+    stdin.end = (chunk?: string) => {
+      if (typeof chunk === "string") prompt = chunk;
+    };
+    stdin.write = (chunk: string) => {
+      prompt += chunk;
+      return true;
+    };
+    child.stdin = stdin;
     child.kill = () => {};
     queueMicrotask(() => {
-      const envelope = behaviour(args);
+      const envelope = behaviour(prompt);
       if (envelope === null) {
         child.emit("close", 1);
         return;
@@ -58,9 +67,7 @@ const { createCliProvider } = await import("../../src/intelligence/cli.js");
 // Helpers
 // ---------------------------------------------------------------------------
 
-function routeByPromptPrefix(args: string[]): string {
-  // The prompt is the last positional argv entry.
-  const prompt = args[args.length - 1];
+function routeByPromptPrefix(prompt: string): string {
   if (prompt.includes("extract durable facts")) return "stage-1";
   if (prompt.includes("decide whether a candidate")) return "stage-2";
   if (prompt.includes("detect whether a new fact supersedes")) return "stage-3";
@@ -95,8 +102,8 @@ describe("CLI provider end-to-end consolidation", () => {
       content: "I'm allergic to aspirin. My partner Robin loves sushi.",
     });
 
-    behaviour = (args) => {
-      const stage = routeByPromptPrefix(args);
+    behaviour = (prompt) => {
+      const stage = routeByPromptPrefix(prompt);
       if (stage === "stage-1") {
         return {
           is_error: false,
@@ -234,8 +241,8 @@ describe("CLI provider end-to-end consolidation", () => {
       content: "Lex mentioned that he prefers tea.",
     });
 
-    behaviour = (args) => {
-      const stage = routeByPromptPrefix(args);
+    behaviour = (prompt) => {
+      const stage = routeByPromptPrefix(prompt);
       if (stage === "stage-1") {
         return {
           is_error: false,

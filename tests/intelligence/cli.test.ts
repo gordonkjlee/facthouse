@@ -5,15 +5,21 @@ import { EventEmitter } from "node:events";
 // Mock child_process.spawn before importing the module under test
 // ---------------------------------------------------------------------------
 
+interface MockStdin extends EventEmitter {
+  end: (chunk?: string, encoding?: string) => void;
+  write: (chunk: string) => boolean;
+}
+
 interface MockChild extends EventEmitter {
   stdout: EventEmitter;
   stderr: EventEmitter;
-  stdin: { end: () => void; write: () => void };
+  stdin: MockStdin;
   kill: (sig?: string) => void;
 }
 
 let nextMockChildBehaviour: (child: MockChild, args: string[]) => void = () => {};
 let lastSpawnArgs: { cmd: string; args: string[]; opts: any } | null = null;
+let lastStdin = "";
 
 vi.mock("node:child_process", async () => {
   return {
@@ -22,7 +28,15 @@ vi.mock("node:child_process", async () => {
       const child = new EventEmitter() as MockChild;
       child.stdout = new EventEmitter();
       child.stderr = new EventEmitter();
-      child.stdin = { end: () => {}, write: () => {} };
+      const stdin = new EventEmitter() as MockStdin;
+      stdin.end = (chunk?: string) => {
+        if (typeof chunk === "string") lastStdin += chunk;
+      };
+      stdin.write = (chunk: string) => {
+        lastStdin += chunk;
+        return true;
+      };
+      child.stdin = stdin;
       child.kill = () => {};
       // Defer behaviour to microtask so the caller gets a chance to wire
       // listeners before we emit.
@@ -36,6 +50,7 @@ const { createCliProvider } = await import("../../src/intelligence/cli.js");
 
 beforeEach(() => {
   lastSpawnArgs = null;
+  lastStdin = "";
   nextMockChildBehaviour = () => {};
 });
 
@@ -147,6 +162,9 @@ describe("createCliProvider — extractFactsFromEvents", () => {
     const idx = lastSpawnArgs!.args.indexOf("--setting-sources");
     expect(lastSpawnArgs!.args[idx + 1]).toBe("user");
     expect(lastSpawnArgs!.opts?.env?.OPENMEMORY_SUBPROCESS).toBe("1");
+    // Prompt is stdin, not argv — the last argv element is the model, not the payload.
+    expect(lastSpawnArgs!.args.at(-1)).toBe("haiku");
+    expect(lastSpawnArgs!.args).not.toContain(lastStdin);
   });
 
   it("threads working memory, session summary and long-term memory into the stage-1 payload", async () => {
@@ -162,16 +180,35 @@ describe("createCliProvider — extractFactsFromEvents", () => {
       "The user has been discussing relocating for work.",
       [{ id: "f1", content: "User lives in Lisbon", domain: "profile" } as any],
     );
-    // The stage prompt (with inlined INPUT json) is the final positional arg.
-    const prompt = lastSpawnArgs!.args[lastSpawnArgs!.args.length - 1];
-    expect(prompt).toContain("candidate_events");
-    expect(prompt).toContain("and I moved to Porto");
-    expect(prompt).toContain("recent_events");
-    expect(prompt).toContain("we were talking about my move");
-    expect(prompt).toContain("session_summary");
-    expect(prompt).toContain("relocating for work");
-    expect(prompt).toContain("long_term_memory");
-    expect(prompt).toContain("User lives in Lisbon");
+    expect(lastStdin).toContain("candidate_events");
+    expect(lastStdin).toContain("and I moved to Porto");
+    expect(lastStdin).toContain("recent_events");
+    expect(lastStdin).toContain("we were talking about my move");
+    expect(lastStdin).toContain("session_summary");
+    expect(lastStdin).toContain("relocating for work");
+    expect(lastStdin).toContain("long_term_memory");
+    expect(lastStdin).toContain("User lives in Lisbon");
+  });
+
+  it("keeps argv under the Windows command-line limit when the prompt is huge", async () => {
+    // Windows CreateProcess caps the full command line at 32,767 characters.
+    // A pulled transcript event of tens of kilobytes used to go on argv and
+    // every extract on Windows degraded with ENAMETOOLONG.
+    nextMockChildBehaviour = respondWith({
+      is_error: false,
+      result: "",
+      structured_output: { facts: [] },
+    });
+    const huge = "x".repeat(40_000);
+    const provider = createCliProvider();
+    await provider.extractFactsFromEvents(
+      [{ id: "e1", role: "user", content: huge, sequence: 1 } as any],
+      [],
+    );
+    expect(lastStdin).toContain(huge);
+    expect(lastSpawnArgs!.args.some((a) => a.includes(huge))).toBe(false);
+    const argvChars = lastSpawnArgs!.args.reduce((n, a) => n + a.length + 3, 0);
+    expect(argvChars).toBeLessThan(32_767);
   });
 
   it("falls back to heuristic when spawn emits error", async () => {
@@ -384,9 +421,8 @@ describe("createCliProvider — summarise", () => {
       [{ id: "f1", content: "x", domain: "medical", subdomain: null } as any],
       "Earlier the user shared work context.",
     );
-    const prompt = lastSpawnArgs!.args[lastSpawnArgs!.args.length - 1];
-    expect(prompt).toContain("prior_summary");
-    expect(prompt).toContain("Earlier the user shared work context.");
+    expect(lastStdin).toContain("prior_summary");
+    expect(lastStdin).toContain("Earlier the user shared work context.");
   });
 });
 

@@ -110,6 +110,11 @@ async function invokeClaude(
   opts: Required<CliProviderOpts>,
 ): Promise<SubprocessResult | SubprocessFailure> {
   const cmd = command[0];
+  // Prompt goes on stdin, not argv. Windows CreateProcess caps the command
+  // line at 32,767 characters; a stage-1 extract (schema + events + evidence)
+  // exceeds that routinely, spawn fails with ENAMETOOLONG, and extract
+  // degrades for every run. `claude -p` with no positional prompt reads stdin
+  // (`echo "…" | claude -p`). The JSON schema stays on argv — it is small.
   const args = [
     ...command.slice(1),
     "-p",
@@ -122,7 +127,6 @@ async function invokeClaude(
     "--no-session-persistence",
     "--model",
     opts.model,
-    prompt,
   ];
 
   return new Promise((resolve) => {
@@ -168,6 +172,10 @@ async function invokeClaude(
 
     child.stdout?.on("data", (d) => (stdout += d.toString()));
     child.stderr?.on("data", (d) => (stderr += d.toString()));
+    child.stdin?.on("error", () => {
+      // EPIPE if the child exits before consuming the prompt; close/error
+      // handlers below settle the result.
+    });
     child.on("error", (err) => {
       clearTimeout(timer);
       finish({ error: "spawn-error", detail: err.message });
@@ -207,9 +215,11 @@ async function invokeClaude(
       });
     });
 
-    // stdin unused — prompt goes via argv — but close it so the subprocess
-    // doesn't wait indefinitely if it tries to read.
-    child.stdin?.end();
+    try {
+      child.stdin?.end(prompt, "utf8");
+    } catch {
+      // Child already closed stdin; close/error handlers settle the result.
+    }
   });
 }
 
