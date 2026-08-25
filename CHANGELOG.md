@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.18.0](https://github.com/gordonkjlee/openmemory/compare/v0.17.0...v0.18.0) (2026-08-25)
+
+
+### Features
+
+* **intelligence:** split extract and graduate ([#158](https://github.com/gordonkjlee/openmemory/issues/158)) ([185f72d](https://github.com/gordonkjlee/openmemory/commit/185f72d0a98c391ecf421fd36a2b5d012a2ed379))
+
+
+### Bug Fixes
+
+* **intelligence:** pass CLI prompt via stdin ([#163](https://github.com/gordonkjlee/openmemory/issues/163)) ([62bd061](https://github.com/gordonkjlee/openmemory/commit/62bd06116011e827943f5c50d94ca30dd5b3b963)), closes [#160](https://github.com/gordonkjlee/openmemory/issues/160)
+
 ## [0.17.0](https://github.com/gordonkjlee/openmemory/compare/v0.16.0...v0.17.0) (2026-08-25)
 
 
