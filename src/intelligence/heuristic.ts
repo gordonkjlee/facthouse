@@ -227,7 +227,7 @@ export function createHeuristicProvider(
       return dupe ? { kind: "noop" } : { kind: "add" };
     },
 
-    async summarise(facts, graduatedFacts, priorSummary) {
+    async summarise(facts, graduatedFacts, priorSummary, _closedTopics) {
       if (graduatedFacts.length === 0) {
         // Empty run: keep the prior rolling summary verbatim if it exists.
         return {

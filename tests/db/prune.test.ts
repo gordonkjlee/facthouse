@@ -98,10 +98,9 @@ describe("what prune refuses to remove", () => {
   });
 
   it("keeps the most recent events of a session as working memory", () => {
-    // The condition that is invisible unless you read the extraction path:
-    // consolidation re-reads already-read events from the same session for
-    // pronoun resolution. Pruning them degrades every future extraction in that
-    // session and raises nothing.
+    // Reachable recent D for this session: reread and the evidence prefix
+    // both read already-extracted events. Pruning them silently degrades
+    // forgetfulness reread.
     for (let i = 0; i < 10; i++) addEvent();
     markAllRead();
 

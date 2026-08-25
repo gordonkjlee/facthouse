@@ -12,14 +12,31 @@
 import { randomUUID } from "node:crypto";
 import { withTransaction } from "../db/connection.js";
 import type { Db } from "../db/connection.js";
-import type { Fact, SessionEvent, SessionFact } from "../types/data.js";
+import type {
+  Fact,
+  SessionEvent,
+  SessionFact,
+  TopicSegment,
+} from "../types/data.js";
 import { DEFAULT_CONFIDENCE, DEFAULT_IMPORTANCE, type ServerConfig } from "../types/config.js";
 import type {
   IntelligenceProvider,
   ClassifiedFact,
   ExtractedEntity,
   ExtractedFact,
+  ExtractionOutcome,
 } from "./types.js";
+import {
+  EXTRACT_EVIDENCE_SLICE,
+  EXTRACT_REREAD_CONFIDENCE,
+  EXTRACT_REREAD_WINDOW,
+  capReferents,
+} from "./extract-prompt.js";
+import {
+  latestConversationSituation,
+  applySituation,
+  type ConversationSituation,
+} from "../db/consolidations.js";
 import { normaliseForDedup } from "./heuristic.js";
 import {
   claimForConsolidation,
@@ -147,6 +164,7 @@ export async function consolidate(
   // leave them eligible for the next run. Advancing regardless is what made a
   // transient provider failure discard a batch of conversation for good.
   let extractionDegraded = false;
+  let extractPending: ExtractPending[] = [];
 
   let phaseDCommitted = false;
   try {
@@ -155,12 +173,14 @@ export async function consolidate(
 
     // Phase B: D→I event extraction (if enabled)
     if (extractionEnabled) {
-      extractionDegraded = await extractFactsFromEvents(
+      const extracted = await extractFactsFromEvents(
         db,
         intelligence,
         consolidationId,
         config,
       );
+      extractionDegraded = extracted.degraded;
+      extractPending = extracted.pending;
     }
 
     // Hold the watermark back rather than advancing past unexamined events.
@@ -177,13 +197,27 @@ export async function consolidate(
       // consolidations table with duplicate no-op rows when nothing new has
       // landed since the last run.
       if (!extractionDegraded && runWatermark > prevWatermark) {
+        const onlyId =
+          extractPending.length === 1 ? extractPending[0].group.ref.id : null;
         db.prepare(
           `INSERT INTO consolidations
            (id, session_id, facts_in, facts_graduated, facts_rejected,
             entities_created, entities_linked, supersessions,
             summary, open_threads, last_event_sequence, created_at)
-           VALUES (?, NULL, 0, 0, 0, 0, 0, 0, NULL, NULL, ?, ?)`,
-        ).run(consolidationId, effectiveWatermark, new Date().toISOString());
+           VALUES (?, ?, 0, 0, 0, 0, 0, 0, NULL, NULL, ?, ?)`,
+        ).run(
+          consolidationId,
+          onlyId,
+          effectiveWatermark,
+          new Date().toISOString(),
+        );
+        persistSituations(
+          db,
+          consolidationId,
+          onlyId,
+          extractPending,
+          effectiveWatermark,
+        );
       }
       // Backfill on the empty path too. This branch is "nothing new graduated",
       // which is exactly the state a store is in when it has a backlog and no
@@ -625,10 +659,19 @@ export async function consolidate(
         consolidationId,
       );
       try {
+        persistSituations(
+          db,
+          consolidationId,
+          recordSessionId,
+          extractPending,
+          effectiveWatermark,
+        );
+        const closed = closedGistsFor(extractPending, recordSessionId);
         const summaryResult = await intelligence.summarise(
           sessionFacts,
           graduatedFacts,
           priorSessionSummary,
+          closed,
         );
         summaryText = summaryResult.summary;
         threads = [...conflictMessages, ...summaryResult.openThreads];
@@ -648,32 +691,52 @@ export async function consolidate(
           `UPDATE consolidations SET open_threads = ? WHERE id = ?`,
         ).run(JSON.stringify(conflictMessages), consolidationId);
       }
+      const situationRows = persistSituations(
+        db,
+        consolidationId,
+        null,
+        extractPending,
+        effectiveWatermark,
+      );
       for (const sessionId of uniqueSessionIds) {
         const factsFor = sessionFacts.filter((f) => f.session_id === sessionId);
         const graduatedFor = graduatedFacts.filter(
           (f) => f.session_id === sessionId,
         );
         const prior = latestSessionSummary(db, sessionId, consolidationId);
+        const closed = closedGistsFor(extractPending, sessionId);
         try {
           const summaryResult = await intelligence.summarise(
             factsFor,
             graduatedFor,
             prior,
+            closed,
           );
-          db.prepare(
-            `INSERT INTO consolidations
-             (id, session_id, facts_in, facts_graduated, facts_rejected,
-              entities_created, entities_linked, supersessions,
-              summary, open_threads, last_event_sequence, created_at)
-             VALUES (?, ?, 0, 0, 0, 0, 0, 0, ?, ?, ?, ?)`,
-          ).run(
-            randomUUID(),
-            sessionId,
-            summaryResult.summary,
-            JSON.stringify(summaryResult.openThreads),
-            effectiveWatermark,
-            new Date().toISOString(),
-          );
+          const existingId = situationRows.get(sessionId);
+          if (existingId) {
+            db.prepare(
+              `UPDATE consolidations SET summary = ?, open_threads = ? WHERE id = ?`,
+            ).run(
+              summaryResult.summary,
+              JSON.stringify(summaryResult.openThreads),
+              existingId,
+            );
+          } else {
+            db.prepare(
+              `INSERT INTO consolidations
+               (id, session_id, facts_in, facts_graduated, facts_rejected,
+                entities_created, entities_linked, supersessions,
+                summary, open_threads, last_event_sequence, created_at)
+               VALUES (?, ?, 0, 0, 0, 0, 0, 0, ?, ?, ?, ?)`,
+            ).run(
+              randomUUID(),
+              sessionId,
+              summaryResult.summary,
+              JSON.stringify(summaryResult.openThreads),
+              effectiveWatermark,
+              new Date().toISOString(),
+            );
+          }
         } catch {
           // Satellite summary is non-critical — the run row already advanced
           // the watermark and the facts are graduated.
@@ -766,26 +829,34 @@ function groupByConversation(events: SessionEvent[]): EventGroup[] {
   );
 }
 
-function loadWorkingMemory(
+function loadSessionWindow(
   db: Db,
   watermark: number,
   ref: ConversationRef,
   limit: number,
+  fromSequence?: number,
 ): SessionEvent[] {
+  if (limit <= 0) return [];
   // Kind-branched on purpose: binding the same string to both columns is how
   // two conversations share a window. Client-keyed groups match the client
   // column only; mcp-keyed groups match mcp-only rows (no client id).
+  const fromClause =
+    fromSequence != null ? " AND sequence >= ?" : "";
   const sql =
     ref.kind === "client"
       ? `SELECT * FROM session_events
-         WHERE sequence <= ? AND client_session_id = ?
+         WHERE sequence <= ? AND client_session_id = ?${fromClause}
          ORDER BY sequence DESC
          LIMIT ?`
       : `SELECT * FROM session_events
-         WHERE sequence <= ? AND client_session_id IS NULL AND mcp_session_id = ?
+         WHERE sequence <= ? AND client_session_id IS NULL AND mcp_session_id = ?${fromClause}
          ORDER BY sequence DESC
          LIMIT ?`;
-  const rows = db.prepare(sql).all(watermark, ref.id, limit) as SessionEventRow[];
+  const params =
+    fromSequence != null
+      ? [watermark, ref.id, fromSequence, limit]
+      : [watermark, ref.id, limit];
+  const rows = db.prepare(sql).all(...params) as SessionEventRow[];
   return rows.map(parseEventRow).reverse();
 }
 
@@ -830,26 +901,144 @@ function linkExtractedFactToEvents(
   }
 }
 
+type ExtractPending = {
+  group: EventGroup;
+  facts: ExtractedFact[];
+  situation: ConversationSituation | null;
+  closedGist: string | null;
+};
+
+function needsReread(outcome: ExtractionOutcome): boolean {
+  if (outcome.degraded) return false;
+  if (typeof outcome.confidence !== "number") return false;
+  return outcome.confidence < EXTRACT_REREAD_CONFIDENCE;
+}
+
+function buildSituation(
+  prev: ConversationSituation | null,
+  outcome: ExtractionOutcome,
+  watermark: number,
+  firstCandidateSeq: number,
+): { situation: ConversationSituation | null; closedGist: string | null } {
+  const hasNow = outcome.now !== undefined;
+  const hasReferents = outcome.referents !== undefined;
+  const shifted = outcome.topic_shifted === true;
+  if (!hasNow && !hasReferents && !shifted) {
+    return { situation: null, closedGist: null };
+  }
+
+  const prevReferents = prev?.referents ?? [];
+  const prevSegments = prev?.segments ?? [];
+  const prevNow = prev?.now ?? null;
+  const prevStart = prev?.now_start_sequence ?? null;
+  const referents = hasReferents ? capReferents(outcome.referents) : prevReferents;
+  const now = hasNow ? (outcome.now ?? null) : prevNow;
+
+  if (shifted && (prevNow != null || prevReferents.length > 0)) {
+    const closed: TopicSegment = {
+      start_sequence: prevStart ?? watermark,
+      end_sequence: watermark,
+      gist: prevNow ?? "",
+      referents: prevReferents,
+    };
+    return {
+      situation: {
+        now,
+        now_start_sequence: firstCandidateSeq,
+        referents,
+        segments: [...prevSegments, closed],
+      },
+      closedGist: closed.gist,
+    };
+  }
+
+  return {
+    situation: {
+      now,
+      now_start_sequence: prevStart ?? firstCandidateSeq,
+      referents,
+      segments: prevSegments,
+    },
+    closedGist: null,
+  };
+}
+
+function situationChanged(
+  prev: ConversationSituation | null,
+  next: ConversationSituation,
+): boolean {
+  if (!prev) return true;
+  return JSON.stringify(prev) !== JSON.stringify(next);
+}
+
+function closedGistsFor(pending: ExtractPending[], sessionId: string): string[] {
+  return pending
+    .filter((p) => p.group.ref.id === sessionId && p.closedGist)
+    .map((p) => p.closedGist as string);
+}
+
+function persistSituations(
+  db: Db,
+  runId: string,
+  recordSessionId: string | null,
+  pending: ExtractPending[],
+  watermark: number,
+): Map<string, string> {
+  const rows = new Map<string, string>();
+  const withState = pending.filter(
+    (p): p is ExtractPending & { situation: ConversationSituation } =>
+      p.situation != null,
+  );
+  if (withState.length === 0) return rows;
+
+  if (recordSessionId) {
+    const match = withState.find((p) => p.group.ref.id === recordSessionId);
+    if (match) {
+      applySituation(db, runId, match.situation);
+      rows.set(recordSessionId, runId);
+    }
+    return rows;
+  }
+
+  for (const item of withState) {
+    const id = randomUUID();
+    db.prepare(
+      `INSERT INTO consolidations
+       (id, session_id, facts_in, facts_graduated, facts_rejected,
+        entities_created, entities_linked, supersessions,
+        summary, open_threads, last_event_sequence, created_at,
+        now, now_start_sequence, now_referents, segments)
+       VALUES (?, ?, 0, 0, 0, 0, 0, 0, NULL, NULL, ?, ?, ?, ?, ?, ?)`,
+    ).run(
+      id,
+      item.group.ref.id,
+      watermark,
+      new Date().toISOString(),
+      item.situation.now,
+      item.situation.now_start_sequence,
+      JSON.stringify(item.situation.referents),
+      JSON.stringify(item.situation.segments),
+    );
+    rows.set(item.group.ref.id, id);
+  }
+  return rows;
+}
+
 async function extractFactsFromEvents(
   db: Db,
   intelligence: IntelligenceProvider,
   consolidationId: string,
   config?: Partial<ServerConfig>,
-): Promise<boolean> {
+): Promise<{ degraded: boolean; pending: ExtractPending[] }> {
+  const empty = { degraded: false, pending: [] as ExtractPending[] };
   const workingMemorySize = config?.extraction?.working_memory_size ?? 50;
   const maxContentLength = config?.extraction?.max_content_length ?? 2000;
-  // These three shipped in the default config and were read by nothing, so
-  // extraction examined every event whatever a store had configured. They are
-  // the only lever over what reaches the extractor: a store whose tool output is
-  // noise rather than knowledge sets `event_types: ["message"]` and stops paying
-  // to have it read.
   const eventTypes = config?.extraction?.event_types ?? null;
   const roles = config?.extraction?.roles ?? null;
   const minContentLength = config?.extraction?.min_content_length ?? 0;
+  const evidenceLimit = Math.min(EXTRACT_EVIDENCE_SLICE, workingMemorySize);
+  const rereadLimit = Math.min(EXTRACT_REREAD_WINDOW, workingMemorySize);
 
-  // Watermark is the highest session_events.sequence recorded on any previous
-  // consolidation run. consolidate() writes this on every run (including empty
-  // ones) so we don't stall when a batch produces zero facts.
   const watermarkRow = db
     .prepare(
       `SELECT MAX(last_event_sequence) AS max_seq FROM consolidations`,
@@ -857,7 +1046,6 @@ async function extractFactsFromEvents(
     .get() as { max_seq: number | null } | undefined;
   const watermark = watermarkRow?.max_seq ?? 0;
 
-  // Load candidate events: everything since the watermark.
   const candidateRows = db
     .prepare(
       `SELECT * FROM session_events
@@ -866,32 +1054,19 @@ async function extractFactsFromEvents(
     )
     .all(watermark) as SessionEventRow[];
 
-  if (candidateRows.length === 0) return false;
+  if (candidateRows.length === 0) return empty;
 
-  // Filter what the extractor sees. The watermark still advances past everything
-  // read this run, filtered or not: these events were examined and declined, not
-  // skipped by a failure, so holding the watermark back for them would grow a
-  // backlog that nothing could ever drain.
   const eligible = candidateRows.filter((e) => {
     if (eventTypes && !eventTypes.includes(e.event_type)) return false;
     if (roles && !roles.includes(e.role)) return false;
     return (e.content?.length ?? 0) >= minContentLength;
   });
-  // Nothing eligible is a successful run that found nothing, not a degraded one.
-  if (eligible.length === 0) return false;
+  if (eligible.length === 0) return empty;
 
   const newEvents = eligible.map(parseEventRow);
   const groups = groupByConversation(newEvents);
-  // Unkeyed rows are examined and declined — not attached to last-active.
-  // A batch that is only unkeyed is an empty successful run; mixed batches
-  // extract the keyed groups and still advance past the unkeyed ones.
-  if (groups.length === 0) return false;
+  if (groups.length === 0) return empty;
 
-  // Long-term memory: currently-active graduated facts. Cross-session
-  // background knowledge that helps the LLM avoid re-extracting facts the
-  // system already has and resolve references not established in this
-  // session. Empty when the K-layer hasn't been seeded yet. Store-wide on
-  // purpose — entity resolution across conversations is desired.
   const longTermMemory = (
     db
       .prepare(
@@ -902,19 +1077,19 @@ async function extractFactsFromEvents(
       .all() as Array<Omit<Fact, "is_latest"> & { is_latest: number }>
   ).map((row) => ({ ...row, is_latest: row.is_latest === 1 }));
 
-  // Buffer inserts until every group has been examined. A global watermark
-  // cannot advance past a mixed batch if any conversation was unexamined, and
-  // inserting the successful groups first would re-extract them on retry
-  // (paraphrase → a second session_fact). One degraded group discards the
-  // buffer; the LLM cost of the successful calls is paid again on retry.
-  const pending: Array<{ group: EventGroup; facts: ExtractedFact[] }> = [];
+  // Buffer inserts until every group has been examined. Provider-down
+  // (degraded) still discards the whole buffer so a mixed batch cannot
+  // advance past an unexamined conversation. Unconfident-after-reread is
+  // examined: no I, no now update, other groups still land, watermark moves.
+  const pending: ExtractPending[] = [];
   for (const group of groups) {
-    const workingMemory = loadWorkingMemory(
+    const evidence = loadSessionWindow(
       db,
       watermark,
       group.ref,
-      workingMemorySize,
+      evidenceLimit,
     );
+    const prior = latestConversationSituation(db, group.ref.id);
     const priorSummary = latestSessionSummary(db, group.ref.id);
     const truncated = group.events.map((e) => ({
       ...e,
@@ -923,15 +1098,59 @@ async function extractFactsFromEvents(
           ? e.content.slice(0, maxContentLength)
           : e.content,
     }));
+    const extras = {
+      now: prior?.now ?? null,
+      referents: prior?.referents ?? [],
+      segments: prior?.segments ?? [],
+    };
 
-    const outcome = await intelligence.extractFactsFromEvents(
+    let outcome = await intelligence.extractFactsFromEvents(
       truncated,
-      workingMemory,
+      evidence,
       priorSummary,
       longTermMemory,
+      extras,
     );
-    if (outcome.degraded) return true;
-    pending.push({ group, facts: outcome.facts });
+    if (outcome.degraded) return { degraded: true, pending: [] };
+
+    if (needsReread(outcome)) {
+      const reminder = loadSessionWindow(
+        db,
+        watermark,
+        group.ref,
+        rereadLimit,
+        prior?.now_start_sequence ?? undefined,
+      );
+      outcome = await intelligence.extractFactsFromEvents(
+        truncated,
+        evidence,
+        priorSummary,
+        longTermMemory,
+        { ...extras, reminderEvents: reminder },
+      );
+      if (outcome.degraded) return { degraded: true, pending: [] };
+      if (needsReread(outcome)) {
+        pending.push({
+          group,
+          facts: [],
+          situation: null,
+          closedGist: null,
+        });
+        continue;
+      }
+    }
+
+    const firstSeq = group.events[0]?.sequence ?? watermark + 1;
+    const built = buildSituation(prior, outcome, watermark, firstSeq);
+    pending.push({
+      group,
+      facts: outcome.facts,
+      situation:
+        built.situation && situationChanged(prior, built.situation)
+          ? built.situation
+          : null,
+      closedGist: built.closedGist,
+    });
   }
 
   for (const { group, facts } of pending) {
@@ -958,7 +1177,7 @@ async function extractFactsFromEvents(
     }
   }
 
-  return false;
+  return { degraded: false, pending };
 }
 
 

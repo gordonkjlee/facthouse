@@ -4,7 +4,15 @@
  * but sampling/API providers will need async.
  */
 
-import type { SessionFact, SessionEvent, Fact } from "../types/data.js";
+import type {
+  SessionFact,
+  SessionEvent,
+  Fact,
+  Referent,
+  TopicSegment,
+} from "../types/data.js";
+
+export type { Referent, TopicSegment };
 
 /** A fact with domain classification applied. */
 export interface ClassifiedFact {
@@ -49,6 +57,29 @@ export interface ExtractionOutcome {
   facts: ExtractedFact[];
   /** The configured extractor could not run, and this is a fallback result. */
   degraded: boolean;
+  /**
+   * 0–1, optional. Absent + !degraded means confident — the heuristic empty
+   * extract must not trigger a reread or the watermark would never move.
+   * Below EXTRACT_REREAD_CONFIDENCE the caller may show a short reminder.
+   */
+  confidence?: number;
+  /** Current activity gist. Optional; omitting it must not mark degraded. */
+  now?: string | null;
+  /** Last-known deictic board for this now. Optional. */
+  referents?: Referent[];
+  /**
+   * True only for a return-worthy break ("back to the previous thing").
+   * Binding churn and refinements are false/omitted.
+   */
+  topic_shifted?: boolean;
+}
+
+/** Extra D→I context beyond the four positional extract arguments. */
+export interface ExtractExtras {
+  now?: string | null;
+  referents?: Referent[];
+  segments?: TopicSegment[];
+  reminderEvents?: SessionEvent[];
 }
 
 /** Rich per-fact output from holistic D→I extraction. */
@@ -116,23 +147,23 @@ export interface IntelligenceProvider {
   /** Extract facts from raw session events (D→I transition). */
   /** Extract durable facts from events since the last consolidation.
    *  @param events           Session events with sequence > last watermark
-   *                          — candidates for extraction.
-   *  @param workingMemory    Pre-watermark events from the SAME session as
-   *                          the candidates. Recent conversational context
-   *                          for pronoun resolution and topical flow.
-   *                          NOT re-extracted. Capped at
-   *                          extraction.working_memory_size.
-   *  @param sessionSummary   Rolling summary of the entire current session
-   *                          up to the last consolidation (optional). Provides
-   *                          long-range conversational memory beyond the
-   *                          working_memory_size window.
+   *                          — candidates for extraction. The only lines to
+   *                          extract from.
+   *  @param workingMemory    Short raw prefix of THIS conversation (evidence
+   *                          that session_now has not drifted). NOT the
+   *                          disambiguation table and NOT re-extracted.
+   *  @param sessionSummary   Rolling gist of the episode (optional).
    *  @param longTermMemory   Currently-active graduated facts (optional).
-   *                          Cross-session background knowledge. */
+   *                          Cue and de-dupe; must not veto a contradicting
+   *                          new line.
+   *  @param extras           session_now, referents, closed segments, and
+   *                          optional reminder_events on a forgetfulness retry. */
   extractFactsFromEvents(
     events: SessionEvent[],
     workingMemory: SessionEvent[],
     sessionSummary?: string | null,
     longTermMemory?: Fact[],
+    extras?: ExtractExtras,
   ): Promise<ExtractionOutcome>;
 
   /** Detect if a new fact supersedes an existing one. */
@@ -160,5 +191,6 @@ export interface IntelligenceProvider {
     facts: SessionFact[],
     graduatedFacts: Fact[],
     priorSummary?: string | null,
+    closedTopics?: string[],
   ): Promise<SessionSummary>;
 }

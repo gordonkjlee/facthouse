@@ -1,0 +1,51 @@
+/**
+ * One definition of what D→I extract-context fields *are*.
+ *
+ * Sampling and CLI previously drifted: sampling shrank recent_events to
+ * "pronoun resolution" while CLI kept topical flow. The jobs below are the
+ * contract; each provider may still describe what a durable fact is in its
+ * own voice.
+ */
+
+import type { Referent } from "../types/data.js";
+
+/** Live deictics kept for the current activity. Last-known only. */
+export const REFERENT_CAP = 8;
+
+/** First eight of the model's list. No merge with the previous board. */
+export function capReferents(referents: Referent[] | undefined): Referent[] {
+  if (!referents) return [];
+  return referents.slice(0, REFERENT_CAP);
+}
+
+/** Happy-path raw prefix passed as recent_events. Evidence, not the board. */
+export const EXTRACT_EVIDENCE_SLICE = 8;
+
+/** Forgetfulness reread: short window of this conversation's session_events. */
+export const EXTRACT_REREAD_WINDOW = 20;
+
+/**
+ * Prompt-reported extract confidence below this triggers one reread.
+ * Absent confidence is treated as confident (the heuristic must not reread).
+ */
+export const EXTRACT_REREAD_CONFIDENCE = 0.5;
+
+export const EXTRACT_CONTEXT_CONTRACT = `
+Extract-context fields (do not paraphrase these jobs):
+
+- candidate_events: the only lines to extract facts from.
+- session_now: the current ACTIVITY (1–3 sentences). What we are doing. Evolves in place. Not the referent board.
+- referents: last-known board for live deictics in this now, as {phrase, binding} objects, at most ${REFERENT_CAP}. Examples of phrases: "the file", "we", "that approach", "the programme". Episode-local nicknames, not long-term facts. Return the whole live set each time; drop what is no longer live.
+- topic_segments: closed nows, oldest first. Each has a gist, the referents as they were then, and an event-sequence range. A later turn can return to one. Do not rewrite them away. A binding change is NOT a new segment.
+- recent_events: a short raw prefix of this conversation. Evidence that session_now has not drifted. Do NOT extract from it. Do NOT treat it as the disambiguation table.
+- session_summary: rolling gist of the episode. May mention closed topics; the segment list is the topic log.
+- long_term_memory: graduated facts across sessions. Use to resolve a name this episode never introduced, and to skip duplicating what is already known. If a new candidate line CONTRADICTS long_term_memory, extract the new fact anyway — updating the graph happens later. Do not silence the line.
+- reminder_events: present only on a retry. A short look at this conversation's raw log because the previous pass could not tell. Reminder only. Do NOT extract facts from reminder_events unless the same content is also in candidate_events.
+
+session_now / topic_shifted / referents:
+1. Set topic_shifted true only if a later speaker would say "back to the previous thing" as a topic return. Refinements and "the file is now sampling.ts" are not shifts.
+2. Evolve session_now in place when the activity is the same job with a moved centre of gravity.
+3. Update referents whenever a live deictic changed, appeared, or died. At most ${REFERENT_CAP}; drop what is no longer live. Do not list long-term entities this episode has not used as deictics.
+
+If the candidate lines are mostly unresolved deictics, or you cannot tell what was said, set confidence below ${EXTRACT_REREAD_CONFIDENCE} so the caller can show you a short reminder. Still extract only from candidate_events.
+`.trim();

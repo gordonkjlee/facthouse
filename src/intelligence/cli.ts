@@ -31,10 +31,11 @@ import { spawn, spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import type { IntelligenceProvider, ExtractedFact, ExtractedEntity } from "./types.js";
+import type { IntelligenceProvider, ExtractedFact, ExtractedEntity, Referent } from "./types.js";
 import { createHeuristicProvider } from "./heuristic.js";
 import { domainRoutingInstruction, normaliseDomainName } from "../schemas/domains.js";
 import type { DomainDef } from "../types/config.js";
+import { EXTRACT_CONTEXT_CONTRACT } from "./extract-prompt.js";
 
 // ---------------------------------------------------------------------------
 // Config
@@ -406,6 +407,20 @@ const STAGE_1_SCHEMA = {
         required: ["content", "domain", "entities"],
       },
     },
+    session_now: { type: ["string", "null"] },
+    referents: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          phrase: { type: "string" },
+          binding: { type: "string" },
+        },
+        required: ["phrase", "binding"],
+      },
+    },
+    topic_shifted: { type: "boolean" },
+    confidence: { type: "number", minimum: 0, maximum: 1 },
   },
   required: ["facts"],
 };
@@ -581,7 +596,7 @@ export function createCliProvider(
   }
 
   return {
-    async extractFactsFromEvents(events, workingMemory, sessionSummary, longTermMemory) {
+    async extractFactsFromEvents(events, workingMemory, sessionSummary, longTermMemory, extras) {
       // Nothing to examine is not a failure — there is no watermark to hold back.
       if (events.length === 0) return { facts: [], degraded: false };
       const result = await runStage<{
@@ -601,6 +616,10 @@ export function createCliProvider(
             existing_id?: string | null;
           }>;
         }>;
+        session_now?: string | null;
+        referents?: Referent[];
+        topic_shifted?: boolean;
+        confidence?: number;
       }>(
         "stage-1-extract",
         "You extract durable facts from conversation events — facts worth " +
@@ -630,18 +649,15 @@ export function createCliProvider(
           "valuable things to extract and must still be extracted in full, exactly as " +
           "any other fact — they simply carry no entity for the user. Other people, " +
           "including people close to the user, ARE listed as entities normally. " +
-          "Only extract facts from candidate_events. " +
-          "recent_events is prior conversational context for pronoun resolution and topical " +
-          "flow — use it to interpret candidate_events, but DO NOT extract facts from it. " +
-          "session_summary is a rolling synopsis of the conversation up to recent_events; use " +
-          "it for long-range context but DO NOT re-extract facts it already covers. " +
-          "long_term_memory holds facts already known across all sessions; use " +
-          "it to avoid duplicating knowledge the system already has. " +
+          EXTRACT_CONTEXT_CONTRACT + " " +
           "If an entity matches one of the entities referenced in long_term_memory (by name or " +
           "clear reference), set existing_id to the matching id; otherwise omit existing_id " +
           "(= new entity). " +
-          "Return strictly {facts: [...]}.",
+          "Return strictly {facts: [...], session_now?, referents?, topic_shifted?, confidence?}.",
         {
+          session_now: extras?.now ?? null,
+          referents: extras?.referents ?? [],
+          topic_segments: extras?.segments ?? [],
           session_summary: sessionSummary ?? null,
           long_term_memory: (longTermMemory ?? []).map((f) => ({
             id: f.id,
@@ -649,6 +665,10 @@ export function createCliProvider(
             domain: f.domain,
           })),
           recent_events: workingMemory.map((e) => ({ role: e.role, content: e.content })),
+          reminder_events: (extras?.reminderEvents ?? []).map((e) => ({
+            role: e.role,
+            content: e.content,
+          })),
           candidate_events: events.map((e) => ({ role: e.role, content: e.content })),
         },
         STAGE_1_SCHEMA,
@@ -664,6 +684,7 @@ export function createCliProvider(
           workingMemory,
           sessionSummary,
           longTermMemory,
+          extras,
         );
         return { facts: fell.facts, degraded: true };
       }
@@ -687,7 +708,14 @@ export function createCliProvider(
           : [],
         source_quality: "cli",
       }));
-      return { facts: extracted, degraded: false };
+      return {
+        facts: extracted,
+        degraded: false,
+        now: result.session_now,
+        referents: Array.isArray(result.referents) ? result.referents : undefined,
+        topic_shifted: result.topic_shifted,
+        confidence: typeof result.confidence === "number" ? result.confidence : undefined,
+      };
     },
 
     async classifyFacts(facts, sessionContext) {
@@ -886,7 +914,7 @@ export function createCliProvider(
       return { existingFactId: hit.existing_id, reason: hit.reason };
     },
 
-    async summarise(sessionFacts, graduatedFacts, priorSummary) {
+    async summarise(sessionFacts, graduatedFacts, priorSummary, closedTopics) {
       if (graduatedFacts.length === 0) {
         return { summary: "No facts graduated.", openThreads: [] };
       }
@@ -897,12 +925,15 @@ export function createCliProvider(
         "stage-4-summarise",
         "You summarise a consolidation run. " +
           "prior_summary is the rolling summary of this session so far (may be null for the " +
-          "first consolidation). Produce a CUMULATIVE summary that folds what was just learned " +
-          "(graduated) into prior_summary — one natural paragraph, not a diff. " +
+          "first consolidation). closed_topics are activity gists closed this run (may be empty). " +
+          "Produce a CUMULATIVE summary that folds what was just learned " +
+          "(graduated) into prior_summary — one natural paragraph, not a diff — " +
+          "and mentions closed topics without treating the paragraph as the topic log. " +
           "List up to 5 open threads — questions or follow-ups the user might want revisited. " +
           "Return strictly {summary, openThreads}.",
         {
           prior_summary: priorSummary ?? null,
+          closed_topics: closedTopics ?? [],
           graduated: graduatedFacts.map((f) => ({
             content: f.content,
             domain: f.domain,

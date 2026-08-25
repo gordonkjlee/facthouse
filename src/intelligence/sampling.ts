@@ -21,11 +21,13 @@ import type {
   SupersessionCandidate,
   ReconcileDecision,
   SessionSummary,
+  Referent,
 } from "./types.js";
 import type { SessionEvent } from "../types/data.js";
 import { createHeuristicProvider } from "./heuristic.js";
 import { domainRoutingInstruction } from "../schemas/domains.js";
 import type { DomainDef } from "../types/config.js";
+import { EXTRACT_CONTEXT_CONTRACT } from "./extract-prompt.js";
 
 // Conservative token budgets. Prompts are short; responses are JSON-only.
 const DEFAULT_MAX_TOKENS = 2048;
@@ -36,6 +38,75 @@ function readText(result: { content: { type: string; text?: string } }): string 
     throw new Error(`Expected text content, got ${result.content.type}`);
   }
   return result.content.text;
+}
+
+interface ShapedExtract {
+  facts: Array<{ content: string; domain_hint: string | null }>;
+  now?: string | null;
+  referents?: Referent[];
+  topic_shifted?: boolean;
+  confidence?: number;
+}
+
+function asReferents(value: unknown): Referent[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const out: Referent[] = [];
+  for (const item of value) {
+    if (
+      item &&
+      typeof item === "object" &&
+      typeof (item as Referent).phrase === "string" &&
+      typeof (item as Referent).binding === "string"
+    ) {
+      out.push({
+        phrase: (item as Referent).phrase,
+        binding: (item as Referent).binding,
+      });
+    }
+  }
+  return out;
+}
+
+/**
+ * Object shape is current. A JSON array of facts is the previous sampling
+ * contract — treat as facts-only, confident, now unchanged.
+ */
+function shapeExtractPayload(parsed: unknown): ShapedExtract {
+  if (Array.isArray(parsed)) {
+    return {
+      facts: parsed.map((p: { content?: string; domain_hint?: string | null }) => ({
+        content: typeof p?.content === "string" ? p.content : "",
+        domain_hint: p?.domain_hint ?? null,
+      })).filter((p) => p.content),
+    };
+  }
+  if (!parsed || typeof parsed !== "object" || !Array.isArray((parsed as { facts?: unknown }).facts)) {
+    throw new Error("sampling: unparseable extraction output");
+  }
+  const obj = parsed as {
+    facts: Array<{ content?: string; domain_hint?: string | null }>;
+    session_now?: string | null;
+    now?: string | null;
+    referents?: unknown;
+    topic_shifted?: boolean;
+    confidence?: number;
+  };
+  const facts = obj.facts
+    .map((p) => ({
+      content: typeof p?.content === "string" ? p.content : "",
+      domain_hint: p?.domain_hint ?? null,
+    }))
+    .filter((p) => p.content);
+  const now = obj.session_now ?? obj.now;
+  const confidence =
+    typeof obj.confidence === "number" ? obj.confidence : undefined;
+  return {
+    facts,
+    now,
+    referents: asReferents(obj.referents),
+    topic_shifted: obj.topic_shifted === true ? true : obj.topic_shifted === false ? false : undefined,
+    confidence,
+  };
 }
 
 /** Strip ```json fences if the model returns a fenced block. */
@@ -152,7 +223,7 @@ export function createSamplingProvider(
       );
     },
 
-    async extractFactsFromEvents(events, workingMemory, sessionSummary, longTermMemory) {
+    async extractFactsFromEvents(events, workingMemory, sessionSummary, longTermMemory, extras) {
       if (events.length === 0) return { facts: [], degraded: false };
       return withFallback<ExtractionOutcome>(
         async () => {
@@ -168,38 +239,37 @@ export function createSamplingProvider(
               "work context, opinions, decisions. " +
               "Ignore ephemeral statements (current tasks, transient mood). " +
               "Each fact should be a complete, self-contained sentence — rewrite as needed. " +
-              "session_summary is a rolling synopsis of this conversation up to recent_events; " +
-              "use it for long-range context but DO NOT re-extract facts already covered. " +
-              "recent_events provides immediate conversational context for pronoun resolution; " +
-              "DO NOT extract facts from recent_events — only from candidate_events. " +
-              "long_term_memory holds already-known facts about the user across all sessions; " +
-              "use it to avoid duplicating facts the system already has. " +
-              "Respond with JSON only: an array of {content, domain_hint} objects. " +
+              EXTRACT_CONTEXT_CONTRACT + " " +
+              "Respond with JSON only: {facts: [{content, domain_hint}], session_now?, referents?, topic_shifted?, confidence?}. " +
               `domain_hint is a domain already in use, a new short lowercase noun if none fits, or null. ` +
-              "Return [] if no durable facts are present. No prose.",
+              "facts may be []. A JSON array of {content, domain_hint} is also accepted (facts only). No prose.",
             JSON.stringify({
+              session_now: extras?.now ?? null,
+              referents: extras?.referents ?? [],
+              topic_segments: extras?.segments ?? [],
               session_summary: sessionSummary ?? null,
               long_term_memory: (longTermMemory ?? []).map((f) => ({
                 content: f.content,
                 domain: f.domain,
               })),
               recent_events: workingMemory.map(trim),
+              reminder_events: (extras?.reminderEvents ?? []).map(trim),
               candidate_events: events.map(trim),
             }),
           );
-          const parsed = parseJson<Array<{ content: string; domain_hint: string | null }>>(raw);
-          // Unparseable output means the model answered but not usably — the
-          // same situation as a failed call, and the events are equally
-          // unexamined. Raising rather than returning empty routes it to the
-          // fallback below, which marks the outcome degraded.
-          if (!Array.isArray(parsed)) throw new Error("sampling: unparseable extraction output");
+          const parsed: unknown = parseJson(raw);
+          const shaped = shapeExtractPayload(parsed);
           return {
-            facts: parsed.map((p) => ({
+            facts: shaped.facts.map((p) => ({
               content: p.content,
               domain_hint: p.domain_hint,
               source_quality: "sampling" as const,
             })),
             degraded: false,
+            now: shaped.now,
+            referents: shaped.referents,
+            topic_shifted: shaped.topic_shifted,
+            confidence: shaped.confidence,
           };
         },
         async () => {
@@ -208,6 +278,7 @@ export function createSamplingProvider(
             workingMemory,
             sessionSummary,
             longTermMemory,
+            extras,
           );
           return { facts: fell.facts, degraded: true };
         },
@@ -281,7 +352,7 @@ export function createSamplingProvider(
       );
     },
 
-    async summarise(sessionFacts, graduatedFacts, priorSummary) {
+    async summarise(sessionFacts, graduatedFacts, priorSummary, closedTopics) {
       if (graduatedFacts.length === 0 && !priorSummary) {
         return { summary: "No facts graduated.", openThreads: [] };
       }
@@ -289,6 +360,7 @@ export function createSamplingProvider(
         async () => {
           const payload = {
             prior_summary: priorSummary ?? null,
+            closed_topics: closedTopics ?? [],
             newly_graduated: graduatedFacts.map((f) => ({
               content: f.content,
               domain: f.domain,
@@ -296,9 +368,12 @@ export function createSamplingProvider(
           };
           const raw = await ask(
             "You maintain a rolling summary of an ongoing conversation. " +
-              "Given prior_summary (the existing rolling summary, may be null) and " +
+              "Given prior_summary (the existing rolling summary, may be null), " +
+              "closed_topics (activity gists closed this run, may be empty), and " +
               "newly_graduated (facts just consolidated this run), produce an UPDATED " +
-              "rolling summary that integrates the new facts into the prior synopsis. " +
+              "rolling summary that integrates the new facts into the prior synopsis " +
+              "and folds closed topics without destroying them as a topic log — " +
+              "the segment list is stored separately. " +
               "Keep it to one cohesive paragraph; don't accumulate redundantly. " +
               "If prior_summary is null, write a fresh summary of newly_graduated alone. " +
               "Then list up to 5 open threads — questions or follow-ups the user might want revisited. " +

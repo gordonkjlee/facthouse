@@ -22,12 +22,10 @@
  *      `session_fact_sources.event_id`, so a referenced event is the answer to
  *      "why does it believe this?". Deleting it would leave facts whose
  *      justification is a dangling id — and there is no foreign key to notice.
- *   3. **It is not recent working memory for its own session.** Extraction
- *      deliberately re-reads the newest already-read events of a session for
- *      pronoun resolution and topical flow. This is the condition that is only
- *      visible if you read the extraction path: without it, pruning silently
- *      degrades the quality of every future extraction in an active session
- *      while looking like it merely reclaimed space.
+ *   3. **It is not recent reachable D for its own session.** Forgetfulness
+ *      reread and the short evidence prefix both read already-extracted events
+ *      of this conversation. Without this spare, prune would delete the notes
+ *      extract glances at when now/referents are not enough.
  *
  * Nothing here runs automatically. Deletion is irreversible and this is a
  * memory product; the caller asks, having been shown what would go.

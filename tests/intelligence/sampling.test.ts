@@ -61,6 +61,69 @@ describe("sampling intelligence provider", () => {
     expect(result[0].domain).toBe("medical");
   });
 
+  it("extracts from an object payload including now and confidence", async () => {
+    const server = makeServer({
+      createMessage: vi.fn().mockResolvedValue({
+        content: {
+          type: "text",
+          text: JSON.stringify({
+            facts: [{ content: "Alex prefers oat milk at Acme.", domain_hint: "preferences" }],
+            session_now: "beverage talk",
+            referents: [{ phrase: "the drink", binding: "oat milk" }],
+            topic_shifted: false,
+            confidence: 0.9,
+          }),
+        },
+      }),
+    });
+    const provider = createSamplingProvider(
+      server,
+      createHeuristicProvider(PERSONAL_VOCABULARY),
+      PERSONAL_VOCABULARY,
+    );
+    const result = await provider.extractFactsFromEvents(
+      [{ role: "user", content: "oat milk" } as never],
+      [],
+    );
+    expect(result.degraded).toBe(false);
+    expect(result.facts[0].content).toMatch(/oat milk/);
+    expect(result.now).toBe("beverage talk");
+    expect(result.referents).toEqual([
+      { phrase: "the drink", binding: "oat milk" },
+    ]);
+    expect(result.confidence).toBe(0.9);
+    const prompt = (server.createMessage as ReturnType<typeof vi.fn>).mock
+      .calls[0][0].systemPrompt as string;
+    expect(prompt).toContain("CONTRADICTS long_term_memory");
+    expect(prompt).not.toMatch(/pronoun resolution/i);
+  });
+
+  it("treats a legacy JSON array as facts-only", async () => {
+    const server = makeServer({
+      createMessage: vi.fn().mockResolvedValue({
+        content: {
+          type: "text",
+          text: JSON.stringify([
+            { content: "Alex prefers oat milk at Acme.", domain_hint: "preferences" },
+          ]),
+        },
+      }),
+    });
+    const provider = createSamplingProvider(
+      server,
+      createHeuristicProvider(PERSONAL_VOCABULARY),
+      PERSONAL_VOCABULARY,
+    );
+    const result = await provider.extractFactsFromEvents(
+      [{ role: "user", content: "oat milk" } as never],
+      [],
+    );
+    expect(result.degraded).toBe(false);
+    expect(result.facts).toHaveLength(1);
+    expect(result.now).toBeUndefined();
+    expect(result.confidence).toBeUndefined();
+  });
+
   it("uses sampling result when it parses cleanly", async () => {
     const server = makeServer({
       createMessage: vi.fn().mockResolvedValue({
