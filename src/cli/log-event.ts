@@ -28,13 +28,15 @@ export interface LogEventArgs {
  * client_session_id. When it is not, the event is attached to the most recent
  * session, creating one if the store has none.
  *
- * That fallback is load-bearing, not tidiness. Consolidation's event-extraction
- * pass resolves a session from the events it is about to read and returns early
- * if it cannot find one — so an event with both session columns null is not
- * merely unattributed, it is never read at all. Events used to be stored that
- * way whenever no session id was supplied, which meant the documented manual
- * form (`log-event --content "..."`) wrote rows that consolidation silently
- * skipped for ever, with nothing reported at either end.
+ * That fallback is load-bearing, not tidiness, and it is **only** for this
+ * command. `openmemory pull` writes `client_session_id` from the JSONL and
+ * never calls `getLatestSession()` — two files in one pull stay two
+ * conversations. Consolidation groups extraction by that id; an event with
+ * both session columns null is examined and declined, not attached to
+ * whatever was last active. Events used to be stored that way whenever no
+ * session id was supplied, which meant the documented manual form
+ * (`log-event --content "..."`) wrote rows that extraction skipped for ever,
+ * with nothing reported at either end.
  *
  * After insertion, best-effort signals the running MCP server to tick the
  * scheduler. If the server isn't reachable (not running, different user

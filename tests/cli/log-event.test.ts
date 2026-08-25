@@ -157,8 +157,32 @@ describe("logEvent attributes every event to a session", () => {
 
     const [event] = readEvents();
     expect(event.client_session_id).toBe("client-abc-123");
-    // Not invented as one of ours — the client's id is opaque to us, and
-    // extraction resolves either column.
+    // Not invented as one of ours — the client's id is opaque to us.
     expect(event.mcp_session_id).toBeNull();
+  });
+
+  it("the most-recent fallback is not how pull attributes conversations", async () => {
+    await logEvent({
+      role: "user",
+      eventType: "message",
+      content: "manual, no session id",
+      dataDir,
+    });
+    await logEvent({
+      role: "user",
+      eventType: "message",
+      content: "from a hook",
+      sessionId: "sess-aaa",
+      dataDir,
+    });
+
+    const events = readEvents();
+    expect(events[0].mcp_session_id).not.toBeNull();
+    expect(events[0].client_session_id).toBeNull();
+    expect(events[1].client_session_id).toBe("sess-aaa");
+    expect(events[1].mcp_session_id).toBeNull();
+    // Distinct conversations. Pull writes the same shape as the second row
+    // and never calls getLatestSession — see extract-by-session tests.
+    expect(events[0].mcp_session_id).not.toBe(events[1].client_session_id);
   });
 });

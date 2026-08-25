@@ -33,6 +33,29 @@ export interface GetEventsOpts {
   limit?: number;
 }
 
+/**
+ * The conversation an event belongs to.
+ *
+ * `client_session_id` is the client's own conversation (a Claude Code JSONL
+ * file, `log-event --session-id`, `OPENMEMORY_CLIENT_SESSION`). Prefer it:
+ * `mcp_session_id` is our MCP connection, one per handshake, not one per chat.
+ *
+ * Pull writes only the client column and never calls `getLatestSession()`.
+ * Events with neither column are unkeyed — examined and declined, not attached
+ * to whatever was last active. SQL that partitions sessions must use the same
+ * order: `COALESCE(client_session_id, mcp_session_id, id)` in `prune.ts`.
+ */
+export type ConversationRef = { kind: "client" | "mcp"; id: string };
+
+export function conversationRef(event: {
+  client_session_id: string | null;
+  mcp_session_id: string | null;
+}): ConversationRef | null {
+  if (event.client_session_id) return { kind: "client", id: event.client_session_id };
+  if (event.mcp_session_id) return { kind: "mcp", id: event.mcp_session_id };
+  return null;
+}
+
 // ---------------------------------------------------------------------------
 // Sessions
 // ---------------------------------------------------------------------------

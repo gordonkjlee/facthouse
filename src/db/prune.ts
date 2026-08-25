@@ -57,10 +57,10 @@ const UNREACHABLE = `
 /**
  * Rank each event within its own session, newest first.
  *
- * Sessions are identified by either column: events arrive tagged with the MCP
- * session id when they come through the server and the client session id when
- * they come from hooks, and an event that matches neither is its own partition
- * rather than being lumped in with every other orphan.
+ * Must match `conversationRef` in sessions.ts: client id first (the Claude
+ * chat), then mcp id (our connection), then the event id so an unkeyed row is
+ * its own partition rather than being lumped in with every other orphan.
+ * Window functions cannot call JS, so the order is duplicated here on purpose.
  */
 const RANKED = `
   WITH ranked AS (
@@ -68,7 +68,7 @@ const RANKED = `
            e.sequence AS sequence,
            LENGTH(COALESCE(e.content, '')) AS size,
            ROW_NUMBER() OVER (
-             PARTITION BY COALESCE(e.mcp_session_id, e.client_session_id, e.id)
+             PARTITION BY COALESCE(e.client_session_id, e.mcp_session_id, e.id)
              ORDER BY e.sequence DESC
            ) AS rn
       FROM session_events e

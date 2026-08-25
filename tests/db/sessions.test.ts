@@ -6,8 +6,15 @@ import type { Db } from "../../src/db/connection.js";
 
 const { openDatabase, closeDatabase } = await import("../../src/db/connection.js");
 const { applySchema, getSchemaVersion } = await import("../../src/db/schema.js");
-const { createSession, getSession, getLatestSession, insertEvent, getEvents, getEventCount } =
-  await import("../../src/db/sessions.js");
+const {
+  createSession,
+  getSession,
+  getLatestSession,
+  insertEvent,
+  getEvents,
+  getEventCount,
+  conversationRef,
+} = await import("../../src/db/sessions.js");
 
 let db: Db;
 
@@ -319,6 +326,32 @@ describe("session events", () => {
     expect(byMcp).toHaveLength(1);
     expect(byClient).toHaveLength(1);
     expect(byMcp[0].id).toBe(byClient[0].id);
+  });
+});
+
+describe("conversationRef", () => {
+  it("prefers the client id when both columns are set", () => {
+    expect(
+      conversationRef({
+        client_session_id: "sess-aaa",
+        mcp_session_id: "mcp-uuid",
+      }),
+    ).toEqual({ kind: "client", id: "sess-aaa" });
+  });
+
+  it("uses the mcp id only when no client id exists", () => {
+    expect(
+      conversationRef({
+        client_session_id: null,
+        mcp_session_id: "mcp-uuid",
+      }),
+    ).toEqual({ kind: "mcp", id: "mcp-uuid" });
+  });
+
+  it("returns null when both columns are empty — not last-active", () => {
+    expect(
+      conversationRef({ client_session_id: null, mcp_session_id: null }),
+    ).toBeNull();
   });
 });
 
