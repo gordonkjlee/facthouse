@@ -51,6 +51,9 @@ export function applySchema(db: Db): void {
   if (version < 12) {
     applyV12(db);
   }
+  if (version < 13) {
+    applyV13(db);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -586,4 +589,44 @@ function applyV12(db: Db): void {
   `);
 
   pragmaWrite(db, "user_version = 12");
+}
+
+// ---------------------------------------------------------------------------
+// Schema version 13 — FTS index over session_events (D when K is thin)
+//
+// search_knowledge only looks at graduated facts and pending session_facts.
+// A pulled line that extraction has not yet turned into a fact is invisible,
+// which is the first-fact miss: the words are in the store and search says
+// nothing. Keyword-on-D is the honest fill — not embeddings, not a second
+// retrieval product. hybridSearch only reads this index when `results` is
+// empty, and returns a short window as `episodes`, kept off `results`.
+//
+// Only `content` is indexed. Events are append-only: nothing UPDATEs content
+// (prune DELETEs). INSERT and DELETE triggers; no UPDATE trigger.
+// ---------------------------------------------------------------------------
+function applyV13(db: Db): void {
+  db.exec(`
+    CREATE VIRTUAL TABLE IF NOT EXISTS session_events_fts USING fts5(
+      content,
+      content=session_events, content_rowid=rowid
+    );
+
+    CREATE TRIGGER IF NOT EXISTS session_events_ai AFTER INSERT ON session_events
+    WHEN new.content IS NOT NULL BEGIN
+      INSERT INTO session_events_fts(rowid, content) VALUES (new.rowid, new.content);
+    END;
+
+    CREATE TRIGGER IF NOT EXISTS session_events_ad AFTER DELETE ON session_events
+    WHEN old.content IS NOT NULL BEGIN
+      INSERT INTO session_events_fts(session_events_fts, rowid, content)
+      VALUES ('delete', old.rowid, old.content);
+    END;
+  `);
+
+  db.exec(`
+    INSERT INTO session_events_fts(rowid, content)
+    SELECT rowid, content FROM session_events WHERE content IS NOT NULL;
+  `);
+
+  pragmaWrite(db, "user_version = 13");
 }

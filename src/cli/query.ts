@@ -15,7 +15,7 @@ import { searchWithProvider } from "../search/index.js";
 import type { VectorSearchOpts } from "../search/vector.js";
 import type { EmbeddingProvider } from "../embedding/types.js";
 import { getStats, type KnowledgeStats } from "../db/stats.js";
-import type { SearchResponse } from "../types/data.js";
+import type { EpisodeSlice, SearchResponse } from "../types/data.js";
 
 // ---------------------------------------------------------------------------
 // search
@@ -47,6 +47,10 @@ export async function runSearch(
 /** Render search results for a terminal. */
 export function formatSearch(response: SearchResponse, query: string): string {
   if (response.results.length === 0) {
+    const episodes = response.episodes ?? [];
+    if (episodes.length > 0) {
+      return formatEpisodes(query, episodes, response.suggested_refinement);
+    }
     const hint = response.suggested_refinement
       ? `\n\n${response.suggested_refinement}`
       : "";
@@ -85,6 +89,28 @@ export function formatSearch(response: SearchResponse, query: string): string {
     lines.push(`  ${response.suggested_refinement}`);
   }
 
+  return lines.join("\n");
+}
+
+function formatEpisodes(
+  query: string,
+  episodes: EpisodeSlice[],
+  refinement: string | null,
+): string {
+  const lines: string[] = [
+    `No graduated facts for "${query}". Raw log window:`,
+    "",
+  ];
+  for (const slice of episodes) {
+    lines.push(`  conversation ${slice.conversation_id}`);
+    for (const e of slice.events) {
+      const mark = e.matched ? "*" : " ";
+      const text = (e.content ?? "").replace(/\s+/g, " ").trim();
+      lines.push(`  ${mark} [${e.role}] ${text}`);
+    }
+    lines.push("");
+  }
+  if (refinement) lines.push(`  ${refinement}`);
   return lines.join("\n");
 }
 

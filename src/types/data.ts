@@ -273,10 +273,39 @@ export interface SearchResponse {
    * for a fact until it graduates.
    */
   pending: PendingFact[];
+  /**
+   * Short raw-log windows around a keyword hit in `session_events`. Filled
+   * only when graduated `results` are empty — pattern completion from D, not
+   * a second retrieval product. Not extracted, not reconciled; never mixed
+   * into `results` or `pending`.
+   */
+  episodes: EpisodeSlice[];
   /** Estimated fraction of relevant knowledge surfaced (0.0–1.0). */
   coverage_estimate: number;
   /** Confidence in result quality based on score distribution (0.0–1.0). */
   result_confidence: number;
   /** Suggested query refinement when results look thin. */
   suggested_refinement: string | null;
+}
+
+/** One event inside an episode slice. */
+export interface EpisodeEvent {
+  id: string;
+  sequence: number;
+  role: SessionEvent["role"];
+  event_type: SessionEvent["event_type"];
+  content: string | null;
+  /** True on the event whose content matched the query. */
+  matched: boolean;
+}
+
+/**
+ * A short window of `session_events` around a keyword hit.
+ *
+ * `conversation_id` is the client chat id, else the MCP session id, else the
+ * hit event's id (same partition as prune).
+ */
+export interface EpisodeSlice {
+  conversation_id: string;
+  events: EpisodeEvent[];
 }

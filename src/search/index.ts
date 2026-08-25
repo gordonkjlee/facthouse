@@ -13,6 +13,7 @@ import type {
   SearchResult,
   SearchResponse,
   PendingFact,
+  EpisodeSlice,
 } from "../types/data.js";
 import {
   keywordSearch as fts5Search,
@@ -23,6 +24,7 @@ import {
 import { findEntity, getEntitiesForFacts } from "../db/entities.js";
 import { keywordSearchPending } from "../db/session-facts.js";
 import { vectorSearch, type VectorSearchOpts } from "./vector.js";
+import { EPISODE_REFINEMENT, searchEpisodes } from "./episodes.js";
 import type { EmbeddingProvider } from "../embedding/types.js";
 
 // ---------------------------------------------------------------------------
@@ -513,9 +515,20 @@ export function hybridSearch(
     limit,
   );
 
+  // D only when K is empty. Always-on event search would be a second
+  // retrieval product; a pulled line that never graduated is the named gap.
+  let episodes: EpisodeSlice[] = [];
+  if (results.length === 0 && sanitised) {
+    episodes = searchEpisodes(db, sanitised);
+    if (episodes.length > 0) {
+      quality.suggested_refinement = EPISODE_REFINEMENT;
+    }
+  }
+
   return {
     results,
     pending,
+    episodes,
     ...quality,
   };
 }

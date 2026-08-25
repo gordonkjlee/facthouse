@@ -29,6 +29,8 @@ function result(content: string, domain = "preferences", subdomain: string | nul
 function response(over: Partial<SearchResponse> = {}): SearchResponse {
   return {
     results: [],
+    pending: [],
+    episodes: [],
     coverage_estimate: 0.8,
     result_confidence: 0.7,
     suggested_refinement: null,
@@ -90,6 +92,33 @@ describe("formatSearch", () => {
     );
     expect(out).toContain("coverage 30%");
     expect(out).toContain("confidence 25%");
+  });
+
+  it("renders episode slices when K is empty and D hit", () => {
+    const out = formatSearch(
+      response({
+        episodes: [
+          {
+            conversation_id: "sess-aaa",
+            events: [
+              {
+                id: "e1",
+                sequence: 1,
+                role: "user",
+                event_type: "message",
+                content: "Alex keeps a brass kaleidoscope on the desk at Acme.",
+                matched: true,
+              },
+            ],
+          },
+        ],
+        suggested_refinement: "No graduated facts matched.",
+      }),
+      "kaleidoscope",
+    );
+    expect(out).toContain("No graduated facts");
+    expect(out).toContain("kaleidoscope");
+    expect(out).not.toContain("No knowledge found");
   });
 
   it("lists linked entities when a result has them", () => {

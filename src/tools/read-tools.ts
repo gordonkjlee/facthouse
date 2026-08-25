@@ -34,20 +34,22 @@ export function registerReadTools(
       `questions that might benefit from what this store knows — preferences, ` +
       `history, relationships, medical info, work context. Returns facts ` +
       `ranked by relevance with source attribution and confidence scores.\n\n` +
-      `Two fields come back. \`results\` is integrated knowledge: deduplicated, ` +
+      `Three fields come back. \`results\` is integrated knowledge: deduplicated, ` +
       `reconciled against everything else known, entities resolved. \`pending\` ` +
       `is what was captured recently and not yet consolidated — real, and ` +
       `usually the most recent thing you were told, but not yet checked against ` +
       `existing knowledge, so it may duplicate or contradict a fact in results. ` +
       `Trust results first; use pending to avoid forgetting something you were ` +
-      `told minutes ago.
+      `told minutes ago. \`episodes\` is filled only when results are empty: a ` +
+      `short raw-log window around a keyword hit in the pulled transcript, not ` +
+      `yet extracted. It is not knowledge of the same standing — do not report ` +
+      `it as a graduated fact.
 
 ` +
       `When semantic search is enabled, \`results\` also matches on meaning, so a ` +
-      `query can surface a fact that shares none of its words. \`pending\` never ` +
-      `does — it is keyword-only, because a fact is embedded when it is ` +
-      `consolidated, not when it is captured. So a just-captured fact is findable ` +
-      `by its own words but not yet by a paraphrase of them.`,
+      `query can surface a fact that shares none of its words. \`pending\` and ` +
+      `\`episodes\` never do — they are keyword-only. A just-captured fact is ` +
+      `findable by its own words but not yet by a paraphrase of them.`,
     {
       query: z.string().describe("What to search for"),
       domain: z
