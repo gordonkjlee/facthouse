@@ -327,6 +327,18 @@ describe("session events", () => {
     expect(byClient).toHaveLength(1);
     expect(byMcp[0].id).toBe(byClient[0].id);
   });
+
+  it("does not store an empty-string session column", () => {
+    const event = insertEvent(db, {
+      mcp_session_id: sessionId,
+      client_session_id: "",
+      event_type: "message",
+      role: "user",
+      content: "empty client id is missing",
+    });
+    expect(event.client_session_id).toBeNull();
+    expect(conversationRef(event)).toEqual({ kind: "mcp", id: sessionId });
+  });
 });
 
 describe("conversationRef", () => {
@@ -352,6 +364,15 @@ describe("conversationRef", () => {
     expect(
       conversationRef({ client_session_id: null, mcp_session_id: null }),
     ).toBeNull();
+  });
+
+  it("treats an empty string as missing, matching prune's NULLIF", () => {
+    expect(
+      conversationRef({
+        client_session_id: "",
+        mcp_session_id: "mcp-uuid",
+      }),
+    ).toEqual({ kind: "mcp", id: "mcp-uuid" });
   });
 });
 

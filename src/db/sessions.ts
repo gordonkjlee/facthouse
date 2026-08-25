@@ -43,7 +43,7 @@ export interface GetEventsOpts {
  * Pull writes only the client column and never calls `getLatestSession()`.
  * Events with neither column are unkeyed — examined and declined, not attached
  * to whatever was last active. SQL that partitions sessions must use the same
- * order: `COALESCE(client_session_id, mcp_session_id, id)` in `prune.ts`.
+ * order: `COALESCE(NULLIF(client_session_id, ''), NULLIF(mcp_session_id, ''), id)` in `prune.ts`.
  */
 export type ConversationRef = { kind: "client" | "mcp"; id: string };
 
@@ -51,8 +51,12 @@ export function conversationRef(event: {
   client_session_id: string | null;
   mcp_session_id: string | null;
 }): ConversationRef | null {
-  if (event.client_session_id) return { kind: "client", id: event.client_session_id };
-  if (event.mcp_session_id) return { kind: "mcp", id: event.mcp_session_id };
+  // Empty string is the same as null: COALESCE would treat it as a key,
+  // so prune uses NULLIF to match this truthiness.
+  const client = event.client_session_id || null;
+  const mcp = event.mcp_session_id || null;
+  if (client) return { kind: "client", id: client };
+  if (mcp) return { kind: "mcp", id: mcp };
   return null;
 }
 
@@ -125,8 +129,10 @@ export function insertEvent(
 ): SessionEvent {
   const id = randomUUID();
   const now = new Date().toISOString();
-  const mcpSessionId = event.mcp_session_id ?? null;
-  const clientSessionId = event.client_session_id ?? null;
+  // Empty string is missing — same truthiness as conversationRef / prune NULLIF.
+  // `??` would store "" and then working-memory SQL (`IS NULL`) would skip the row.
+  const mcpSessionId = event.mcp_session_id || null;
+  const clientSessionId = event.client_session_id || null;
   const contentType = event.content_type ?? "text";
   const contentRef = event.content_ref ?? null;
   const metadata = event.metadata ? JSON.stringify(event.metadata) : null;

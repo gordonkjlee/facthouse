@@ -10,13 +10,15 @@
  *   Wisdom       Inference       Applied judgement — hypotheses from patterns (not yet implemented)
  *
  * Each transformation is explicit:
- *   Data → Information    The calling LLM captures explicitly (capture_fact) or the server
- *                          extracts from events during consolidation (hybrid capture model)
+ *   Data → Information    Pull / log-event fill session_events; capture_fact is
+ *                          an optional explicit correction; extraction runs at
+ *                          consolidation
  *   Information → Knowledge   Event-driven batch consolidation
  *   Knowledge → Wisdom        Inference pipeline (not yet implemented)
  *
- * Session scopes the technical boundary (MCP connection).
- * Episodes (narrative boundaries) are discovered at consolidation, not declared here.
+ * Session scopes the MCP connection. Conversation identity is written at
+ * insert (`client_session_id`, else `mcp_session_id`). Consolidation extracts
+ * each conversation separately; it does not invent narrative boundaries.
  */
 
 /** MCP connection lifecycle — an open-ended container for events and facts. */

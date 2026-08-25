@@ -60,7 +60,8 @@ const UNREACHABLE = `
  * Must match `conversationRef` in sessions.ts: client id first (the Claude
  * chat), then mcp id (our connection), then the event id so an unkeyed row is
  * its own partition rather than being lumped in with every other orphan.
- * Window functions cannot call JS, so the order is duplicated here on purpose.
+ * NULLIF matches JS truthiness (empty string is missing). Window functions
+ * cannot call JS, so the expression is duplicated here on purpose.
  */
 const RANKED = `
   WITH ranked AS (
@@ -68,7 +69,7 @@ const RANKED = `
            e.sequence AS sequence,
            LENGTH(COALESCE(e.content, '')) AS size,
            ROW_NUMBER() OVER (
-             PARTITION BY COALESCE(e.client_session_id, e.mcp_session_id, e.id)
+             PARTITION BY COALESCE(NULLIF(e.client_session_id, ''), NULLIF(e.mcp_session_id, ''), e.id)
              ORDER BY e.sequence DESC
            ) AS rn
       FROM session_events e

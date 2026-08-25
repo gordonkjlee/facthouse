@@ -18,6 +18,7 @@ import type {
   IntelligenceProvider,
   ClassifiedFact,
   ExtractedEntity,
+  ExtractedFact,
 } from "./types.js";
 import { normaliseForDedup } from "./heuristic.js";
 import {
@@ -901,7 +902,12 @@ async function extractFactsFromEvents(
       .all() as Array<Omit<Fact, "is_latest"> & { is_latest: number }>
   ).map((row) => ({ ...row, is_latest: row.is_latest === 1 }));
 
-  let anyDegraded = false;
+  // Buffer inserts until every group has been examined. A global watermark
+  // cannot advance past a mixed batch if any conversation was unexamined, and
+  // inserting the successful groups first would re-extract them on retry
+  // (paraphrase → a second session_fact). One degraded group discards the
+  // buffer; the LLM cost of the successful calls is paid again on retry.
+  const pending: Array<{ group: EventGroup; facts: ExtractedFact[] }> = [];
   for (const group of groups) {
     const workingMemory = loadWorkingMemory(
       db,
@@ -924,9 +930,12 @@ async function extractFactsFromEvents(
       priorSummary,
       longTermMemory,
     );
-    if (outcome.degraded) anyDegraded = true;
+    if (outcome.degraded) return true;
+    pending.push({ group, facts: outcome.facts });
+  }
 
-    for (const item of outcome.facts) {
+  for (const { group, facts } of pending) {
+    for (const item of facts) {
       const fact = insertSessionFact(db, {
         session_id: group.ref.id,
         content: item.content,
@@ -949,10 +958,7 @@ async function extractFactsFromEvents(
     }
   }
 
-  // Tell the caller whether the configured extractor actually ran. When it did
-  // not, these events have not been examined and the watermark must not move
-  // past them.
-  return anyDegraded;
+  return false;
 }
 
 

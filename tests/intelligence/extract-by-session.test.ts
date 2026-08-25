@@ -7,6 +7,7 @@
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import {
+  appendFileSync,
   mkdirSync,
   mkdtempSync,
   rmSync,
@@ -157,12 +158,8 @@ describe("extraction groups by conversation, not by pull batch", () => {
     const byFirstEvent = new Map(calls.map((c) => [c.events[0], c]));
     expect(byFirstEvent.get(factA)?.events).toEqual([factA]);
     expect(byFirstEvent.get(factB)?.events).toEqual([factB]);
-    expect(byFirstEvent.get(factA)?.workingMemory.join(" ")).not.toContain(
-      "shellfish",
-    );
-    expect(byFirstEvent.get(factB)?.workingMemory.join(" ")).not.toContain(
-      "oat milk",
-    );
+    // First extract: working memory is empty (nothing pre-watermark). The
+    // disjoint `events` arrays are what prove the batch was not concatenated.
 
     const facts = factRows();
     expect(facts).toEqual(
@@ -178,6 +175,47 @@ describe("extraction groups by conversation, not by pull batch", () => {
     const srcB = provenanceSessions(factB);
     expect(srcB.length).toBeGreaterThan(0);
     expect(srcB.every((s) => s.client_session_id === "sess-bbb")).toBe(true);
+  });
+
+  it("a later mixed pull keeps the other conversation out of working memory", async () => {
+    // The first extract has no pre-watermark rows, so a WM assertion there
+    // cannot fail. Seed each conversation, advance the watermark, then pull
+    // a new line in both files in one process.
+    const home = path.join(tmpRoot, "claude-home");
+    const group = encodeProjectDir("C:\\dev\\app");
+    const fileA = path.join(home, "projects", group, "sess-aaa.jsonl");
+    const fileB = path.join(home, "projects", group, "sess-bbb.jsonl");
+    const priorA = "Alex previously mentioned oat milk at Acme.";
+    const priorB = "Alex previously mentioned a shellfish allergy.";
+    writeJsonl(fileA, [userLine("sess-aaa", priorA)]);
+    writeJsonl(fileB, [userLine("sess-bbb", priorB)]);
+    pullSources(db, [{ kind: "claude-code", home }]);
+    await consolidate(db, recording().provider as never, {
+      extraction: { enabled: true } as never,
+    });
+
+    const nextA = "Alex prefers oat milk at Acme.";
+    const nextB = "Alex is allergic to shellfish.";
+    appendFileSync(fileA, userLine("sess-aaa", nextA) + "\n");
+    appendFileSync(fileB, userLine("sess-bbb", nextB) + "\n");
+    const secondPull = pullSources(db, [{ kind: "claude-code", home }]);
+    expect(secondPull.events_inserted).toBe(2);
+
+    const { provider, calls } = recording();
+    await consolidate(db, provider as never, {
+      extraction: { enabled: true } as never,
+    });
+
+    expect(calls).toHaveLength(2);
+    const byNext = new Map(calls.map((c) => [c.events[0], c]));
+    expect(byNext.get(nextA)?.events).toEqual([nextA]);
+    expect(byNext.get(nextB)?.events).toEqual([nextB]);
+    expect(byNext.get(nextA)?.workingMemory.join(" ")).toContain("oat milk");
+    expect(byNext.get(nextA)?.workingMemory.join(" ")).not.toContain(
+      "shellfish",
+    );
+    expect(byNext.get(nextB)?.workingMemory.join(" ")).toContain("shellfish");
+    expect(byNext.get(nextB)?.workingMemory.join(" ")).not.toContain("oat milk");
   });
 
   it("contextual provenance does not spray onto the other conversation", async () => {
@@ -351,7 +389,74 @@ describe("extraction groups by conversation, not by pull batch", () => {
         { session_id: mcp, content: "a manual note with no session id" },
       ]),
     );
-    expect(facts.every((f) => f.session_id !== null)).toBe(true);
+    expect(
+      facts
+        .filter((f) => f.content.includes("oat milk") || f.content.includes("shellfish"))
+        .every((f) => f.session_id !== mcp),
+    ).toBe(true);
+  });
+
+  it("does not persist a successful group when another group in the batch is degraded", async () => {
+    insertEvent(db, {
+      client_session_id: "sess-aaa",
+      event_type: "message",
+      role: "user",
+      content: "Alex prefers oat milk at Acme.",
+    });
+    insertEvent(db, {
+      client_session_id: "sess-bbb",
+      event_type: "message",
+      role: "user",
+      content: "Alex is allergic to shellfish.",
+    });
+
+    let calls = 0;
+    const flaky = {
+      ...createHeuristicProvider(PERSONAL_VOCABULARY),
+      async extractFactsFromEvents(events: SessionEvent[]) {
+        calls += 1;
+        if (calls === 2) {
+          return {
+            facts: [
+              {
+                content: "this fact must not land; the extractor did not finish",
+                domain_hint: "preferences",
+              },
+            ],
+            degraded: true,
+          };
+        }
+        return {
+          facts: events
+            .filter((e) => e.content)
+            .map((e) => ({
+              content: e.content as string,
+              domain_hint: "preferences",
+            })),
+          degraded: false,
+        };
+      },
+    };
+
+    const first = await consolidate(db, flaky as never, {
+      extraction: { enabled: true } as never,
+    });
+    expect(first.extractionDegraded).toBe(true);
+    expect(factRows()).toEqual([]);
+    const watermark = db
+      .prepare(`SELECT COALESCE(MAX(last_event_sequence), 0) AS seq FROM consolidations`)
+      .get() as { seq: number };
+    expect(watermark.seq).toBe(0);
+
+    const { provider } = recording();
+    const second = await consolidate(db, provider as never, {
+      extraction: { enabled: true } as never,
+    });
+    expect(second.extractionDegraded).toBe(false);
+    expect(factRows().map((f) => f.session_id).sort()).toEqual([
+      "sess-aaa",
+      "sess-bbb",
+    ]);
   });
 });
 
