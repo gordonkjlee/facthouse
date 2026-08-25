@@ -24,7 +24,7 @@ Add to your AI tool's MCP configuration:
   "mcpServers": {
     "openmemory": {
       "command": "npx",
-      "args": ["-y", "@openmem/mcp@0.15.0"]
+      "args": ["-y", "@openmem/mcp@0.16.0"]
     }
   }
 }
@@ -42,7 +42,7 @@ Git Bash / macOS / Linux:
 
 ```bash
 export OPENMEMORY_DATA=/tmp/openmemory-try
-om() { npx -y -p @openmem/mcp@0.15.0 openmemory "$@"; }
+om() { npx -y -p @openmem/mcp@0.16.0 openmemory "$@"; }
 om init
 ```
 
@@ -50,7 +50,7 @@ PowerShell:
 
 ```powershell
 $env:OPENMEMORY_DATA = Join-Path $env:TEMP "openmemory-try"
-function om { npx -y -p "@openmem/mcp@0.15.0" openmemory @args }
+function om { npx -y -p "@openmem/mcp@0.16.0" openmemory @args }
 om init
 ```
 <!-- x-release-please-end -->
