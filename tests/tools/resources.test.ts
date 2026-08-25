@@ -110,7 +110,40 @@ describe("memory://profile", () => {
     });
     const md = buildProfile(db);
     expect(md).toContain("Nothing captured yet");
+    expect(md).toMatch(/`consolidate`/);
     expect(md).toMatch(/openmemory consolidate/);
+    expect(md).toMatch(/session start will flush/);
+    expect(md).not.toMatch(/openmemory pull/);
+  });
+
+  it("does not promise a session-start flush after a large backfill", () => {
+    for (let i = 0; i < 51; i++) {
+      insertEvent(db, {
+        event_type: "message",
+        role: "user",
+        content: `Synthetic waiting event ${i}.`,
+      });
+    }
+    const md = buildProfile(db);
+    expect(md).toMatch(/never auto-flushed/);
+    expect(md).not.toMatch(/session start will flush/);
+  });
+
+  it("names heuristic no-op extraction when a run produced no facts", () => {
+    insertEvent(db, {
+      event_type: "message",
+      role: "user",
+      content: "The demo store prefers dark mode.",
+    });
+    db.prepare(
+      `INSERT INTO consolidations
+         (id, session_id, facts_in, facts_graduated, facts_rejected,
+          entities_created, entities_linked, supersessions,
+          summary, open_threads, last_event_sequence, created_at)
+       VALUES ('c-empty', NULL, 0, 0, 0, 0, 0, 0, NULL, NULL, 1, ?)`,
+    ).run(new Date().toISOString());
+    const md = buildProfile(db);
+    expect(md).toMatch(/heuristic/);
     expect(md).not.toMatch(/openmemory pull/);
   });
 

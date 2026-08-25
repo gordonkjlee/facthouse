@@ -47,20 +47,51 @@ function bullet(f: Fact): string {
   return `- ${f.content}`;
 }
 
+function pendingEventCount(db: Db): number {
+  const row = db
+    .prepare(`SELECT COALESCE(MAX(sequence), 0) AS seq FROM session_events`)
+    .get() as { seq: number };
+  const last = db
+    .prepare(
+      `SELECT COALESCE(MAX(last_event_sequence), 0) AS seq FROM consolidations`,
+    )
+    .get() as { seq: number };
+  return row.seq - last.seq;
+}
+
+function consolidationRunCount(db: Db): number {
+  return (db.prepare(`SELECT COUNT(*) AS n FROM consolidations`).get() as { n: number }).n;
+}
+
+/**
+ * Next step when the store has no graduated facts. The profile is loaded by
+ * the MCP client for the assistant — name the `consolidate` tool, not only
+ * the CLI. Pending count is since the last watermark, so a 5_000-event
+ * backfill is not promised a session-start flush.
+ */
 function emptyStoreNextStep(db: Db): string {
-  const events = (
-    db.prepare(`SELECT COUNT(*) AS n FROM session_events`).get() as { n: number }
-  ).n;
-  if (events > 0) {
+  const pending = pendingEventCount(db);
+  if (pending > 0) {
+    const flushNote =
+      pending <= 50
+        ? " A later MCP session start will flush this leftover."
+        : " A pull of more than 50 events is never auto-flushed.";
     return (
-      "Nothing captured yet. Conversation events are waiting — run " +
-      "`openmemory consolidate`. A first pull of more than 50 events does not " +
-      "auto-flush; a later session start will flush a smaller leftover."
+      "Nothing captured yet. Conversation events are waiting — call the " +
+      "`consolidate` tool, or run `openmemory consolidate` from the CLI." +
+      flushNote
+    );
+  }
+  if (consolidationRunCount(db) > 0) {
+    return (
+      "Nothing captured yet. Events were processed but produced no facts — " +
+      "heuristic extraction does not read transcripts. Use the claude CLI, then " +
+      "call `consolidate` (or `openmemory consolidate`)."
     );
   }
   return (
     "Nothing captured yet. If this store has a claude-code source, run " +
-    "`openmemory pull`, then `openmemory consolidate`."
+    "`openmemory pull`, then call `consolidate`."
   );
 }
 

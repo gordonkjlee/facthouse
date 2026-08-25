@@ -79,7 +79,9 @@ That search is the proof: a fact you did not re-type. `om pull` ticks a running 
 
 Point the MCP snippet above at the same throwaway directory (`"env": { "OPENMEMORY_DATA": "…" }`). Empty `sources` means pull stays off.
 
-**Hooks later, and only after that first CLI pull.** Incremental `pull` is small; the first one is not. The command must invoke the CLI (`openmemory`), never the server binary:
+**Hooks later, and only after that first CLI pull.** Incremental `pull` is small; the first one is not. The command must invoke the CLI (`openmemory`), never the server binary.
+
+`mcp.json` `env` is **not** visible to hooks. One data dir is one memory — pass the same `--data` (or export `OPENMEMORY_DATA` in the environment Claude Code itself inherits, not only in MCP config):
 
 ```json
 {
@@ -89,7 +91,7 @@ Point the MCP snippet above at the same throwaway directory (`"env": { "OPENMEMO
         "hooks": [
           {
             "type": "command",
-            "command": "npx -y -p @openmem/mcp openmemory pull"
+            "command": "npx -y -p @openmem/mcp openmemory pull --data /absolute/path/to/the-same-store"
           }
         ]
       }
@@ -99,7 +101,7 @@ Point the MCP snippet above at the same throwaway directory (`"env": { "OPENMEMO
         "hooks": [
           {
             "type": "command",
-            "command": "npx -y -p @openmem/mcp openmemory signal flush"
+            "command": "npx -y -p @openmem/mcp openmemory signal flush --data /absolute/path/to/the-same-store"
           }
         ]
       }
@@ -108,7 +110,7 @@ Point the MCP snippet above at the same throwaway directory (`"env": { "OPENMEMO
 }
 ```
 
-Stop tails new lines (pull then ticks the server). PreCompact `signal flush` is consolidation only — it does not insert `session_events`. Never install `log-event` hooks on a store that pulls: both write the same rows. A global `npm install -g @openmem/mcp` lets you write `openmemory pull` instead of npx.
+On Windows the `--data` path is the same absolute directory you put in `OPENMEMORY_DATA` (for example `C:\\Users\\alex\\AppData\\Local\\Temp\\openmemory-try`). Stop tails new lines (pull then ticks the server). PreCompact `signal flush` is consolidation only — it does not insert `session_events`. Never install `log-event` hooks on a store that pulls: both write the same rows. A global `npm install -g @openmem/mcp` lets you write `openmemory pull --data …` instead of npx.
 
 **Alternative, no pull:** leave `sources` empty and pipe UserPromptSubmit / Stop / PostToolUse into `openmemory log-event`. See Session Event Logging. Do not run both mechanisms on the same store.
 
