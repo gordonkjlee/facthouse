@@ -110,15 +110,21 @@ export function ingestClaudeCodeFile(db: Db, filePath: string): ClaudeCodeFilePu
     const startLine = resume?.line_number ?? 0;
 
     const { lines, endOffset } = readCompleteLines(fd, startOffset, size);
+    const sessionId = sessionIdFromPath(abs);
+    const project = encodedProjectGroupFromPath(abs);
     if (lines.length === 0 && resume) {
       // File unchanged, or only an incomplete last line past the watermark.
       // Leave the watermark where it is: a later append that completes the
       // line is detected as growth and resumed from this offset.
+      // Still record the conversation's project so a store that was pulled
+      // before sessions.project was written gets provenance on the next pull.
+      ensureSession(db, {
+        id: sessionId,
+        source_tool: "claude-code",
+        project,
+      });
       return { path: abs, inserted: 0, skipped: 0 };
     }
-
-    const sessionId = sessionIdFromPath(abs);
-    const project = encodedProjectGroupFromPath(abs);
     let inserted = 0;
     let skipped = 0;
     let lineNumber = startLine;
