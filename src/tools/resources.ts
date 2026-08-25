@@ -47,11 +47,59 @@ function bullet(f: Fact): string {
   return `- ${f.content}`;
 }
 
+function pendingEventCount(db: Db): number {
+  const row = db
+    .prepare(`SELECT COALESCE(MAX(sequence), 0) AS seq FROM session_events`)
+    .get() as { seq: number };
+  const last = db
+    .prepare(
+      `SELECT COALESCE(MAX(last_event_sequence), 0) AS seq FROM consolidations`,
+    )
+    .get() as { seq: number };
+  return row.seq - last.seq;
+}
+
+function consolidationRunCount(db: Db): number {
+  return (db.prepare(`SELECT COUNT(*) AS n FROM consolidations`).get() as { n: number }).n;
+}
+
+/**
+ * Next step when the store has no graduated facts. The profile is loaded by
+ * the MCP client for the assistant — name the `consolidate` tool, not only
+ * the CLI. Pending count is since the last watermark, so a 5_000-event
+ * backfill is not promised a session-start flush.
+ */
+function emptyStoreNextStep(db: Db): string {
+  const pending = pendingEventCount(db);
+  if (pending > 0) {
+    const flushNote =
+      pending <= 50
+        ? " A later MCP session start will flush this leftover."
+        : " A pull of more than 50 events is never auto-flushed.";
+    return (
+      "Nothing captured yet. Conversation events are waiting — call the " +
+      "`consolidate` tool, or run `openmemory consolidate` from the CLI." +
+      flushNote
+    );
+  }
+  if (consolidationRunCount(db) > 0) {
+    return (
+      "Nothing captured yet. Events were processed but produced no facts — " +
+      "heuristic extraction does not read transcripts. Use the claude CLI, then " +
+      "call `consolidate` (or `openmemory consolidate`)."
+    );
+  }
+  return (
+    "Nothing captured yet. If this store has a claude-code source, run " +
+    "`openmemory pull`, then call `consolidate`."
+  );
+}
+
 /** `memory://profile` — the store's most important facts as markdown. */
 export function buildProfile(db: Db): string {
   const facts = keyFacts(db, 200);
   if (facts.length === 0) {
-    return "# Key facts\n\nNothing captured yet.\n";
+    return `# Key facts\n\n${emptyStoreNextStep(db)}\n`;
   }
   return `# Key facts\n\n${facts.map(bullet).join("\n")}\n`;
 }
@@ -69,7 +117,7 @@ export function buildBriefing(db: Db): string {
     "\n## Key facts\n",
     key.length
       ? key.map(bullet).join("\n")
-      : "Nothing captured yet.",
+      : emptyStoreNextStep(db),
   );
 
   // The narrative comes from the last run that actually produced one: a run

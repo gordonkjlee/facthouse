@@ -10,7 +10,7 @@ The common gap: structured, schema-driven knowledge with effective retrieval, wo
 
 ## The Solution
 
-One place that accumulates structured knowledge - validated, owned by you - and every AI tool can query it with granular permissions. Works for personal identity, team knowledge, project context, or any use case where AI needs persistent memory.
+One place that accumulates structured knowledge - validated, owned by you - and every AI tool can query it. Works for personal identity, team knowledge, project context, or any use case where AI needs persistent memory.
 
 ## Quick Start
 
@@ -29,13 +29,31 @@ Add to your AI tool's MCP configuration:
 ```
 <!-- x-release-please-end -->
 
-Works with Claude Code, Claude Desktop, Cursor, and any MCP-compatible tool. Data is stored at `~/.openmemory` by default. To change this, add `"env": { "OPENMEMORY_DATA": "/absolute/path" }` to the config above.
+Works with Claude Code, Claude Desktop, and any MCP-compatible tool. Cursor consumes tools but not resources until a later adapter exists — `search_knowledge` and `get_entity` still work there. Data is stored at `~/.openmemory` by default. To change this, add `"env": { "OPENMEMORY_DATA": "/absolute/path" }` to the config above.
 
-### Claude Code
+### Claude Code — first session (throwaway store)
 
-Two capture mechanisms. Choose one.
+One path. Pick the pull mechanism. Do this from the CLI against a **throwaway** data directory. Do **not** install capture hooks yet: a Stop hook that runs pull on a large home will hang the session, and `npx -y @openmem/mcp` with no `-p` / `openmemory` starts the MCP **server** and hangs a hook. The first backfill is a CLI command.
 
-**Recommended:** name a source and pull. After `openmemory init`, put this in that store's `config.json`. Set `cwd` — a bare `home` walks every project group and a first pull can ingest years of transcripts:
+<!-- x-release-please-start-version -->
+Git Bash / macOS / Linux:
+
+```bash
+export OPENMEMORY_DATA=/tmp/openmemory-try
+om() { npx -y -p @openmem/mcp@0.15.0 openmemory "$@"; }
+om init
+```
+
+PowerShell:
+
+```powershell
+$env:OPENMEMORY_DATA = Join-Path $env:TEMP "openmemory-try"
+function om { npx -y -p "@openmem/mcp@0.15.0" openmemory @args }
+om init
+```
+<!-- x-release-please-end -->
+
+`init` writes `config.json` with `"sources": []` (pull off) and prints that. Add **one** source. `home` is the Claude Code config dir (`~/.claude`, or whatever `CLAUDE_CONFIG_DIR` would point at — that variable is an example of the path, not extra discovery). Set `cwd` to this project; a bare `home` walks every project group:
 
 ```json
 {
@@ -49,7 +67,21 @@ Two capture mechanisms. Choose one.
 }
 ```
 
-`home` is the Claude Code config dir (`CLAUDE_CONFIG_DIR` is an example of that path, not extra discovery). Then add Claude Code hooks that **only** pull and consolidate — never `log-event`:
+Then:
+
+```bash
+om pull
+om consolidate
+om search "<a word you already said to Claude Code in this project>"
+```
+
+That search is the proof: a fact you did not re-type. `om pull` ticks a running MCP server after a small insert (≤50 events). A first pull of more than 50 events does **not** auto-consolidate — run `om consolidate`. If no server is listening, pull says the same.
+
+Point the MCP snippet above at the same throwaway directory (`"env": { "OPENMEMORY_DATA": "…" }`). Empty `sources` means pull stays off.
+
+**Hooks later, and only after that first CLI pull.** Incremental `pull` is small; the first one is not. The command must invoke the CLI (`openmemory`), never the server binary.
+
+`mcp.json` `env` is **not** visible to hooks. One data dir is one memory — pass the same `--data` (or export `OPENMEMORY_DATA` in the environment Claude Code itself inherits, not only in MCP config):
 
 ```json
 {
@@ -59,7 +91,7 @@ Two capture mechanisms. Choose one.
         "hooks": [
           {
             "type": "command",
-            "command": "openmemory pull"
+            "command": "npx -y -p @openmem/mcp openmemory pull --data /absolute/path/to/the-same-store"
           }
         ]
       }
@@ -69,7 +101,7 @@ Two capture mechanisms. Choose one.
         "hooks": [
           {
             "type": "command",
-            "command": "openmemory signal flush"
+            "command": "npx -y -p @openmem/mcp openmemory signal flush --data /absolute/path/to/the-same-store"
           }
         ]
       }
@@ -78,69 +110,15 @@ Two capture mechanisms. Choose one.
 }
 ```
 
-Stop tails new transcript lines. PreCompact consolidates; it does not insert `session_events`. The MCP server also pulls once at session start. Empty `sources` means pull is off.
+On Windows the `--data` path is the same absolute directory you put in `OPENMEMORY_DATA` (for example `C:\\Users\\alex\\AppData\\Local\\Temp\\openmemory-try`). Stop tails new lines (pull then ticks the server). PreCompact `signal flush` is consolidation only — it does not insert `session_events`. Never install `log-event` hooks on a store that pulls: both write the same rows. A global `npm install -g @openmem/mcp` lets you write `openmemory pull --data …` instead of npx.
 
-**Alternative:** leave `sources` empty (the default — pull is off) and use `log-event` hooks. Do not add a `sources` entry on this store:
-
-```json
-{
-  "hooks": {
-    "UserPromptSubmit": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "openmemory log-event --role user --event-type message"
-          }
-        ]
-      }
-    ],
-    "Stop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "openmemory log-event --role assistant --event-type message"
-          }
-        ]
-      }
-    ],
-    "PostToolUse": [
-      {
-        "matcher": "^(?!mcp__openmemory__)",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "openmemory log-event --role tool --event-type tool_result"
-          }
-        ]
-      }
-    ],
-    "PreCompact": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "openmemory signal flush"
-          }
-        ]
-      }
-    ]
-  }
-}
-```
-
-`UserPromptSubmit` / `Stop` / `PostToolUse` write `session_events`. PreCompact still consolidates; it does not insert events and is safe with either mechanism. Install the CLI (`npm install -g @openmem/mcp`) or replace `openmemory` with `npx -y @openmem/mcp` in the commands above.
-
-**Hard rule:** do not run `log-event` hooks and pull on the same store. Both write the same conversation into `session_events`.
-
-> **Disable your client's built-in memory.** OpenMemory replaces it — running both fragments your knowledge across two systems. In Claude Desktop: Settings → Memory → off. In ChatGPT: Settings → Personalisation → Memory → off. This ensures OpenMemory is the single source of truth.
+**Alternative, no pull:** leave `sources` empty and pipe UserPromptSubmit / Stop / PostToolUse into `openmemory log-event`. See Session Event Logging. Do not run both mechanisms on the same store.
 
 ### What you need for the intelligence
 
 Storage works with nothing but Node. The *intelligence* — entity extraction, domain routing, contradiction detection — needs a language model, and by default OpenMemory gets one by shelling out to the [Claude Code CLI](https://github.com/anthropics/claude-code). That runs on your existing Claude subscription, so there is no API key to configure and no per-call billing.
 
-Without it, consolidation falls back to a built-in heuristic. Be clear about what that means: the fallback **stores facts but extracts no entities and does no domain routing**, so you get a flat list rather than a knowledge graph. That is a deliberate design choice — the engine ships no vocabulary of its own, and a keyword classifier with no keywords cannot honestly route anything.
+Without it, consolidation falls back to a built-in heuristic. Be clear about what that means: the fallback **does not extract facts from transcripts**. `capture_fact` still stores facts, but with no entities and no domain routing, so you get a flat list rather than a knowledge graph. That is a deliberate design choice — the engine ships no vocabulary of its own, and a keyword classifier with no keywords cannot honestly route anything. PreCompact `signal flush` with no MCP server uses this fallback on purpose (it must not spawn `claude -p` during compaction) and will not graduate pulled events.
 
 Run `npx -y -p @openmem/mcp openmemory init` and it tells you which of the two you have:
 
@@ -153,7 +131,9 @@ To choose the fallback deliberately and silence the check, set `OPENMEMORY_PROVI
 
 ## See It Work in Five Minutes
 
-No MCP client needed — this runs entirely on the command line against a throwaway store, so you can watch what the server does to a conversation before you point a real tool at it.
+No MCP client needed — this runs entirely on the command line against a throwaway store, so you can watch what the server does to a conversation before you point a real tool at it. These three lines are typed in; to search something you already said to Claude Code, use the pull recipe above instead.
+
+Git Bash / macOS / Linux:
 
 ```bash
 export OPENMEMORY_DATA=/tmp/openmemory-demo
@@ -166,6 +146,18 @@ om log-event --role user --content "I prefer dark mode in every editor, and I ne
 om log-event --role user --content "I am allergic to shellfish, so avoid seafood restaurants when booking anything."
 om log-event --role user --content "My colleague Robin at Acme is leading the Atlas migration project this quarter."
 
+om consolidate
+```
+
+PowerShell:
+
+```powershell
+$env:OPENMEMORY_DATA = Join-Path $env:TEMP "openmemory-demo"
+function om { npx -y -p "@openmem/mcp" openmemory @args }
+om init
+om log-event --role user --content "I prefer dark mode in every editor, and I never want telemetry enabled."
+om log-event --role user --content "I am allergic to shellfish, so avoid seafood restaurants when booking anything."
+om log-event --role user --content "My colleague Robin at Acme is leading the Atlas migration project this quarter."
 om consolidate
 ```
 
@@ -233,7 +225,7 @@ The server side of this is covered by tests that spawn the real binary twice aga
 
 For Claude Code, the D-layer is **pull**. You name a source; transcripts land in `session_events`; consolidation graduates facts from those events. The model does not have to call `capture_fact` for a conversation to be remembered.
 
-1. **Pull** — A named `sources` entry (`kind: "claude-code"`, `home`, and `cwd` — set it) is tailed into `session_events` by `openmemory pull` (Stop hook or CLI) or by the MCP server at session start. Empty `sources` means pull is off.
+1. **Pull** — A named `sources` entry (`kind: "claude-code"`, `home`, and `cwd` — set it) is tailed into `session_events` by `openmemory pull` from the CLI (first backfill) or by the MCP server at session start. Empty `sources` means pull is off. A Stop hook may pull later, once that first backfill has run.
 
 2. **Batch consolidation** — Periodically, the server reads those events (and any staged facts): classifying domains, extracting and typing entities (people, organisations, projects, places — whatever the conversation is about), detecting duplicates and contradictions, and building a knowledge graph.
 
@@ -291,7 +283,7 @@ OpenMemory captures every interaction as a `SessionEvent` — the DIKW Data laye
 
 Choose one mechanism.
 
-**Recommended — pull.** Name a `claude-code` source (set `cwd`; a bare `home` walks every project group) and run `openmemory pull`. The recommended Claude Code hooks call `openmemory pull` on Stop and `openmemory signal flush` on PreCompact. The MCP server also pulls once at session start. Grok, Codex, and Cursor are later adapters. Unknown `kind` values are rejected with a clear error.
+**Recommended — pull.** Name a `claude-code` source (set `cwd`; a bare `home` walks every project group) and run `openmemory pull` from the CLI first. Do not hang a first backfill on a Stop hook. After that, optional Stop / PreCompact hooks (npx or a global install — a bare `openmemory` is not on PATH after `npx`). The MCP server also pulls once at session start. Grok, Codex, and Cursor are later adapters. Unknown `kind` values are rejected with a clear error.
 
 ```bash
 openmemory pull
@@ -435,7 +427,7 @@ OpenMemory's tool descriptions tell assistants when to search and when a correct
 
 ### Without Configuration
 
-Claude Code: name a `sources` entry (set `cwd`) and pull — Stop hook or MCP session start. The `search_knowledge` description still says to search before answering questions that might benefit from personal context. `capture_fact` is there if the assistant needs to correct or add something pull-plus-extraction will not produce.
+Claude Code: name a `sources` entry (set `cwd`) and pull from the CLI first. MCP session start also pulls. The `search_knowledge` description still says to search before answering questions that might benefit from personal context. `capture_fact` is there if the assistant needs to correct or add something pull-plus-extraction will not produce.
 
 Clients with no pull adapter still rely on `log_event` / `capture_fact` until their adapter exists.
 
@@ -458,7 +450,7 @@ Create `.claude/rules/openmemory.md` in your project (or `~/.claude/rules/openme
 ```markdown
 # OpenMemory
 
-- Conversations are pulled from the named Claude Code source (Stop hook runs openmemory pull)
+- Conversations are pulled from the named Claude Code source (first backfill: `openmemory pull` on the CLI)
 - Do not install log-event hooks on this store
 - Identity context loads automatically from the `memory://profile` resource — no tool call needed
 - Before answering questions about preferences, people, or history, call `search_knowledge`

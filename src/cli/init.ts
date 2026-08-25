@@ -24,6 +24,7 @@ import { ensureSelfEntity } from "../db/entities.js";
 import { CONFIG_FILENAME, defaultServerConfig, loadConfig } from "../config.js";
 import { probeCliProvider, type CliProbeResult } from "../intelligence/cli.js";
 import { createEmbeddingProvider } from "../embedding/provider.js";
+import { resolveSources } from "../sources/resolve.js";
 import type { IntelligenceProviderType, EmbeddingConfig } from "../types/config.js";
 
 /**
@@ -141,6 +142,36 @@ export function embeddingStatusLines(
   return [
     `Semantic search: on, via ${config?.provider} (${provider.model}). Facts are`,
     `embedded at consolidation, so an existing store fills in on the next run.`,
+  ];
+}
+
+/**
+ * Report whether this store will pull Claude Code transcripts.
+ *
+ * Empty `sources` is the shipped default and means pull is off. Init writes
+ * that empty list so the knob is visible; this is the sentence that says
+ * what to do with it, otherwise a tester initialises a store, never names a
+ * source, and wonders why `search` is empty.
+ */
+export function sourcesStatusLines(sources: unknown): string[] {
+  let n: number;
+  try {
+    n = resolveSources(sources).length;
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return [`Capture: config.sources is invalid — ${message}`];
+  }
+  if (n === 0) {
+    return [
+      `Capture: pull is off (sources is empty). Add a claude-code source to`,
+      `config.json — kind, home (e.g. ~/.claude), cwd (e.g. C:\\dev\\app).`,
+      `Set cwd. Then run openmemory pull. A first pull of more than 50 events`,
+      `needs openmemory consolidate; a later session start will flush a smaller leftover.`,
+    ];
+  }
+  return [
+    `Capture: ${n} source${n === 1 ? "" : "s"}. Run openmemory pull.`,
+    `A first pull of more than 50 events needs openmemory consolidate.`,
   ];
 }
 

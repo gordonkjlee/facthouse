@@ -15,6 +15,7 @@ import {
   mcpConfigSnippet,
   providerStatusLines,
   embeddingStatusLines,
+  sourcesStatusLines,
 } from "./init.js";
 import { runSearch, formatSearch, formatStats, formatPrune, getStats } from "./query.js";
 import { prunableEvents, pruneEvents, vacuum } from "../db/prune.js";
@@ -30,7 +31,7 @@ import { DEFAULT_CONFIG, type ServerConfig } from "../types/config.js";
 import type { SessionEvent } from "../types/data.js";
 import { loadConfig } from "../config.js";
 import { sendSchedulerSignal, type SignalKind } from "../ipc/scheduler-ipc.js";
-import { pullSources } from "../sources/pull.js";
+import { pullSources, shouldTickAfterCliPull } from "../sources/pull.js";
 
 const SESSION_ROLES = ["user", "assistant", "system", "tool"] as const;
 const SESSION_EVENT_TYPES = ["message", "tool_call", "tool_result", "artifact"] as const;
@@ -195,6 +196,8 @@ async function runInit() {
     ),
     ``,
     ...embeddingStatusLines(loadConfig(result.dataDir).embedding),
+    ``,
+    ...sourcesStatusLines(loadConfig(result.dataDir).sources),
     ``,
   ];
   console.log(lines.join("\n"));
@@ -379,6 +382,29 @@ async function runPull() {
 
   try {
     const result = withDb(dataDir, (db) => pullSources(db, config.sources));
+    const provider = resolveProviderType(config.intelligence.provider);
+    if (result.events_inserted > 0 && provider === "heuristic") {
+      console.error(
+        "[openmemory] intelligence.provider is heuristic — it does not extract " +
+          "facts from transcripts. capture_fact still works. Use the claude CLI " +
+          "(the default provider) and run openmemory consolidate.",
+      );
+    }
+    if (shouldTickAfterCliPull(result.events_inserted)) {
+      const delivered = await sendSchedulerSignal(dataDir, "tick");
+      if (!delivered) {
+        console.error(
+          "[openmemory] No MCP server listening — run openmemory consolidate " +
+            "to graduate these events.",
+        );
+      }
+    } else if (result.events_inserted > 0) {
+      console.error(
+        `[openmemory] Pulled ${result.events_inserted} event(s) — skipping auto-consolidate ` +
+          `so a first-run backfill does not spawn claude -p on the lot. ` +
+          `Run openmemory consolidate when ready.`,
+      );
+    }
     console.log(JSON.stringify(result));
   } catch (err: unknown) {
     console.error(errorMessage(err));
@@ -420,7 +446,9 @@ async function runSignal() {
   // dependency-free — heuristic-era facts can be reprocessed later.
   if (kind === "flush") {
     console.error(
-      "[openmemory] Server unreachable; running heuristic consolidate in-process as fallback.",
+      "[openmemory] Server unreachable; running heuristic consolidate in-process as fallback. " +
+        "Heuristic extraction does not read transcripts — events stay events, not facts. " +
+        "Start the MCP server (cli provider) or run openmemory consolidate with the claude CLI.",
     );
     await consolidateInProcess(dataDir, createHeuristicProvider(), DEFAULT_CONFIG);
     return;
@@ -446,6 +474,12 @@ async function runConsolidate() {
   // OPENMEMORY_SUBPROCESS guard at the top of main() prevents recursion when
   // this runs inside a provider subprocess.
   const config = loadConfig(dataDir);
+  if (resolveProviderType(config.intelligence.provider) === "heuristic") {
+    console.error(
+      "[openmemory] intelligence.provider is heuristic — it does not extract " +
+        "facts from transcripts. capture_fact still works.",
+    );
+  }
   const provider = createIntelligenceProvider(config.intelligence, {
     vocabulary: config.domains ?? [],
   });
