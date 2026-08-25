@@ -8,6 +8,7 @@ const { openDatabase, closeDatabase } = await import("../../src/db/connection.js
 const { applySchema, getSchemaVersion } = await import("../../src/db/schema.js");
 const {
   createSession,
+  ensureSession,
   getSession,
   getLatestSession,
   insertEvent,
@@ -78,6 +79,44 @@ describe("sessions", () => {
 
   it("returns null for non-existent session", () => {
     expect(getSession(db, "non-existent")).toBeNull();
+  });
+
+  it("ensureSession inserts a named id and is idempotent", () => {
+    const first = ensureSession(db, {
+      id: "sess-aaa",
+      source_tool: "claude-code",
+      project: "C--dev-app",
+    });
+    const second = ensureSession(db, {
+      id: "sess-aaa",
+      source_tool: "claude-code",
+      project: "C--dev-app",
+    });
+    expect(first.id).toBe("sess-aaa");
+    expect(second.id).toBe("sess-aaa");
+    expect(
+      (db.prepare(`SELECT COUNT(*) AS n FROM sessions`).get() as { n: number }).n,
+    ).toBe(1);
+  });
+
+  it("ensureSession fills a null project and does not overwrite a set one", () => {
+    ensureSession(db, {
+      id: "sess-aaa",
+      source_tool: "claude-code",
+      project: null,
+    });
+    const filled = ensureSession(db, {
+      id: "sess-aaa",
+      source_tool: "cli",
+      project: "C--dev-app",
+    });
+    expect(filled.project).toBe("C--dev-app");
+    const kept = ensureSession(db, {
+      id: "sess-aaa",
+      source_tool: "cli",
+      project: "other-group",
+    });
+    expect(kept.project).toBe("C--dev-app");
   });
 
   const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));

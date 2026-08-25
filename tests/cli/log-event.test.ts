@@ -161,6 +161,33 @@ describe("logEvent attributes every event to a session", () => {
     expect(event.mcp_session_id).toBeNull();
   });
 
+  it("records OPENMEMORY_PROJECT on the session as provenance", async () => {
+    const previous = process.env.OPENMEMORY_PROJECT;
+    process.env.OPENMEMORY_PROJECT = "atlas";
+    try {
+      await logEvent({
+        role: "user",
+        eventType: "message",
+        content: "from a hook",
+        sessionId: "client-abc-123",
+        dataDir,
+      });
+      const conn = dbMod.openDatabase(path.join(dataDir, "memory.db"));
+      try {
+        const row = conn
+          .prepare(`SELECT project, source_tool FROM sessions WHERE id = ?`)
+          .get("client-abc-123") as { project: string; source_tool: string };
+        expect(row.project).toBe("atlas");
+        expect(row.source_tool).toBe("cli");
+      } finally {
+        dbMod.closeDatabase(conn);
+      }
+    } finally {
+      if (previous === undefined) delete process.env.OPENMEMORY_PROJECT;
+      else process.env.OPENMEMORY_PROJECT = previous;
+    }
+  });
+
   it("the most-recent fallback is not how pull attributes conversations", async () => {
     await logEvent({
       role: "user",

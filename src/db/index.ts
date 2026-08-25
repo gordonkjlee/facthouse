@@ -13,6 +13,7 @@ export type { Db } from "./connection.js";
 export { applySchema, getSchemaVersion } from "./schema.js";
 export {
   createSession,
+  ensureSession,
   updateLastActivity,
   getSession,
   getLatestSession,

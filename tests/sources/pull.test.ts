@@ -142,6 +142,12 @@ describe("pullSources", () => {
     expect(rows[3].content).toContain("theme");
     expect(rows.every((r) => r.client_session_id === "sess-aaa")).toBe(true);
     expect(JSON.parse(rows[0].metadata ?? "{}").source).toBe("claude-code");
+
+    const session = db
+      .prepare(`SELECT id, source_tool, project FROM sessions WHERE id = ?`)
+      .get("sess-aaa") as { id: string; source_tool: string; project: string };
+    expect(session.source_tool).toBe("claude-code");
+    expect(session.project).toBe(group);
   });
 
   it("a second pull of the same file is a no-op", () => {
@@ -211,6 +217,13 @@ describe("pullSources", () => {
     // Without cwd, the nested sessions/ file is discovered too.
     const unfiltered = pullSources(db, [{ kind: "claude-code", home }]);
     expect(unfiltered.files).toBe(2);
+    const projects = db
+      .prepare(`SELECT id, project FROM sessions ORDER BY id`)
+      .all() as Array<{ id: string; project: string }>;
+    expect(projects).toEqual([
+      { id: "sess-keep", project: keep },
+      { id: "sess-other", project: other },
+    ]);
     expect(unfiltered.events_inserted).toBe(4);
     const ids = new Set(events(db).map((r) => r.client_session_id));
     expect(ids).toEqual(new Set(["sess-keep", "sess-other"]));

@@ -86,6 +86,47 @@ export function createSession(
   };
 }
 
+/**
+ * Make sure a session row exists for this id.
+ *
+ * Pull uses the client's conversation id (the JSONL file name / payload
+ * sessionId) as `sessions.id`, so `client_session_id` on events joins to
+ * `sessions.project`. MCP `createSession` still mints a UUID.
+ *
+ * `project` is provenance of which project group produced the conversation,
+ * not a tenant. A later call fills a null project; it does not overwrite one
+ * that is already set.
+ */
+export function ensureSession(
+  db: Db,
+  opts: { id: string; source_tool: string | null; project: string | null },
+): Session {
+  const existing = getSession(db, opts.id);
+  if (existing) {
+    if (existing.project == null && opts.project != null) {
+      db.prepare(
+        `UPDATE sessions SET project = ? WHERE id = ? AND project IS NULL`,
+      ).run(opts.project, opts.id);
+      return { ...existing, project: opts.project };
+    }
+    return existing;
+  }
+
+  const now = new Date().toISOString();
+  db.prepare(
+    `INSERT INTO sessions (id, source_tool, project, started_at, last_activity_at)
+     VALUES (?, ?, ?, ?, ?)`,
+  ).run(opts.id, opts.source_tool, opts.project, now, now);
+
+  return {
+    id: opts.id,
+    source_tool: opts.source_tool,
+    project: opts.project,
+    started_at: now,
+    last_activity_at: now,
+  };
+}
+
 /** Update the last_activity_at timestamp for a session. */
 export function updateLastActivity(
   db: Db,
