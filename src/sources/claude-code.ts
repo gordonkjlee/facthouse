@@ -27,7 +27,7 @@ import {
 import path from "node:path";
 import { withTransaction } from "../db/connection.js";
 import type { Db } from "../db/connection.js";
-import { insertEvent } from "../db/sessions.js";
+import { ensureSession, insertEvent } from "../db/sessions.js";
 import { getWatermark, upsertWatermark } from "../db/watermarks.js";
 import type { NewSessionEvent } from "../db/sessions.js";
 import { encodeProjectDir, type ResolvedCaptureSource } from "./resolve.js";
@@ -118,11 +118,13 @@ export function ingestClaudeCodeFile(db: Db, filePath: string): ClaudeCodeFilePu
     }
 
     const sessionId = sessionIdFromPath(abs);
+    const project = encodedProjectGroupFromPath(abs);
     let inserted = 0;
     let skipped = 0;
     let lineNumber = startLine;
 
     withTransaction(db, () => {
+      const seen = new Set<string>();
       for (const line of lines) {
         lineNumber += 1;
         const mapped = mapTranscriptLine(line, sessionId, abs, lineNumber);
@@ -131,6 +133,15 @@ export function ingestClaudeCodeFile(db: Db, filePath: string): ClaudeCodeFilePu
           continue;
         }
         for (const event of mapped) {
+          const conversation = event.client_session_id || sessionId;
+          if (!seen.has(conversation)) {
+            seen.add(conversation);
+            ensureSession(db, {
+              id: conversation,
+              source_tool: "claude-code",
+              project,
+            });
+          }
           insertEvent(db, event);
           inserted += 1;
         }
@@ -278,6 +289,18 @@ function isDir(p: string): boolean {
 
 function sessionIdFromPath(filePath: string): string {
   return path.basename(filePath, ".jsonl");
+}
+
+/**
+ * Claude Code's on-disk group under `home/projects/<encoded-cwd>/`.
+ * That encoded name is the provenance we store on `sessions.project` —
+ * not a tenant, and not a decoded filesystem path (encoding is lossy).
+ */
+function encodedProjectGroupFromPath(filePath: string): string | null {
+  const parts = path.normalize(filePath).split(path.sep);
+  const i = parts.lastIndexOf("projects");
+  if (i < 0 || i + 1 >= parts.length) return null;
+  return parts[i + 1] || null;
 }
 
 // ---------------------------------------------------------------------------

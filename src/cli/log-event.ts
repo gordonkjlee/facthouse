@@ -7,7 +7,12 @@ import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { openDatabase, closeDatabase } from "../db/connection.js";
 import { applySchema } from "../db/schema.js";
-import { insertEvent, getLatestSession, createSession } from "../db/sessions.js";
+import {
+  insertEvent,
+  getLatestSession,
+  createSession,
+  ensureSession,
+} from "../db/sessions.js";
 import { sendSchedulerSignal } from "../ipc/scheduler-ipc.js";
 import type { SessionEvent } from "../types/data.js";
 
@@ -62,7 +67,17 @@ export async function logEvent(args: LogEventArgs): Promise<SessionEvent> {
     // client_session_id. Our fallback resolves a row in `sessions`, so it goes
     // in mcp_session_id, which also keeps last_activity_at current and makes
     // "most recent" mean something on the next call.
-    const mcpSessionId = args.sessionId ? null : resolveOwnSession(db);
+    const project = process.env.OPENMEMORY_PROJECT?.trim() || null;
+    const mcpSessionId = args.sessionId
+      ? null
+      : resolveOwnSession(db, project);
+    if (args.sessionId) {
+      ensureSession(db, {
+        id: args.sessionId,
+        source_tool: "cli",
+        project,
+      });
+    }
 
     event = insertEvent(db, {
       mcp_session_id: mcpSessionId,
@@ -87,11 +102,25 @@ export async function logEvent(args: LogEventArgs): Promise<SessionEvent> {
  *
  * `source_tool: "cli"` records how the session came about, so a store seeded
  * from the command line is distinguishable from one an MCP client produced.
+ * `project` is OPENMEMORY_PROJECT when set — the same env the MCP session
+ * uses — provenance, not a tenant.
  */
-function resolveOwnSession(db: ReturnType<typeof openDatabase>): string {
+function resolveOwnSession(
+  db: ReturnType<typeof openDatabase>,
+  project: string | null,
+): string {
   const latest = getLatestSession(db);
-  if (latest) return latest.id;
-  return createSession(db, { source_tool: "cli", project: null }).id;
+  if (latest) {
+    if (latest.project == null && project != null) {
+      ensureSession(db, {
+        id: latest.id,
+        source_tool: latest.source_tool,
+        project,
+      });
+    }
+    return latest.id;
+  }
+  return createSession(db, { source_tool: "cli", project }).id;
 }
 
 // ---------------------------------------------------------------------------
