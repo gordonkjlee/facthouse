@@ -34,7 +34,7 @@ import type { Db } from "../../src/db/connection.js";
 interface MockChild extends EventEmitter {
   stdout: EventEmitter;
   stderr: EventEmitter;
-  stdin: { end: () => void; write: () => void };
+  stdin: EventEmitter & { end: (chunk?: string) => void; write: (chunk: string) => boolean };
   kill: (sig?: string) => void;
 }
 
@@ -82,13 +82,21 @@ vi.mock("node:child_process", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:child_process")>();
   return {
     ...actual,
-    spawn: (_cmd: string, args: string[]) => {
+    spawn: () => {
       const child = new EventEmitter() as MockChild;
       child.stdout = new EventEmitter();
       child.stderr = new EventEmitter();
-      child.stdin = { end: () => {}, write: () => {} };
+      const stdin = new EventEmitter() as MockChild["stdin"];
+      let prompt = "";
+      stdin.end = (chunk?: string) => {
+        if (typeof chunk === "string") prompt = chunk;
+      };
+      stdin.write = (chunk: string) => {
+        prompt += chunk;
+        return true;
+      };
+      child.stdin = stdin;
       child.kill = () => {};
-      const prompt = args[args.length - 1];
       queueMicrotask(() => {
         const structured = structuredOutputFor(prompt);
         if (structured === null) {

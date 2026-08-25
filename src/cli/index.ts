@@ -524,6 +524,11 @@ export async function consolidateInProcess(
   try {
     applySchema(db);
     const result = await consolidate(db, provider, config, embedding, phase);
+    if (result.extractionDegraded) {
+      console.error(
+        "[openmemory] Extraction could not run — events were not examined and the watermark was held. A zero factsGraduated here is not a successful empty extract. Re-run openmemory consolidate when the CLI provider can run.",
+      );
+    }
     console.log(JSON.stringify(result));
   } catch (err: unknown) {
     console.error(errorMessage(err));
