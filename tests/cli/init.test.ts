@@ -153,6 +153,23 @@ describe("mcpConfigSnippet", () => {
       expect(line.startsWith("    ")).toBe(true);
     }
   });
+
+  it("uses a distinct server name so two brains can share one mcp.json", () => {
+    const personal = JSON.parse(
+      mcpConfigSnippet("@openmem/mcp", "/tmp/openmemory-personal", 0, "openmemory-personal"),
+    );
+    const work = JSON.parse(
+      mcpConfigSnippet("@openmem/mcp", "/tmp/openmemory-work", 0, "openmemory-work"),
+    );
+    expect(Object.keys(personal.mcpServers)).toEqual(["openmemory-personal"]);
+    expect(Object.keys(work.mcpServers)).toEqual(["openmemory-work"]);
+    expect(personal.mcpServers["openmemory-personal"].env.OPENMEMORY_DATA).toBe(
+      "/tmp/openmemory-personal",
+    );
+    expect(work.mcpServers["openmemory-work"].env.OPENMEMORY_DATA).toBe(
+      "/tmp/openmemory-work",
+    );
+  });
 });
 
 describe("providerStatusLines", () => {

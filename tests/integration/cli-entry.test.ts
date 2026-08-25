@@ -147,6 +147,14 @@ describe.skipIf(!runnable)("cli entry — init reports the intelligence it will 
 });
 
 describe.skipIf(!runnable)("cli entry — init output", () => {
+  it("says one data directory is one memory", () => {
+    const dir = path.join(root, "one-brain");
+    const r = run(["init", dir]);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toMatch(/one data directory is one memory/i);
+    expect(r.stdout).toMatch(/second brain is a second directory/i);
+  });
+
   it("tells a tester that pull is off until they name a source", () => {
     const dir = path.join(root, "sources-hint");
     const r = run(["init", dir]);

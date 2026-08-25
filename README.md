@@ -31,7 +31,7 @@ Add to your AI tool's MCP configuration:
 ```
 <!-- x-release-please-end -->
 
-Works with Claude Code, Claude Desktop, and any MCP-compatible tool. Cursor consumes tools but not resources until a later adapter exists — `search_knowledge` and `get_entity` still work there. Data is stored at `~/.openmemory` by default. To change this, add `"env": { "OPENMEMORY_DATA": "/absolute/path" }` to the config above.
+Works with Claude Code, Claude Desktop, and any MCP-compatible tool. Cursor consumes tools but not resources until a later adapter exists — `search_knowledge` and `get_entity` still work there. Data is stored at `~/.openmemory` by default. To change this, add `"env": { "OPENMEMORY_DATA": "/absolute/path" }` to the config above. One directory is one memory: a work brain and a personal brain are two directories, two `OPENMEMORY_DATA` values, and two MCP server names (two entries both called `openmemory` overwrite each other).
 
 ### Claude Code — first session (throwaway store)
 
@@ -115,6 +115,33 @@ Point the MCP snippet above at the same throwaway directory (`"env": { "OPENMEMO
 On Windows the `--data` path is the same absolute directory you put in `OPENMEMORY_DATA` (for example `C:\\Users\\alex\\AppData\\Local\\Temp\\openmemory-try`). Stop tails new lines (pull then ticks the server to extract facts when the threshold is due). PreCompact `signal flush` graduates those pending facts into long-term knowledge without re-reading the transcript, so compaction is not held for a full extract. It does not insert `session_events`. Never install `log-event` hooks on a store that pulls: both write the same rows. A global `npm install -g @openmem/mcp` lets you write `openmemory pull --data …` instead of npx.
 
 **Alternative, no pull:** leave `sources` empty and pipe UserPromptSubmit / Stop / PostToolUse into `openmemory log-event`. See Session Event Logging. Do not run both mechanisms on the same store.
+
+### Two memories (work and personal)
+
+One data directory is one brain. Life and work are two directories — not a filter on which client wrote the row, not a tenant column inside one SQLite file. Each store has its own `config.json`, its own pull sources, its own hooks (`--data` must match), and its own scheduler socket. They cannot see each other's facts.
+
+`openmemory init` against each directory prints an MCP snippet. Give the two entries different names:
+
+<!-- x-release-please-start-version -->
+```json
+{
+  "mcpServers": {
+    "openmemory-personal": {
+      "command": "npx",
+      "args": ["-y", "@openmem/mcp@0.18.0"],
+      "env": { "OPENMEMORY_DATA": "C:\\Users\\alex\\.openmemory-personal" }
+    },
+    "openmemory-work": {
+      "command": "npx",
+      "args": ["-y", "@openmem/mcp@0.18.0"],
+      "env": { "OPENMEMORY_DATA": "C:\\Users\\alex\\.openmemory-work" }
+    }
+  }
+}
+```
+<!-- x-release-please-end -->
+
+Point each store's `sources.cwd` (or hook `--data`) at that store only. A bare `home` on the personal brain that walks every Claude Code project group will ingest work transcripts into the personal file — two directories do not help if both pull the same home.
 
 ### What you need for the intelligence
 
@@ -247,6 +274,7 @@ The result is a structured, evolving knowledge graph that any AI tool can query 
 - **Immutable history** — Facts are never deleted, only superseded. Full history preserved.
 - **Source traceability** — Every fact links back to the conversation events that produced it.
 - **Manual consolidation** — Call `consolidate` at natural breakpoints (topic change, task completion, pre-compaction). No reliance on session boundaries.
+- **One directory, one brain** — Work and personal are two `OPENMEMORY_DATA` directories and two MCP server names. Isolation is the directory, not a column.
 
 ## MCP Resources
 
