@@ -166,6 +166,21 @@ describe("pullSources", () => {
     expect(events(db)).toHaveLength(4);
   });
 
+  it("a no-op pull still records project on a store that had none", () => {
+    const home = path.join(root, "claude-home");
+    const group = encodeProjectDir("C:\\dev\\app");
+    const file = path.join(home, "projects", group, "sess-aaa.jsonl");
+    writeJsonl(file, fixtureLines("sess-aaa"));
+    pullSources(db, [{ kind: "claude-code", home }]);
+    db.prepare(`DELETE FROM sessions`).run();
+    const again = pullSources(db, [{ kind: "claude-code", home }]);
+    expect(again.events_inserted).toBe(0);
+    const row = db
+      .prepare(`SELECT project FROM sessions WHERE id = ?`)
+      .get("sess-aaa") as { project: string };
+    expect(row.project).toBe(group);
+  });
+
   it("an appended line is the only insert on a third pull", () => {
     const home = path.join(root, "claude-home");
     const file = path.join(
