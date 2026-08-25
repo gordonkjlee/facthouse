@@ -22,6 +22,12 @@ jobs:
       contents: read
       id-token: write
     environment: npm
+    outputs:
+      found: ${{ steps.release.outputs.found }}
+      tag: ${{ steps.release.outputs.tag }}
+      version: ${{ steps.release.outputs.version }}
+      processing: ${{ steps.release.outputs.processing }}
+      accepted: ${{ steps.publish_pkg.outputs.accepted }}
     steps:
       - name: Find unpublished release
         id: release
@@ -48,16 +54,31 @@ jobs:
           if [ -z "$TAG" ]; then
             echo "No releases exist yet — nothing to publish."
             echo "found=false" >> "$GITHUB_OUTPUT"
+            echo "processing=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           VERSION="${TAG#v}"
-          if npm view @openmem/mcp@"$VERSION" version 2>/dev/null; then
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          # Three states, because a 404 from `npm view` is no longer "not
+          # published". npm scans at publish time (typically ~5 minutes, up to
+          # 15+ at peak) and prints "Your package is being processed…". During
+          # that window `npm view pkg@version` 404s while the version is already
+          # accepted — a second run that treats the 404 as "publish me" will
+          # 403 over the in-flight version. dist-tag continues to work while
+          # scanning; if it already names this version, do not republish.
+          if npm view "@openmem/mcp@${VERSION}" version >/dev/null 2>&1; then
             echo "$TAG already on npm"
             echo "found=false" >> "$GITHUB_OUTPUT"
+            echo "processing=false" >> "$GITHUB_OUTPUT"
+          elif npm dist-tag ls @openmem/mcp 2>/dev/null | grep -qE ": ${VERSION}$"; then
+            echo "$TAG accepted by npm (dist-tag) but not yet resolvable — still processing. Will not republish."
+            echo "found=false" >> "$GITHUB_OUTPUT"
+            echo "processing=true" >> "$GITHUB_OUTPUT"
           else
             echo "$TAG not on npm — publishing"
             echo "found=true" >> "$GITHUB_OUTPUT"
-            echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+            echo "processing=false" >> "$GITHUB_OUTPUT"
           fi
         env:
           GH_TOKEN: ${{ github.token }}
@@ -100,8 +121,28 @@ jobs:
       # package (owner/repo + workflow filename + environment must match exactly).
       # Provenance is generated automatically under trusted publishing.
       - if: steps.release.outputs.found == 'true'
+        id: publish_pkg
         name: Publish ${{ steps.release.outputs.tag }}
-        run: npm publish --provenance --access public
+        run: |
+          # A 403 "cannot publish over the previously published versions" means
+          # npm already accepted this version — live, or still in the publish-time
+          # scan. Treating that as failure would turn a concurrent workflow_run
+          # (or a retry while scanning) into a red X for a package that is fine.
+          set +e
+          LOG=$(npm publish --provenance --access public 2>&1)
+          STATUS=$?
+          set -e
+          echo "$LOG"
+          if [ "$STATUS" -eq 0 ]; then
+            echo "accepted=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if echo "$LOG" | grep -qi 'cannot publish over the previously published'; then
+            echo "npm already accepted this version (live or still processing). Not a failed publish."
+            echo "accepted=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          exit "$STATUS"
 
   # Did the latest release actually reach users, and does it work?
   #
@@ -119,7 +160,10 @@ jobs:
     needs: publish
     if: always() && needs.publish.result != 'skipped'
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # Must exceed the resolve wait (20 min when we just published) plus setup
+    # and the smoke install. A 10-minute job timeout with a 20-minute loop
+    # would kill the wait and look like a missing release.
+    timeout-minutes: 30
     permissions:
       contents: read
       issues: write
@@ -168,26 +212,53 @@ jobs:
         id: resolve
         run: |
           VERSION="${{ steps.expected.outputs.version }}"
-          # The registry takes a moment to serve a new version. Retry so a
-          # propagation delay isn't reported as a failed release — but bound it,
-          # because "eventually" is not a release guarantee.
-          for i in $(seq 1 10); do
-            if npm view "@openmem/mcp@${VERSION}" version >/dev/null 2>&1; then
+          ACCEPTED="${{ needs.publish.outputs.accepted }}"
+          PROCESSING="${{ needs.publish.outputs.processing }}"
+          # npm scans packages at publish time before they become installable
+          # (typical ~5 minutes, up to 15+ at peak; measured ~7 minutes for
+          # 0.16.0 and 0.17.0). The old 150s bound was written for CDN
+          # propagation and fires while npm is still printing "being processed".
+          # Wait out the documented peak only when this run accepted a publish
+          # (or saw a dist-tag for a version `npm view` cannot yet resolve).
+          # A publish that never happened must not wait 20 minutes to admit it.
+          if [ "$ACCEPTED" = "true" ] || [ "$PROCESSING" = "true" ]; then
+            MAX_WAIT=1200
+          else
+            MAX_WAIT=180
+          fi
+          echo "Waiting up to ${MAX_WAIT}s for @openmem/mcp@${VERSION} (accepted=${ACCEPTED:-false} processing=${PROCESSING:-false})"
+          echo "max_wait=$MAX_WAIT" >> "$GITHUB_OUTPUT"
+          DEADLINE=$((SECONDS + MAX_WAIT))
+          ATTEMPT=0
+          while [ "$SECONDS" -lt "$DEADLINE" ]; do
+            ATTEMPT=$((ATTEMPT + 1))
+            if OUT=$(npm view "@openmem/mcp@${VERSION}" version 2>&1); then
               echo "resolved=true" >> "$GITHUB_OUTPUT"
-              echo "@openmem/mcp@${VERSION} is live on npm."
+              echo "waited=$SECONDS" >> "$GITHUB_OUTPUT"
+              echo "@openmem/mcp@${VERSION} is live on npm after ${SECONDS}s ($ATTEMPT attempt(s))."
               exit 0
             fi
-            echo "attempt ${i}/10: not on npm yet, waiting 15s..."
-            sleep 15
+            LEFT=$((DEADLINE - SECONDS))
+            echo "attempt ${ATTEMPT}: not resolvable after ${SECONDS}s (${LEFT}s left): ${OUT}"
+            if [ "$LEFT" -le 0 ]; then
+              break
+            fi
+            SLEEP=30
+            if [ "$SLEEP" -gt "$LEFT" ]; then
+              SLEEP=$LEFT
+            fi
+            sleep "$SLEEP"
           done
           echo "resolved=false" >> "$GITHUB_OUTPUT"
-          echo "::error::Release ${VERSION} is NOT on npm after 150s. The GitHub release exists but users cannot install it."
+          echo "waited=$SECONDS" >> "$GITHUB_OUTPUT"
+          echo "::error::Release ${VERSION} is not resolvable from npm after ${SECONDS}s. If npm accepted the publish, it may still be in publish-time scanning — or it never landed."
           exit 1
 
       # Resolving proves the metadata is there. It does not prove the package
       # works — a published-but-broken package is the failure that actually
       # reached users last time.
-      - if: steps.expected.outputs.check == 'true'
+      - if: success() && steps.expected.outputs.check == 'true'
+        id: smoke
         name: Install it clean and run it, as a user would
         run: |
           VERSION="${{ steps.expected.outputs.version }}"
@@ -210,10 +281,52 @@ jobs:
       - name: Open an issue if the release never landed
         if: failure() && steps.expected.outputs.check == 'true'
         run: |
-          TITLE="Release ${{ steps.expected.outputs.tag }} is not usable from npm"
-          # One issue per broken release, not one per re-run.
+          TAG="${{ steps.expected.outputs.tag }}"
+          VERSION="${{ steps.expected.outputs.version }}"
+          RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          RESOLVE="${{ steps.resolve.outcome }}"
+          PUBLISH_RESULT="${{ needs.publish.result }}"
+          ACCEPTED="${{ needs.publish.outputs.accepted }}"
+          PROCESSING="${{ needs.publish.outputs.processing }}"
+          WAITED="${{ steps.resolve.outputs.waited }}"
+          MAX_WAIT="${{ steps.resolve.outputs.max_wait }}"
+
+          BODY_FILE="${RUNNER_TEMP}/issue-body.md"
+          if [ "$RESOLVE" != "success" ]; then
+            TITLE="Release ${TAG} did not become installable from npm"
+            {
+              echo "The GitHub release **${TAG}** exists, but npm view @openmem/mcp@${VERSION} version was still empty after waiting **${WAITED:-?}s** (budget ${MAX_WAIT:-?}s)."
+              echo
+              echo "Publish job result: ${PUBLISH_RESULT}. This run accepted a publish: ${ACCEPTED:-false}. Dist-tag showed an in-flight version: ${PROCESSING:-false}."
+              echo
+              echo "npm scans packages at publish time before they are installable (typically ~5 minutes, up to 15+ at peak). A wait that ends while scanning is in progress is not proof the release never landed — check the registry before assuming users are stuck on the previous tag."
+              echo
+              echo "Run that failed: ${RUN_URL}"
+              echo
+              echo "Check, in order:"
+              echo "1. Did the publish job run npm publish, or did it fail earlier (tests, install, auth)?"
+              echo "2. Is npm view @openmem/mcp@${VERSION} version empty *now*?"
+              echo "3. If publish succeeded and the version is still empty after 20 minutes, npm may be holding the package for review."
+            } > "$BODY_FILE"
+          else
+            TITLE="Release ${TAG} is on npm but failed the install smoke test"
+            {
+              echo "**${TAG}** resolves from npm, but a clean npm install @openmem/mcp@${VERSION} + openmemory init did not produce a database. Users can download this release and it does not run."
+              echo
+              echo "Publish job result: ${PUBLISH_RESULT}."
+              echo
+              echo "Run that failed: ${RUN_URL}"
+              echo
+              echo "The package is on the registry; this is not a processing delay. The smoke test is the same call that previously crashed when a native binary was missing from the tarball."
+            } > "$BODY_FILE"
+          fi
+
+          # One issue per broken release, not one per re-run. Match the new
+          # titles and the older "not usable from npm" wording so a retry of
+          # an already-filed release does not open a second issue.
           EXISTING=$(gh issue list --repo ${{ github.repository }} --state open \
-            --search "$TITLE in:title" --json number --jq '.[0].number // ""')
+            --search "${TAG} in:title" --json number,title \
+            --jq '[.[] | select(.title | test("not usable from npm|did not become installable|failed the install smoke test")) | .number] | .[0] // empty')
           if [ -n "$EXISTING" ]; then
             echo "Issue #${EXISTING} already open for this release."
             exit 0
@@ -221,15 +334,6 @@ jobs:
           gh issue create --repo ${{ github.repository }} \
             --title "$TITLE" \
             --assignee gordonkjlee \
-            --body "The GitHub release **${{ steps.expected.outputs.tag }}** exists, but verification failed: the version could not be installed from npm and run.
-
-          Users installing \`@openmem/mcp\` are not getting this release. A tagged release that never reached the registry has gone unnoticed before — this issue exists so it cannot happen silently again.
-
-          Run that failed: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-
-          Check, in order:
-          1. Did the publish job run at all, or did it fail earlier (tests, install)?
-          2. Is \`npm view @openmem/mcp@${{ steps.expected.outputs.version }} version\` empty?
-          3. Did the package publish but fail to run — i.e. installable but broken?"
+            --body-file "$BODY_FILE"
         env:
           GH_TOKEN: ${{ github.token }}
