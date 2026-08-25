@@ -259,6 +259,18 @@ describe.skipIf(!runnable)("the README names tools that exist", () => {
     }
   });
 
+  it("PowerShell examples quote the scoped package so @ is not splat", () => {
+    // `@openmem/mcp` unquoted is PowerShell splatting $openmem. A tester
+    // pasting Quick Start then gets a bind error, not a memory store.
+    const md = readFileSync(README, "utf-8");
+    const blocks = [...md.matchAll(/```powershell\r?\n([\s\S]*?)```/gi)].map((m) => m[1]);
+    expect(blocks.length).toBeGreaterThan(0);
+    for (const block of blocks) {
+      expect(block).not.toMatch(/-p @openmem\//);
+      expect(block).toMatch(/-p "@openmem\/mcp/);
+    }
+  });
+
   it("every registered tool is named in the README", () => {
     // The reverse rot: a tool ships and no one documents it, so the only place
     // it is described is a description the user never reads.

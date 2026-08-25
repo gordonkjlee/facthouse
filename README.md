@@ -48,7 +48,7 @@ PowerShell:
 
 ```powershell
 $env:OPENMEMORY_DATA = Join-Path $env:TEMP "openmemory-try"
-function om { npx -y -p @openmem/mcp@0.15.0 openmemory @args }
+function om { npx -y -p "@openmem/mcp@0.15.0" openmemory @args }
 om init
 ```
 <!-- x-release-please-end -->
@@ -153,7 +153,7 @@ PowerShell:
 
 ```powershell
 $env:OPENMEMORY_DATA = Join-Path $env:TEMP "openmemory-demo"
-function om { npx -y -p @openmem/mcp openmemory @args }
+function om { npx -y -p "@openmem/mcp" openmemory @args }
 om init
 om log-event --role user --content "I prefer dark mode in every editor, and I never want telemetry enabled."
 om log-event --role user --content "I am allergic to shellfish, so avoid seafood restaurants when booking anything."
