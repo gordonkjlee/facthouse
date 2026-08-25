@@ -24,10 +24,11 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync, existsSync, readFileSync } from "node:fs";
+import { mkdtempSync, rmSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { captureFactDescription } from "../../src/tools/capture-fact-description.js";
 
 const SERVER = path.resolve(fileURLToPath(new URL("../../dist/index.js", import.meta.url)));
 const CLI = path.resolve(fileURLToPath(new URL("../../dist/cli/index.js", import.meta.url)));
@@ -111,7 +112,8 @@ describe.skipIf(!runnable)("tool descriptions are an instruction layer", () => {
     // answering. If their descriptions go passive, OpenMemory stops working on
     // clients that have no rules of their own — which is every client but one.
     const captureFact = tools.find((t) => t.name === "capture_fact")!;
-    expect(captureFact.description).toMatch(/proactively/i);
+    // Default init writes sources: [] — proactive capture is the instruction.
+    expect(captureFact.description).toBe(captureFactDescription([]));
 
     const search = tools.find((t) => t.name === "search_knowledge")!;
     expect(search.description).toMatch(/\bbefore\b/i);
@@ -172,6 +174,63 @@ describe.skipIf(!runnable)("tool descriptions are an instruction layer", () => {
     }
   });
 });
+
+describe.skipIf(!runnable)(
+  "capture_fact on a pull store is a correction, not recapture",
+  () => {
+    let pullRoot: string;
+    let pullClient: Client;
+    let pullTools: Array<{ name: string; description?: string }> = [];
+
+    const pullSources = [
+      {
+        kind: "claude-code",
+        home: "C:\\Users\\alex\\.claude",
+        cwd: "C:\\dev\\app",
+      },
+    ];
+
+    beforeAll(async () => {
+      pullRoot = mkdtempSync(path.join(tmpdir(), "om-desc-pull-"));
+      spawnSync(process.execPath, [CLI, "init", pullRoot], { encoding: "utf-8" });
+      const configPath = path.join(pullRoot, "config.json");
+      const config = JSON.parse(readFileSync(configPath, "utf-8"));
+      config.sources = pullSources;
+      writeFileSync(configPath, JSON.stringify(config, null, 2));
+
+      const env: Record<string, string> = {};
+      for (const [k, v] of Object.entries(process.env)) if (v !== undefined) env[k] = v;
+      env.OPENMEMORY_DATA = pullRoot;
+      env.OPENMEMORY_PROVIDER = "heuristic";
+
+      const transport = new StdioClientTransport({
+        command: process.execPath,
+        args: [SERVER],
+        env,
+        stderr: "ignore",
+      });
+      pullClient = new Client(
+        { name: "desc-audit-pull", version: "1.0.0" },
+        { capabilities: {} },
+      );
+      await pullClient.connect(transport);
+      pullTools = (await pullClient.listTools()).tools;
+    }, 60_000);
+
+    afterAll(async () => {
+      await pullClient?.close().catch(() => {});
+      if (pullRoot) rmSync(pullRoot, { recursive: true, force: true });
+    });
+
+    it("ships the correction text from the same definition", () => {
+      const captureFact = pullTools.find((t) => t.name === "capture_fact")!;
+      expect(captureFact.description).toBe(captureFactDescription(pullSources));
+      expect(captureFact.description).not.toMatch(/proactively/i);
+      expect((captureFact.description ?? "").length).toBeGreaterThanOrEqual(120);
+      expect(TIMING.test(captureFact.description ?? "")).toBe(true);
+    });
+  },
+);
 
 // ---------------------------------------------------------------------------
 // The README is an instruction layer too

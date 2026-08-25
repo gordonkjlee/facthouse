@@ -21,6 +21,9 @@ const { insertEvent } = await import("../../src/db/sessions.js");
 const { insertFact } = await import("../../src/db/facts.js");
 const { consolidate } = await import("../../src/intelligence/consolidate.js");
 const { createHeuristicProvider } = await import("../../src/intelligence/heuristic.js");
+const { latestConversationSituation } = await import(
+  "../../src/db/consolidations.js"
+);
 const { PERSONAL_VOCABULARY } = await import("../fixtures/vocabulary.js");
 
 let db: Db;
@@ -65,23 +68,14 @@ function watermark() {
 }
 
 function situation(sessionId: string) {
-  return db
-    .prepare(
-      `SELECT now, now_start_sequence, now_referents, segments
-         FROM consolidations
-        WHERE session_id = ?
-          AND (now IS NOT NULL OR now_referents IS NOT NULL OR segments IS NOT NULL)
-        ORDER BY created_at DESC
-        LIMIT 1`,
-    )
-    .get(sessionId) as
-    | {
-        now: string | null;
-        now_start_sequence: number | null;
-        now_referents: string | null;
-        segments: string | null;
-      }
-    | undefined;
+  const s = latestConversationSituation(db, sessionId);
+  if (!s) return undefined;
+  return {
+    now: s.now,
+    now_start_sequence: s.now_start_sequence,
+    now_referents: JSON.stringify(s.referents),
+    segments: JSON.stringify(s.segments),
+  };
 }
 
 function recording(
@@ -373,6 +367,37 @@ describe("now, referents, segments", () => {
       { phrase: "the file", binding: "sampling.ts" },
     ]);
     expect(JSON.parse(row.segments ?? "[]")).toEqual([]);
+  });
+
+  it("picks the later run when two rows share a created_at", () => {
+    const ts = "2026-08-25T12:00:00.000Z";
+    const insert = db.prepare(
+      `INSERT INTO consolidations
+         (id, session_id, facts_in, facts_graduated, facts_rejected,
+          entities_created, entities_linked, supersessions,
+          summary, open_threads, last_event_sequence, created_at,
+          now, now_referents, segments)
+       VALUES (?, 'sess-aaa', 0, 0, 0, 0, 0, 0, NULL, NULL, ?, ?,
+               'changing D→I', ?, '[]')`,
+    );
+    // Higher watermark first so a rowid-only ORDER BY would pick the wrong
+    // row. created_at alone is what flaked on Node 24 CI.
+    insert.run(
+      "c-later",
+      2,
+      ts,
+      JSON.stringify([{ phrase: "the file", binding: "sampling.ts" }]),
+    );
+    insert.run(
+      "c-earlier",
+      1,
+      ts,
+      JSON.stringify([{ phrase: "the file", binding: "consolidate.ts" }]),
+    );
+    const row = situation("sess-aaa")!;
+    expect(JSON.parse(row.now_referents ?? "[]")).toEqual([
+      { phrase: "the file", binding: "sampling.ts" },
+    ]);
   });
 
   it("restores gist and referents from a closed segment on topic return", async () => {

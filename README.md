@@ -1,6 +1,8 @@
 # OpenMemory
 
-AI memory engine exposed as an MCP server. Structured knowledge with server-side intelligence - domain routing, entity extraction, deduplication, and supersession. Any AI tool can query it. You own the data.
+Local-first AI memory engine exposed as an MCP server. GitHub [`gordonkjlee/openmemory`](https://github.com/gordonkjlee/openmemory), npm [`@openmem/mcp`](https://www.npmjs.com/package/@openmem/mcp). Structured knowledge with server-side intelligence — domain routing, entity extraction, deduplication, and supersession. Any AI tool can query it. You own the SQLite file.
+
+This is not Mem0's hosted "OpenMemory MCP" at [`mcp.mem0.ai`](https://mcp.mem0.ai). Same name, different product: this one is local SQLite, not a hosted memory plane.
 
 ## The Problem
 
@@ -268,7 +270,7 @@ Both are read-only views over the same database the tools query, so they can't d
 - `search_knowledge` — Hybrid search across graduated knowledge
 
 ### Writing
-- `capture_fact` — Optional correction: store a fact pull-plus-extraction missed. Fast append with session tagging. Full intelligence deferred to consolidation.
+- `capture_fact` — Store a fact. On a pull store this is a correction for something extraction missed; on a store with empty `sources` it is how facts get in. The description the assistant sees is generated from that same rule. Fast append with session tagging; full intelligence deferred to consolidation.
 - `consolidate` — Integrate pending facts into long-term knowledge. Extracts entities, resolves duplicates, detects contradictions, builds the knowledge graph. Call at natural breakpoints or before context compaction.
 
 ### Meta
@@ -506,7 +508,7 @@ If most of that volume is tool output you judge to be noise rather than knowledg
 
 1. Extraction has already read it. Anything ahead of the consolidation watermark is still input.
 2. No fact's provenance cites it. A cited event is the answer to "why does it believe this?", so it stays however old it gets.
-3. It has fallen outside its own session's most recent `extraction.working_memory_size` events, which consolidation re-reads for pronoun resolution and topical flow.
+3. It has fallen outside its own session's most recent `extraction.working_memory_size` events — a spare so consolidation can still glance at recent raw notes. That window is evidence of the current topic, not a pronoun dictionary.
 
 No fact, entity, embedding or search result is affected — only raw events that nothing can reach. Deleting rows does not shrink the file on its own, which is what `--vacuum` is for; it rewrites the whole database and needs comparable free disk space.
 
@@ -522,17 +524,18 @@ npm run build
 npm test
 ```
 
-`npm test` skips the semantic-recall eval, because that one needs a real
-embedding model rather than a stub — it drives the built server over stdio and
-asks whether a query sharing no words with a fact actually finds it. To run it,
-start Ollama with `ollama pull nomic-embed-text` and:
+`npm test` always runs a hermetic first-fact pipeline (fixture JSONL → pull →
+extract → search) with a recording extractor, and skips two live evals that
+need a real model:
 
-```bash
-npm run test:semantic
-```
+- Semantic recall needs Ollama with `nomic-embed-text`. Start it, then
+  `npm run test:semantic`.
+- The live first-fact eval needs the `claude` CLI, the same path as Quick
+  Start. Run `npm run test:first-fact`.
 
-That fails rather than skips when no model is reachable, so a green run means
-semantic search was genuinely verified rather than quietly stepped over.
+Each of those scripts fails rather than skips when its dependency is missing,
+so a green run means the claim was actually verified rather than quietly
+stepped over.
 
 ## License
 

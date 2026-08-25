@@ -126,6 +126,7 @@ const factManager = createFactManager(db, sessionManager, {
   // reads them, so the hardcoded defaults always won whatever a store set.
   captureConfig: config.capture,
   autoLinkEvents: config.consolidation.auto_link_events,
+  sources: config.sources,
   // Consolidation is the only thing that changes graduated knowledge, so it's
   // the only thing that can change what these resources render.
   onConsolidated: () => resources.notifyUpdated(),

@@ -35,6 +35,7 @@ import {
 import {
   latestConversationSituation,
   applySituation,
+  NEWEST_CONSOLIDATION,
   type ConversationSituation,
 } from "../db/consolidations.js";
 import { normaliseForDedup } from "./heuristic.js";
@@ -797,7 +798,7 @@ function latestSessionSummary(
         .prepare(
           `SELECT summary FROM consolidations
            WHERE session_id = ? AND id != ? AND summary IS NOT NULL
-           ORDER BY created_at DESC
+           ORDER BY ${NEWEST_CONSOLIDATION}
            LIMIT 1`,
         )
         .get(sessionId, excludeId) as { summary: string } | undefined)
@@ -805,7 +806,7 @@ function latestSessionSummary(
         .prepare(
           `SELECT summary FROM consolidations
            WHERE session_id = ? AND summary IS NOT NULL
-           ORDER BY created_at DESC
+           ORDER BY ${NEWEST_CONSOLIDATION}
            LIMIT 1`,
         )
         .get(sessionId) as { summary: string } | undefined);
