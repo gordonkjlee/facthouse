@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.16.0](https://github.com/gordonkjlee/openmemory/compare/v0.15.0...v0.16.0) (2026-08-25)
+
+
+### Features
+
+* **intelligence:** extract with now and referents ([#150](https://github.com/gordonkjlee/openmemory/issues/150)) ([bc238e3](https://github.com/gordonkjlee/openmemory/commit/bc238e35815cb035c7a8e0da5ed7b003e6678ac8))
+* **tools:** match capture_fact to store mode ([#151](https://github.com/gordonkjlee/openmemory/issues/151)) ([f41e645](https://github.com/gordonkjlee/openmemory/commit/f41e64581a73f3b6fd04106bb51eaa705da332d1))
+
+
+### Bug Fixes
+
+* **cli:** tell testers how to turn pull on without hanging hooks ([#147](https://github.com/gordonkjlee/openmemory/issues/147)) ([53e320f](https://github.com/gordonkjlee/openmemory/commit/53e320f4c4a285ed4c6f799b6ce96b04f830e7a1))
+* **intelligence:** extract each conversation on its own ([#149](https://github.com/gordonkjlee/openmemory/issues/149)) ([e6effcf](https://github.com/gordonkjlee/openmemory/commit/e6effcf736e5285effced12fc8aa2c73b2a7a5f9))
+
 ## [0.15.0](https://github.com/gordonkjlee/openmemory/compare/v0.14.1...v0.15.0) (2026-08-23)
 
 
