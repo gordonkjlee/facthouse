@@ -4,9 +4,13 @@
  */
 
 import type { Db } from "./connection.js";
-import type { Consolidation } from "../types/data.js";
+import type {
+  Consolidation,
+  Referent,
+  TopicSegment,
+} from "../types/data.js";
 
-/** Shape as stored: open_threads is a JSON-encoded TEXT column. */
+/** Shape as stored: open_threads / now_referents / segments are JSON TEXT. */
 interface ConsolidationRow {
   id: string;
   session_id: string | null;
@@ -18,7 +22,72 @@ interface ConsolidationRow {
   supersessions: number;
   summary: string | null;
   open_threads: string | null;
+  now: string | null;
+  now_start_sequence: number | null;
+  now_referents: string | null;
+  segments: string | null;
   created_at: string;
+}
+
+function parseReferents(raw: string | null): Referent[] | null {
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return null;
+    const out: Referent[] = [];
+    for (const item of parsed) {
+      if (
+        item &&
+        typeof item === "object" &&
+        typeof (item as Referent).phrase === "string" &&
+        typeof (item as Referent).binding === "string"
+      ) {
+        out.push({
+          phrase: (item as Referent).phrase,
+          binding: (item as Referent).binding,
+        });
+      }
+    }
+    return out;
+  } catch {
+    return null;
+  }
+}
+
+function parseSegments(raw: string | null): TopicSegment[] | null {
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return null;
+    const out: TopicSegment[] = [];
+    for (const item of parsed) {
+      if (
+        item &&
+        typeof item === "object" &&
+        typeof (item as TopicSegment).start_sequence === "number" &&
+        typeof (item as TopicSegment).end_sequence === "number" &&
+        typeof (item as TopicSegment).gist === "string"
+      ) {
+        const referents = Array.isArray((item as TopicSegment).referents)
+          ? ((item as TopicSegment).referents as Referent[]).filter(
+              (r) =>
+                r &&
+                typeof r.phrase === "string" &&
+                typeof r.binding === "string",
+            )
+          : [];
+        out.push({
+          start_sequence: (item as TopicSegment).start_sequence,
+          end_sequence: (item as TopicSegment).end_sequence,
+          gist: (item as TopicSegment).gist,
+          referents,
+        });
+      }
+    }
+    return out;
+  } catch {
+    return null;
+  }
 }
 
 function hydrate(row: ConsolidationRow): Consolidation {
@@ -42,8 +111,20 @@ function hydrate(row: ConsolidationRow): Consolidation {
     supersessions: row.supersessions,
     summary: row.summary,
     open_threads: openThreads,
+    now: row.now ?? null,
+    now_start_sequence: row.now_start_sequence ?? null,
+    now_referents: parseReferents(row.now_referents),
+    segments: parseSegments(row.segments),
     created_at: row.created_at,
   };
+}
+
+/** Situation stored for one conversation, read from the latest row that has it. */
+export interface ConversationSituation {
+  now: string | null;
+  now_start_sequence: number | null;
+  referents: Referent[];
+  segments: TopicSegment[];
 }
 
 /** The most recent consolidation run, or null if none have happened. */
@@ -72,4 +153,72 @@ export function getLatestSummarised(db: Db): Consolidation | null {
     )
     .get() as unknown as ConsolidationRow | undefined;
   return row ? hydrate(row) : null;
+}
+
+/**
+ * Latest now / referents / segments for one conversation.
+ *
+ * Same "newest row for this session_id" pattern as the rolling summary.
+ */
+export function latestConversationSituation(
+  db: Db,
+  sessionId: string,
+  excludeId?: string,
+): ConversationSituation | null {
+  const row = excludeId
+    ? (db
+        .prepare(
+          `SELECT now, now_start_sequence, now_referents, segments
+           FROM consolidations
+           WHERE session_id = ? AND id != ?
+             AND (now IS NOT NULL OR now_referents IS NOT NULL OR segments IS NOT NULL)
+           ORDER BY created_at DESC
+           LIMIT 1`,
+        )
+        .get(sessionId, excludeId) as
+        | Pick<
+            ConsolidationRow,
+            "now" | "now_start_sequence" | "now_referents" | "segments"
+          >
+        | undefined)
+    : (db
+        .prepare(
+          `SELECT now, now_start_sequence, now_referents, segments
+           FROM consolidations
+           WHERE session_id = ?
+             AND (now IS NOT NULL OR now_referents IS NOT NULL OR segments IS NOT NULL)
+           ORDER BY created_at DESC
+           LIMIT 1`,
+        )
+        .get(sessionId) as
+        | Pick<
+            ConsolidationRow,
+            "now" | "now_start_sequence" | "now_referents" | "segments"
+          >
+        | undefined);
+  if (!row) return null;
+  return {
+    now: row.now ?? null,
+    now_start_sequence: row.now_start_sequence ?? null,
+    referents: parseReferents(row.now_referents) ?? [],
+    segments: parseSegments(row.segments) ?? [],
+  };
+}
+
+export function applySituation(
+  db: Db,
+  consolidationId: string,
+  situation: ConversationSituation,
+): void {
+  db.prepare(
+    `UPDATE consolidations
+     SET now = ?, now_start_sequence = ?, now_referents = ?, segments = ?
+     WHERE id = ?`,
+  ).run(
+    situation.now,
+    situation.now_start_sequence,
+    JSON.stringify(situation.referents),
+    JSON.stringify(situation.segments),
+    consolidationId,
+  );
 }

@@ -30,6 +30,23 @@ export interface Session {
   last_activity_at: string;
 }
 
+/** Last-known binding for a live deictic in the current activity. */
+export interface Referent {
+  phrase: string;
+  binding: string;
+}
+
+/**
+ * A closed activity in one conversation: gist + referents as they were,
+ * bounded by event sequence. Return-worthy, not a per-noun granule.
+ */
+export interface TopicSegment {
+  start_sequence: number;
+  end_sequence: number;
+  gist: string;
+  referents: Referent[];
+}
+
 /** A consolidation run over session facts. Can happen multiple times per session. */
 export interface Consolidation {
   id: string;
@@ -42,6 +59,11 @@ export interface Consolidation {
   supersessions: number;
   summary: string | null;
   open_threads: string[] | null;
+  /** Current activity gist for this session_id, if this row carries situation. */
+  now: string | null;
+  now_start_sequence: number | null;
+  now_referents: Referent[] | null;
+  segments: TopicSegment[] | null;
   created_at: string;
 }
 

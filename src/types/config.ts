@@ -81,10 +81,13 @@ export interface ExtractionConfig {
   min_content_length: number;
   /** Truncate events longer than this for extraction (full content preserved). */
   max_content_length: number;
-  /** Max number of pre-watermark events from the same session to pass to the
-   *  extraction provider as working memory. Larger values give the LLM richer
-   *  pronoun resolution and topical continuity at the cost of more tokens per
-   *  call. The 0 case effectively disables working memory. */
+  /**
+   * Reachable recent D kept per conversation: prune spares this many newest
+   * already-read events, and forgetfulness reread may fetch from that pool.
+   * Happy-path extract passes only a short evidence prefix of this pool, not
+   * the whole window — situation and referents live on consolidations.now.
+   * 0 disables the prefix and the reread pool.
+   */
   working_memory_size: number;
 }
 
@@ -144,7 +147,7 @@ export interface ConsolidationConfig {
  */
 export interface RetentionConfig {
   /**
-   * Events per session spared as working memory when pruning. Null defers to
+   * Events per session spared as reachable recent D when pruning. Null defers to
    * `extraction.working_memory_size`, which is the setting it protects — the
    * two must not drift, so there is normally no reason to set this.
    */

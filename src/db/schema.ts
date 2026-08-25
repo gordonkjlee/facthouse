@@ -48,6 +48,9 @@ export function applySchema(db: Db): void {
   if (version < 11) {
     applyV11(db);
   }
+  if (version < 12) {
+    applyV12(db);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -562,4 +565,25 @@ function applyV11(db: Db): void {
   `);
 
   pragmaWrite(db, "user_version = 11");
+}
+
+// ---------------------------------------------------------------------------
+// Schema version 12 — conversation situation for D→I
+//
+// Per-session extract context lives on consolidations next to the rolling
+// summary (same "latest row for this session_id" read). `now` is the activity
+// gist; `now_referents` is the last-known deictic board; `segments` are closed
+// nows (gist + referents + sequence range). Nullable so existing INSERT
+// column lists keep working.
+// ---------------------------------------------------------------------------
+function applyV12(db: Db): void {
+  db.exec(`
+    ALTER TABLE consolidations ADD COLUMN now TEXT;
+    ALTER TABLE consolidations ADD COLUMN now_start_sequence INTEGER;
+    ALTER TABLE consolidations ADD COLUMN now_referents TEXT;
+    ALTER TABLE consolidations ADD COLUMN segments TEXT;
+    CREATE INDEX IF NOT EXISTS idx_consolidations_session ON consolidations(session_id);
+  `);
+
+  pragmaWrite(db, "user_version = 12");
 }
