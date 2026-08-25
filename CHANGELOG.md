@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.17.0](https://github.com/gordonkjlee/openmemory/compare/v0.16.0...v0.17.0) (2026-08-25)
+
+
+### Features
+
+* **intelligence:** pass related K into extract, not all facts ([#156](https://github.com/gordonkjlee/openmemory/issues/156)) ([7bf9851](https://github.com/gordonkjlee/openmemory/commit/7bf98511e39b4d9108242f5a776a1838673b8cb7))
+* **search:** return episode slices when knowledge is thin ([#153](https://github.com/gordonkjlee/openmemory/issues/153)) ([7029c57](https://github.com/gordonkjlee/openmemory/commit/7029c57bae32e315dfca7b47d82793f46cdb06d1))
+* **tools:** bootstrap tools-only clients via session context ([#155](https://github.com/gordonkjlee/openmemory/issues/155)) ([25cac5d](https://github.com/gordonkjlee/openmemory/commit/25cac5dcb98b1082eb68f4b4bf36e1eff62a82da))
+
 ## [0.16.0](https://github.com/gordonkjlee/openmemory/compare/v0.15.0...v0.16.0) (2026-08-25)
 
 
