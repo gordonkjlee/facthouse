@@ -32,6 +32,7 @@ import {
   EXTRACT_REREAD_WINDOW,
   capReferents,
 } from "./extract-prompt.js";
+import { relatedFactsForExtract } from "./related-k.js";
 import {
   latestConversationSituation,
   applySituation,
@@ -1068,16 +1069,6 @@ async function extractFactsFromEvents(
   const groups = groupByConversation(newEvents);
   if (groups.length === 0) return empty;
 
-  const longTermMemory = (
-    db
-      .prepare(
-        `SELECT * FROM facts
-       WHERE status = 'active' AND is_latest = 1
-         AND (valid_until IS NULL OR valid_until > datetime('now'))`,
-      )
-      .all() as Array<Omit<Fact, "is_latest"> & { is_latest: number }>
-  ).map((row) => ({ ...row, is_latest: row.is_latest === 1 }));
-
   // Buffer inserts until every group has been examined. Provider-down
   // (degraded) still discards the whole buffer so a mixed batch cannot
   // advance past an unexamined conversation. Unconfident-after-reread is
@@ -1099,17 +1090,19 @@ async function extractFactsFromEvents(
           ? e.content.slice(0, maxContentLength)
           : e.content,
     }));
+    const relatedFacts = relatedFactsForExtract(db, truncated);
     const extras = {
       now: prior?.now ?? null,
       referents: prior?.referents ?? [],
       segments: prior?.segments ?? [],
+      relatedFacts,
     };
 
     let outcome = await intelligence.extractFactsFromEvents(
       truncated,
       evidence,
       priorSummary,
-      longTermMemory,
+      relatedFacts,
       extras,
     );
     if (outcome.degraded) return { degraded: true, pending: [] };
@@ -1126,7 +1119,7 @@ async function extractFactsFromEvents(
         truncated,
         evidence,
         priorSummary,
-        longTermMemory,
+        relatedFacts,
         { ...extras, reminderEvents: reminder },
       );
       if (outcome.degraded) return { degraded: true, pending: [] };

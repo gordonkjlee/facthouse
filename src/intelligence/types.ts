@@ -80,6 +80,11 @@ export interface ExtractExtras {
   referents?: Referent[];
   segments?: TopicSegment[];
   reminderEvents?: SessionEvent[];
+  /**
+   * Bounded related graduated facts for this extract (hybrid search, capped).
+   * Same list as the longTermMemory argument. Cue, not veto.
+   */
+  relatedFacts?: Fact[];
 }
 
 /** Rich per-fact output from holistic D→I extraction. */
@@ -153,9 +158,9 @@ export interface IntelligenceProvider {
    *                          that session_now has not drifted). NOT the
    *                          disambiguation table and NOT re-extracted.
    *  @param sessionSummary   Rolling gist of the episode (optional).
-   *  @param longTermMemory   Currently-active graduated facts (optional).
-   *                          Cue and de-dupe; must not veto a contradicting
-   *                          new line.
+   *  @param longTermMemory   Small related set of graduated facts (optional).
+   *                          Same list as extras.relatedFacts. Cue and
+   *                          de-dupe; must not veto a contradicting new line.
    *  @param extras           session_now, referents, closed segments, and
    *                          optional reminder_events on a forgetfulness retry. */
   extractFactsFromEvents(
