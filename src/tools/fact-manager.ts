@@ -18,6 +18,7 @@ import {
   linkFactSource,
 } from "../db/session-facts.js";
 import { consolidate, type ConsolidationResult } from "../intelligence/consolidate.js";
+import { captureFactDescription } from "./capture-fact-description.js";
 
 // ---------------------------------------------------------------------------
 // Public interface
@@ -66,6 +67,12 @@ export interface FactManagerOpts {
    * throwing hook would be invisible.
    */
   onConsolidated?: (result: ConsolidationResult) => void;
+  /**
+   * This store's `config.sources`. Named sources → correction-only
+   * capture_fact description; empty/omitted → proactive capture. The
+   * description is the one instruction layer every client reads.
+   */
+  sources?: unknown;
 }
 
 export function createFactManager(
@@ -204,16 +211,7 @@ export function createFactManager(
       // ---------------------------------------------------------------
       server.tool(
         "capture_fact",
-        `Store a durable fact worth remembering across sessions. Call this proactively whenever you learn ` +
-          `something useful for future conversations — preferences, personal details, ` +
-          `medical information, relationships, work context, opinions, or decisions.\n\n` +
-          `Capture is fast — the server stores the fact immediately. Entity extraction, ` +
-          `domain classification, and cross-session reconciliation run in batch when ` +
-          `you call consolidate. Capture frequently without slowing the conversation.\n\n` +
-          `Exact same-session duplicates are dropped immediately. Cross-session exact ` +
-          `duplicates are also rejected during the next consolidation run — safe to ` +
-          `capture the same fact from multiple conversations without polluting the ` +
-          `knowledge graph.`,
+        captureFactDescription(opts?.sources),
         {
           content: z.string().describe("The fact to capture"),
           domain_hint: z

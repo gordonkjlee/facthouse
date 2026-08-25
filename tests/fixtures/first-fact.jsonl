@@ -1,0 +1,2 @@
+{"type":"user","sessionId":"sess-first-fact","message":{"role":"user","content":"Alex keeps a brass kaleidoscope on the desk at Acme."}}
+{"type":"assistant","sessionId":"sess-first-fact","message":{"role":"assistant","content":[{"type":"text","text":"I will remember the kaleidoscope."}]}}

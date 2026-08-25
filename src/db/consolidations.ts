@@ -10,6 +10,18 @@ import type {
   TopicSegment,
 } from "../types/data.js";
 
+/**
+ * Newest consolidation when `created_at` ties.
+ *
+ * `new Date().toISOString()` is millisecond resolution. Two consolidations in
+ * the same millisecond (fast machines, Node 24 CI) then sort unstably on
+ * created_at alone — the test that rebinds a referent and the live extract
+ * that reads `now` both picked the earlier row. last_event_sequence is how
+ * far the run got; rowid is insert order.
+ */
+export const NEWEST_CONSOLIDATION =
+  "created_at DESC, last_event_sequence DESC, rowid DESC";
+
 /** Shape as stored: open_threads / now_referents / segments are JSON TEXT. */
 interface ConsolidationRow {
   id: string;
@@ -130,7 +142,9 @@ export interface ConversationSituation {
 /** The most recent consolidation run, or null if none have happened. */
 export function getLatestConsolidation(db: Db): Consolidation | null {
   const row = db
-    .prepare(`SELECT * FROM consolidations ORDER BY created_at DESC LIMIT 1`)
+    .prepare(
+      `SELECT * FROM consolidations ORDER BY ${NEWEST_CONSOLIDATION} LIMIT 1`,
+    )
     .get() as unknown as ConsolidationRow | undefined;
   return row ? hydrate(row) : null;
 }
@@ -148,7 +162,7 @@ export function getLatestSummarised(db: Db): Consolidation | null {
     .prepare(
       `SELECT * FROM consolidations
        WHERE summary IS NOT NULL
-       ORDER BY created_at DESC
+       ORDER BY ${NEWEST_CONSOLIDATION}
        LIMIT 1`,
     )
     .get() as unknown as ConsolidationRow | undefined;
@@ -172,7 +186,7 @@ export function latestConversationSituation(
            FROM consolidations
            WHERE session_id = ? AND id != ?
              AND (now IS NOT NULL OR now_referents IS NOT NULL OR segments IS NOT NULL)
-           ORDER BY created_at DESC
+           ORDER BY ${NEWEST_CONSOLIDATION}
            LIMIT 1`,
         )
         .get(sessionId, excludeId) as
@@ -187,7 +201,7 @@ export function latestConversationSituation(
            FROM consolidations
            WHERE session_id = ?
              AND (now IS NOT NULL OR now_referents IS NOT NULL OR segments IS NOT NULL)
-           ORDER BY created_at DESC
+           ORDER BY ${NEWEST_CONSOLIDATION}
            LIMIT 1`,
         )
         .get(sessionId) as
