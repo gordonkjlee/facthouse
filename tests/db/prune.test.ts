@@ -121,6 +121,35 @@ describe("what prune refuses to remove", () => {
 
     expect(prunableEvents(db, 4).events).toBe(4);
   });
+
+  it("partitions dual-id rows by client id, matching conversationRef", () => {
+    // Pull writes client only. MCP log_event with OPENMEMORY_CLIENT_SESSION
+    // writes both. They are the same Claude chat, so they share a working-memory
+    // window. mcp-first COALESCE would split them: pull by client, MCP by
+    // connection. Client-first keeps them together.
+    const mcp = s1;
+    for (let i = 0; i < 6; i++) {
+      insertEvent(db, {
+        client_session_id: "sess-aaa",
+        event_type: "message",
+        role: "user",
+        content: "pulled from jsonl",
+      });
+    }
+    for (let i = 0; i < 6; i++) {
+      insertEvent(db, {
+        mcp_session_id: mcp,
+        client_session_id: "sess-aaa",
+        event_type: "message",
+        role: "user",
+        content: "logged on the mcp connection",
+      });
+    }
+    markAllRead();
+
+    // One conversation of 12, keep 4 → prune 8. Two partitions of 6 would prune 4.
+    expect(prunableEvents(db, 4).events).toBe(8);
+  });
 });
 
 describe("what prune does remove", () => {

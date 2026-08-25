@@ -33,6 +33,33 @@ export interface GetEventsOpts {
   limit?: number;
 }
 
+/**
+ * The conversation an event belongs to.
+ *
+ * `client_session_id` is the client's own conversation (a Claude Code JSONL
+ * file, `log-event --session-id`, `OPENMEMORY_CLIENT_SESSION`). Prefer it:
+ * `mcp_session_id` is our MCP connection, one per handshake, not one per chat.
+ *
+ * Pull writes only the client column and never calls `getLatestSession()`.
+ * Events with neither column are unkeyed — examined and declined, not attached
+ * to whatever was last active. SQL that partitions sessions must use the same
+ * order: `COALESCE(NULLIF(client_session_id, ''), NULLIF(mcp_session_id, ''), id)` in `prune.ts`.
+ */
+export type ConversationRef = { kind: "client" | "mcp"; id: string };
+
+export function conversationRef(event: {
+  client_session_id: string | null;
+  mcp_session_id: string | null;
+}): ConversationRef | null {
+  // Empty string is the same as null: COALESCE would treat it as a key,
+  // so prune uses NULLIF to match this truthiness.
+  const client = event.client_session_id || null;
+  const mcp = event.mcp_session_id || null;
+  if (client) return { kind: "client", id: client };
+  if (mcp) return { kind: "mcp", id: mcp };
+  return null;
+}
+
 // ---------------------------------------------------------------------------
 // Sessions
 // ---------------------------------------------------------------------------
@@ -102,8 +129,10 @@ export function insertEvent(
 ): SessionEvent {
   const id = randomUUID();
   const now = new Date().toISOString();
-  const mcpSessionId = event.mcp_session_id ?? null;
-  const clientSessionId = event.client_session_id ?? null;
+  // Empty string is missing — same truthiness as conversationRef / prune NULLIF.
+  // `??` would store "" and then working-memory SQL (`IS NULL`) would skip the row.
+  const mcpSessionId = event.mcp_session_id || null;
+  const clientSessionId = event.client_session_id || null;
   const contentType = event.content_type ?? "text";
   const contentRef = event.content_ref ?? null;
   const metadata = event.metadata ? JSON.stringify(event.metadata) : null;

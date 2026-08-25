@@ -18,6 +18,7 @@ import type {
   IntelligenceProvider,
   ClassifiedFact,
   ExtractedEntity,
+  ExtractedFact,
 } from "./types.js";
 import { normaliseForDedup } from "./heuristic.js";
 import {
@@ -26,6 +27,10 @@ import {
   insertSessionFact,
   linkFactSource,
 } from "../db/session-facts.js";
+import {
+  conversationRef,
+  type ConversationRef,
+} from "../db/sessions.js";
 import {
   insertFact,
   getFactsByDomain,
@@ -366,10 +371,10 @@ export async function consolidate(
       });
     }
 
-    // Determine the session_id for this consolidation run — used for the
-    // consolidations row session_id column and to look up the prior rolling
-    // session summary. Multi-session runs (rare; happens when consolidate
-    // spans events from multiple sessions) get null.
+    // The run row carries this id when every fact this batch belongs to one
+    // conversation. Mixed batches leave it null — per-session rolling
+    // summaries are written as satellite consolidations rows below, not
+    // dropped.
     const uniqueSessionIds = new Set(sessionFacts.map((f) => f.session_id));
     const recordSessionId =
       uniqueSessionIds.size === 1 ? [...uniqueSessionIds][0] : null;
@@ -607,42 +612,72 @@ export async function consolidate(
         `Conflict: "${d.newContent}" also targeted "${d.targetedContent}" for supersession but another candidate won. Graduated as an independent fact — review manually.`,
     );
 
-    // Look up the prior rolling session summary for this session — null when
-    // this is the first consolidation of the session, or when the run spans
-    // multiple sessions (recordSessionId is null in that case).
-    const priorSessionSummary = recordSessionId
-      ? (db
-          .prepare(
-            `SELECT summary FROM consolidations
-             WHERE session_id = ? AND id != ? AND summary IS NOT NULL
-             ORDER BY created_at DESC
-             LIMIT 1`,
-          )
-          .get(recordSessionId, consolidationId) as { summary: string } | undefined)?.summary ??
-        null
-      : null;
-
-    // Generate summary (non-critical — don't lose a successful consolidation on failure)
+    // Generate summaries (non-critical — don't lose a successful consolidation
+    // on failure). One conversation updates the run row. Several conversations
+    // leave the run row as the watermark clock and write a satellite row per
+    // session so the next extract of that id still has a rolling summary.
     let summaryText: string | null = null;
     let threads: string[] = [...conflictMessages];
-    try {
-      const summaryResult = await intelligence.summarise(
-        sessionFacts,
-        graduatedFacts,
-        priorSessionSummary,
+    if (recordSessionId) {
+      const priorSessionSummary = latestSessionSummary(
+        db,
+        recordSessionId,
+        consolidationId,
       );
-      summaryText = summaryResult.summary;
-      threads = [...conflictMessages, ...summaryResult.openThreads];
-      db.prepare(
-        `UPDATE consolidations SET summary = ?, open_threads = ? WHERE id = ?`,
-      ).run(summaryText, JSON.stringify(threads), consolidationId);
-    } catch {
-      // Summary is non-critical — consolidation already succeeded.
-      // Still persist conflict threads if any.
+      try {
+        const summaryResult = await intelligence.summarise(
+          sessionFacts,
+          graduatedFacts,
+          priorSessionSummary,
+        );
+        summaryText = summaryResult.summary;
+        threads = [...conflictMessages, ...summaryResult.openThreads];
+        db.prepare(
+          `UPDATE consolidations SET summary = ?, open_threads = ? WHERE id = ?`,
+        ).run(summaryText, JSON.stringify(threads), consolidationId);
+      } catch {
+        if (conflictMessages.length > 0) {
+          db.prepare(
+            `UPDATE consolidations SET open_threads = ? WHERE id = ?`,
+          ).run(JSON.stringify(conflictMessages), consolidationId);
+        }
+      }
+    } else {
       if (conflictMessages.length > 0) {
         db.prepare(
           `UPDATE consolidations SET open_threads = ? WHERE id = ?`,
         ).run(JSON.stringify(conflictMessages), consolidationId);
+      }
+      for (const sessionId of uniqueSessionIds) {
+        const factsFor = sessionFacts.filter((f) => f.session_id === sessionId);
+        const graduatedFor = graduatedFacts.filter(
+          (f) => f.session_id === sessionId,
+        );
+        const prior = latestSessionSummary(db, sessionId, consolidationId);
+        try {
+          const summaryResult = await intelligence.summarise(
+            factsFor,
+            graduatedFor,
+            prior,
+          );
+          db.prepare(
+            `INSERT INTO consolidations
+             (id, session_id, facts_in, facts_graduated, facts_rejected,
+              entities_created, entities_linked, supersessions,
+              summary, open_threads, last_event_sequence, created_at)
+             VALUES (?, ?, 0, 0, 0, 0, 0, 0, ?, ?, ?, ?)`,
+          ).run(
+            randomUUID(),
+            sessionId,
+            summaryResult.summary,
+            JSON.stringify(summaryResult.openThreads),
+            effectiveWatermark,
+            new Date().toISOString(),
+          );
+        } catch {
+          // Satellite summary is non-critical — the run row already advanced
+          // the watermark and the facts are graduated.
+        }
       }
     }
 
@@ -687,6 +722,112 @@ function parseEventRow(row: SessionEventRow): SessionEvent {
       ? (JSON.parse(row.metadata) as Record<string, unknown>)
       : null,
   };
+}
+
+function latestSessionSummary(
+  db: Db,
+  sessionId: string,
+  excludeId?: string,
+): string | null {
+  const row = excludeId
+    ? (db
+        .prepare(
+          `SELECT summary FROM consolidations
+           WHERE session_id = ? AND id != ? AND summary IS NOT NULL
+           ORDER BY created_at DESC
+           LIMIT 1`,
+        )
+        .get(sessionId, excludeId) as { summary: string } | undefined)
+    : (db
+        .prepare(
+          `SELECT summary FROM consolidations
+           WHERE session_id = ? AND summary IS NOT NULL
+           ORDER BY created_at DESC
+           LIMIT 1`,
+        )
+        .get(sessionId) as { summary: string } | undefined);
+  return row?.summary ?? null;
+}
+
+type EventGroup = { ref: ConversationRef; events: SessionEvent[] };
+
+function groupByConversation(events: SessionEvent[]): EventGroup[] {
+  const groups = new Map<string, EventGroup>();
+  for (const event of events) {
+    const ref = conversationRef(event);
+    if (!ref) continue;
+    const key = `${ref.kind}:${ref.id}`;
+    const existing = groups.get(key);
+    if (existing) existing.events.push(event);
+    else groups.set(key, { ref, events: [event] });
+  }
+  return [...groups.values()].sort(
+    (a, b) => a.events[0].sequence - b.events[0].sequence,
+  );
+}
+
+function loadWorkingMemory(
+  db: Db,
+  watermark: number,
+  ref: ConversationRef,
+  limit: number,
+): SessionEvent[] {
+  // Kind-branched on purpose: binding the same string to both columns is how
+  // two conversations share a window. Client-keyed groups match the client
+  // column only; mcp-keyed groups match mcp-only rows (no client id).
+  const sql =
+    ref.kind === "client"
+      ? `SELECT * FROM session_events
+         WHERE sequence <= ? AND client_session_id = ?
+         ORDER BY sequence DESC
+         LIMIT ?`
+      : `SELECT * FROM session_events
+         WHERE sequence <= ? AND client_session_id IS NULL AND mcp_session_id = ?
+         ORDER BY sequence DESC
+         LIMIT ?`;
+  const rows = db.prepare(sql).all(watermark, ref.id, limit) as SessionEventRow[];
+  return rows.map(parseEventRow).reverse();
+}
+
+function linkExtractedFactToEvents(
+  db: Db,
+  sessionFactId: string,
+  factContent: string,
+  groupEvents: SessionEvent[],
+): void {
+  // Only the FIRST match is primary. `groupEvents` is ordered by sequence, so
+  // that is the earliest occurrence — the point the information actually
+  // arrived. Later matches are the same text appearing again, which is what
+  // `corroborating` means ("mentioned again"), and repeated tool output
+  // makes that common: one fact in a real store claimed 145 separate events
+  // as the one it came from. Provenance answers "where did this come from",
+  // and a question with 145 answers has none.
+  //
+  // Scoped to this conversation. A mixed pull of two JSONL files used to
+  // walk every candidate in the watermark window, so a fact from A could
+  // claim B's rows as contextual origin.
+  let linkedPrimary = false;
+  for (const event of groupEvents) {
+    if (event.content && event.content.includes(factContent)) {
+      linkFactSource(db, {
+        session_fact_id: sessionFactId,
+        event_id: event.id,
+        relevance: linkedPrimary ? 0.5 : 0.8,
+        extraction_type: linkedPrimary ? "corroborating" : "primary",
+      });
+      linkedPrimary = true;
+    }
+  }
+  if (!linkedPrimary) {
+    for (const event of groupEvents) {
+      linkFactSource(db, {
+        session_fact_id: sessionFactId,
+        event_id: event.id,
+        relevance: 0.3,
+        extraction_type: "contextual",
+      });
+    }
+  }
 }
 
 async function extractFactsFromEvents(
@@ -740,50 +881,17 @@ async function extractFactsFromEvents(
   if (eligible.length === 0) return false;
 
   const newEvents = eligible.map(parseEventRow);
-
-  // Determine the session id for attribution and working-memory scoping.
-  // Prefer mcp_session_id (our own MCP connection); fall back to
-  // client_session_id (hook-originated events from chat-only sessions).
-  const sessionId =
-    newEvents.find((e) => e.mcp_session_id)?.mcp_session_id ??
-    newEvents.find((e) => e.client_session_id)?.client_session_id ??
-    null;
-  if (!sessionId) {
-    return false;
-  }
-
-  // Working memory: pre-watermark events from THE SAME session, capped at
-  // workingMemorySize (default 50). Recent conversational context for
-  // pronoun resolution and topical flow in the candidate events.
-  const workingMemoryRows = db
-    .prepare(
-      `SELECT * FROM session_events
-       WHERE sequence <= ?
-         AND (mcp_session_id = ? OR client_session_id = ?)
-       ORDER BY sequence DESC
-       LIMIT ?`,
-    )
-    .all(watermark, sessionId, sessionId, workingMemorySize) as SessionEventRow[];
-  const workingMemory = workingMemoryRows.map(parseEventRow).reverse(); // chronological order
-
-  // Session summary: the rolling summary from the latest prior consolidation
-  // for THIS session. Long-range conversational memory that survives beyond
-  // the working_memory_size window. Null on the first consolidation in a
-  // session — providers fall back to recent_events alone.
-  const priorSummaryRow = db
-    .prepare(
-      `SELECT summary FROM consolidations
-       WHERE session_id = ? AND summary IS NOT NULL
-       ORDER BY created_at DESC
-       LIMIT 1`,
-    )
-    .get(sessionId) as { summary: string | null } | undefined;
-  const priorSummary = priorSummaryRow?.summary ?? null;
+  const groups = groupByConversation(newEvents);
+  // Unkeyed rows are examined and declined — not attached to last-active.
+  // A batch that is only unkeyed is an empty successful run; mixed batches
+  // extract the keyed groups and still advance past the unkeyed ones.
+  if (groups.length === 0) return false;
 
   // Long-term memory: currently-active graduated facts. Cross-session
   // background knowledge that helps the LLM avoid re-extracting facts the
   // system already has and resolve references not established in this
-  // session. Empty when the K-layer hasn't been seeded yet.
+  // session. Empty when the K-layer hasn't been seeded yet. Store-wide on
+  // purpose — entity resolution across conversations is desired.
   const longTermMemory = (
     db
       .prepare(
@@ -794,90 +902,63 @@ async function extractFactsFromEvents(
       .all() as Array<Omit<Fact, "is_latest"> & { is_latest: number }>
   ).map((row) => ({ ...row, is_latest: row.is_latest === 1 }));
 
-  // Truncate long content for extraction.
-  const truncated = newEvents.map((e) => ({
-    ...e,
-    content:
-      e.content && e.content.length > maxContentLength
-        ? e.content.slice(0, maxContentLength)
-        : e.content,
-  }));
+  // Buffer inserts until every group has been examined. A global watermark
+  // cannot advance past a mixed batch if any conversation was unexamined, and
+  // inserting the successful groups first would re-extract them on retry
+  // (paraphrase → a second session_fact). One degraded group discards the
+  // buffer; the LLM cost of the successful calls is paid again on retry.
+  const pending: Array<{ group: EventGroup; facts: ExtractedFact[] }> = [];
+  for (const group of groups) {
+    const workingMemory = loadWorkingMemory(
+      db,
+      watermark,
+      group.ref,
+      workingMemorySize,
+    );
+    const priorSummary = latestSessionSummary(db, group.ref.id);
+    const truncated = group.events.map((e) => ({
+      ...e,
+      content:
+        e.content && e.content.length > maxContentLength
+          ? e.content.slice(0, maxContentLength)
+          : e.content,
+    }));
 
-  // Extract facts via intelligence provider.
-  const outcome = await intelligence.extractFactsFromEvents(
-    truncated,
-    workingMemory,
-    priorSummary,
-    longTermMemory,
-  );
-  const extracted = outcome.facts;
+    const outcome = await intelligence.extractFactsFromEvents(
+      truncated,
+      workingMemory,
+      priorSummary,
+      longTermMemory,
+    );
+    if (outcome.degraded) return true;
+    pending.push({ group, facts: outcome.facts });
+  }
 
-  // Attribute the extracted session_facts to the session we already
-  // identified above (used for working-memory scoping). This is the same
-  // session id throughout — chat-only sessions with no MCP tool calls fall
-  // back to client_session_id naturally via the lookup at the top.
-  for (const item of extracted) {
-    const fact = insertSessionFact(db, {
-      session_id: sessionId,
-      content: item.content,
-      source_origin: "inferred",
-      domain_hint: item.domain_hint,
-      subdomain_hint: item.subdomain_hint ?? null,
-      confidence_signal: item.confidence_signal ?? null,
-      importance_signal: item.importance_signal ?? null,
-      capture_context: item.capture_context ?? null,
-      valid_from_hint: item.valid_from ?? null,
-      valid_until_hint: item.valid_until ?? null,
-      entities_json: item.entities ? JSON.stringify(item.entities) : null,
-      source_quality: item.source_quality ?? "heuristic",
-      consolidation_id: consolidationId,
-    });
+  for (const { group, facts } of pending) {
+    for (const item of facts) {
+      const fact = insertSessionFact(db, {
+        session_id: group.ref.id,
+        content: item.content,
+        source_origin: "inferred",
+        domain_hint: item.domain_hint,
+        subdomain_hint: item.subdomain_hint ?? null,
+        confidence_signal: item.confidence_signal ?? null,
+        importance_signal: item.importance_signal ?? null,
+        capture_context: item.capture_context ?? null,
+        valid_from_hint: item.valid_from ?? null,
+        valid_until_hint: item.valid_until ?? null,
+        entities_json: item.entities ? JSON.stringify(item.entities) : null,
+        source_quality: item.source_quality ?? "heuristic",
+        consolidation_id: consolidationId,
+      });
 
-    if (fact) {
-      // Link events whose content literally contains the fact text. Works for
-      // heuristic extraction (which lifts substrings) but not for LLM providers
-      // that paraphrase. If substring matching finds nothing, fall through to a
-      // contextual link against every new event in the window — lossy but
-      // preserves provenance so the fact isn't orphaned.
-      //
-      // Only the FIRST match is primary. `newEvents` is ordered by sequence, so
-      // that is the earliest occurrence — the point the information actually
-      // arrived. Later matches are the same text appearing again, which is what
-      // `corroborating` means ("mentioned again"), and repeated tool output
-      // makes that common: one fact in a real store claimed 145 separate events
-      // as the one it came from. Provenance answers "where did this come from",
-      // and a question with 145 answers has none.
-      let linkedPrimary = false;
-      for (const event of newEvents) {
-        if (event.content && event.content.includes(item.content)) {
-          linkFactSource(db, {
-            session_fact_id: fact.id,
-            event_id: event.id,
-            // A repeat is weaker evidence of origin than the first statement,
-            // and the relevance ordering should say so.
-            relevance: linkedPrimary ? 0.5 : 0.8,
-            extraction_type: linkedPrimary ? "corroborating" : "primary",
-          });
-          linkedPrimary = true;
-        }
-      }
-      if (!linkedPrimary) {
-        for (const event of newEvents) {
-          linkFactSource(db, {
-            session_fact_id: fact.id,
-            event_id: event.id,
-            relevance: 0.3,
-            extraction_type: "contextual",
-          });
-        }
+      if (fact) {
+        linkExtractedFactToEvents(db, fact.id, item.content, group.events);
       }
     }
   }
 
-  // Tell the caller whether the configured extractor actually ran. When it did
-  // not, these events have not been examined and the watermark must not move
-  // past them.
-  return outcome.degraded;
+  return false;
 }
 
 

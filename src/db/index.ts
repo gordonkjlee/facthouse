@@ -19,8 +19,14 @@ export {
   insertEvent,
   getEvents,
   getEventCount,
+  conversationRef,
 } from "./sessions.js";
-export type { NewSession, NewSessionEvent, GetEventsOpts } from "./sessions.js";
+export type {
+  NewSession,
+  NewSessionEvent,
+  GetEventsOpts,
+  ConversationRef,
+} from "./sessions.js";
 export * from "./session-facts.js";
 export * from "./facts.js";
 export * from "./entities.js";
