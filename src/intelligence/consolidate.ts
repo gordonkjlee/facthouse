@@ -1,12 +1,15 @@
 /**
  * Consolidation pipeline — the core intelligence engine.
- * Performs both DIKW transitions in one atomic operation:
- *   D → Staging: Extract facts from raw events (if extraction enabled)
- *   Staging → Knowledge: Graduate session_facts through the full pipeline
+ * Two DIKW arrows, independently timed:
+ *   D → I: Extract facts from raw events (tick / pull / Stop)
+ *   I → K: Graduate session_facts through classify, entities, reconcile,
+ *          supersede (flush / PreCompact / shutdown)
+ *   Both:  MCP `consolidate` tool, CLI, session-start leftovers (`full`)
  *
  * Loose analogy to human memory: rapid, context-rich capture during a session
- * is separated from a later batch consolidation phase that integrates new
- * information with prior knowledge. Not a model of hippocampal-cortical dynamics.
+ * is separated from a later batch that integrates new information with prior
+ * knowledge. Not a model of hippocampal-cortical dynamics, and not a dream
+ * that invents facts nobody said.
  */
 
 import { randomUUID } from "node:crypto";
@@ -78,6 +81,15 @@ import {
 // Result type
 // ---------------------------------------------------------------------------
 
+/**
+ * Which arrows of consolidate() to run.
+ *
+ * `full` is the tester path and the MCP tool. `extract` is D→I on pull/Stop
+ * (tick). `graduate` is I→K on PreCompact flush / shutdown — skip extract so
+ * compaction is not four `claude -p` stages when D was already examined.
+ */
+export type ConsolidatePhase = "extract" | "graduate" | "full";
+
 export interface ConsolidationResult {
   consolidationId: string;
   factsIn: number;
@@ -115,8 +127,11 @@ export async function consolidate(
    * about providers, exactly as it keeps none about intelligence providers.
    */
   embeddingProvider: EmbeddingProvider | null = null,
+  phase: ConsolidatePhase = "full",
 ): Promise<ConsolidationResult> {
   const consolidationId = randomUUID();
+  const doExtract = phase === "extract" || phase === "full";
+  const doGraduate = phase === "graduate" || phase === "full";
   const extractionEnabled = config?.extraction?.enabled ?? false;
   // Read from the vocabulary the user configured, not a separate map. Importance
   // is a property of a domain — a domain's calibration belongs with the domain,
@@ -170,15 +185,14 @@ export async function consolidate(
 
   let phaseDCommitted = false;
   try {
-    // Phase A: Claim pending session_facts
-    claimForConsolidation(db, consolidationId);
-
-    // Phase B: D→I event extraction (if enabled)
-    if (extractionEnabled) {
+    // Phase B: D→I event extraction (if this run examines events).
+    // Session facts land unclaimed so a later graduate-only flush can pick
+    // them up — extract on tick, graduate on PreCompact, not four LLM stages
+    // in the compaction hook.
+    if (doExtract && extractionEnabled) {
       const extracted = await extractFactsFromEvents(
         db,
         intelligence,
-        consolidationId,
         config,
       );
       extractionDegraded = extracted.degraded;
@@ -186,19 +200,22 @@ export async function consolidate(
     }
 
     // Hold the watermark back rather than advancing past unexamined events.
-    // Deliberately not `prevWatermark - 1` or similar: the goal is simply that
-    // this run claims no new ground, so the next one sees the same candidates.
-    const effectiveWatermark = extractionDegraded ? prevWatermark : runWatermark;
+    // Graduate-only must not claim unextracted events as read.
+    const examinedEvents = doExtract && !extractionDegraded;
+    const effectiveWatermark = examinedEvents ? runWatermark : prevWatermark;
 
-    // Load all claimed facts (explicit + any newly inferred)
-    const sessionFacts = getClaimedFacts(db, consolidationId);
+    if (doGraduate) {
+      claimForConsolidation(db, consolidationId);
+    }
+    const sessionFacts = doGraduate
+      ? getClaimedFacts(db, consolidationId)
+      : [];
 
     if (sessionFacts.length === 0) {
-      // Only record an empty run when the watermark actually advances. This
-      // prevents session_start (and other force-flushes) from spamming the
-      // consolidations table with duplicate no-op rows when nothing new has
-      // landed since the last run.
-      if (!extractionDegraded && runWatermark > prevWatermark) {
+      // Only record an empty run when this run examined events and the
+      // watermark actually advances. Graduate-only with nothing pending is
+      // a PreCompact no-op — do not spam rows or pretend D was read.
+      if (doExtract && !extractionDegraded && runWatermark > prevWatermark) {
         const onlyId =
           extractPending.length === 1 ? extractPending[0].group.ref.id : null;
         db.prepare(
@@ -227,13 +244,19 @@ export async function consolidate(
       // previous run whose provider was down. Returning here without embedding
       // would mean the backlog only ever drains on runs that happen to have new
       // facts, which for a quiet store is never.
-      await embedGraduatedFacts(db, embeddingProvider, config);
+      if (doGraduate) {
+        await embedGraduatedFacts(db, embeddingProvider, config);
+      }
 
       releaseLock(db, consolidationId);
+      const extractedCount = extractPending.reduce(
+        (n, p) => n + p.facts.length,
+        0,
+      );
       return {
         consolidationId,
         extractionDegraded,
-        factsIn: 0,
+        factsIn: extractedCount,
         factsGraduated: 0,
         factsRejected: 0,
         entitiesCreated: 0,
@@ -1029,7 +1052,6 @@ function persistSituations(
 async function extractFactsFromEvents(
   db: Db,
   intelligence: IntelligenceProvider,
-  consolidationId: string,
   config?: Partial<ServerConfig>,
 ): Promise<{ degraded: boolean; pending: ExtractPending[] }> {
   const empty = { degraded: false, pending: [] as ExtractPending[] };
@@ -1162,7 +1184,8 @@ async function extractFactsFromEvents(
         valid_until_hint: item.valid_until ?? null,
         entities_json: item.entities ? JSON.stringify(item.entities) : null,
         source_quality: item.source_quality ?? "heuristic",
-        consolidation_id: consolidationId,
+        // Unclaimed: a later graduate-only flush (PreCompact) picks these up.
+        consolidation_id: null,
       });
 
       if (fact) {

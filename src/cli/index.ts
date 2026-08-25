@@ -21,7 +21,10 @@ import { runSearch, formatSearch, formatStats, formatPrune, getStats } from "./q
 import { prunableEvents, pruneEvents, vacuum } from "../db/prune.js";
 import { openDatabase, closeDatabase } from "../db/connection.js";
 import { applySchema } from "../db/schema.js";
-import { consolidate } from "../intelligence/consolidate.js";
+import {
+  consolidate,
+  type ConsolidatePhase,
+} from "../intelligence/consolidate.js";
 import { createHeuristicProvider } from "../intelligence/heuristic.js";
 import { createIntelligenceProvider, resolveProviderType } from "../intelligence/provider.js";
 import { createEmbeddingProvider } from "../embedding/provider.js";
@@ -446,11 +449,17 @@ async function runSignal() {
   // dependency-free — heuristic-era facts can be reprocessed later.
   if (kind === "flush") {
     console.error(
-      "[openmemory] Server unreachable; running heuristic consolidate in-process as fallback. " +
-        "Heuristic extraction does not read transcripts — events stay events, not facts. " +
+      "[openmemory] Server unreachable; running heuristic I→K in-process as fallback. " +
+        "Extract already ran on pull/Stop, or events stay events. " +
         "Start the MCP server (cli provider) or run openmemory consolidate with the claude CLI.",
     );
-    await consolidateInProcess(dataDir, createHeuristicProvider(), DEFAULT_CONFIG);
+    await consolidateInProcess(
+      dataDir,
+      createHeuristicProvider(),
+      DEFAULT_CONFIG,
+      null,
+      "graduate",
+    );
     return;
   }
 
@@ -507,13 +516,14 @@ export async function consolidateInProcess(
   provider: IntelligenceProvider,
   config: Partial<ServerConfig> = DEFAULT_CONFIG,
   embedding: EmbeddingProvider | null = null,
+  phase: ConsolidatePhase = "full",
 ): Promise<void> {
   const dbPath = path.join(dataDir, "memory.db");
   const db = openDatabase(dbPath);
 
   try {
     applySchema(db);
-    const result = await consolidate(db, provider, config, embedding);
+    const result = await consolidate(db, provider, config, embedding, phase);
     console.log(JSON.stringify(result));
   } catch (err: unknown) {
     console.error(errorMessage(err));

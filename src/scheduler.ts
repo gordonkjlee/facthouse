@@ -2,8 +2,9 @@
  * Consolidation scheduler.
  *
  * The scheduler is purely the coordinating layer around consolidate() — it
- * owns the threshold check, the in-flight guard, and exposes tick()/flush()
+ * owns the threshold check, the in-flight guard, and exposes tick()/flush()/full()
  * for callers to invoke when they receive a wake-up signal.
+ * tick = D→I, flush = I→K, full = both.
  *
  * Wake-up mechanisms live outside:
  *   - IPC signal from the log-event CLI (src/ipc/scheduler-ipc.ts)
@@ -15,12 +16,15 @@
 
 import { pragmaRead } from "./db/connection.js";
 import type { Db } from "./db/connection.js";
-import type { ConsolidationResult } from "./intelligence/consolidate.js";
+import type {
+  ConsolidationResult,
+  ConsolidatePhase,
+} from "./intelligence/consolidate.js";
 
 export interface SchedulerOpts {
   db: Db;
   /** Called when the scheduler decides to fire a consolidation run. */
-  runConsolidate: () => Promise<ConsolidationResult>;
+  runConsolidate: (phase: ConsolidatePhase) => Promise<ConsolidationResult>;
   /** Events-since-last-consolidation at which tick() fires. */
   threshold: number;
   /** Minimum ms between tick()-driven consolidations. Protects LLM rate
@@ -30,10 +34,12 @@ export interface SchedulerOpts {
 }
 
 export interface Scheduler {
-  /** Check the threshold and fire if due. Used by IPC and opportunistic callers. */
+  /** D→I when the event threshold is due. Pull/Stop. */
   tick(): Promise<ConsolidationResult | null>;
-  /** Force consolidation regardless of the threshold. Used for session_start, shutdown, compaction. */
+  /** I→K regardless of threshold. PreCompact / shutdown — skip extract. */
   flush(): Promise<ConsolidationResult | null>;
+  /** D→I then I→K, forced. Session-start leftovers under the pull cap. */
+  full(): Promise<ConsolidationResult | null>;
   /** Release any internal resources. Idempotent. */
   stop(): void;
 }
@@ -72,7 +78,10 @@ export function startScheduler(opts: SchedulerOpts): Scheduler {
   // just avoids the wasted call.
   let inFlight: Promise<ConsolidationResult | null> | null = null;
 
-  async function runIfDue(force: boolean): Promise<ConsolidationResult | null> {
+  async function runIfDue(
+    force: boolean,
+    phase: ConsolidatePhase,
+  ): Promise<ConsolidationResult | null> {
     if (inFlight) return inFlight;
 
     if (!force) {
@@ -95,7 +104,7 @@ export function startScheduler(opts: SchedulerOpts): Scheduler {
 
     inFlight = (async () => {
       try {
-        return await opts.runConsolidate();
+        return await opts.runConsolidate(phase);
       } catch {
         // The scheduler must not crash the server. Failure is observable
         // via the consolidations table (no new row written).
@@ -114,8 +123,9 @@ export function startScheduler(opts: SchedulerOpts): Scheduler {
   }
 
   return {
-    tick: () => runIfDue(false),
-    flush: () => runIfDue(true),
+    tick: () => runIfDue(false, "extract"),
+    flush: () => runIfDue(true, "graduate"),
+    full: () => runIfDue(true, "full"),
     stop: () => {
       // Nothing to release now that the scheduler holds no timers or watchers.
     },

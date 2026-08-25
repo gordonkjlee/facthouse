@@ -112,7 +112,7 @@ Point the MCP snippet above at the same throwaway directory (`"env": { "OPENMEMO
 }
 ```
 
-On Windows the `--data` path is the same absolute directory you put in `OPENMEMORY_DATA` (for example `C:\\Users\\alex\\AppData\\Local\\Temp\\openmemory-try`). Stop tails new lines (pull then ticks the server). PreCompact `signal flush` is consolidation only — it does not insert `session_events`. Never install `log-event` hooks on a store that pulls: both write the same rows. A global `npm install -g @openmem/mcp` lets you write `openmemory pull --data …` instead of npx.
+On Windows the `--data` path is the same absolute directory you put in `OPENMEMORY_DATA` (for example `C:\\Users\\alex\\AppData\\Local\\Temp\\openmemory-try`). Stop tails new lines (pull then ticks the server to extract facts when the threshold is due). PreCompact `signal flush` graduates those pending facts into long-term knowledge without re-reading the transcript, so compaction is not held for a full extract. It does not insert `session_events`. Never install `log-event` hooks on a store that pulls: both write the same rows. A global `npm install -g @openmem/mcp` lets you write `openmemory pull --data …` instead of npx.
 
 **Alternative, no pull:** leave `sources` empty and pipe UserPromptSubmit / Stop / PostToolUse into `openmemory log-event`. See Session Event Logging. Do not run both mechanisms on the same store.
 
@@ -120,7 +120,7 @@ On Windows the `--data` path is the same absolute directory you put in `OPENMEMO
 
 Storage works with nothing but Node. The *intelligence* — entity extraction, domain routing, contradiction detection — needs a language model, and by default OpenMemory gets one by shelling out to the [Claude Code CLI](https://github.com/anthropics/claude-code). That runs on your existing Claude subscription, so there is no API key to configure and no per-call billing.
 
-Without it, consolidation falls back to a built-in heuristic. Be clear about what that means: the fallback **does not extract facts from transcripts**. `capture_fact` still stores facts, but with no entities and no domain routing, so you get a flat list rather than a knowledge graph. That is a deliberate design choice — the engine ships no vocabulary of its own, and a keyword classifier with no keywords cannot honestly route anything. PreCompact `signal flush` with no MCP server uses this fallback on purpose (it must not spawn `claude -p` during compaction) and will not graduate pulled events.
+Without it, consolidation falls back to a built-in heuristic. Be clear about what that means: the fallback **does not extract facts from transcripts**. `capture_fact` still stores facts, but with no entities and no domain routing, so you get a flat list rather than a knowledge graph. That is a deliberate design choice — the engine ships no vocabulary of its own, and a keyword classifier with no keywords cannot honestly route anything. PreCompact `signal flush` skips extract even when the server is up (extract already ran on pull/Stop). With no MCP server it uses the heuristic fallback on purpose (it must not spawn `claude -p` during compaction) and will not invent facts from unread events.
 
 Run `npx -y -p @openmem/mcp openmemory init` and it tells you which of the two you have:
 
@@ -229,7 +229,7 @@ For Claude Code, the D-layer is **pull**. You name a source; transcripts land in
 
 1. **Pull** — A named `sources` entry (`kind: "claude-code"`, `home`, and `cwd` — set it) is tailed into `session_events` by `openmemory pull` from the CLI (first backfill) or by the MCP server at session start. Empty `sources` means pull is off. A Stop hook may pull later, once that first backfill has run.
 
-2. **Batch consolidation** — Periodically, the server reads those events (and any staged facts): classifying domains, extracting and typing entities (people, organisations, projects, places — whatever the conversation is about), detecting duplicates and contradictions, and building a knowledge graph.
+2. **Batch consolidation** — Two speeds. Pull and Stop **extract** self-contained facts from new transcript lines when the threshold is due. PreCompact **flush** (and shutdown) **graduates** those pending facts: classifying domains, extracting and typing entities (people, organisations, projects, places — whatever the conversation is about), detecting duplicates and contradictions, and building a knowledge graph. `openmemory consolidate` and the MCP `consolidate` tool still run both steps.
 
 3. **Optional correction** — `capture_fact` remains available when the assistant should store a judgement that is not in the transcript, or a fact extraction missed. It is a correction, not the Claude Code capture path.
 
@@ -239,7 +239,7 @@ The result is a structured, evolving knowledge graph that any AI tool can query 
 
 ## Features
 
-- **Pull, then consolidate** — Claude Code conversations are pulled from a named source into `session_events`. Consolidation extracts and graduates facts from that D-layer. `capture_fact` is an optional correction, not how those conversations get in.
+- **Pull, then consolidate** — Claude Code conversations are pulled from a named source into `session_events`. Extract runs on pull/Stop; graduate runs on PreCompact flush (or on a manual `consolidate`). `capture_fact` is an optional correction, not how those conversations get in.
 - **Batch consolidation** — Periodic processing integrates pending captures into the long-term knowledge graph: classifies domains, extracts entities, resolves duplicates, detects contradictions.
 - **Entity graph** — Whatever the conversation is about — people, organisations, projects, places, products — extracted, typed and linked automatically. Relationship strength tracks corroboration.
 - **Hybrid search** — BM25 keyword + structured domain + entity-graph paths, merged via Reciprocal Rank Fusion with temporal decay. Add an embedding provider and semantic similarity joins the merge as a fourth path: it ranks, it does not gate, so a fact with no embedding is still found by its words. When no graduated fact matches, a short raw-log window around a keyword hit is returned separately as `episodes` — not knowledge, not mixed into `results`.
@@ -299,7 +299,7 @@ A second run against unchanged files inserts nothing — progress is a durable p
 
 **Hard rule:** do not run `log-event` hooks and pull on the same store. OpenMemory does not detect or rewrite existing hook configs.
 
-PreCompact `openmemory signal flush` is consolidation, not capture. It does not insert `session_events` and is part of the recommended recipe.
+PreCompact `openmemory signal flush` graduates pending facts; it does not re-read the transcript and does not insert `session_events`. It is part of the recommended recipe.
 
 ### CLI Reference
 
@@ -374,14 +374,14 @@ It honours the configured provider, so by default this is the real LLM path (`cl
 Wake a *running* MCP server over its IPC socket, rather than consolidating in this process:
 
 ```bash
-openmemory signal tick    # nudge the scheduler to check its triggers
-openmemory signal flush   # consolidate now — for PreCompact hooks
+openmemory signal tick    # extract if the event threshold is due — pull / Stop
+openmemory signal flush   # graduate pending facts — for PreCompact hooks
 
 # Options:
 #   --data     Data directory (default: ~/.openmemory or $OPENMEMORY_DATA)
 ```
 
-`flush` is the one that matters: it is what a PreCompact hook calls so pending facts survive a context collapse. That hook consolidates; it does not insert `session_events` and it does not duplicate a `claude-code` pull. If no server is listening, `flush` falls back to an in-process **heuristic** consolidation — deliberately, because a compaction is time-critical and spawning `claude -p` could take 35–50 seconds. Lower quality, but the data survives and can be reprocessed later. A `tick` that finds no server simply exits; the next `session_start` recovers it.
+`flush` is the one that matters: it is what a PreCompact hook calls so pending facts survive a context collapse. That hook graduates staged facts; it does not re-read transcripts, does not insert `session_events`, and does not duplicate a `claude-code` pull. If no server is listening, `flush` falls back to an in-process **heuristic** graduate — deliberately, because a compaction is time-critical and spawning `claude -p` could take 35–50 seconds. Lower quality, but the data survives and can be reprocessed later. A `tick` that finds no server simply exits; the next `session_start` recovers it.
 
 #### `openmemory search <query>`
 
@@ -440,10 +440,10 @@ Clients with no pull adapter still rely on `log_event` / `capture_fact` until th
 | Session start | Conversation begins | `memory://profile` (automatic), `search_knowledge` | AI knows who you are from message one |
 | Correction | A durable fact is missing from the store | `capture_fact` | Optional; Claude Code conversations are already in `session_events` via pull |
 | Pre-response search | Before generating a reply | `search_knowledge`, `get_context` | Responses informed by personal knowledge |
-| Pre-compaction | Before context window compression | `consolidate` or `openmemory signal flush` | Processes pending facts before context is wiped — does not insert events |
+| Pre-compaction | Before context window compression | `consolidate` or `openmemory signal flush` | Graduates pending facts before context is wiped — does not re-read the transcript or insert events |
 | Natural breakpoints | Topic change, task completion | `consolidate` (optional) | Keeps knowledge graph current |
 
-**On pre-compaction:** This is the highest-value consolidation hook — without it, staged facts are silently lost when the client compresses context. `openmemory signal flush` (or the `consolidate` tool) graduates what pull already wrote. It is not a `log-event` hook and does not duplicate `session_events`.
+**On pre-compaction:** This is the highest-value consolidation hook — without it, staged facts are silently lost when the client compresses context. `openmemory signal flush` graduates what extract already wrote; it does not re-read the transcript. The `consolidate` tool still runs extract then graduate. It is not a `log-event` hook and does not duplicate `session_events`.
 
 ### Claude Code
 

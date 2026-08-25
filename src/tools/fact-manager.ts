@@ -17,7 +17,11 @@ import {
   getUnconsolidatedSessionFacts,
   linkFactSource,
 } from "../db/session-facts.js";
-import { consolidate, type ConsolidationResult } from "../intelligence/consolidate.js";
+import {
+  consolidate,
+  type ConsolidationResult,
+  type ConsolidatePhase,
+} from "../intelligence/consolidate.js";
 import { captureFactDescription } from "./capture-fact-description.js";
 import {
   buildBriefing,
@@ -42,8 +46,8 @@ export interface FactManager {
   /** Retrieve session facts for the current or specified session. */
   getSessionContext(sessionId?: string): SessionFact[];
 
-  /** Run the consolidation pipeline. */
-  runConsolidate(): Promise<ConsolidationResult>;
+  /** Run the consolidation pipeline. Default `full` (D→I then I→K). */
+  runConsolidate(phase?: ConsolidatePhase): Promise<ConsolidationResult>;
 
   /** Register capture_fact, get_session_context, and consolidate MCP tools. */
   registerTools(server: McpServer): void;
@@ -191,11 +195,17 @@ export function createFactManager(
       return getUnconsolidatedSessionFacts(db, id);
     },
 
-    async runConsolidate() {
+    async runConsolidate(phase: ConsolidatePhase = "full") {
       if (!intelligence) {
         throw new Error("No intelligence provider configured for consolidation.");
       }
-      const result = await consolidate(db, intelligence, serverConfig, embedding);
+      const result = await consolidate(
+        db,
+        intelligence,
+        serverConfig,
+        embedding,
+        phase,
+      );
 
       // Skipped runs (lock contention, nothing pending) changed no knowledge,
       // so there is nothing for subscribers to re-read.

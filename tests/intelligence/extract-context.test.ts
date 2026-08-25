@@ -221,6 +221,46 @@ describe("K is cue not veto", () => {
       { phrase: "the programme", binding: "this branch" },
     ]);
   });
+
+  it("extract-only persists now without writing K", async () => {
+    insertEvent(db, {
+      client_session_id: "sess-aaa",
+      event_type: "message",
+      role: "user",
+      content: "Alex prefers oat milk at Acme.",
+    });
+    const { provider } = recording(() => ({
+      facts: [
+        {
+          content: "Alex prefers oat milk at Acme.",
+          domain_hint: "preferences",
+        },
+      ],
+      degraded: false,
+      now: "choosing milk",
+      referents: [{ phrase: "oat milk", binding: "the preference" }],
+    }));
+    await consolidate(
+      db,
+      provider as never,
+      { extraction: { enabled: true } as never },
+      null,
+      "extract",
+    );
+    expect(factRows()).toEqual([
+      { session_id: "sess-aaa", content: "Alex prefers oat milk at Acme." },
+    ]);
+    const graduated = db
+      .prepare(`SELECT COUNT(*) AS n FROM facts`)
+      .get() as { n: number };
+    expect(graduated.n).toBe(0);
+    const row = situation("sess-aaa");
+    expect(row).toBeDefined();
+    expect(row!.now).toBe("choosing milk");
+    expect(JSON.parse(row!.now_referents ?? "[]")).toEqual([
+      { phrase: "oat milk", binding: "the preference" },
+    ]);
+  });
 });
 
 describe("forgetfulness reread", () => {
