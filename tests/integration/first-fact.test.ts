@@ -124,9 +124,16 @@ describe("first-fact pipeline (recording extractor)", () => {
     expect(pulled.events_inserted).toBeGreaterThan(0);
 
     const empty = await searchWithProvider(db, QUERY, null);
-    // Events are not knowledge. If this hits, search is reading D and the
-    // rest of the suite would pass without extract ever running.
+    // Events are not knowledge. If `results` hits, search is mixing D into K
+    // and the rest of the suite would pass without extract ever running.
     expect(hitsKaleidoscope(empty)).toBe(false);
+    expect(
+      empty.episodes.some((s) =>
+        s.events.some(
+          (e) => e.matched && (e.content ?? "").toLowerCase().includes(QUERY),
+        ),
+      ),
+    ).toBe(true);
 
     const heuristic = createHeuristicProvider();
     let extractCalls = 0;
@@ -158,6 +165,8 @@ describe("first-fact pipeline (recording extractor)", () => {
     const found = await searchWithProvider(db, QUERY, null);
     expect(hitsKaleidoscope(found)).toBe(true);
     expect(contentsOf(found)).toContain(FACT);
+    // K is no longer thin — D stays off the response.
+    expect(found.episodes).toEqual([]);
 
     closeDatabase(db);
   });
