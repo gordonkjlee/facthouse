@@ -156,6 +156,9 @@ describe("K is cue not veto", () => {
 
     expect(calls.length).toBeGreaterThan(0);
     expect(calls[0].extras).toBeDefined();
+    expect(calls[0].extras?.relatedFacts?.some((f) => f.content.includes("coffee"))).toBe(
+      true,
+    );
     expect(factRows()).toEqual([
       {
         session_id: "sess-aaa",
@@ -163,6 +166,34 @@ describe("K is cue not veto", () => {
       },
     ]);
     expect(EXTRACT_CONTEXT_CONTRACT).toMatch(/CONTRADICTS long_term_memory/);
+  });
+
+  it("does not dump unrelated graduated facts into extract extras", async () => {
+    insertFact(db, {
+      content: "Alex prefers coffee.",
+      domain: "preferences",
+      source_type: "conversation",
+    });
+    insertFact(db, {
+      content: "Robin keeps a brass kaleidoscope on the desk at Acme.",
+      domain: "preferences",
+      source_type: "conversation",
+    });
+    insertEvent(db, {
+      client_session_id: "sess-aaa",
+      event_type: "message",
+      role: "user",
+      content: "Alex no longer drinks coffee.",
+    });
+    const { provider, calls } = recording((events) => fromCandidates(events));
+    await consolidate(db, provider as never, {
+      extraction: { enabled: true } as never,
+    });
+    const related = calls[0].extras?.relatedFacts ?? [];
+    expect(related.length).toBeGreaterThan(0);
+    expect(related.length).toBeLessThanOrEqual(8);
+    expect(related.some((f) => f.content.includes("kaleidoscope"))).toBe(false);
+    expect(related.some((f) => f.content.includes("coffee"))).toBe(true);
   });
 
   it("does not insert a referent as a session_fact", async () => {
