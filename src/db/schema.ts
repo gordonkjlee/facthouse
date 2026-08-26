@@ -1,18 +1,26 @@
 /**
  * Schema creation and versioning.
- * Uses PRAGMA user_version for migration tracking.
+ * SQLite: PRAGMA user_version, incremental applyVN.
+ * Postgres: schema_migrations, current version in one shot.
  */
 
 import { pragmaRead, pragmaWrite } from "./connection.js";
 import type { Db } from "./connection.js";
+import { applyPostgresSchema, postgresSchemaVersion } from "./postgres-schema.js";
+export { SCHEMA_VERSION } from "./schema-version.js";
 
 /** Read the current schema version from the database. */
 export async function getSchemaVersion(db: Db): Promise<number> {
+  if (db.dialect === "postgres") return postgresSchemaVersion(db);
   return pragmaRead(db, "user_version");
 }
 
 /** Apply any pending schema migrations. */
 export async function applySchema(db: Db): Promise<void> {
+  if (db.dialect === "postgres") {
+    await applyPostgresSchema(db);
+    return;
+  }
   const version = await getSchemaVersion(db);
 
   if (version < 1) {

@@ -59,10 +59,10 @@ export interface FactReadOpts {
 // Facts
 // ---------------------------------------------------------------------------
 
-type FactRow = Omit<Fact, "is_latest"> & { is_latest: number };
+type FactRow = Omit<Fact, "is_latest"> & { is_latest: number | boolean };
 
 function mapFact(row: FactRow): Fact {
-  return { ...row, is_latest: row.is_latest === 1 };
+  return { ...row, is_latest: row.is_latest === 1 || row.is_latest === true };
 }
 
 /**
@@ -433,6 +433,12 @@ export function sanitiseFtsQuery(query: string): string {
   return terms.map((t) => `"${t.replace(/"/g, "")}"`).join(" ");
 }
 
+/** User text for `plainto_tsquery`. Accepts raw or FTS5-quoted sanitiseFtsQuery output. */
+export function ftsQueryText(query: string): string | null {
+  const text = query.replace(/"/g, " ").replace(/\s+/g, " ").trim();
+  return text === "" ? null : text;
+}
+
 /** Keyword search via FTS5. Returns facts with BM25 rank.
  *  @throws {SqliteError} on malformed FTS5 syntax. Use sanitiseFtsQuery for untrusted input. */
 export async function keywordSearch(
@@ -443,6 +449,26 @@ export async function keywordSearch(
 ): Promise<Array<{ fact: Fact; rank: number }>> {
   const effectiveLimit = limit ?? 20;
   const currency = currencyClause("f", opts?.asOfSystemTime);
+
+  if (db.dialect === "postgres") {
+    const text = ftsQueryText(query);
+    if (!text) return [];
+    const rows = (await db
+      .prepare(
+        `SELECT f.*, ts_rank(f.content_tsv, q) AS rank
+         FROM facts f, plainto_tsquery('simple', ?) q
+         WHERE f.content_tsv @@ q AND ${currency.sql}
+         ORDER BY rank DESC
+         LIMIT ?`,
+      )
+      .all(text, ...currency.params, effectiveLimit)) as Array<
+      FactRow & { rank: number }
+    >;
+    return rows.map((row) => {
+      const { rank, ...rest } = row;
+      return { fact: mapFact(rest), rank };
+    });
+  }
 
   const rows = (await db
     .prepare(

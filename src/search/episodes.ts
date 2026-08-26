@@ -54,17 +54,30 @@ interface WindowRow {
 /** Keyword-match session_events and return a short window around each hit. */
 export async function searchEpisodes(db: Db, sanitisedQuery: string): Promise<EpisodeSlice[]> {
   if (!sanitisedQuery) return [];
+  const postgresQuery = sanitisedQuery.replace(/"/g, " ").replace(/\s+/g, " ").trim();
+  if (db.dialect === "postgres" && !postgresQuery) return [];
 
-  const hits = (await db
-    .prepare(
-      `SELECT e.id, e.mcp_session_id, e.client_session_id, e.sequence
-         FROM session_events_fts fts
-         JOIN session_events e ON e.rowid = fts.rowid
-        WHERE session_events_fts MATCH ?
-        ORDER BY fts.rank
-        LIMIT ?`,
-    )
-    .all(sanitisedQuery, EPISODE_HIT_CAP)) as unknown as HitRow[];
+  const hits =
+    db.dialect === "postgres"
+      ? ((await db
+          .prepare(
+            `SELECT e.id, e.mcp_session_id, e.client_session_id, e.sequence
+               FROM session_events e, plainto_tsquery('simple', ?) q
+              WHERE e.content_tsv @@ q
+              ORDER BY ts_rank(e.content_tsv, q) DESC
+              LIMIT ?`,
+          )
+          .all(postgresQuery, EPISODE_HIT_CAP)) as unknown as HitRow[])
+      : ((await db
+          .prepare(
+            `SELECT e.id, e.mcp_session_id, e.client_session_id, e.sequence
+               FROM session_events_fts fts
+               JOIN session_events e ON e.rowid = fts.rowid
+              WHERE session_events_fts MATCH ?
+              ORDER BY fts.rank
+              LIMIT ?`,
+          )
+          .all(sanitisedQuery, EPISODE_HIT_CAP)) as unknown as HitRow[]);
 
   if (hits.length === 0) return [];
 
