@@ -18,9 +18,9 @@ afterEach(() => {
 });
 
 describe("initDataDir", () => {
-  it("creates the data dir, database with schema, and default config", () => {
+  it("creates the data dir, database with schema, and default config", async () => {
     const dataDir = path.join(root, "fresh");
-    const result = initDataDir({ dataDir });
+    const result = await initDataDir({ dataDir });
 
     expect(result.createdDataDir).toBe(true);
     expect(result.wroteConfig).toBe(true);
@@ -31,9 +31,9 @@ describe("initDataDir", () => {
     expect(result.schemaVersion).toBeGreaterThan(0);
   });
 
-  it("writes a config.json that round-trips to the shipped defaults", () => {
+  it("writes a config.json that round-trips to the shipped defaults", async () => {
     const dataDir = path.join(root, "cfg");
-    initDataDir({ dataDir });
+    await initDataDir({ dataDir });
 
     const written = JSON.parse(
       readFileSync(path.join(dataDir, CONFIG_FILENAME), "utf-8"),
@@ -43,9 +43,9 @@ describe("initDataDir", () => {
     expect(loadConfig(dataDir)).toEqual(defaultServerConfig());
   });
 
-  it("surfaces the tunable knobs users otherwise can't discover", () => {
+  it("surfaces the tunable knobs users otherwise can't discover", async () => {
     const dataDir = path.join(root, "knobs");
-    initDataDir({ dataDir });
+    await initDataDir({ dataDir });
     const written = JSON.parse(
       readFileSync(path.join(dataDir, CONFIG_FILENAME), "utf-8"),
     );
@@ -64,28 +64,28 @@ describe("initDataDir", () => {
     expect(written.storage.provider).toBe("sqlite");
   });
 
-  it("refuses postgres before creating memory.db", () => {
+  it("refuses postgres before creating memory.db", async () => {
     const dataDir = path.join(root, "pg");
     mkdirSync(dataDir, { recursive: true });
     writeFileSync(
       path.join(dataDir, CONFIG_FILENAME),
       JSON.stringify({ storage: { provider: "postgres" } }),
     );
-    expect(() => initDataDir({ dataDir })).toThrow(/postgres/);
-    expect(() => initDataDir({ dataDir })).toThrow(/SQLite was not opened/);
+    await expect(initDataDir({ dataDir })).rejects.toThrow(/postgres/);
+    await expect(initDataDir({ dataDir })).rejects.toThrow(/SQLite was not opened/);
     expect(existsSync(path.join(dataDir, "memory.db"))).toBe(false);
   });
 
-  it("is idempotent — a second run preserves an edited config", () => {
+  it("is idempotent — a second run preserves an edited config", async () => {
     const dataDir = path.join(root, "again");
-    initDataDir({ dataDir });
+    await initDataDir({ dataDir });
 
     // Simulate the user tuning their config.
     const configPath = path.join(dataDir, CONFIG_FILENAME);
     const edited = { ...defaultServerConfig(), consolidation: { triggers: ["manual"], threshold: 99, auto_link_events: 1 } };
     writeFileSync(configPath, JSON.stringify(edited, null, 2), "utf-8");
 
-    const second = initDataDir({ dataDir });
+    const second = await initDataDir({ dataDir });
     expect(second.createdDataDir).toBe(false);
     expect(second.wroteConfig).toBe(false);
     expect(second.configPreserved).toBe(true);
@@ -95,13 +95,13 @@ describe("initDataDir", () => {
     expect(after.consolidation.threshold).toBe(99);
   });
 
-  it("--force resets an existing config back to defaults", () => {
+  it("--force resets an existing config back to defaults", async () => {
     const dataDir = path.join(root, "forced");
-    initDataDir({ dataDir });
+    await initDataDir({ dataDir });
     const configPath = path.join(dataDir, CONFIG_FILENAME);
     writeFileSync(configPath, JSON.stringify({ intelligence: { provider: "heuristic" } }), "utf-8");
 
-    const forced = initDataDir({ dataDir, force: true });
+    const forced = await initDataDir({ dataDir, force: true });
     expect(forced.wroteConfig).toBe(true);
     expect(forced.configPreserved).toBe(false);
     expect(JSON.parse(readFileSync(configPath, "utf-8"))).toEqual(defaultServerConfig());
@@ -109,27 +109,27 @@ describe("initDataDir", () => {
 
   it("re-running preserves existing data (does not recreate the database)", async () => {
     const dataDir = path.join(root, "data");
-    initDataDir({ dataDir });
+    await initDataDir({ dataDir });
 
     const m: any = await import("../../src/db/index.js");
     const dbPath = path.join(dataDir, "memory.db");
 
     const db = m.openDatabase(dbPath);
-    m.createSession(db, { source_tool: "test", project: null });
-    m.closeDatabase(db);
+    await m.createSession(db, { source_tool: "test", project: null });
+    await m.closeDatabase(db);
 
-    const second = initDataDir({ dataDir });
+    const second = await initDataDir({ dataDir });
     expect(second.createdDataDir).toBe(false);
 
     const db2 = m.openDatabase(dbPath);
-    const count = db2.prepare("SELECT COUNT(*) AS n FROM sessions").get() as { n: number };
-    m.closeDatabase(db2);
+    const count = (await db2.prepare("SELECT COUNT(*) AS n FROM sessions").get()) as { n: number };
+    await m.closeDatabase(db2);
     expect(count.n).toBe(1);
   });
 
-  it("creates nested data directories that don't exist yet", () => {
+  it("creates nested data directories that don't exist yet", async () => {
     const dataDir = path.join(root, "deeply", "nested", "dir");
-    const result = initDataDir({ dataDir });
+    const result = await initDataDir({ dataDir });
     expect(result.createdDataDir).toBe(true);
     expect(existsSync(result.dbPath)).toBe(true);
   });

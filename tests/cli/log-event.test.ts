@@ -10,13 +10,13 @@ const { extractContentFromHookPayload, logEvent } = await import("../../src/cli/
 
 let db: Db;
 
-beforeEach(() => {
+beforeEach(async () => {
   db = dbMod.openDatabase(":memory:");
-  dbMod.applySchema(db);
+  await dbMod.applySchema(db);
 });
 
-afterEach(() => {
-  dbMod.closeDatabase(db);
+afterEach(async () => {
+  await dbMod.closeDatabase(db);
 });
 
 describe("extractContentFromHookPayload", () => {
@@ -74,9 +74,9 @@ describe("extractContentFromHookPayload", () => {
 });
 
 describe("logEvent (function)", () => {
-  it("getLatestSession finds the most recent session", () => {
-    dbMod.createSession(db, { source_tool: "claude-code", project: null });
-    const latest = dbMod.getLatestSession(db);
+  it("getLatestSession finds the most recent session", async () => {
+    await dbMod.createSession(db, { source_tool: "claude-code", project: null });
+    const latest = await dbMod.getLatestSession(db);
     expect(latest).not.toBeNull();
     expect(latest!.source_tool).toBe("claude-code");
   });
@@ -106,14 +106,14 @@ describe("logEvent attributes every event to a session", () => {
   });
 
   /** Read the events back through a fresh connection, as consolidation would. */
-  function readEvents(): Array<{ mcp_session_id: string | null; client_session_id: string | null }> {
+  async function readEvents(): Promise<Array<{ mcp_session_id: string | null; client_session_id: string | null }>> {
     const conn = dbMod.openDatabase(path.join(dataDir, "memory.db"));
     try {
-      return conn
+      return (await conn
         .prepare(`SELECT mcp_session_id, client_session_id FROM session_events ORDER BY sequence`)
-        .all() as any[];
+        .all()) as any[];
     } finally {
-      dbMod.closeDatabase(conn);
+      await dbMod.closeDatabase(conn);
     }
   }
 
@@ -142,7 +142,7 @@ describe("logEvent attributes every event to a session", () => {
       dataDir,
     });
 
-    const [event] = readEvents();
+    const [event] = await readEvents();
     // The precondition consolidation checks. Null here means never extracted.
     expect(event.mcp_session_id).not.toBeNull();
   });
@@ -152,7 +152,7 @@ describe("logEvent attributes every event to a session", () => {
       await logEvent({ role: "user", eventType: "message", content, dataDir });
     }
 
-    const events = readEvents();
+    const events = await readEvents();
     expect(events).toHaveLength(3);
     // All three in one conversation — otherwise working memory, which scopes to
     // a single session, sees each event in isolation.
@@ -173,13 +173,13 @@ describe("logEvent attributes every event to a session", () => {
     });
     const conn = dbMod.openDatabase(path.join(dataDir, "memory.db"));
     try {
-      const row = conn
+      const row = (await conn
         .prepare(`SELECT speaker, role FROM session_events`)
-        .get() as { speaker: string | null; role: string };
+        .get()) as { speaker: string | null; role: string };
       expect(row.role).toBe("user");
       expect(row.speaker).toBe("Alex");
     } finally {
-      dbMod.closeDatabase(conn);
+      await dbMod.closeDatabase(conn);
     }
   });
 
@@ -194,11 +194,11 @@ describe("logEvent attributes every event to a session", () => {
     });
     const conn = dbMod.openDatabase(path.join(dataDir, "memory.db"));
     try {
-      const row = conn
+      const row = (await conn
         .prepare(
           `SELECT occurred_at, created_at FROM session_events WHERE client_session_id = ?`,
         )
-        .get("client-abc-123") as { occurred_at: string | null; created_at: string };
+        .get("client-abc-123")) as { occurred_at: string | null; created_at: string };
       expect(row.occurred_at).not.toBeNull();
       expect(row.occurred_at! >= before).toBe(true);
       // Live capture: said and ingested are the same instant, give or take
@@ -207,7 +207,7 @@ describe("logEvent attributes every event to a session", () => {
         1000,
       );
     } finally {
-      dbMod.closeDatabase(conn);
+      await dbMod.closeDatabase(conn);
     }
   });
 
@@ -220,7 +220,7 @@ describe("logEvent attributes every event to a session", () => {
       dataDir,
     });
 
-    const [event] = readEvents();
+    const [event] = await readEvents();
     expect(event.client_session_id).toBe("client-abc-123");
     // Not invented as one of ours — the client's id is opaque to us.
     expect(event.mcp_session_id).toBeNull();
@@ -239,13 +239,13 @@ describe("logEvent attributes every event to a session", () => {
       });
       const conn = dbMod.openDatabase(path.join(dataDir, "memory.db"));
       try {
-        const row = conn
+        const row = (await conn
           .prepare(`SELECT project, source_tool FROM sessions WHERE id = ?`)
-          .get("client-abc-123") as { project: string; source_tool: string };
+          .get("client-abc-123")) as { project: string; source_tool: string };
         expect(row.project).toBe("atlas");
         expect(row.source_tool).toBe("cli");
       } finally {
-        dbMod.closeDatabase(conn);
+        await dbMod.closeDatabase(conn);
       }
     } finally {
       if (previous === undefined) delete process.env.OPENMEMORY_PROJECT;
@@ -268,7 +268,7 @@ describe("logEvent attributes every event to a session", () => {
       dataDir,
     });
 
-    const events = readEvents();
+    const events = await readEvents();
     expect(events[0].mcp_session_id).not.toBeNull();
     expect(events[0].client_session_id).toBeNull();
     expect(events[1].client_session_id).toBe("sess-aaa");

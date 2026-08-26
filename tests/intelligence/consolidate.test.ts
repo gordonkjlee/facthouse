@@ -25,21 +25,21 @@ import { PERSONAL_VOCABULARY } from "../fixtures/vocabulary.js";
 
 let db: Db;
 
-beforeEach(() => {
+beforeEach(async () => {
   db = openDatabase(":memory:");
-  applySchema(db);
+  await applySchema(db);
 });
 
-afterEach(() => {
-  closeDatabase(db);
+afterEach(async () => {
+  await closeDatabase(db);
 });
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-function setupSession(): string {
-  const session = createSession(db, {
+async function setupSession(): Promise<string> {
+  const session = await createSession(db, {
     source_tool: "test-client",
     project: "openmemory",
   });
@@ -78,20 +78,20 @@ function providerReturningEntity(
 
 describe("consolidation pipeline", () => {
   it("consolidates session_facts into graduated facts", async () => {
-    const sessionId = setupSession();
+    const sessionId = await setupSession();
     const provider = createHeuristicProvider(PERSONAL_VOCABULARY);
 
-    insertSessionFact(db, {
+    await insertSessionFact(db, {
       session_id: sessionId,
       content: "My name is Alex",
       domain_hint: "profile",
     });
-    insertSessionFact(db, {
+    await insertSessionFact(db, {
       session_id: sessionId,
       content: "I prefer dark roast coffee",
       domain_hint: "preferences",
     });
-    insertSessionFact(db, {
+    await insertSessionFact(db, {
       session_id: sessionId,
       content: "I'm allergic to aspirin",
       domain_hint: "medical",
@@ -105,14 +105,14 @@ describe("consolidation pipeline", () => {
     expect(result.factsRejected).toBe(0);
 
     // Verify graduated facts exist in their correct domains
-    const profileFacts = getFactsByDomain(db, "profile");
+    const profileFacts = await getFactsByDomain(db, "profile");
     expect(profileFacts.length).toBeGreaterThanOrEqual(1);
     expect(profileFacts.some((f: any) => f.content.includes("Alex"))).toBe(true);
 
-    const prefFacts = getFactsByDomain(db, "preferences");
+    const prefFacts = await getFactsByDomain(db, "preferences");
     expect(prefFacts.length).toBeGreaterThanOrEqual(1);
 
-    const medFacts = getFactsByDomain(db, "medical");
+    const medFacts = await getFactsByDomain(db, "medical");
     expect(medFacts.length).toBeGreaterThanOrEqual(1);
 
     // Untimed extracts must not look as if they became true at graduation.
@@ -122,14 +122,14 @@ describe("consolidation pipeline", () => {
   });
 
   it("graduates a stated valid_from_hint and leaves an untimed fact undated", async () => {
-    const sessionId = setupSession();
-    insertSessionFact(db, {
+    const sessionId = await setupSession();
+    await insertSessionFact(db, {
       session_id: sessionId,
       content: "The user went to the beach on 25 August 2026",
       domain_hint: "profile",
       valid_from_hint: "2026-08-25T00:00:00.000Z",
     });
-    insertSessionFact(db, {
+    await insertSessionFact(db, {
       session_id: sessionId,
       content: "The user worked in a bar when younger",
       domain_hint: "work",
@@ -137,10 +137,10 @@ describe("consolidation pipeline", () => {
 
     await consolidate(db, createHeuristicProvider(PERSONAL_VOCABULARY));
 
-    const beach = getFactsByDomain(db, "profile").find((f) =>
+    const beach = (await getFactsByDomain(db, "profile")).find((f) =>
       f.content.includes("beach"),
     );
-    const bar = getFactsByDomain(db, "work").find((f) => f.content.includes("bar"));
+    const bar = (await getFactsByDomain(db, "work")).find((f) => f.content.includes("bar"));
     expect(beach).toBeDefined();
     expect(bar).toBeDefined();
     expect(beach!.valid_from).toBe("2026-08-25T00:00:00.000Z");
@@ -148,10 +148,10 @@ describe("consolidation pipeline", () => {
   });
 
   it("creates entities from facts mentioning people", async () => {
-    const sessionId = setupSession();
+    const sessionId = await setupSession();
     const provider = providerReturningEntity("Robin", "partner_of");
 
-    insertSessionFact(db, {
+    await insertSessionFact(db, {
       session_id: sessionId,
       content: "my partner Robin loves sushi",
     });
@@ -161,16 +161,16 @@ describe("consolidation pipeline", () => {
     expect(result.skipped).toBe(false);
     expect(result.entitiesCreated).toBeGreaterThanOrEqual(1);
 
-    const entity = findEntity(db, "Robin", "person");
+    const entity = await findEntity(db, "Robin", "person");
     expect(entity).not.toBeNull();
     expect(entity!.name).toBe("Robin");
   });
 
   it("links entities to graduated facts", async () => {
-    const sessionId = setupSession();
+    const sessionId = await setupSession();
     const provider = providerReturningEntity("Robin", "partner_of");
 
-    insertSessionFact(db, {
+    await insertSessionFact(db, {
       session_id: sessionId,
       content: "my partner Robin loves sushi",
     });
@@ -181,19 +181,19 @@ describe("consolidation pipeline", () => {
   });
 
   it("deduplicates exact content matches (reconcile returns noop)", async () => {
-    const sessionId = setupSession();
+    const sessionId = await setupSession();
     const provider = createHeuristicProvider(PERSONAL_VOCABULARY);
 
     // Pre-insert a graduated fact
-    ensureDomain(db, "profile");
-    insertFact(db, {
+    await ensureDomain(db, "profile");
+    await insertFact(db, {
       content: "My name is Alex",
       domain: "profile",
       source_type: "conversation",
     });
 
     // Insert the same content as a session fact
-    insertSessionFact(db, {
+    await insertSessionFact(db, {
       session_id: sessionId,
       content: "My name is Alex",
     });
@@ -206,16 +206,16 @@ describe("consolidation pipeline", () => {
   });
 
   it("skips when lock is held by another process", async () => {
-    const sessionId = setupSession();
+    const sessionId = await setupSession();
     const provider = createHeuristicProvider(PERSONAL_VOCABULARY);
 
-    insertSessionFact(db, {
+    await insertSessionFact(db, {
       session_id: sessionId,
       content: "Some fact",
     });
 
     // Manually insert a lock row with a recent timestamp
-    db.prepare(
+    await db.prepare(
       `INSERT INTO consolidation_lock (id, holder, started_at) VALUES (1, ?, ?)`,
     ).run("other-process", new Date().toISOString());
 
@@ -226,10 +226,10 @@ describe("consolidation pipeline", () => {
   });
 
   it("is idempotent: second consolidation on same data returns 0 facts_in", async () => {
-    const sessionId = setupSession();
+    const sessionId = await setupSession();
     const provider = createHeuristicProvider(PERSONAL_VOCABULARY);
 
-    insertSessionFact(db, {
+    await insertSessionFact(db, {
       session_id: sessionId,
       content: "My name is Alex",
     });
@@ -245,15 +245,15 @@ describe("consolidation pipeline", () => {
   });
 
   it("generates a summary", async () => {
-    const sessionId = setupSession();
+    const sessionId = await setupSession();
     const provider = createHeuristicProvider(PERSONAL_VOCABULARY);
 
-    insertSessionFact(db, {
+    await insertSessionFact(db, {
       session_id: sessionId,
       content: "My name is Alex",
       domain_hint: "profile",
     });
-    insertSessionFact(db, {
+    await insertSessionFact(db, {
       session_id: sessionId,
       content: "I prefer dark roast coffee",
       domain_hint: "preferences",
@@ -266,19 +266,19 @@ describe("consolidation pipeline", () => {
   });
 
   it("creates consolidation record in consolidations table", async () => {
-    const sessionId = setupSession();
+    const sessionId = await setupSession();
     const provider = createHeuristicProvider(PERSONAL_VOCABULARY);
 
-    insertSessionFact(db, {
+    await insertSessionFact(db, {
       session_id: sessionId,
       content: "My name is Alex",
     });
 
     const result = await consolidate(db, provider);
 
-    const record = db
+    const record = (await db
       .prepare(`SELECT * FROM consolidations WHERE id = ?`)
-      .get(result.consolidationId) as any;
+      .get(result.consolidationId)) as any;
 
     expect(record).toBeDefined();
     expect(record.facts_in).toBe(1);
@@ -287,45 +287,45 @@ describe("consolidation pipeline", () => {
   });
 
   it("releases lock after completion", async () => {
-    const sessionId = setupSession();
+    const sessionId = await setupSession();
     const provider = createHeuristicProvider(PERSONAL_VOCABULARY);
 
-    insertSessionFact(db, {
+    await insertSessionFact(db, {
       session_id: sessionId,
       content: "My name is Alex",
     });
 
     await consolidate(db, provider);
 
-    const lockRow = db
+    const lockRow = (await db
       .prepare(`SELECT * FROM consolidation_lock WHERE id = 1`)
-      .get();
+      .get());
 
     expect(lockRow).toBeUndefined();
   });
 
   it("sets consolidation_id on claimed session_facts", async () => {
-    const sessionId = setupSession();
+    const sessionId = await setupSession();
     const provider = createHeuristicProvider(PERSONAL_VOCABULARY);
 
-    insertSessionFact(db, {
+    await insertSessionFact(db, {
       session_id: sessionId,
       content: "My name is Alex",
     });
 
     const result = await consolidate(db, provider);
 
-    const facts = db
+    const facts = (await db
       .prepare(`SELECT * FROM session_facts WHERE session_id = ?`)
-      .all(sessionId) as any[];
+      .all(sessionId)) as any[];
 
     expect(facts).toHaveLength(1);
     expect(facts[0].consolidation_id).toBe(result.consolidationId);
   });
 
   it("unclaims session_facts when the pipeline throws mid-run", async () => {
-    const session = createSession(db, { source_tool: "test", project: null });
-    insertSessionFact(db, { session_id: session.id, content: "will be unclaimed" });
+    const session = await createSession(db, { source_tool: "test", project: null });
+    await insertSessionFact(db, { session_id: session.id, content: "will be unclaimed" });
 
     // Provider that always throws during classification
     const failingProvider = {
@@ -338,15 +338,15 @@ describe("consolidation pipeline", () => {
     await expect(consolidate(db, failingProvider)).rejects.toThrow("simulated provider failure");
 
     // Facts should be unclaimed (consolidation_id = NULL), not orphaned
-    const facts = db
+    const facts = (await db
       .prepare(`SELECT * FROM session_facts WHERE session_id = ?`)
-      .all(session.id) as any[];
+      .all(session.id)) as any[];
     expect(facts).toHaveLength(1);
     expect(facts[0].consolidation_id).toBeNull();
 
     // Lock must have been released — otherwise next consolidation would skip
     const { getLockState } = await import("../../src/db/consolidation-lock.js");
-    expect(getLockState(db)).toBeNull();
+    expect(await getLockState(db)).toBeNull();
 
     // Next consolidation should pick them up
     const retry = await consolidate(db, createHeuristicProvider(PERSONAL_VOCABULARY));
@@ -354,22 +354,22 @@ describe("consolidation pipeline", () => {
   });
 
   it("handles two new facts targeting the same existing fact for supersession", async () => {
-    const session = createSession(db, { source_tool: "test", project: null });
+    const session = await createSession(db, { source_tool: "test", project: null });
 
     // Pre-existing fact that two new ones will try to supersede
-    insertFact(db, {
+    await insertFact(db, {
       content: "I prefer dark roast coffee every morning",
       domain: "preferences",
       source_type: "conversation",
     });
 
     // Two new session facts both contradicting the existing one
-    insertSessionFact(db, {
+    await insertSessionFact(db, {
       session_id: session.id,
       content: "I no longer prefer dark roast coffee every morning",
       domain_hint: "preferences",
     });
-    insertSessionFact(db, {
+    await insertSessionFact(db, {
       session_id: session.id,
       content: "I stopped drinking dark roast coffee every morning",
       domain_hint: "preferences",
@@ -385,33 +385,33 @@ describe("consolidation pipeline", () => {
   });
 
   it("consolidation record session_id is null when batch spans multiple sessions", async () => {
-    const s1 = createSession(db, { source_tool: "test", project: null });
-    const s2 = createSession(db, { source_tool: "test", project: null });
+    const s1 = await createSession(db, { source_tool: "test", project: null });
+    const s2 = await createSession(db, { source_tool: "test", project: null });
 
-    insertSessionFact(db, { session_id: s1.id, content: "fact from session 1", domain_hint: "profile" });
-    insertSessionFact(db, { session_id: s2.id, content: "fact from session 2", domain_hint: "profile" });
+    await insertSessionFact(db, { session_id: s1.id, content: "fact from session 1", domain_hint: "profile" });
+    await insertSessionFact(db, { session_id: s2.id, content: "fact from session 2", domain_hint: "profile" });
 
     const result = await consolidate(db, createHeuristicProvider(PERSONAL_VOCABULARY));
     expect(result.factsIn).toBe(2);
 
-    const record = db
+    const record = (await db
       .prepare("SELECT session_id FROM consolidations WHERE id = ?")
-      .get(result.consolidationId) as { session_id: string | null };
+      .get(result.consolidationId)) as { session_id: string | null };
 
     expect(record.session_id).toBeNull();
   });
 
   it("deduplicates identical content across sessions within one batch (D3)", async () => {
-    const s1 = createSession(db, { source_tool: "test", project: null });
-    const s2 = createSession(db, { source_tool: "test", project: null });
+    const s1 = await createSession(db, { source_tool: "test", project: null });
+    const s2 = await createSession(db, { source_tool: "test", project: null });
 
     // Same content in two sessions — per-session hash dedup doesn't catch this
-    insertSessionFact(db, {
+    await insertSessionFact(db, {
       session_id: s1.id,
       content: "I prefer dark roast coffee",
       domain_hint: "preferences",
     });
-    insertSessionFact(db, {
+    await insertSessionFact(db, {
       session_id: s2.id,
       content: "I prefer dark roast coffee",
       domain_hint: "preferences",
@@ -424,22 +424,22 @@ describe("consolidation pipeline", () => {
     expect(result.factsRejected).toBe(1);
 
     // Verify: exactly one active fact in the preferences domain
-    const facts = getFactsByDomain(db, "preferences");
+    const facts = await getFactsByDomain(db, "preferences");
     expect(facts).toHaveLength(1);
   });
 
   it("reconciles cross-domain duplicates via domain scan (not FTS5)", async () => {
-    const session = createSession(db, { source_tool: "test", project: null });
+    const session = await createSession(db, { source_tool: "test", project: null });
 
     // Pre-existing fact — long enough that FTS5 AND-semantics would miss paraphrases
-    insertFact(db, {
+    await insertFact(db, {
       content: "I prefer dark roast Ethiopian coffee from Blue Bottle in the morning",
       domain: "preferences",
       source_type: "conversation",
     });
 
     // New fact with identical content should be deduplicated by heuristic reconcile
-    insertSessionFact(db, {
+    await insertSessionFact(db, {
       session_id: session.id,
       content: "I prefer dark roast Ethiopian coffee from Blue Bottle in the morning",
       domain_hint: "preferences",
@@ -452,8 +452,8 @@ describe("consolidation pipeline", () => {
   });
 
   it("graduated facts have a source_id linking back to provenance (C1)", async () => {
-    const session = createSession(db, { source_tool: "test", project: null });
-    insertSessionFact(db, {
+    const session = await createSession(db, { source_tool: "test", project: null });
+    await insertSessionFact(db, {
       session_id: session.id,
       content: "I prefer dark roast",
       domain_hint: "preferences",
@@ -463,16 +463,16 @@ describe("consolidation pipeline", () => {
     expect(result.factsGraduated).toBe(1);
 
     // Graduated fact should have source_id set
-    const graduatedFact = db
+    const graduatedFact = (await db
       .prepare(`SELECT * FROM facts WHERE source_id IS NOT NULL LIMIT 1`)
-      .get() as any;
+      .get()) as any;
     expect(graduatedFact).toBeTruthy();
     expect(graduatedFact.source_id).toBeTruthy();
 
     // Source should exist and contain session_fact_id in metadata
-    const source = db
+    const source = (await db
       .prepare(`SELECT * FROM sources WHERE id = ?`)
-      .get(graduatedFact.source_id) as any;
+      .get(graduatedFact.source_id)) as any;
     expect(source).toBeTruthy();
     expect(source.type).toBe("session-fact");
     const metadata = JSON.parse(source.metadata);
@@ -481,10 +481,10 @@ describe("consolidation pipeline", () => {
   });
 
   it("low-confidence negation DOES supersede high-confidence prior (intentional)", async () => {
-    const session = createSession(db, { source_tool: "test", project: null });
+    const session = await createSession(db, { source_tool: "test", project: null });
 
     // High-confidence existing fact
-    const oldFact = insertFact(db, {
+    const oldFact = await insertFact(db, {
       content: "I prefer dark roast coffee every morning",
       domain: "preferences",
       confidence: 0.95,
@@ -492,7 +492,7 @@ describe("consolidation pipeline", () => {
     });
 
     // Low-confidence new fact with explicit negation
-    insertSessionFact(db, {
+    await insertSessionFact(db, {
       session_id: session.id,
       content: "I no longer prefer dark roast coffee every morning",
       domain_hint: "preferences",
@@ -506,20 +506,20 @@ describe("consolidation pipeline", () => {
     expect(result.supersessions).toBe(1);
 
     const { getFact } = await import("../../src/db/facts.js");
-    const superseded = getFact(db, oldFact.id);
+    const superseded = await getFact(db, oldFact.id);
     expect(superseded!.status).toBe("superseded");
     expect(superseded!.is_latest).toBe(false);
     expect(superseded!.system_retired_at).toBeNull();
   });
 
   it("stamps system_retired_at on supersede when temporal mode is bitemporal", async () => {
-    const session = createSession(db, { source_tool: "test", project: null });
-    const oldFact = insertFact(db, {
+    const session = await createSession(db, { source_tool: "test", project: null });
+    const oldFact = await insertFact(db, {
       content: "I prefer dark roast coffee every morning",
       domain: "preferences",
       source_type: "conversation",
     });
-    insertSessionFact(db, {
+    await insertSessionFact(db, {
       session_id: session.id,
       content: "I no longer prefer dark roast coffee every morning",
       domain_hint: "preferences",
@@ -530,18 +530,18 @@ describe("consolidation pipeline", () => {
     });
 
     const { getFact } = await import("../../src/db/facts.js");
-    const superseded = getFact(db, oldFact.id);
+    const superseded = await getFact(db, oldFact.id);
     expect(superseded!.status).toBe("superseded");
     expect(superseded!.system_retired_at).toBe(superseded!.valid_until);
     expect(superseded!.system_retired_at).not.toBeNull();
   });
 
   it("surfaces dropped supersessions via openThreads when two candidates target the same prior", async () => {
-    const sessionId = setupSession();
+    const sessionId = await setupSession();
 
     // Seed an existing graduated fact to be targeted
-    ensureDomain(db, "preferences");
-    const oldCoffee = insertFact(db, {
+    await ensureDomain(db, "preferences");
+    const oldCoffee = await insertFact(db, {
       content: "I prefer dark roast coffee",
       domain: "preferences",
       source_type: "conversation",
@@ -550,12 +550,12 @@ describe("consolidation pipeline", () => {
     // Two new session facts both targeting the coffee prior with negation.
     // No inline punctuation — the heuristic tokeniser splits on whitespace only,
     // so "coffee," would be a different token from "coffee".
-    insertSessionFact(db, {
+    await insertSessionFact(db, {
       session_id: sessionId,
       content: "I no longer prefer dark roast coffee I prefer tea",
       domain_hint: "preferences",
     });
-    insertSessionFact(db, {
+    await insertSessionFact(db, {
       session_id: sessionId,
       content: "I stopped drinking dark roast coffee entirely",
       domain_hint: "preferences",
@@ -577,16 +577,16 @@ describe("consolidation pipeline", () => {
 
     // Old coffee is now superseded (by the winner)
     const { getFact } = await import("../../src/db/facts.js");
-    const oldState = getFact(db, oldCoffee.id);
+    const oldState = await getFact(db, oldCoffee.id);
     expect(oldState!.status).toBe("superseded");
   });
 
   it("serialises concurrent consolidate calls via advisory lock", async () => {
-    const sessionId = setupSession();
+    const sessionId = await setupSession();
 
     // Seed enough session_facts to make consolidation do real work
     for (let i = 0; i < 3; i++) {
-      insertSessionFact(db, {
+      await insertSessionFact(db, {
         session_id: sessionId,
         content: `I like hobby number ${i}`,
         domain_hint: "preferences",
@@ -610,20 +610,20 @@ describe("consolidation pipeline", () => {
 
   it("upsertEntityEdge strengthens on repeated calls (saturating potentiation)", async () => {
     const { createEntity, upsertEntityEdge } = await import("../../src/db/entities.js");
-    const alice = createEntity(db, { type: "person", name: "Alice" });
-    const bob = createEntity(db, { type: "person", name: "Bob" });
+    const alice = await createEntity(db, { type: "person", name: "Alice" });
+    const bob = await createEntity(db, { type: "person", name: "Bob" });
 
     // Consolidation code canonicalises (smaller id first) before calling
     // upsertEntityEdge. The function itself trusts the caller's ordering.
     const [a, b] = alice.id < bob.id ? [alice.id, bob.id] : [bob.id, alice.id];
 
-    upsertEntityEdge(db, a, b, "co_mentioned");
-    upsertEntityEdge(db, a, b, "co_mentioned"); // Same direction — should strengthen, not duplicate
+    await upsertEntityEdge(db, a, b, "co_mentioned");
+    await upsertEntityEdge(db, a, b, "co_mentioned"); // Same direction — should strengthen, not duplicate
 
     // Verify exactly one row exists
-    const rows = db
+    const rows = (await db
       .prepare(`SELECT * FROM entity_edges WHERE relationship = 'co_mentioned'`)
-      .all() as Array<{ from_entity: string; to_entity: string; strength: number }>;
+      .all()) as Array<{ from_entity: string; to_entity: string; strength: number }>;
     expect(rows).toHaveLength(1);
     expect(rows[0].from_entity).toBe(a);
     expect(rows[0].to_entity).toBe(b);
@@ -654,11 +654,11 @@ describe("domain handling at graduation", () => {
   }
 
   async function graduateWith(domain: string, content = "A synthetic fact") {
-    const sessionId = setupSession();
-    insertSessionFact(db, { session_id: sessionId, content, domain_hint: null });
+    const sessionId = await setupSession();
+    await insertSessionFact(db, { session_id: sessionId, content, domain_hint: null });
     const result = await consolidate(db, providerReturning(domain) as never);
     expect(result.factsGraduated).toBe(1);
-    return (db.prepare(`SELECT domain FROM facts`).get() as { domain: string }).domain;
+    return ((await db.prepare(`SELECT domain FROM facts`).get()) as { domain: string }).domain;
   }
 
   it("keeps a domain outside the core rather than flattening it", async () => {
@@ -667,7 +667,7 @@ describe("domain handling at graduation", () => {
     // to `general` would throw away the most informative thing about the fact.
     expect(await graduateWith("fitness")).toBe("fitness");
 
-    const domains = db.prepare(`SELECT name FROM domains`).all() as Array<{ name: string }>;
+    const domains = (await db.prepare(`SELECT name FROM domains`).all()) as Array<{ name: string }>;
     expect(domains.map((d) => d.name)).toContain("fitness");
   });
 
@@ -676,7 +676,7 @@ describe("domain handling at graduation", () => {
     // canonicalise the spelling, don't police the meaning.
     expect(await graduateWith("Preferences")).toBe("preferences");
 
-    const domains = db.prepare(`SELECT name FROM domains`).all() as Array<{ name: string }>;
+    const domains = (await db.prepare(`SELECT name FROM domains`).all()) as Array<{ name: string }>;
     expect(domains.map((d) => d.name)).not.toContain("Preferences");
   });
 
@@ -700,8 +700,8 @@ describe("subject marking at graduation", () => {
    * which is how an assistant records facts about its user.
    */
   it("anchors a fact about the user to the self entity", async () => {
-    const sessionId = setupSession();
-    insertSessionFact(db, {
+    const sessionId = await setupSession();
+    await insertSessionFact(db, {
       session_id: sessionId,
       content: "The user prefers dark mode in all editors",
       source_origin: "explicit",
@@ -709,9 +709,9 @@ describe("subject marking at graduation", () => {
 
     await consolidate(db, createHeuristicProvider(PERSONAL_VOCABULARY), {});
 
-    const self = getSelfEntity(db);
+    const self = await getSelfEntity(db);
     expect(self).not.toBeNull();
-    const subjectFacts = getFactsBySubject(db, self!.id);
+    const subjectFacts = await getFactsBySubject(db, self!.id);
     expect(subjectFacts).toHaveLength(1);
     expect(subjectFacts[0].content).toMatch(/dark mode/);
   });
@@ -721,8 +721,8 @@ describe("subject marking at graduation", () => {
     // The heuristic provider extracts no entities at all, so if subject marking
     // hung off extraction this fact would have no anchor — and it is exactly
     // the kind of fact a profile is made of.
-    const sessionId = setupSession();
-    insertSessionFact(db, {
+    const sessionId = await setupSession();
+    await insertSessionFact(db, {
       session_id: sessionId,
       content: "The user is allergic to shellfish",
       source_origin: "explicit",
@@ -730,18 +730,18 @@ describe("subject marking at graduation", () => {
 
     await consolidate(db, createHeuristicProvider(PERSONAL_VOCABULARY), {});
 
-    const self = getSelfEntity(db)!;
-    expect(getFactsBySubject(db, self.id)).toHaveLength(1);
+    const self = (await getSelfEntity(db))!;
+    expect(await getFactsBySubject(db, self.id)).toHaveLength(1);
   });
 
   it("does not anchor a fact about somebody else", async () => {
     // Create the anchor first, as init and server boot both do. Without this
     // the store has no self entity, the lookup below returns null, and the
     // assertion would pass by never running.
-    const self = ensureSelfEntity(db);
+    const self = await ensureSelfEntity(db);
 
-    const sessionId = setupSession();
-    insertSessionFact(db, {
+    const sessionId = await setupSession();
+    await insertSessionFact(db, {
       session_id: sessionId,
       content: "Robin leads the Atlas migration this quarter",
       source_origin: "explicit",
@@ -749,10 +749,10 @@ describe("subject marking at graduation", () => {
 
     await consolidate(db, createHeuristicProvider(PERSONAL_VOCABULARY), {});
 
-    expect(getFactsBySubject(db, self.id)).toEqual([]);
+    expect(await getFactsBySubject(db, self.id)).toEqual([]);
     // And the fact still graduated — declining to name a subject must not drop
     // the fact along with it.
-    expect(getFactsByDomain(db, "general").length + getFactsByDomain(db, "work").length)
+    expect((await getFactsByDomain(db, "general")).length + (await getFactsByDomain(db, "work")).length)
       .toBeGreaterThan(0);
   });
 
@@ -761,16 +761,16 @@ describe("subject marking at graduation", () => {
       "The user prefers dark mode",
       "The user is allergic to shellfish",
     ]) {
-      const sessionId = setupSession();
-      insertSessionFact(db, { session_id: sessionId, content, source_origin: "explicit" });
+      const sessionId = await setupSession();
+      await insertSessionFact(db, { session_id: sessionId, content, source_origin: "explicit" });
       await consolidate(db, createHeuristicProvider(PERSONAL_VOCABULARY), {});
     }
 
-    const count = db
+    const count = (await db
       .prepare(`SELECT COUNT(*) AS n FROM entities WHERE is_self = 1`)
-      .get() as { n: number };
+      .get()) as { n: number };
     expect(count.n).toBe(1);
-    expect(getFactsBySubject(db, getSelfEntity(db)!.id)).toHaveLength(2);
+    expect(await getFactsBySubject(db, (await getSelfEntity(db))!.id)).toHaveLength(2);
   });
 });
 
@@ -806,8 +806,8 @@ describe("embedding never costs a fact", () => {
   });
 
   it("graduates facts even when the embedding provider throws", async () => {
-    const sessionId = setupSession();
-    insertSessionFact(db, {
+    const sessionId = await setupSession();
+    await insertSessionFact(db, {
       session_id: sessionId,
       content: "The user prefers dark roast coffee",
       source_origin: "explicit",
@@ -825,8 +825,8 @@ describe("embedding never costs a fact", () => {
   });
 
   it("leaves the unembedded fact queued for the next run", async () => {
-    const sessionId = setupSession();
-    insertSessionFact(db, {
+    const sessionId = await setupSession();
+    await insertSessionFact(db, {
       session_id: sessionId,
       content: "The user prefers dark roast coffee",
       source_origin: "explicit",
@@ -835,25 +835,25 @@ describe("embedding never costs a fact", () => {
 
     // The queue is the absence of a row, so a later working run finds it with
     // nothing to reset and no state to reconcile.
-    expect(getFactsMissingEmbeddings(db, "test-model", 3, 100)).toHaveLength(1);
+    expect(await getFactsMissingEmbeddings(db, "test-model", 3, 100)).toHaveLength(1);
   });
 
   it("a later working run backfills what the failed one missed", async () => {
-    const sessionId = setupSession();
-    insertSessionFact(db, {
+    const sessionId = await setupSession();
+    await insertSessionFact(db, {
       session_id: sessionId,
       content: "The user prefers dark roast coffee",
       source_origin: "explicit",
     });
     await consolidate(db, createHeuristicProvider(PERSONAL_VOCABULARY), {}, failing as never);
-    expect(countEmbeddings(db, "test-model", 3)).toBe(0);
+    expect(await countEmbeddings(db, "test-model", 3)).toBe(0);
 
     // Second run graduates nothing new — the backfill must come from the store,
     // not from what this run happened to produce.
     await consolidate(db, createHeuristicProvider(PERSONAL_VOCABULARY), {}, working() as never);
 
-    expect(countEmbeddings(db, "test-model", 3)).toBe(1);
-    expect(getFactsMissingEmbeddings(db, "test-model", 3, 100)).toHaveLength(0);
+    expect(await countEmbeddings(db, "test-model", 3)).toBe(1);
+    expect(await getFactsMissingEmbeddings(db, "test-model", 3, 100)).toHaveLength(0);
   });
 
   it("drains a backlog larger than one batch in a single run", async () => {
@@ -861,9 +861,9 @@ describe("embedding never costs a fact", () => {
     // on over an existing store the whole store is backlog, and a run that
     // stopped after one batch would leave the rest embedded only if more
     // consolidations happened to occur — silently, since search still works.
-    const sessionId = setupSession();
+    const sessionId = await setupSession();
     for (let i = 0; i < 7; i++) {
-      insertSessionFact(db, {
+      await insertSessionFact(db, {
         session_id: sessionId,
         content: `The user prefers beverage number ${i}`,
         source_origin: "explicit",
@@ -897,8 +897,8 @@ describe("embedding never costs a fact", () => {
     // Guards the premise: if dedup collapsed these to one fact there would be
     // no backlog and the test would pass without exercising anything.
     expect(result.factsGraduated).toBe(7);
-    expect(countEmbeddings(db, "test-model", 3)).toBe(7);
-    expect(getFactsMissingEmbeddings(db, "test-model", 3, 100)).toHaveLength(0);
+    expect(await countEmbeddings(db, "test-model", 3)).toBe(7);
+    expect(await getFactsMissingEmbeddings(db, "test-model", 3, 100)).toHaveLength(0);
     // One probe plus four batches of two — not one batch and a silent remainder.
     expect(calls).toBeGreaterThan(2);
   });
@@ -907,9 +907,9 @@ describe("embedding never costs a fact", () => {
     // Progress must be durable per batch. Otherwise a large backlog against a
     // flaky provider makes no headway at all: every run redoes the same first
     // batches and loses them again at the same point.
-    const sessionId = setupSession();
+    const sessionId = await setupSession();
     for (let i = 0; i < 7; i++) {
-      insertSessionFact(db, {
+      await insertSessionFact(db, {
         session_id: sessionId,
         content: `The user prefers beverage number ${i}`,
         source_origin: "explicit",
@@ -940,14 +940,14 @@ describe("embedding never costs a fact", () => {
     );
 
     // Some, not none and not all — the two batches that completed.
-    expect(countEmbeddings(db, "test-model", 3)).toBe(4);
-    expect(getFactsMissingEmbeddings(db, "test-model", 3, 100)).toHaveLength(3);
+    expect(await countEmbeddings(db, "test-model", 3)).toBe(4);
+    expect(await getFactsMissingEmbeddings(db, "test-model", 3, 100)).toHaveLength(3);
   });
 
   it("embeds nothing when no provider is configured", async () => {
     // The shipped default. No call, no rows, no behaviour change.
-    const sessionId = setupSession();
-    insertSessionFact(db, {
+    const sessionId = await setupSession();
+    await insertSessionFact(db, {
       session_id: sessionId,
       content: "The user prefers dark roast coffee",
       source_origin: "explicit",
@@ -955,14 +955,14 @@ describe("embedding never costs a fact", () => {
 
     await consolidate(db, createHeuristicProvider(PERSONAL_VOCABULARY), {});
 
-    const rows = db
+    const rows = (await db
       .prepare(`SELECT COUNT(*) AS n FROM fact_embeddings`)
-      .get() as { n: number };
+      .get()) as { n: number };
     expect(rows.n).toBe(0);
   });
 });
 
-describe("provenance names one origin, not every repeat", () => {
+describe("provenance names one origin, not every repeat", async () => {
   /**
    * `extraction_type` distinguishes the event that stated a fact from the ones
    * that merely repeat it. The schema, the type and its doc comment have all
@@ -988,8 +988,8 @@ describe("provenance names one origin, not every repeat", () => {
     },
   });
 
-  const sources = (factContent: string) =>
-    db
+  const sources = async (factContent: string) =>
+    (await db
       .prepare(
         `SELECT s.extraction_type AS type, e.sequence AS seq
            FROM session_fact_sources s
@@ -998,14 +998,14 @@ describe("provenance names one origin, not every repeat", () => {
           WHERE sf.content = ?
           ORDER BY e.sequence ASC`,
       )
-      .all(factContent) as Array<{ type: string; seq: number }>;
+      .all(factContent)) as Array<{ type: string; seq: number }>;
 
   it("marks the earliest occurrence primary and later ones corroborating", async () => {
-    const sessionId = setupSession();
+    const sessionId = await setupSession();
     const fact = "The user prefers dark roast coffee";
     // The same sentence three times, as repeated tool output would produce.
     for (let i = 0; i < 3; i++) {
-      insertEvent(db, {
+      await insertEvent(db, {
         mcp_session_id: sessionId,
         event_type: "tool_result",
         role: "tool",
@@ -1017,7 +1017,7 @@ describe("provenance names one origin, not every repeat", () => {
       extraction: { enabled: true } as never,
     });
 
-    const links = sources(fact);
+    const links = await sources(fact);
     // Guards the premise: if extraction produced nothing, the assertions below
     // would pass vacuously on an empty list.
     expect(links.length).toBeGreaterThan(1);
@@ -1030,9 +1030,9 @@ describe("provenance names one origin, not every repeat", () => {
   it("still records a single occurrence as primary", async () => {
     // The common case must not become corroborating-only, which would leave a
     // fact with repeats but no stated origin.
-    const sessionId = setupSession();
+    const sessionId = await setupSession();
     const fact = "The user prefers dark roast coffee";
-    insertEvent(db, {
+    await insertEvent(db, {
       mcp_session_id: sessionId,
       event_type: "message",
       role: "user",
@@ -1043,7 +1043,7 @@ describe("provenance names one origin, not every repeat", () => {
       extraction: { enabled: true } as never,
     });
 
-    const links = sources(fact);
+    const links = await sources(fact);
     expect(links).toHaveLength(1);
     expect(links[0].type).toBe("primary");
   });
@@ -1078,14 +1078,14 @@ describe("extraction honours what a store told it to look at", () => {
   });
 
   it("skips event types the store excluded", async () => {
-    const sessionId = setupSession();
-    insertEvent(db, {
+    const sessionId = await setupSession();
+    await insertEvent(db, {
       mcp_session_id: sessionId,
       event_type: "message",
       role: "user",
       content: "a sentence the user actually said",
     });
-    insertEvent(db, {
+    await insertEvent(db, {
       mcp_session_id: sessionId,
       event_type: "tool_result",
       role: "tool",
@@ -1100,14 +1100,14 @@ describe("extraction honours what a store told it to look at", () => {
   });
 
   it("skips roles the store excluded", async () => {
-    const sessionId = setupSession();
-    insertEvent(db, {
+    const sessionId = await setupSession();
+    await insertEvent(db, {
       mcp_session_id: sessionId,
       event_type: "message",
       role: "user",
       content: "something the user said",
     });
-    insertEvent(db, {
+    await insertEvent(db, {
       mcp_session_id: sessionId,
       event_type: "message",
       role: "assistant",
@@ -1122,9 +1122,9 @@ describe("extraction honours what a store told it to look at", () => {
   });
 
   it("skips events shorter than the configured minimum", async () => {
-    const sessionId = setupSession();
+    const sessionId = await setupSession();
     for (const content of ["ok", "a properly substantial sentence about coffee"]) {
-      insertEvent(db, {
+      await insertEvent(db, {
         mcp_session_id: sessionId,
         event_type: "message",
         role: "user",
@@ -1144,8 +1144,8 @@ describe("extraction honours what a store told it to look at", () => {
     // it degraded would hold the watermark back for ever and grow a backlog
     // nothing could drain — the failure mode a previous fix in this file
     // eliminated.
-    const sessionId = setupSession();
-    insertEvent(db, {
+    const sessionId = await setupSession();
+    await insertEvent(db, {
       mcp_session_id: sessionId,
       event_type: "tool_result",
       role: "tool",
@@ -1160,9 +1160,9 @@ describe("extraction honours what a store told it to look at", () => {
     // The extractor was never called, because nothing was eligible.
     expect(sawContents()).toHaveLength(0);
     // And the watermark moved, so these events are not reconsidered for ever.
-    const wm = db
+    const wm = (await db
       .prepare(`SELECT COALESCE(MAX(last_event_sequence), 0) v FROM consolidations`)
-      .get() as { v: number };
+      .get()) as { v: number };
     expect(wm.v).toBeGreaterThan(0);
   });
 });
@@ -1170,22 +1170,22 @@ describe("extraction honours what a store told it to look at", () => {
 describe("extract and graduate can run separately", () => {
   const FACT = "The user prefers oat milk at Acme";
 
-  function eventWatermark(): number {
+  async function eventWatermark(): Promise<number> {
     return (
-      db
+      (await db
         .prepare(
           `SELECT COALESCE(MAX(last_event_sequence), 0) AS seq FROM consolidations`,
         )
-        .get() as { seq: number }
+        .get()) as { seq: number }
     ).seq;
   }
 
-  function sessionFactRows() {
-    return db
+  async function sessionFactRows() {
+    return (await db
       .prepare(
         `SELECT content, consolidation_id FROM session_facts ORDER BY created_at ASC`,
       )
-      .all() as Array<{ content: string; consolidation_id: string | null }>;
+      .all()) as Array<{ content: string; consolidation_id: string | null }>;
   }
 
   function extractingProvider(hooks: {
@@ -1214,8 +1214,8 @@ describe("extract and graduate can run separately", () => {
   }
 
   it("extract-only writes unclaimed session_facts, no K, and advances the watermark", async () => {
-    const sessionId = setupSession();
-    insertEvent(db, {
+    const sessionId = await setupSession();
+    await insertEvent(db, {
       mcp_session_id: sessionId,
       event_type: "message",
       role: "user",
@@ -1235,19 +1235,19 @@ describe("extract and graduate can run separately", () => {
     expect(result.factsIn).toBe(1);
     expect(classifyCalls).toBe(0);
     expect(
-      (db.prepare(`SELECT COUNT(*) AS n FROM facts`).get() as { n: number }).n,
+      ((await db.prepare(`SELECT COUNT(*) AS n FROM facts`).get()) as { n: number }).n,
     ).toBe(0);
 
-    const staged = sessionFactRows();
+    const staged = await sessionFactRows();
     expect(staged).toHaveLength(1);
     expect(staged[0].content).toBe(FACT);
     expect(staged[0].consolidation_id).toBeNull();
-    expect(eventWatermark()).toBe(1);
+    expect(await eventWatermark()).toBe(1);
   });
 
   it("graduate-only does not re-read events or advance the watermark past them", async () => {
-    const sessionId = setupSession();
-    insertEvent(db, {
+    const sessionId = await setupSession();
+    await insertEvent(db, {
       mcp_session_id: sessionId,
       event_type: "message",
       role: "user",
@@ -1260,9 +1260,9 @@ describe("extract and graduate can run separately", () => {
       null,
       "extract",
     );
-    expect(eventWatermark()).toBe(1);
+    expect(await eventWatermark()).toBe(1);
 
-    insertEvent(db, {
+    await insertEvent(db, {
       mcp_session_id: sessionId,
       event_type: "message",
       role: "user",
@@ -1280,22 +1280,22 @@ describe("extract and graduate can run separately", () => {
 
     expect(extractCalls).toBe(0);
     expect(result.factsGraduated).toBe(1);
-    expect(eventWatermark()).toBe(1);
+    expect(await eventWatermark()).toBe(1);
 
-    const graduated = db
+    const graduated = (await db
       .prepare(`SELECT content FROM facts`)
-      .all() as Array<{ content: string }>;
+      .all()) as Array<{ content: string }>;
     expect(graduated).toHaveLength(1);
     expect(graduated[0].content).toBe(FACT);
 
-    const staged = sessionFactRows();
+    const staged = await sessionFactRows();
     expect(staged).toHaveLength(1);
     expect(staged[0].consolidation_id).toBe(result.consolidationId);
   });
 
   it("graduate-only with nothing pending does not pretend events were read", async () => {
-    const sessionId = setupSession();
-    insertEvent(db, {
+    const sessionId = await setupSession();
+    await insertEvent(db, {
       mcp_session_id: sessionId,
       event_type: "message",
       role: "user",
@@ -1312,17 +1312,17 @@ describe("extract and graduate can run separately", () => {
     );
 
     expect(extractCalls).toBe(0);
-    expect(eventWatermark()).toBe(0);
+    expect(await eventWatermark()).toBe(0);
     expect(
-      (db.prepare(`SELECT COUNT(*) AS n FROM consolidations`).get() as { n: number })
+      ((await db.prepare(`SELECT COUNT(*) AS n FROM consolidations`).get()) as { n: number })
         .n,
     ).toBe(0);
-    expect(sessionFactRows()).toHaveLength(0);
+    expect(await sessionFactRows()).toHaveLength(0);
   });
 
   it("full still extracts and graduates in one run", async () => {
-    const sessionId = setupSession();
-    insertEvent(db, {
+    const sessionId = await setupSession();
+    await insertEvent(db, {
       mcp_session_id: sessionId,
       event_type: "message",
       role: "user",
@@ -1338,12 +1338,12 @@ describe("extract and graduate can run separately", () => {
     );
 
     expect(result.factsGraduated).toBe(1);
-    const graduated = db
+    const graduated = (await db
       .prepare(`SELECT content FROM facts`)
-      .all() as Array<{ content: string }>;
+      .all()) as Array<{ content: string }>;
     expect(graduated).toHaveLength(1);
     expect(graduated[0].content).toBe(FACT);
-    const staged = sessionFactRows();
+    const staged = await sessionFactRows();
     expect(staged).toHaveLength(1);
     expect(staged[0].consolidation_id).toBe(result.consolidationId);
   });

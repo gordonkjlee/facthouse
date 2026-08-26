@@ -77,8 +77,8 @@ export function discoverClaudeCodeFiles(source: ResolvedCaptureSource): string[]
 }
 
 /** Tail one Claude Code JSONL file into session_events. */
-export function ingestClaudeCodeFile(db: Db, filePath: string): JsonlFilePull {
-  return ingestJsonlFile(db, filePath, {
+export async function ingestClaudeCodeFile(db: Db, filePath: string): Promise<JsonlFilePull> {
+  return await ingestJsonlFile(db, filePath, {
     sourceTool: "claude-code",
     mapLine: mapTranscriptLine,
   });

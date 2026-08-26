@@ -39,7 +39,7 @@ export async function runSearch(
 ): Promise<SearchResponse> {
   // Same entry point the MCP tool uses, so the command line and an assistant
   // cannot get different answers to the same question.
-  return searchWithProvider(db, args.query, embedding, {
+  return await searchWithProvider(db, args.query, embedding, {
     domain: args.domain,
     limit: args.limit,
     asOfSystemTime: args.asOfSystemTime,

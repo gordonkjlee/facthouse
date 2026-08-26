@@ -77,13 +77,13 @@ function writeJsonl(filePath: string, lines: string[]): void {
   writeFileSync(filePath, lines.map((l) => l + "\n").join(""), "utf-8");
 }
 
-function events(db: Db) {
-  return db
+async function events(db: Db) {
+  return (await db
     .prepare(
       `SELECT role, event_type, content, client_session_id, metadata
          FROM session_events ORDER BY sequence ASC`,
     )
-    .all() as Array<{
+    .all()) as Array<{
     role: string;
     event_type: string;
     content: string;
@@ -95,42 +95,42 @@ function events(db: Db) {
 let root: string;
 let db: Db;
 
-beforeEach(() => {
+beforeEach(async () => {
   root = mkdtempSync(path.join(tmpdir(), "om-pull-"));
   db = openDatabase(":memory:");
-  applySchema(db);
+  await applySchema(db);
 });
 
-afterEach(() => {
-  closeDatabase(db);
+afterEach(async () => {
+  await closeDatabase(db);
   rmSync(root, { recursive: true, force: true });
 });
 
 describe("pullSources", () => {
-  it("is a no-op when sources is empty", () => {
-    const result = pullSources(db, []);
+  it("is a no-op when sources is empty", async () => {
+    const result = await pullSources(db, []);
     expect(result).toEqual({
       sources: 0,
       files: 0,
       events_inserted: 0,
       events_skipped: 0,
     });
-    expect(events(db)).toHaveLength(0);
+    expect(await events(db)).toHaveLength(0);
   });
 
-  it("ingests a fixture JSONL into session_events and skips system and isMeta lines", () => {
+  it("ingests a fixture JSONL into session_events and skips system and isMeta lines", async () => {
     const home = path.join(root, "claude-home");
     const group = encodeProjectDir("C:\\dev\\app");
     const file = path.join(home, "projects", group, "sess-aaa.jsonl");
     writeJsonl(file, fixtureLines("sess-aaa"));
 
-    const result = pullSources(db, [{ kind: "claude-code", home }]);
+    const result = await pullSources(db, [{ kind: "claude-code", home }]);
     expect(result.sources).toBe(1);
     expect(result.files).toBe(1);
     expect(result.events_inserted).toBe(4);
     expect(result.events_skipped).toBe(2);
 
-    const rows = events(db);
+    const rows = await events(db);
     expect(rows.map((r) => [r.role, r.event_type])).toEqual([
       ["user", "message"],
       ["assistant", "message"],
@@ -143,14 +143,14 @@ describe("pullSources", () => {
     expect(rows.every((r) => r.client_session_id === "sess-aaa")).toBe(true);
     expect(JSON.parse(rows[0].metadata ?? "{}").source).toBe("claude-code");
 
-    const session = db
+    const session = (await db
       .prepare(`SELECT id, source_tool, project FROM sessions WHERE id = ?`)
-      .get("sess-aaa") as { id: string; source_tool: string; project: string };
+      .get("sess-aaa")) as { id: string; source_tool: string; project: string };
     expect(session.source_tool).toBe("claude-code");
     expect(session.project).toBe(group);
   });
 
-  it("records the JSONL timestamp as occurred_at, distinct from ingest created_at", () => {
+  it("records the JSONL timestamp as occurred_at, distinct from ingest created_at", async () => {
     const home = path.join(root, "claude-home");
     const group = encodeProjectDir("C:\\dev\\app");
     const file = path.join(home, "projects", group, "sess-time.jsonl");
@@ -165,19 +165,19 @@ describe("pullSources", () => {
     ]);
 
     const before = new Date().toISOString();
-    pullSources(db, [{ kind: "claude-code", home }]);
-    const row = db
+    await pullSources(db, [{ kind: "claude-code", home }]);
+    const row = (await db
       .prepare(
         `SELECT occurred_at, created_at FROM session_events WHERE client_session_id = ?`,
       )
-      .get("sess-time") as { occurred_at: string | null; created_at: string };
+      .get("sess-time")) as { occurred_at: string | null; created_at: string };
 
     expect(row.occurred_at).toBe(said);
     expect(row.created_at >= before).toBe(true);
     expect(row.created_at).not.toBe(said);
   });
 
-  it("a second pull of the same file is a no-op", () => {
+  it("a second pull of the same file is a no-op", async () => {
     const home = path.join(root, "claude-home");
     const file = path.join(
       home,
@@ -187,28 +187,28 @@ describe("pullSources", () => {
     );
     writeJsonl(file, fixtureLines("sess-aaa"));
 
-    pullSources(db, [{ kind: "claude-code", home }]);
-    const second = pullSources(db, [{ kind: "claude-code", home }]);
+    await pullSources(db, [{ kind: "claude-code", home }]);
+    const second = await pullSources(db, [{ kind: "claude-code", home }]);
     expect(second.events_inserted).toBe(0);
-    expect(events(db)).toHaveLength(4);
+    expect(await events(db)).toHaveLength(4);
   });
 
-  it("a no-op pull still records project on a store that had none", () => {
+  it("a no-op pull still records project on a store that had none", async () => {
     const home = path.join(root, "claude-home");
     const group = encodeProjectDir("C:\\dev\\app");
     const file = path.join(home, "projects", group, "sess-aaa.jsonl");
     writeJsonl(file, fixtureLines("sess-aaa"));
-    pullSources(db, [{ kind: "claude-code", home }]);
-    db.prepare(`DELETE FROM sessions`).run();
-    const again = pullSources(db, [{ kind: "claude-code", home }]);
+    await pullSources(db, [{ kind: "claude-code", home }]);
+    await db.prepare(`DELETE FROM sessions`).run();
+    const again = await pullSources(db, [{ kind: "claude-code", home }]);
     expect(again.events_inserted).toBe(0);
-    const row = db
+    const row = (await db
       .prepare(`SELECT project FROM sessions WHERE id = ?`)
-      .get("sess-aaa") as { project: string };
+      .get("sess-aaa")) as { project: string };
     expect(row.project).toBe(group);
   });
 
-  it("an appended line is the only insert on a third pull", () => {
+  it("an appended line is the only insert on a third pull", async () => {
     const home = path.join(root, "claude-home");
     const file = path.join(
       home,
@@ -217,8 +217,8 @@ describe("pullSources", () => {
       "sess-aaa.jsonl",
     );
     writeJsonl(file, fixtureLines("sess-aaa"));
-    pullSources(db, [{ kind: "claude-code", home }]);
-    pullSources(db, [{ kind: "claude-code", home }]);
+    await pullSources(db, [{ kind: "claude-code", home }]);
+    await pullSources(db, [{ kind: "claude-code", home }]);
 
     appendFileSync(
       file,
@@ -229,14 +229,14 @@ describe("pullSources", () => {
       }) + "\n",
     );
 
-    const third = pullSources(db, [{ kind: "claude-code", home }]);
+    const third = await pullSources(db, [{ kind: "claude-code", home }]);
     expect(third.events_inserted).toBe(1);
-    const rows = events(db);
+    const rows = await events(db);
     expect(rows).toHaveLength(5);
     expect(rows[4].content).toContain("extra preference");
   });
 
-  it("cwd filter excludes another project group, including sessions/ layout", () => {
+  it("cwd filter excludes another project group, including sessions/ layout", async () => {
     const home = path.join(root, "claude-home");
     const keep = encodeProjectDir("C:\\dev\\app");
     const other = encodeProjectDir("C:\\dev\\other");
@@ -249,29 +249,29 @@ describe("pullSources", () => {
       fixtureLines("sess-other"),
     );
 
-    const filtered = pullSources(db, [
+    const filtered = await pullSources(db, [
       { kind: "claude-code", home, cwd: "C:\\dev\\app" },
     ]);
     expect(filtered.files).toBe(1);
     expect(filtered.events_inserted).toBe(4);
-    expect(events(db).every((r) => r.client_session_id === "sess-keep")).toBe(true);
+    expect((await events(db)).every((r) => r.client_session_id === "sess-keep")).toBe(true);
 
     // Without cwd, the nested sessions/ file is discovered too.
-    const unfiltered = pullSources(db, [{ kind: "claude-code", home }]);
+    const unfiltered = await pullSources(db, [{ kind: "claude-code", home }]);
     expect(unfiltered.files).toBe(2);
-    const projects = db
+    const projects = (await db
       .prepare(`SELECT id, project FROM sessions ORDER BY id`)
-      .all() as Array<{ id: string; project: string }>;
+      .all()) as Array<{ id: string; project: string }>;
     expect(projects).toEqual([
       { id: "sess-keep", project: keep },
       { id: "sess-other", project: other },
     ]);
     expect(unfiltered.events_inserted).toBe(4);
-    const ids = new Set(events(db).map((r) => r.client_session_id));
+    const ids = new Set((await events(db)).map((r) => r.client_session_id));
     expect(ids).toEqual(new Set(["sess-keep", "sess-other"]));
   });
 
-  it("does not walk directories outside projects/", () => {
+  it("does not walk directories outside projects/", async () => {
     const home = path.join(root, "claude-home");
     writeJsonl(
       path.join(home, "tmp", "stray.jsonl"),
@@ -282,19 +282,19 @@ describe("pullSources", () => {
       fixtureLines("real"),
     );
 
-    const result = pullSources(db, [{ kind: "claude-code", home }]);
+    const result = await pullSources(db, [{ kind: "claude-code", home }]);
     expect(result.files).toBe(1);
-    expect(events(db).every((r) => r.client_session_id === "real")).toBe(true);
+    expect((await events(db)).every((r) => r.client_session_id === "real")).toBe(true);
   });
 
-  it("rejects an unknown kind without inserting anything", () => {
-    expect(() =>
+  it("rejects an unknown kind without inserting anything", async () => {
+    await expect(
       pullSources(db, [{ kind: "grok", home: path.join(root, "nope") }]),
-    ).toThrow(/Unknown source kind "grok"/);
-    expect(events(db)).toHaveLength(0);
+    ).rejects.toThrow(/Unknown source kind "grok"/);
+    expect(await events(db)).toHaveLength(0);
   });
 
-  it("does not consume an incomplete last line, then inserts it once completed", () => {
+  it("does not consume an incomplete last line, then inserts it once completed", async () => {
     const home = path.join(root, "claude-home");
     const file = path.join(
       home,
@@ -319,20 +319,20 @@ describe("pullSources", () => {
     // change the prefix hash and look like a rewrite.
     expect(Buffer.byteLength(complete + incomplete, "utf-8")).toBeLessThan(256);
 
-    const first = pullSources(db, [{ kind: "claude-code", home }]);
+    const first = await pullSources(db, [{ kind: "claude-code", home }]);
     expect(first.events_inserted).toBe(1);
-    expect(events(db)).toHaveLength(1);
-    expect(events(db)[0].content).toContain("Complete line one");
+    expect(await events(db)).toHaveLength(1);
+    expect((await events(db))[0].content).toContain("Complete line one");
 
     writeFileSync(file, complete + incomplete + "\n", "utf-8");
-    const second = pullSources(db, [{ kind: "claude-code", home }]);
+    const second = await pullSources(db, [{ kind: "claude-code", home }]);
     expect(second.events_inserted).toBe(1);
-    const rows = events(db);
+    const rows = await events(db);
     expect(rows).toHaveLength(2);
     expect(rows[1].content).toContain("Partial assistant line");
   });
 
-  it("does not walk subagents/ nests under a session id", () => {
+  it("does not walk subagents/ nests under a session id", async () => {
     const home = path.join(root, "claude-home");
     const group = encodeProjectDir("C:\\dev\\app");
     writeJsonl(
@@ -344,12 +344,12 @@ describe("pullSources", () => {
       fixtureLines("agent-aaa"),
     );
 
-    const result = pullSources(db, [{ kind: "claude-code", home }]);
+    const result = await pullSources(db, [{ kind: "claude-code", home }]);
     expect(result.files).toBe(1);
-    expect(events(db).every((r) => r.client_session_id === "sess-parent")).toBe(true);
+    expect((await events(db)).every((r) => r.client_session_id === "sess-parent")).toBe(true);
   });
 
-  it("re-reads a rewrite that keeps the same header prefix", () => {
+  it("re-reads a rewrite that keeps the same header prefix", async () => {
     // Compaction often leaves the opening user line intact and replaces the
     // body. A prefix-only fingerprint would miss that and skip the new lines.
     const header =
@@ -385,18 +385,18 @@ describe("pullSources", () => {
     writeFileSync(file, header + originalBody, "utf-8");
     expect(Buffer.byteLength(header, "utf-8")).toBeGreaterThan(256);
 
-    pullSources(db, [{ kind: "claude-code", home }]);
-    expect(events(db)).toHaveLength(2);
+    await pullSources(db, [{ kind: "claude-code", home }]);
+    expect(await events(db)).toHaveLength(2);
 
     writeFileSync(file, header + compactedBody, "utf-8");
-    const again = pullSources(db, [{ kind: "claude-code", home }]);
+    const again = await pullSources(db, [{ kind: "claude-code", home }]);
     expect(again.events_inserted).toBe(2);
-    const rows = events(db);
+    const rows = await events(db);
     expect(rows).toHaveLength(4);
     expect(rows[3].content).toContain("Compacted summary");
   });
 
-  it("re-reads a replaced file when the fingerprint no longer matches", () => {
+  it("re-reads a replaced file when the fingerprint no longer matches", async () => {
     const home = path.join(root, "claude-home");
     const file = path.join(
       home,
@@ -405,7 +405,7 @@ describe("pullSources", () => {
       "sess-aaa.jsonl",
     );
     writeJsonl(file, fixtureLines("sess-aaa"));
-    pullSources(db, [{ kind: "claude-code", home }]);
+    await pullSources(db, [{ kind: "claude-code", home }]);
 
     writeJsonl(file, [
       JSON.stringify({
@@ -415,9 +415,9 @@ describe("pullSources", () => {
       }),
     ]);
 
-    const again = pullSources(db, [{ kind: "claude-code", home }]);
+    const again = await pullSources(db, [{ kind: "claude-code", home }]);
     expect(again.events_inserted).toBe(1);
-    const rows = events(db);
+    const rows = await events(db);
     expect(rows).toHaveLength(5);
     expect(rows[4].content).toContain("Replacement transcript");
   });

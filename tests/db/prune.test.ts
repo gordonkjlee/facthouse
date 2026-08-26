@@ -23,13 +23,15 @@ let db: Db;
 let s1: string;
 let s2: string;
 
-beforeEach(() => {
+beforeEach(async () => {
   db = dbMod.openDatabase(":memory:");
-  applySchema(db);
-  s1 = createSession(db, { source_tool: "test", project: null }).id;
+  await applySchema(db);
+  s1 = (await createSession(db, { source_tool: "test", project: null })).id;
 });
 
-afterEach(() => dbMod.closeDatabase(db));
+afterEach(async () => {
+  await dbMod.closeDatabase(db);
+});
 
 /**
  * Add an event through the production insert path.
@@ -39,20 +41,19 @@ afterEach(() => dbMod.closeDatabase(db));
  * itself would be testing the prune rule against rows the system never
  * actually writes.
  */
-function addEvent(session?: string, content = "some tool output"): string {
-  return insertEvent(db, {
+async function addEvent(session?: string, content = "some tool output"): Promise<string> {
+  return (await insertEvent(db, {
     mcp_session_id: session ?? s1,
     event_type: "tool_result",
     role: "tool",
     content,
-  }).id;
+  })).id;
 }
 
 /** Move the extraction watermark to cover everything logged so far. */
-function markAllRead() {
-  const seq = db.prepare(`SELECT COALESCE(MAX(sequence), 0) v FROM session_events`).get()
-    .v as number;
-  db.prepare(
+async function markAllRead() {
+  const seq = ((await db.prepare(`SELECT COALESCE(MAX(sequence), 0) v FROM session_events`).get()) as { v: number }).v;
+  await db.prepare(
     `INSERT INTO consolidations
        (id, session_id, facts_in, facts_graduated, facts_rejected, entities_created,
         entities_linked, supersessions, summary, open_threads, last_event_sequence, created_at)
@@ -60,75 +61,75 @@ function markAllRead() {
   ).run(`c${seq}`, seq);
 }
 
-function citeAsProvenance(eventId: string) {
-  const sf = insertSessionFact(db, {
+async function citeAsProvenance(eventId: string) {
+  const sf = await insertSessionFact(db, {
     session_id: s1,
     content: "Alex prefers dark roast coffee",
     source_origin: "inferred",
   });
-  db.prepare(
+  await db.prepare(
     `INSERT INTO session_fact_sources (session_fact_id, event_id, relevance, extraction_type)
      VALUES (?, ?, 1.0, 'primary')`,
   ).run(sf.id, eventId);
 }
 
-const remaining = () =>
-  db.prepare(`SELECT COUNT(*) c FROM session_events`).get().c as number;
+const remaining = async () =>
+  ((await db.prepare(`SELECT COUNT(*) c FROM session_events`).get()) as { c: number }).c;
 
 describe("what prune refuses to remove", () => {
-  it("keeps events extraction has not read yet", () => {
+  it("keeps events extraction has not read yet", async () => {
     // Ahead of the watermark an event is still input. Deleting it would discard
     // conversation that was never examined — the same class of loss as advancing
     // a watermark past events a failed extractor never saw.
-    for (let i = 0; i < 5; i++) addEvent();
+    for (let i = 0; i < 5; i++) await addEvent();
     // No consolidation row at all: the watermark is 0.
-    expect(prunableEvents(db, 0).events).toBe(0);
+    expect((await prunableEvents(db, 0)).events).toBe(0);
   });
 
-  it("keeps an event a fact's provenance points at, however old", () => {
-    const cited = addEvent(undefined, "the sentence a fact came from");
-    for (let i = 0; i < 5; i++) addEvent();
-    markAllRead();
-    citeAsProvenance(cited);
+  it("keeps an event a fact's provenance points at, however old", async () => {
+    const cited = await addEvent(undefined, "the sentence a fact came from");
+    for (let i = 0; i < 5; i++) await addEvent();
+    await markAllRead();
+    await citeAsProvenance(cited);
 
-    pruneEvents(db, 0);
+    await pruneEvents(db, 0);
 
-    const survivors = db.prepare(`SELECT id FROM session_events`).all().map((r) => r.id);
+    const survivors = ((await db.prepare(`SELECT id FROM session_events`).all()) as Array<{ id: string }>).map((r) => r.id);
     expect(survivors).toEqual([cited]);
   });
 
-  it("keeps the most recent events of a session as working memory", () => {
+  it("keeps the most recent events of a session as working memory", async () => {
     // Reachable recent D for this session: reread and the evidence prefix
     // both read already-extracted events. Pruning them silently degrades
     // forgetfulness reread.
-    for (let i = 0; i < 10; i++) addEvent();
-    markAllRead();
+    for (let i = 0; i < 10; i++) await addEvent();
+    await markAllRead();
 
-    expect(prunableEvents(db, 4).events).toBe(6);
-    expect(prunableEvents(db, 10).events).toBe(0);
+    expect((await prunableEvents(db, 4)).events).toBe(6);
+    expect((await prunableEvents(db, 10)).events).toBe(0);
     // The guard is what makes the difference — without it, all ten go.
-    expect(prunableEvents(db, 0).events).toBe(10);
+    expect((await prunableEvents(db, 0)).events).toBe(10);
   });
 
-  it("counts the working-memory window per session, not across the store", () => {
+  it("counts the working-memory window per session, not across the store", async () => {
     // Two sessions of 6 events each, keeping 4. A global window would spare 4
     // events in total and delete 8; a per-session one spares 4 each.
-    for (let i = 0; i < 6; i++) addEvent();
-    s2 = createSession(db, { source_tool: "test", project: null }).id;
-    for (let i = 0; i < 6; i++) addEvent(s2);
-    markAllRead();
+    for (let i = 0; i < 6; i++) await addEvent();
+    s2 = (await createSession(db, { source_tool: "test", project: null })).id;
+    for (let i = 0; i < 6; i++) await addEvent(s2);
+    await markAllRead();
 
-    expect(prunableEvents(db, 4).events).toBe(4);
+    expect((await prunableEvents(db, 4)).events).toBe(4);
   });
 
-  it("partitions dual-id rows by client id, matching conversationRef", () => {
+  it("partitions dual-id rows by client id, matching conversationRef", async () => {
     // Pull writes client only. MCP log_event with OPENMEMORY_CLIENT_SESSION
     // writes both. They are the same Claude chat, so they share a working-memory
     // window. mcp-first COALESCE would split them: pull by client, MCP by
     // connection. Client-first keeps them together.
     const mcp = s1;
     for (let i = 0; i < 6; i++) {
-      insertEvent(db, {
+      await insertEvent(db, {
         client_session_id: "sess-aaa",
         event_type: "message",
         role: "user",
@@ -136,7 +137,7 @@ describe("what prune refuses to remove", () => {
       });
     }
     for (let i = 0; i < 6; i++) {
-      insertEvent(db, {
+      await insertEvent(db, {
         mcp_session_id: mcp,
         client_session_id: "sess-aaa",
         event_type: "message",
@@ -144,70 +145,70 @@ describe("what prune refuses to remove", () => {
         content: "logged on the mcp connection",
       });
     }
-    markAllRead();
+    await markAllRead();
 
     // One conversation of 12, keep 4 → prune 8. Two partitions of 6 would prune 4.
-    expect(prunableEvents(db, 4).events).toBe(8);
+    expect((await prunableEvents(db, 4)).events).toBe(8);
   });
 });
 
 describe("what prune does remove", () => {
-  it("removes read, uncited, out-of-window events and reports the bytes", () => {
-    for (let i = 0; i < 8; i++) addEvent(undefined, "x".repeat(100));
-    markAllRead();
+  it("removes read, uncited, out-of-window events and reports the bytes", async () => {
+    for (let i = 0; i < 8; i++) await addEvent(undefined, "x".repeat(100));
+    await markAllRead();
 
-    const result = pruneEvents(db, 3);
+    const result = await pruneEvents(db, 3);
 
     expect(result.events).toBe(5);
     expect(result.bytes).toBe(500);
-    expect(remaining()).toBe(3);
+    expect(await remaining()).toBe(3);
   });
 
-  it("reports exactly what it will delete", () => {
+  it("reports exactly what it will delete", async () => {
     // A dry run that disagrees with the apply is worse than no dry run, so both
     // read one definition of the rule. This is what catches them diverging.
-    for (let i = 0; i < 9; i++) addEvent();
-    markAllRead();
+    for (let i = 0; i < 9; i++) await addEvent();
+    await markAllRead();
 
-    const predicted = prunableEvents(db, 2);
-    const actual = pruneEvents(db, 2);
+    const predicted = await prunableEvents(db, 2);
+    const actual = await pruneEvents(db, 2);
 
     expect(actual).toEqual(predicted);
-    expect(remaining()).toBe(9 - predicted.events);
+    expect(await remaining()).toBe(9 - predicted.events);
   });
 
-  it("leaves facts, entities and session_facts untouched", () => {
+  it("leaves facts, entities and session_facts untouched", async () => {
     // Pruning is about the raw layer only. If it ever reached the knowledge
     // layer that would be data loss, not housekeeping.
-    const cited = addEvent();
-    for (let i = 0; i < 5; i++) addEvent();
-    markAllRead();
-    citeAsProvenance(cited);
-    insertFact(db, {
+    const cited = await addEvent();
+    for (let i = 0; i < 5; i++) await addEvent();
+    await markAllRead();
+    await citeAsProvenance(cited);
+    await insertFact(db, {
       content: "Alex prefers dark roast coffee",
       domain: "preferences",
       source_type: "explicit",
     });
 
-    pruneEvents(db, 0);
+    await pruneEvents(db, 0);
 
-    expect(db.prepare(`SELECT COUNT(*) c FROM facts`).get().c).toBe(1);
-    expect(db.prepare(`SELECT COUNT(*) c FROM session_facts`).get().c).toBe(1);
-    expect(db.prepare(`SELECT COUNT(*) c FROM session_fact_sources`).get().c).toBe(1);
+    expect(((await db.prepare(`SELECT COUNT(*) c FROM facts`).get()) as { c: number }).c).toBe(1);
+    expect(((await db.prepare(`SELECT COUNT(*) c FROM session_facts`).get()) as { c: number }).c).toBe(1);
+    expect(((await db.prepare(`SELECT COUNT(*) c FROM session_fact_sources`).get()) as { c: number }).c).toBe(1);
   });
 
-  it("is a no-op on an empty store rather than an error", () => {
-    expect(pruneEvents(db, 50)).toEqual({ events: 0, bytes: 0 });
+  it("is a no-op on an empty store rather than an error", async () => {
+    expect(await pruneEvents(db, 50)).toEqual({ events: 0, bytes: 0 });
   });
 
-  it("is idempotent", () => {
-    for (let i = 0; i < 6; i++) addEvent();
-    markAllRead();
+  it("is idempotent", async () => {
+    for (let i = 0; i < 6; i++) await addEvent();
+    await markAllRead();
 
-    expect(pruneEvents(db, 2).events).toBe(4);
+    expect((await pruneEvents(db, 2)).events).toBe(4);
     // The second run must find nothing — if the rule were unstable it would
     // keep eating into the working-memory window on each invocation.
-    expect(pruneEvents(db, 2).events).toBe(0);
-    expect(remaining()).toBe(2);
+    expect((await pruneEvents(db, 2)).events).toBe(0);
+    expect(await remaining()).toBe(2);
   });
 });

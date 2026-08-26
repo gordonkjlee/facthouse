@@ -27,19 +27,19 @@ const { hybridSearch } = await import("../../src/search/index.js");
 
 let db: Db;
 
-beforeEach(() => {
+beforeEach(async () => {
   db = dbMod.openDatabase(":memory:");
-  applySchema(db);
+  await applySchema(db);
 });
 
-afterEach(() => {
-  dbMod.closeDatabase(db);
+afterEach(async () => {
+  await dbMod.closeDatabase(db);
 });
 
 const vec = (...xs: number[]) => Float32Array.from(xs);
 
-function addFact(content: string, domain = "general") {
-  return insertFact(db, { content, domain, source_type: "explicit" });
+async function addFact(content: string, domain = "general") {
+  return await insertFact(db, { content, domain, source_type: "explicit" });
 }
 
 describe("vector serialisation", () => {
@@ -120,57 +120,57 @@ describe("model and dimension isolation", () => {
    * is meaningless, and nothing anywhere raises. A store that silently mixes
    * them returns confident nonsense.
    */
-  it("never returns a vector from a different model", () => {
-    const a = addFact("fact under model A");
-    const b = addFact("fact under model B");
-    insertEmbeddings(db, [{ fact_id: a.id, vector: vec(1, 0) }], "model-a", 2);
-    insertEmbeddings(db, [{ fact_id: b.id, vector: vec(1, 0) }], "model-b", 2);
+  it("never returns a vector from a different model", async () => {
+    const a = await addFact("fact under model A");
+    const b = await addFact("fact under model B");
+    await insertEmbeddings(db, [{ fact_id: a.id, vector: vec(1, 0) }], "model-a", 2);
+    await insertEmbeddings(db, [{ fact_id: b.id, vector: vec(1, 0) }], "model-b", 2);
 
-    const hits = vectorSearch(db, vec(1, 0), "model-a", 2, 10);
+    const hits = await vectorSearch(db, vec(1, 0), "model-a", 2, 10);
 
     expect(hits).toHaveLength(1);
     expect(hits[0].id).toBe(a.id);
   });
 
-  it("never returns a vector of a different dimension", () => {
+  it("never returns a vector of a different dimension", async () => {
     // The subtler half: same model, re-embedded at a different truncation.
     // A 512-dim query against 256-dim vectors is not a comparison at all.
-    const a = addFact("stored at 2 dimensions");
-    const b = addFact("stored at 3 dimensions");
-    insertEmbeddings(db, [{ fact_id: a.id, vector: vec(1, 0) }], "same-model", 2);
-    insertEmbeddings(db, [{ fact_id: b.id, vector: vec(1, 0, 0) }], "same-model", 3);
+    const a = await addFact("stored at 2 dimensions");
+    const b = await addFact("stored at 3 dimensions");
+    await insertEmbeddings(db, [{ fact_id: a.id, vector: vec(1, 0) }], "same-model", 2);
+    await insertEmbeddings(db, [{ fact_id: b.id, vector: vec(1, 0, 0) }], "same-model", 3);
 
-    const hits = vectorSearch(db, vec(1, 0), "same-model", 2, 10);
+    const hits = await vectorSearch(db, vec(1, 0), "same-model", 2, 10);
 
     expect(hits).toHaveLength(1);
     expect(hits[0].id).toBe(a.id);
   });
 
-  it("rejects a query vector that does not match the store's dimension", () => {
+  it("rejects a query vector that does not match the store's dimension", async () => {
     // Fails loudly rather than comparing a prefix, which would "work".
-    const f = addFact("anything");
-    insertEmbeddings(db, [{ fact_id: f.id, vector: vec(1, 0) }], "m", 2);
-    expect(() => vectorSearch(db, vec(1, 0, 0), "m", 2, 10)).toThrow(/dimensions/);
+    const f = await addFact("anything");
+    await insertEmbeddings(db, [{ fact_id: f.id, vector: vec(1, 0) }], "m", 2);
+    await expect(vectorSearch(db, vec(1, 0, 0), "m", 2, 10)).rejects.toThrow(/dimensions/);
   });
 
-  it("refuses to store a vector whose length contradicts its declared dimension", () => {
-    const f = addFact("anything");
-    expect(() =>
+  it("refuses to store a vector whose length contradicts its declared dimension", async () => {
+    const f = await addFact("anything");
+    await expect(
       insertEmbeddings(db, [{ fact_id: f.id, vector: vec(1, 0, 0) }], "m", 2),
-    ).toThrow(/dimensions/);
+    ).rejects.toThrow(/dimensions/);
   });
 });
 
 describe("vectorSearch", () => {
-  it("ranks by similarity, most similar first", () => {
+  it("ranks by similarity, most similar first", async () => {
     // Three vectors deliberately within the relative cutoff of each other, so
     // this test observes *ordering* only. Exclusion is the cutoff's job and is
     // covered separately — a fixture spread wide enough to be dropped would
     // conflate the two and pass for the wrong reason.
-    const near = addFact("near");
-    const mid = addFact("mid");
-    const farther = addFact("farther");
-    insertEmbeddings(
+    const near = await addFact("near");
+    const mid = await addFact("mid");
+    const farther = await addFact("farther");
+    await insertEmbeddings(
       db,
       [
         // Inserted out of order so a stable sort cannot fake the result.
@@ -182,29 +182,29 @@ describe("vectorSearch", () => {
       2,
     );
 
-    expect(vectorSearch(db, vec(1, 0), "m", 2, 10).map((f) => f.id)).toEqual([
+    expect((await vectorSearch(db, vec(1, 0), "m", 2, 10)).map((f) => f.id)).toEqual([
       near.id,
       mid.id,
       farther.id,
     ]);
   });
 
-  it("returns nothing when the store holds no vectors for this model", () => {
-    addFact("unembedded");
-    expect(vectorSearch(db, vec(1, 0), "m", 2, 10)).toEqual([]);
+  it("returns nothing when the store holds no vectors for this model", async () => {
+    await addFact("unembedded");
+    expect(await vectorSearch(db, vec(1, 0), "m", 2, 10)).toEqual([]);
   });
 
-  it("omits a fact that was superseded after being embedded", () => {
+  it("omits a fact that was superseded after being embedded", async () => {
     // An embedding outlives the currency of its fact. Returning it would
     // resurrect superseded knowledge through a path that never checks.
-    const f = addFact("superseded since embedding");
-    insertEmbeddings(db, [{ fact_id: f.id, vector: vec(1, 0) }], "m", 2);
-    expect(vectorSearch(db, vec(1, 0), "m", 2, 10)).toHaveLength(1);
+    const f = await addFact("superseded since embedding");
+    await insertEmbeddings(db, [{ fact_id: f.id, vector: vec(1, 0) }], "m", 2);
+    expect(await vectorSearch(db, vec(1, 0), "m", 2, 10)).toHaveLength(1);
 
-    db.prepare(`UPDATE facts SET status = 'superseded', is_latest = 0 WHERE id = ?`)
+    await db.prepare(`UPDATE facts SET status = 'superseded', is_latest = 0 WHERE id = ?`)
       .run(f.id);
 
-    expect(vectorSearch(db, vec(1, 0), "m", 2, 10)).toEqual([]);
+    expect(await vectorSearch(db, vec(1, 0), "m", 2, 10)).toEqual([]);
   });
 });
 
@@ -213,40 +213,40 @@ describe("the semantic path ranks rather than gates", () => {
    * The regression that would silently break every partially-embedded store —
    * which is every store, for as long as it takes the first backfill to run.
    */
-  it("still returns a keyword match for a fact with no embedding", () => {
-    const embedded = addFact("something entirely unrelated");
-    const unembedded = addFact("the user prefers dark roast coffee");
-    insertEmbeddings(db, [{ fact_id: embedded.id, vector: vec(1, 0) }], "m", 2);
+  it("still returns a keyword match for a fact with no embedding", async () => {
+    const embedded = await addFact("something entirely unrelated");
+    const unembedded = await addFact("the user prefers dark roast coffee");
+    await insertEmbeddings(db, [{ fact_id: embedded.id, vector: vec(1, 0) }], "m", 2);
 
-    const res = hybridSearch(db, "coffee", {
+    const res = await hybridSearch(db, "coffee", {
       semantic: { vector: vec(1, 0), model: "m", dimensions: 2 },
     });
 
     expect(res.results.map((r) => r.fact.id)).toContain(unembedded.id);
   });
 
-  it("adds recall where keyword finds nothing", () => {
+  it("adds recall where keyword finds nothing", async () => {
     // The product claim in one assertion: a query with no lexical overlap
     // returns nothing today, and returns the right fact with a vector.
-    const f = addFact("the user is allergic to shellfish");
-    insertEmbeddings(db, [{ fact_id: f.id, vector: vec(1, 0) }], "m", 2);
+    const f = await addFact("the user is allergic to shellfish");
+    await insertEmbeddings(db, [{ fact_id: f.id, vector: vec(1, 0) }], "m", 2);
 
-    expect(hybridSearch(db, "zzzznomatch").results).toHaveLength(0);
+    expect((await hybridSearch(db, "zzzznomatch")).results).toHaveLength(0);
 
-    const withSemantic = hybridSearch(db, "zzzznomatch", {
+    const withSemantic = await hybridSearch(db, "zzzznomatch", {
       semantic: { vector: vec(1, 0), model: "m", dimensions: 2 },
     });
     expect(withSemantic.results.map((r) => r.fact.id)).toEqual([f.id]);
   });
 
-  it("is inert when no semantic option is passed", () => {
+  it("is inert when no semantic option is passed", async () => {
     // Keyword-only is the shipped default; an embedded store must behave
     // exactly as before until a caller opts in.
-    const f = addFact("the user prefers dark roast coffee");
-    insertEmbeddings(db, [{ fact_id: f.id, vector: vec(1, 0) }], "m", 2);
+    const f = await addFact("the user prefers dark roast coffee");
+    await insertEmbeddings(db, [{ fact_id: f.id, vector: vec(1, 0) }], "m", 2);
 
-    expect(hybridSearch(db, "coffee").results.map((r) => r.fact.id)).toEqual([f.id]);
-    expect(hybridSearch(db, "zzzznomatch").results).toEqual([]);
+    expect((await hybridSearch(db, "coffee")).results.map((r) => r.fact.id)).toEqual([f.id]);
+    expect((await hybridSearch(db, "zzzznomatch")).results).toEqual([]);
   });
 });
 
@@ -256,45 +256,45 @@ describe("the backfill queue", () => {
    * the current model *is* the work queue. These pin that property, because it
    * is what makes a failed embedding run cost nothing permanent.
    */
-  it("lists facts with no vector for this model", () => {
-    const a = addFact("embedded");
-    const b = addFact("not embedded");
-    insertEmbeddings(db, [{ fact_id: a.id, vector: vec(1, 0) }], "m", 2);
+  it("lists facts with no vector for this model", async () => {
+    const a = await addFact("embedded");
+    const b = await addFact("not embedded");
+    await insertEmbeddings(db, [{ fact_id: a.id, vector: vec(1, 0) }], "m", 2);
 
-    const pending = getFactsMissingEmbeddings(db, "m", 2, 100);
+    const pending = await getFactsMissingEmbeddings(db, "m", 2, 100);
     expect(pending.map((f) => f.id)).toEqual([b.id]);
   });
 
-  it("enqueues the whole store when the model changes", () => {
+  it("enqueues the whole store when the model changes", async () => {
     // A model change is not a special case with its own migration — it is the
     // ordinary "no row for this model" condition, applied to everything.
-    const a = addFact("one");
-    const b = addFact("two");
-    insertEmbeddings(
+    const a = await addFact("one");
+    const b = await addFact("two");
+    await insertEmbeddings(
       db,
       [{ fact_id: a.id, vector: vec(1, 0) }, { fact_id: b.id, vector: vec(0, 1) }],
       "old-model",
       2,
     );
 
-    expect(getFactsMissingEmbeddings(db, "old-model", 2, 100)).toHaveLength(0);
-    expect(getFactsMissingEmbeddings(db, "new-model", 2, 100)).toHaveLength(2);
+    expect(await getFactsMissingEmbeddings(db, "old-model", 2, 100)).toHaveLength(0);
+    expect(await getFactsMissingEmbeddings(db, "new-model", 2, 100)).toHaveLength(2);
   });
 
-  it("excludes superseded facts", () => {
-    const f = addFact("superseded");
-    db.prepare(`UPDATE facts SET status = 'superseded', is_latest = 0 WHERE id = ?`)
+  it("excludes superseded facts", async () => {
+    const f = await addFact("superseded");
+    await db.prepare(`UPDATE facts SET status = 'superseded', is_latest = 0 WHERE id = ?`)
       .run(f.id);
-    expect(getFactsMissingEmbeddings(db, "m", 2, 100)).toEqual([]);
+    expect(await getFactsMissingEmbeddings(db, "m", 2, 100)).toEqual([]);
   });
 
-  it("re-embedding replaces rather than accumulating", () => {
-    const f = addFact("re-embedded");
-    insertEmbeddings(db, [{ fact_id: f.id, vector: vec(1, 0) }], "m", 2);
-    insertEmbeddings(db, [{ fact_id: f.id, vector: vec(0, 1) }], "m", 2);
+  it("re-embedding replaces rather than accumulating", async () => {
+    const f = await addFact("re-embedded");
+    await insertEmbeddings(db, [{ fact_id: f.id, vector: vec(1, 0) }], "m", 2);
+    await insertEmbeddings(db, [{ fact_id: f.id, vector: vec(0, 1) }], "m", 2);
 
-    expect(countEmbeddings(db, "m", 2)).toBe(1);
-    expect(Array.from(getEmbeddings(db, "m", 2)[0].vector)).toEqual([0, 1]);
+    expect(await countEmbeddings(db, "m", 2)).toBe(1);
+    expect(Array.from((await getEmbeddings(db, "m", 2))[0].vector)).toEqual([0, 1]);
   });
 });
 
@@ -309,10 +309,10 @@ describe("the relative cutoff", () => {
    * relevance. An absolute threshold would be tuned to one embedding model and
    * silently wrong for the next.
    */
-  it("drops hits that are not comparable to the best one", () => {
-    const near = addFact("clearly relevant");
-    const far = addFact("clearly not");
-    insertEmbeddings(
+  it("drops hits that are not comparable to the best one", async () => {
+    const near = await addFact("clearly relevant");
+    const far = await addFact("clearly not");
+    await insertEmbeddings(
       db,
       [
         { fact_id: near.id, vector: vec(1, 0) },
@@ -323,15 +323,15 @@ describe("the relative cutoff", () => {
       2,
     );
 
-    expect(vectorSearch(db, vec(1, 0), "m", 2, 10).map((f) => f.id)).toEqual([near.id]);
+    expect((await vectorSearch(db, vec(1, 0), "m", 2, 10)).map((f) => f.id)).toEqual([near.id]);
   });
 
-  it("keeps a genuine cluster of comparable hits", () => {
+  it("keeps a genuine cluster of comparable hits", async () => {
     // An ambiguous query should return its whole cluster, not an arbitrary one
     // of them — the cut asks "comparable to the best", not "the single best".
-    const a = addFact("one of two equally good answers");
-    const b = addFact("the other");
-    insertEmbeddings(
+    const a = await addFact("one of two equally good answers");
+    const b = await addFact("the other");
+    await insertEmbeddings(
       db,
       [
         { fact_id: a.id, vector: vec(1, 0) },
@@ -341,16 +341,16 @@ describe("the relative cutoff", () => {
       2,
     );
 
-    expect(vectorSearch(db, vec(1, 0), "m", 2, 10)).toHaveLength(2);
+    expect(await vectorSearch(db, vec(1, 0), "m", 2, 10)).toHaveLength(2);
   });
 
-  it("returns nothing when the best hit is not positively similar", () => {
+  it("returns nothing when the best hit is not positively similar", async () => {
     // Every stored vector points away from the query. A negative-cosine "match"
     // is noise, and a ratio of negatives is meaningless.
-    const f = addFact("opposite");
-    insertEmbeddings(db, [{ fact_id: f.id, vector: vec(-1, 0) }], "m", 2);
+    const f = await addFact("opposite");
+    await insertEmbeddings(db, [{ fact_id: f.id, vector: vec(-1, 0) }], "m", 2);
 
-    expect(vectorSearch(db, vec(1, 0), "m", 2, 10)).toEqual([]);
+    expect(await vectorSearch(db, vec(1, 0), "m", 2, 10)).toEqual([]);
   });
 });
 
@@ -361,10 +361,10 @@ describe("the cutoff is configurable", () => {
    * relevance. A store on a different provider needs a different ratio, which
    * is the same reason `dimensions` is configurable.
    */
-  function twoHits() {
-    const near = addFact("close");
-    const far = addFact("further");
-    insertEmbeddings(
+  async function twoHits() {
+    const near = await addFact("close");
+    const far = await addFact("further");
+    await insertEmbeddings(
       db,
       [
         { fact_id: near.id, vector: vec(1, 0) },        // cos = 1.00
@@ -376,42 +376,42 @@ describe("the cutoff is configurable", () => {
     return { near, far };
   }
 
-  it("excludes at the default and includes at a looser ratio", () => {
-    const { near, far } = twoHits();
+  it("excludes at the default and includes at a looser ratio", async () => {
+    const { near, far } = await twoHits();
 
     // 0.80 < 0.85 of 1.00 — dropped by default.
-    expect(vectorSearch(db, vec(1, 0), "m", 2, 10).map((f) => f.id)).toEqual([near.id]);
+    expect((await vectorSearch(db, vec(1, 0), "m", 2, 10)).map((f) => f.id)).toEqual([near.id]);
 
     // A store that wants broader recall says so.
-    expect(vectorSearch(db, vec(1, 0), "m", 2, 10, { minSimilarityRatio: 0.7 }).map((f) => f.id)).toEqual([
+    expect((await vectorSearch(db, vec(1, 0), "m", 2, 10, { minSimilarityRatio: 0.7 })).map((f) => f.id)).toEqual([
       near.id,
       far.id,
     ]);
   });
 
-  it("keeps only the best at a ratio of 1", () => {
-    const { near } = twoHits();
-    expect(vectorSearch(db, vec(1, 0), "m", 2, 10, { minSimilarityRatio: 1 }).map((f) => f.id)).toEqual([near.id]);
+  it("keeps only the best at a ratio of 1", async () => {
+    const { near } = await twoHits();
+    expect((await vectorSearch(db, vec(1, 0), "m", 2, 10, { minSimilarityRatio: 1 })).map((f) => f.id)).toEqual([near.id]);
   });
 
-  it("keeps everything positively similar at a ratio of 0", () => {
+  it("keeps everything positively similar at a ratio of 0", async () => {
     // A meaningful extreme, not a misconfiguration: it hands ranking entirely
     // to the merge.
-    twoHits();
-    expect(vectorSearch(db, vec(1, 0), "m", 2, 10, { minSimilarityRatio: 0 })).toHaveLength(2);
+    await twoHits();
+    expect(await vectorSearch(db, vec(1, 0), "m", 2, 10, { minSimilarityRatio: 0 })).toHaveLength(2);
   });
 
-  it("clamps a ratio above 1 rather than silently disabling the path", () => {
+  it("clamps a ratio above 1 rather than silently disabling the path", async () => {
     // Nothing can exceed 100% of the best score, so an unclamped 1.5 would
     // return nothing at all — tightening the knob past its end would look
     // like semantic search had stopped working.
-    const { near } = twoHits();
-    expect(vectorSearch(db, vec(1, 0), "m", 2, 10, { minSimilarityRatio: 1.5 }).map((f) => f.id)).toEqual([near.id]);
+    const { near } = await twoHits();
+    expect((await vectorSearch(db, vec(1, 0), "m", 2, 10, { minSimilarityRatio: 1.5 })).map((f) => f.id)).toEqual([near.id]);
   });
 
-  it("clamps a negative ratio", () => {
-    twoHits();
-    expect(vectorSearch(db, vec(1, 0), "m", 2, 10, { minSimilarityRatio: -3 })).toHaveLength(2);
+  it("clamps a negative ratio", async () => {
+    await twoHits();
+    expect(await vectorSearch(db, vec(1, 0), "m", 2, 10, { minSimilarityRatio: -3 })).toHaveLength(2);
   });
 });
 
@@ -426,11 +426,11 @@ describe("the absolute floor", () => {
    * Every one of those ratios clears 0.85, so the relative cut kept all four
    * and search answered a question it had no answer to.
    */
-  function noiseBand() {
+  async function noiseBand() {
     // Four facts within 13% of each other, none of them a real match — the
     // shape an unrelated query actually produces.
-    const ids = ["a", "b", "c", "d"].map((n) => addFact(`fact ${n}`));
-    insertEmbeddings(
+    const ids = await Promise.all(["a", "b", "c", "d"].map((n) => addFact(`fact ${n}`)));
+    await insertEmbeddings(
       db,
       [
         { fact_id: ids[0].id, vector: vec(0.48, 0.877) },  // cos ≈ 0.48
@@ -444,47 +444,47 @@ describe("the absolute floor", () => {
     return ids;
   }
 
-  it("keeps the whole noise band when only the ratio is set", () => {
+  it("keeps the whole noise band when only the ratio is set", async () => {
     // Not the desired behaviour — the shipped default, asserted so the gap is
     // recorded rather than assumed fixed.
-    noiseBand();
-    expect(vectorSearch(db, vec(1, 0), "m", 2, 10)).toHaveLength(4);
+    await noiseBand();
+    expect(await vectorSearch(db, vec(1, 0), "m", 2, 10)).toHaveLength(4);
   });
 
-  it("returns nothing when the whole field is below the floor", () => {
-    noiseBand();
-    expect(vectorSearch(db, vec(1, 0), "m", 2, 10, { minSimilarity: 0.5 })).toEqual([]);
+  it("returns nothing when the whole field is below the floor", async () => {
+    await noiseBand();
+    expect(await vectorSearch(db, vec(1, 0), "m", 2, 10, { minSimilarity: 0.5 })).toEqual([]);
   });
 
-  it("still returns a genuine match above the floor", () => {
+  it("still returns a genuine match above the floor", async () => {
     // The floor must not make the feature silent — the same store, a query
     // that does have an answer.
-    const real = addFact("the real match");
-    noiseBand();
-    insertEmbeddings(db, [{ fact_id: real.id, vector: vec(1, 0) }], "m", 2);
+    const real = await addFact("the real match");
+    await noiseBand();
+    await insertEmbeddings(db, [{ fact_id: real.id, vector: vec(1, 0) }], "m", 2);
 
-    const hits = vectorSearch(db, vec(1, 0), "m", 2, 10, { minSimilarity: 0.5 });
+    const hits = await vectorSearch(db, vec(1, 0), "m", 2, 10, { minSimilarity: 0.5 });
     expect(hits.map((f) => f.id)).toEqual([real.id]);
   });
 
-  it("does not let the ratio re-admit what the floor rejected", () => {
+  it("does not let the ratio re-admit what the floor rejected", async () => {
     // Order matters. Applying the ratio to the unfiltered list first would
     // compute "close to the best" from a best that is itself noise, and the
     // floor would then have nothing left to reject.
-    const real = addFact("the real match");
-    noiseBand();
-    insertEmbeddings(db, [{ fact_id: real.id, vector: vec(1, 0) }], "m", 2);
+    const real = await addFact("the real match");
+    await noiseBand();
+    await insertEmbeddings(db, [{ fact_id: real.id, vector: vec(1, 0) }], "m", 2);
 
-    const hits = vectorSearch(db, vec(1, 0), "m", 2, 10, {
+    const hits = await vectorSearch(db, vec(1, 0), "m", 2, 10, {
       minSimilarity: 0.5,
       minSimilarityRatio: 0, // keep everything the floor allows
     });
     expect(hits.map((f) => f.id)).toEqual([real.id]);
   });
 
-  it("is off by default, so an unconfigured store behaves exactly as before", () => {
-    const real = addFact("the real match");
-    insertEmbeddings(db, [{ fact_id: real.id, vector: vec(1, 0) }], "m", 2);
-    expect(vectorSearch(db, vec(1, 0), "m", 2, 10).map((f) => f.id)).toEqual([real.id]);
+  it("is off by default, so an unconfigured store behaves exactly as before", async () => {
+    const real = await addFact("the real match");
+    await insertEmbeddings(db, [{ fact_id: real.id, vector: vec(1, 0) }], "m", 2);
+    expect((await vectorSearch(db, vec(1, 0), "m", 2, 10)).map((f) => f.id)).toEqual([real.id]);
   });
 });

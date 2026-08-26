@@ -20,29 +20,29 @@ const {
 
 let db: Db;
 
-beforeEach(() => {
+beforeEach(async () => {
   db = openDatabase(":memory:");
-  applySchema(db);
+  await applySchema(db);
 });
 
-afterEach(() => {
-  closeDatabase(db);
+afterEach(async () => {
+  await closeDatabase(db);
 });
 
 describe("schema", () => {
-  it("applies current version", () => {
-    expect(getSchemaVersion(db)).toBe(17);
+  it("applies current version", async () => {
+    expect(await getSchemaVersion(db)).toBe(17);
   });
 
-  it("is idempotent", () => {
-    applySchema(db); // second call
-    expect(getSchemaVersion(db)).toBe(17);
+  it("is idempotent", async () => {
+    await applySchema(db); // second call
+    expect(await getSchemaVersion(db)).toBe(17);
   });
 });
 
 describe("sessions", () => {
-  it("creates a session with generated id and timestamps", () => {
-    const session = createSession(db, {
+  it("creates a session with generated id and timestamps", async () => {
+    const session = await createSession(db, {
       source_tool: "claude-code",
       project: "openmemory",
     });
@@ -56,8 +56,8 @@ describe("sessions", () => {
     expect(session.last_activity_at).toBe(session.started_at);
   });
 
-  it("creates a session with null source_tool and project", () => {
-    const session = createSession(db, {
+  it("creates a session with null source_tool and project", async () => {
+    const session = await createSession(db, {
       source_tool: null,
       project: null,
     });
@@ -66,29 +66,29 @@ describe("sessions", () => {
     expect(session.project).toBeNull();
   });
 
-  it("retrieves a session by id", () => {
-    const created = createSession(db, {
+  it("retrieves a session by id", async () => {
+    const created = await createSession(db, {
       source_tool: "cursor",
       project: null,
     });
 
-    const found = getSession(db, created.id);
+    const found = await getSession(db, created.id);
     expect(found).not.toBeNull();
     expect(found!.id).toBe(created.id);
     expect(found!.source_tool).toBe("cursor");
   });
 
-  it("returns null for non-existent session", () => {
-    expect(getSession(db, "non-existent")).toBeNull();
+  it("returns null for non-existent session", async () => {
+    expect(await getSession(db, "non-existent")).toBeNull();
   });
 
-  it("ensureSession inserts a named id and is idempotent", () => {
-    const first = ensureSession(db, {
+  it("ensureSession inserts a named id and is idempotent", async () => {
+    const first = await ensureSession(db, {
       id: "sess-aaa",
       source_tool: "claude-code",
       project: "C--dev-app",
     });
-    const second = ensureSession(db, {
+    const second = await ensureSession(db, {
       id: "sess-aaa",
       source_tool: "claude-code",
       project: "C--dev-app",
@@ -96,23 +96,23 @@ describe("sessions", () => {
     expect(first.id).toBe("sess-aaa");
     expect(second.id).toBe("sess-aaa");
     expect(
-      (db.prepare(`SELECT COUNT(*) AS n FROM sessions`).get() as { n: number }).n,
+      ((await db.prepare(`SELECT COUNT(*) AS n FROM sessions`).get()) as { n: number }).n,
     ).toBe(1);
   });
 
-  it("ensureSession fills a null project and does not overwrite a set one", () => {
-    ensureSession(db, {
+  it("ensureSession fills a null project and does not overwrite a set one", async () => {
+    await ensureSession(db, {
       id: "sess-aaa",
       source_tool: "claude-code",
       project: null,
     });
-    const filled = ensureSession(db, {
+    const filled = await ensureSession(db, {
       id: "sess-aaa",
       source_tool: "cli",
       project: "C--dev-app",
     });
     expect(filled.project).toBe("C--dev-app");
-    const kept = ensureSession(db, {
+    const kept = await ensureSession(db, {
       id: "sess-aaa",
       source_tool: "cli",
       project: "other-group",
@@ -123,60 +123,60 @@ describe("sessions", () => {
   const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
   it("getLatestSession returns the most recently active", async () => {
-    const s1 = createSession(db, { source_tool: "a", project: null });
+    const s1 = await createSession(db, { source_tool: "a", project: null });
     await sleep(5000);
-    const s2 = createSession(db, { source_tool: "b", project: null });
+    const s2 = await createSession(db, { source_tool: "b", project: null });
 
     // s2 was created 5 s later, so it's the latest
-    const latest = getLatestSession(db);
+    const latest = await getLatestSession(db);
     expect(latest).not.toBeNull();
     expect(latest!.id).toBe(s2.id);
 
     // Insert an event into s1 — its last_activity_at is now ahead of s2's
     await sleep(5000);
-    insertEvent(db, {
+    await insertEvent(db, {
       mcp_session_id: s1.id,
       event_type: "message",
       role: "user",
       content: "hello",
     });
 
-    const updated = getLatestSession(db);
+    const updated = await getLatestSession(db);
     expect(updated!.id).toBe(s1.id);
   }, 15_000);
 
-  it("returns null when no sessions exist", () => {
-    expect(getLatestSession(db)).toBeNull();
+  it("returns null when no sessions exist", async () => {
+    expect(await getLatestSession(db)).toBeNull();
   });
 });
 
 describe("session events", () => {
   let sessionId: string;
 
-  beforeEach(() => {
-    const session = createSession(db, {
+  beforeEach(async () => {
+    const session = await createSession(db, {
       source_tool: "claude-code",
       project: null,
     });
     sessionId = session.id;
   });
 
-  it("inserts an event with auto-incremented sequence", () => {
-    const e1 = insertEvent(db, {
+  it("inserts an event with auto-incremented sequence", async () => {
+    const e1 = await insertEvent(db, {
       mcp_session_id: sessionId,
       event_type: "message",
       role: "user",
       content: "first message",
     });
 
-    const e2 = insertEvent(db, {
+    const e2 = await insertEvent(db, {
       mcp_session_id: sessionId,
       event_type: "message",
       role: "assistant",
       content: "second message",
     });
 
-    const e3 = insertEvent(db, {
+    const e3 = await insertEvent(db, {
       mcp_session_id: sessionId,
       event_type: "tool_call",
       role: "assistant",
@@ -189,23 +189,23 @@ describe("session events", () => {
     expect(e3.sequence).toBe(3);
   });
 
-  it("updates session last_activity_at on insert", () => {
-    const before = getSession(db, sessionId)!;
-    insertEvent(db, {
+  it("updates session last_activity_at on insert", async () => {
+    const before = (await getSession(db, sessionId))!;
+    await insertEvent(db, {
       mcp_session_id: sessionId,
       event_type: "message",
       role: "user",
       content: "hello",
     });
-    const after = getSession(db, sessionId)!;
+    const after = (await getSession(db, sessionId))!;
 
     expect(after.last_activity_at >= before.last_activity_at).toBe(true);
     // Verify the UPDATE actually ran by checking the session was touched.
     expect(after.last_activity_at).toBeTruthy();
   });
 
-  it("defaults content_type to text", () => {
-    const event = insertEvent(db, {
+  it("defaults content_type to text", async () => {
+    const event = await insertEvent(db, {
       mcp_session_id: sessionId,
       event_type: "message",
       role: "user",
@@ -217,8 +217,8 @@ describe("session events", () => {
     expect(event.speaker).toBeNull();
   });
 
-  it("stores a named speaker and leaves it null when omitted", () => {
-    const named = insertEvent(db, {
+  it("stores a named speaker and leaves it null when omitted", async () => {
+    const named = await insertEvent(db, {
       mcp_session_id: sessionId,
       event_type: "message",
       role: "user",
@@ -226,9 +226,9 @@ describe("session events", () => {
       speaker: "  Alex  ",
     });
     expect(named.speaker).toBe("Alex");
-    expect(getEvents(db, sessionId)[0].speaker).toBe("Alex");
+    expect((await getEvents(db, sessionId))[0].speaker).toBe("Alex");
 
-    const blank = insertEvent(db, {
+    const blank = await insertEvent(db, {
       mcp_session_id: sessionId,
       event_type: "message",
       role: "user",
@@ -238,9 +238,9 @@ describe("session events", () => {
     expect(blank.speaker).toBeNull();
   });
 
-  it("stores occurred_at when given and leaves it null when omitted", () => {
+  it("stores occurred_at when given and leaves it null when omitted", async () => {
     const said = "2024-06-01T12:00:00.000Z";
-    const withTime = insertEvent(db, {
+    const withTime = await insertEvent(db, {
       mcp_session_id: sessionId,
       event_type: "message",
       role: "user",
@@ -250,12 +250,12 @@ describe("session events", () => {
     expect(withTime.occurred_at).toBe(said);
     expect(withTime.created_at).not.toBe(said);
 
-    const retrieved = getEvents(db, sessionId);
+    const retrieved = await getEvents(db, sessionId);
     expect(retrieved[0].occurred_at).toBe(said);
   });
 
-  it("stores and retrieves content_ref for non-text events", () => {
-    insertEvent(db, {
+  it("stores and retrieves content_ref for non-text events", async () => {
+    await insertEvent(db, {
       mcp_session_id: sessionId,
       event_type: "artifact",
       role: "user",
@@ -264,15 +264,15 @@ describe("session events", () => {
       content_ref: "/tmp/screenshot.png",
     });
 
-    const events = getEvents(db, sessionId);
+    const events = await getEvents(db, sessionId);
     expect(events[0].content).toBeNull();
     expect(events[0].content_ref).toBe("/tmp/screenshot.png");
     expect(events[0].content_type).toBe("image");
   });
 
-  it("round-trips metadata through JSON", () => {
+  it("round-trips metadata through JSON", async () => {
     const meta = { tool: "search_knowledge", latency_ms: 42 };
-    insertEvent(db, {
+    await insertEvent(db, {
       mcp_session_id: sessionId,
       event_type: "tool_result",
       role: "tool",
@@ -280,39 +280,39 @@ describe("session events", () => {
       metadata: meta,
     });
 
-    const events = getEvents(db, sessionId);
+    const events = await getEvents(db, sessionId);
     expect(events[0].metadata).toEqual(meta);
   });
 
-  it("stores null metadata", () => {
-    insertEvent(db, {
+  it("stores null metadata", async () => {
+    await insertEvent(db, {
       mcp_session_id: sessionId,
       event_type: "message",
       role: "user",
       content: "hello",
     });
 
-    const events = getEvents(db, sessionId);
+    const events = await getEvents(db, sessionId);
     expect(events[0].metadata).toBeNull();
   });
 
-  it("getEventById returns the row or null", () => {
-    const created = insertEvent(db, {
+  it("getEventById returns the row or null", async () => {
+    const created = await insertEvent(db, {
       mcp_session_id: sessionId,
       event_type: "message",
       role: "assistant",
       content: "the grain is bookings",
     });
-    const found = getEventById(db, created.id);
+    const found = await getEventById(db, created.id);
     expect(found?.id).toBe(created.id);
     expect(found?.role).toBe("assistant");
     expect(found?.content).toBe("the grain is bookings");
-    expect(getEventById(db, "missing")).toBeNull();
+    expect(await getEventById(db, "missing")).toBeNull();
   });
 
-  it("getEvents returns ordered by sequence", () => {
+  it("getEvents returns ordered by sequence", async () => {
     for (let i = 0; i < 5; i++) {
-      insertEvent(db, {
+      await insertEvent(db, {
         mcp_session_id: sessionId,
         event_type: "message",
         role: i % 2 === 0 ? "user" : "assistant",
@@ -320,16 +320,16 @@ describe("session events", () => {
       });
     }
 
-    const events = getEvents(db, sessionId);
+    const events = await getEvents(db, sessionId);
     expect(events).toHaveLength(5);
     for (let i = 0; i < events.length; i++) {
       expect(events[i].sequence).toBe(i + 1);
     }
   });
 
-  it("getEvents respects after_sequence filter", () => {
+  it("getEvents respects after_sequence filter", async () => {
     for (let i = 0; i < 5; i++) {
-      insertEvent(db, {
+      await insertEvent(db, {
         mcp_session_id: sessionId,
         event_type: "message",
         role: "user",
@@ -337,15 +337,15 @@ describe("session events", () => {
       });
     }
 
-    const events = getEvents(db, sessionId, { after_sequence: 3 });
+    const events = await getEvents(db, sessionId, { after_sequence: 3 });
     expect(events).toHaveLength(2);
     expect(events[0].sequence).toBe(4);
     expect(events[1].sequence).toBe(5);
   });
 
-  it("getEvents respects limit", () => {
+  it("getEvents respects limit", async () => {
     for (let i = 0; i < 5; i++) {
-      insertEvent(db, {
+      await insertEvent(db, {
         mcp_session_id: sessionId,
         event_type: "message",
         role: "user",
@@ -353,34 +353,34 @@ describe("session events", () => {
       });
     }
 
-    const events = getEvents(db, sessionId, { limit: 2 });
+    const events = await getEvents(db, sessionId, { limit: 2 });
     expect(events).toHaveLength(2);
   });
 
-  it("getEventCount returns correct count", () => {
-    expect(getEventCount(db, sessionId)).toBe(0);
+  it("getEventCount returns correct count", async () => {
+    expect(await getEventCount(db, sessionId)).toBe(0);
 
-    insertEvent(db, {
+    await insertEvent(db, {
       mcp_session_id: sessionId,
       event_type: "message",
       role: "user",
       content: "hello",
     });
 
-    expect(getEventCount(db, sessionId)).toBe(1);
+    expect(await getEventCount(db, sessionId)).toBe(1);
   });
 
-  it("uses global sequence across sessions", () => {
-    const s2 = createSession(db, { source_tool: null, project: null });
+  it("uses global sequence across sessions", async () => {
+    const s2 = await createSession(db, { source_tool: null, project: null });
 
-    const e1 = insertEvent(db, {
+    const e1 = await insertEvent(db, {
       mcp_session_id: sessionId,
       event_type: "message",
       role: "user",
       content: "session 1",
     });
 
-    const e2 = insertEvent(db, {
+    const e2 = await insertEvent(db, {
       mcp_session_id: s2.id,
       event_type: "message",
       role: "user",
@@ -391,22 +391,22 @@ describe("session events", () => {
     expect(e2.sequence).toBe(2);
   });
 
-  it("retrieves events by client_session_id", () => {
-    insertEvent(db, {
+  it("retrieves events by client_session_id", async () => {
+    await insertEvent(db, {
       client_session_id: "claude-uuid",
       event_type: "message",
       role: "user",
       content: "from hook",
     });
 
-    const events = getEvents(db, "claude-uuid");
+    const events = await getEvents(db, "claude-uuid");
     expect(events).toHaveLength(1);
     expect(events[0].client_session_id).toBe("claude-uuid");
     expect(events[0].mcp_session_id).toBeNull();
   });
 
-  it("retrieves events by either session column", () => {
-    insertEvent(db, {
+  it("retrieves events by either session column", async () => {
+    await insertEvent(db, {
       mcp_session_id: sessionId,
       client_session_id: "claude-uuid",
       event_type: "message",
@@ -414,15 +414,15 @@ describe("session events", () => {
       content: "both ids",
     });
 
-    const byMcp = getEvents(db, sessionId);
-    const byClient = getEvents(db, "claude-uuid");
+    const byMcp = await getEvents(db, sessionId);
+    const byClient = await getEvents(db, "claude-uuid");
     expect(byMcp).toHaveLength(1);
     expect(byClient).toHaveLength(1);
     expect(byMcp[0].id).toBe(byClient[0].id);
   });
 
-  it("does not store an empty-string session column", () => {
-    const event = insertEvent(db, {
+  it("does not store an empty-string session column", async () => {
+    const event = await insertEvent(db, {
       mcp_session_id: sessionId,
       client_session_id: "",
       event_type: "message",

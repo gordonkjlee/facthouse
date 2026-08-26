@@ -78,14 +78,14 @@ function routeByPromptPrefix(prompt: string): string {
 let db: Db;
 let sessionId: string;
 
-beforeEach(() => {
+beforeEach(async () => {
   db = openDatabase(":memory:");
-  applySchema(db);
-  sessionId = createSession(db, { source_tool: "test", project: "om" }).id;
+  await applySchema(db);
+  sessionId = (await createSession(db, { source_tool: "test", project: "om" })).id;
 });
 
-afterEach(() => {
-  closeDatabase(db);
+afterEach(async () => {
+  await closeDatabase(db);
 });
 
 // ---------------------------------------------------------------------------
@@ -95,7 +95,7 @@ afterEach(() => {
 describe("CLI provider end-to-end consolidation", () => {
   it("extracts facts with entities, graduates them, writes all K-layer rows", async () => {
     // Seed events.
-    insertEvent(db, {
+    await insertEvent(db, {
       mcp_session_id: sessionId,
       event_type: "message",
       role: "user",
@@ -177,9 +177,9 @@ describe("CLI provider end-to-end consolidation", () => {
     expect(result.factsGraduated).toBe(2);
 
     // facts: content paraphrased from raw events, domain + subdomain set
-    const facts = db
+    const facts = (await db
       .prepare(`SELECT content, domain, subdomain, source_quality, confidence FROM facts`)
-      .all() as Array<{
+      .all()) as Array<{
       content: string;
       domain: string;
       subdomain: string | null;
@@ -193,40 +193,40 @@ describe("CLI provider end-to-end consolidation", () => {
     expect(facts.find((f) => f.domain === "medical")?.confidence).toBeGreaterThan(0.9);
 
     // entities: mixed types populated from stage 1 output
-    const entities = db
+    const entities = (await db
       .prepare(`SELECT name, type FROM entities`)
-      .all() as Array<{ name: string; type: string }>;
+      .all()) as Array<{ name: string; type: string }>;
     const entityKinds = new Set(entities.map((e) => e.type));
     expect(entityKinds.has("person")).toBe(true);
     expect(entityKinds.has("substance")).toBe(true);
     expect(entityKinds.has("food")).toBe(true);
 
     // fact_entities: typed relationships
-    const links = db
+    const links = (await db
       .prepare(`SELECT relationship FROM fact_entities`)
-      .all() as Array<{ relationship: string }>;
+      .all()) as Array<{ relationship: string }>;
     const rels = new Set(links.map((l) => l.relationship));
     expect(rels.has("allergic_to")).toBe(true);
     expect(rels.has("partner_of")).toBe(true);
     expect(rels.has("likes")).toBe(true);
 
     // entity_edges: co-mentioned Robin + sushi
-    const edges = db
+    const edges = (await db
       .prepare(`SELECT COUNT(*) n FROM entity_edges WHERE relationship = 'co_mentioned'`)
-      .get() as { n: number };
+      .get()) as { n: number };
     expect(edges.n).toBeGreaterThanOrEqual(1);
 
     // consolidations: summary is the LLM paragraph, not a template
-    const cons = db
+    const cons = (await db
       .prepare(`SELECT summary, last_event_sequence FROM consolidations`)
-      .get() as { summary: string; last_event_sequence: number };
+      .get()) as { summary: string; last_event_sequence: number };
     expect(cons.summary).toContain("Robin");
     expect(cons.last_event_sequence).toBeGreaterThan(0);
   });
 
   it("reuses existing entities via existing_id resolution", async () => {
     // Pre-seed an entity: Alex.
-    const existing = db
+    const existing = await db
       .prepare(
         `INSERT INTO entities (id, type, name, canonical_name, created_at, access_count)
          VALUES ('ent-alex', 'person', 'Alex', 'alex', datetime('now'), 0)`,
@@ -234,7 +234,7 @@ describe("CLI provider end-to-end consolidation", () => {
       .run();
     expect(existing.changes).toBe(1);
 
-    insertEvent(db, {
+    await insertEvent(db, {
       mcp_session_id: sessionId,
       event_type: "message",
       role: "user",
@@ -294,24 +294,24 @@ describe("CLI provider end-to-end consolidation", () => {
 
     // Only ONE entity should have name 'Alex' or 'Lex' — the LLM-resolved
     // id means the extracted mention reuses the existing entity.
-    const personEntities = db
+    const personEntities = (await db
       .prepare(`SELECT id, name FROM entities WHERE type = 'person'`)
-      .all() as Array<{ id: string; name: string }>;
+      .all()) as Array<{ id: string; name: string }>;
     expect(personEntities).toHaveLength(1);
     expect(personEntities[0].id).toBe("ent-alex");
     expect(personEntities[0].name).toBe("Alex"); // not overwritten
 
     // The fact should be linked to the existing entity.
-    const link = db
+    const link = (await db
       .prepare(
         `SELECT entity_id FROM fact_entities WHERE entity_id = 'ent-alex'`,
       )
-      .all();
+      .all());
     expect(link.length).toBeGreaterThanOrEqual(1);
   });
 
   it("falls back to heuristic on total spawn failure", async () => {
-    insertEvent(db, {
+    await insertEvent(db, {
       mcp_session_id: sessionId,
       event_type: "message",
       role: "user",
@@ -337,7 +337,7 @@ describe("CLI provider end-to-end consolidation", () => {
     expect(result.factsGraduated).toBe(0);
 
     // Explicit captures are unaffected by the LLM being down — only inference is.
-    const facts = db.prepare(`SELECT COUNT(*) c FROM facts`).get() as { c: number };
+    const facts = (await db.prepare(`SELECT COUNT(*) c FROM facts`).get()) as { c: number };
     expect(facts.c).toBe(0);
   });
 });

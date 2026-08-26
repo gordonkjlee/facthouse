@@ -14,70 +14,70 @@ import { consolidate } from "../../src/intelligence/consolidate.js";
 import { insertSessionFact } from "../../src/db/session-facts.js";
 import { createSession } from "../../src/db/sessions.js";
 
-function supportingFact(db: Db, content: string): string {
-  return insertFact(db, {
+async function supportingFact(db: Db, content: string): Promise<string> {
+  return (await insertFact(db, {
     content,
     domain: "preferences",
     source_type: "conversation",
-  }).id;
+  })).id;
 }
 
 let db: Db;
 
-beforeEach(() => {
+beforeEach(async () => {
   db = openDatabase(":memory:");
-  applySchema(db);
+  await applySchema(db);
 });
 
-afterEach(() => {
-  closeDatabase(db);
+afterEach(async () => {
+  await closeDatabase(db);
 });
 
 describe("insertInference", () => {
-  it("stores a pending hypothesis and does not insert a fact", () => {
-    const a = supportingFact(db, "The demo store prefers dark mode.");
-    const b = supportingFact(db, "The demo store avoids light themes.");
-    const inf = insertInference(db, {
+  it("stores a pending hypothesis and does not insert a fact", async () => {
+    const a = await supportingFact(db, "The demo store prefers dark mode.");
+    const b = await supportingFact(db, "The demo store avoids light themes.");
+    const inf = await insertInference(db, {
       hypothesis: "The demo store's UI is dark-theme only.",
       evidence_fact_ids: [a, b],
     });
     expect(inf.status).toBe("pending");
     expect(inf.fact_id).toBeNull();
     expect(inf.evidence_fact_ids).toEqual([a, b].sort());
-    expect(getInference(db, inf.id)!.evidence_fact_ids).toEqual(inf.evidence_fact_ids);
-    expect(getFact(db, inf.id)).toBeNull();
-    const facts = db.prepare(`SELECT COUNT(*) AS n FROM facts`).get() as { n: number };
+    expect((await getInference(db, inf.id))!.evidence_fact_ids).toEqual(inf.evidence_fact_ids);
+    expect(await getFact(db, inf.id)).toBeNull();
+    const facts = (await db.prepare(`SELECT COUNT(*) AS n FROM facts`).get()) as { n: number };
     expect(facts.n).toBe(2);
   });
 
-  it("rejects an empty hypothesis and missing evidence", () => {
-    const a = supportingFact(db, "The demo store prefers dark mode.");
-    expect(() =>
+  it("rejects an empty hypothesis and missing evidence", async () => {
+    const a = await supportingFact(db, "The demo store prefers dark mode.");
+    await expect(
       insertInference(db, { hypothesis: "   ", evidence_fact_ids: [a] }),
-    ).toThrow(/empty/i);
-    expect(() =>
+    ).rejects.toThrow(/empty/i);
+    await expect(
       insertInference(db, {
         hypothesis: "The demo store's UI is dark-theme only.",
         evidence_fact_ids: [],
       }),
-    ).toThrow(/at least one/i);
-    expect(() =>
+    ).rejects.toThrow(/at least one/i);
+    await expect(
       insertInference(db, {
         hypothesis: "The demo store's UI is dark-theme only.",
         evidence_fact_ids: ["not-a-fact"],
       }),
-    ).toThrow(/Unknown evidence/);
+    ).rejects.toThrow(/Unknown evidence/);
   });
 });
 
 describe("validateInference", () => {
-  it("confirm graduates a labelled fact with provenance", () => {
-    const a = supportingFact(db, "The demo store prefers dark mode.");
-    const inf = insertInference(db, {
+  it("confirm graduates a labelled fact with provenance", async () => {
+    const a = await supportingFact(db, "The demo store prefers dark mode.");
+    const inf = await insertInference(db, {
       hypothesis: "The demo store's UI is dark-theme only.",
       evidence_fact_ids: [a],
     });
-    const result = validateInference(db, {
+    const result = await validateInference(db, {
       id: inf.id,
       confirmed: true,
       reason: "Robin confirmed.",
@@ -88,81 +88,81 @@ describe("validateInference", () => {
     expect(result.fact!.content).toContain("dark-theme only");
     expect(result.fact!.valid_from).toBeNull();
 
-    const source = getSource(db, result.fact!.source_id!);
+    const source = await getSource(db, result.fact!.source_id!);
     expect(source!.type).toBe("inference");
     expect(source!.metadata).toMatchObject({
       inference_id: inf.id,
       evidence_fact_ids: [a],
     });
 
-    const stored = getInference(db, inf.id)!;
+    const stored = (await getInference(db, inf.id))!;
     expect(stored.fact_id).toBe(result.fact!.id);
     expect(stored.reason).toBe("Robin confirmed.");
   });
 
-  it("reject writes no fact", () => {
-    const a = supportingFact(db, "The demo store prefers dark mode.");
-    const inf = insertInference(db, {
+  it("reject writes no fact", async () => {
+    const a = await supportingFact(db, "The demo store prefers dark mode.");
+    const inf = await insertInference(db, {
       hypothesis: "The demo store's UI is dark-theme only.",
       evidence_fact_ids: [a],
     });
-    const result = validateInference(db, {
+    const result = await validateInference(db, {
       id: inf.id,
       confirmed: false,
       reason: "Robin said that is not true.",
     });
     expect(result.fact).toBeNull();
     expect(result.inference.status).toBe("rejected");
-    const facts = db.prepare(`SELECT COUNT(*) AS n FROM facts`).get() as { n: number };
+    const facts = (await db.prepare(`SELECT COUNT(*) AS n FROM facts`).get()) as { n: number };
     expect(facts.n).toBe(1);
   });
 
-  it("a second validate throws", () => {
-    const a = supportingFact(db, "The demo store prefers dark mode.");
-    const inf = insertInference(db, {
+  it("a second validate throws", async () => {
+    const a = await supportingFact(db, "The demo store prefers dark mode.");
+    const inf = await insertInference(db, {
       hypothesis: "The demo store's UI is dark-theme only.",
       evidence_fact_ids: [a],
     });
-    validateInference(db, { id: inf.id, confirmed: true });
-    expect(() =>
+    await validateInference(db, { id: inf.id, confirmed: true });
+    await expect(
       validateInference(db, { id: inf.id, confirmed: false }),
-    ).toThrow(/already confirmed/);
+    ).rejects.toThrow(/already confirmed/);
   });
 });
 
 describe("listInferences", () => {
-  it("defaults to pending and excludes confirmed", () => {
-    const a = supportingFact(db, "The demo store prefers dark mode.");
-    const pending = insertInference(db, {
+  it("defaults to pending and excludes confirmed", async () => {
+    const a = await supportingFact(db, "The demo store prefers dark mode.");
+    const pending = await insertInference(db, {
       hypothesis: "Still pending.",
       evidence_fact_ids: [a],
     });
-    const done = insertInference(db, {
+    const done = await insertInference(db, {
       hypothesis: "Will confirm.",
       evidence_fact_ids: [a],
     });
-    validateInference(db, { id: done.id, confirmed: true });
-    const listed = listInferences(db);
+    await validateInference(db, { id: done.id, confirmed: true });
+    const listed = await listInferences(db);
     expect(listed.map((i) => i.id)).toEqual([pending.id]);
-    expect(listInferences(db, "confirmed")).toHaveLength(1);
+    expect(await listInferences(db, "confirmed")).toHaveLength(1);
   });
 });
 
 describe("consolidate does not invent inferences", () => {
   it("graduating a session fact leaves the inferences table empty", async () => {
-    const session = createSession(db, { source_tool: "claude-code", project: null });
-    insertSessionFact(db, {
+    const session = await createSession(db, { source_tool: "claude-code", project: null });
+    await insertSessionFact(db, {
       session_id: session.id,
       content: "The demo store prefers dark mode.",
       source_origin: "explicit",
       source_quality: "explicit",
     });
     await consolidate(db, createHeuristicProvider());
-    const n = db.prepare(`SELECT COUNT(*) AS n FROM inferences`).get() as { n: number };
+    const n = (await db.prepare(`SELECT COUNT(*) AS n FROM inferences`).get()) as { n: number };
     expect(n.n).toBe(0);
-    const inferred = db
+    const inferred = (await db
       .prepare(`SELECT COUNT(*) AS n FROM facts WHERE source_type = 'inference'`)
-      .get() as { n: number };
+      .get()) as { n: number };
     expect(inferred.n).toBe(0);
   });
 });

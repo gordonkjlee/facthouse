@@ -326,15 +326,15 @@ describe.skipIf(!runnable)("cli entry — search and stats", () => {
     const { ensureDomain } = await import("../../src/db/domains.js");
 
     const db = openDatabase(path.join(dir, "memory.db"));
-    const source = createSource(db, {
+    const source = await createSource(db, {
       type: "test",
       tool_id: null,
       raw_content: "x",
       metadata: {},
     });
-    const add = (content: string, domain: string) => {
-      ensureDomain(db, domain);
-      insertFact(db, {
+    const add = async (content: string, domain: string) => {
+      await ensureDomain(db, domain);
+      await insertFact(db, {
         content,
         domain,
         subdomain: null,
@@ -348,10 +348,10 @@ describe.skipIf(!runnable)("cli entry — search and stats", () => {
         source_quality: "explicit",
       });
     };
-    add("Prefers dark roast coffee", "preferences");
-    add("Dislikes instant coffee", "preferences");
-    add("Drinks coffee at the Acme office", "work");
-    closeDatabase(db);
+    await add("Prefers dark roast coffee", "preferences");
+    await add("Dislikes instant coffee", "preferences");
+    await add("Drinks coffee at the Acme office", "work");
+    await closeDatabase(db);
   }
 
   it("stats reports what the store holds", async () => {
@@ -467,7 +467,7 @@ describe.skipIf(!runnable)("cli entry — search and stats", () => {
     );
     const { insertFact, supersedeFact } = await import("../../src/db/facts.js");
     const db = openDatabase(path.join(dir, "memory.db"));
-    const old = insertFact(db, {
+    const old = await insertFact(db, {
       content: "Prefers tea",
       domain: "preferences",
       source_type: "conversation",
@@ -475,7 +475,7 @@ describe.skipIf(!runnable)("cli entry — search and stats", () => {
     while (new Date().toISOString() <= old.created_at) {
       /* millisecond clock */
     }
-    supersedeFact(
+    await supersedeFact(
       db,
       old.id,
       {
@@ -485,7 +485,7 @@ describe.skipIf(!runnable)("cli entry — search and stats", () => {
       },
       { retireSystemTime: true },
     );
-    closeDatabase(db);
+    await closeDatabase(db);
 
     const now = run(["search", "Prefers", "--json", "--data", dir]);
     expect(now.status).toBe(0);

@@ -31,14 +31,14 @@ const { PERSONAL_VOCABULARY } = await import("../fixtures/vocabulary.js");
 let db: Db;
 let tmpRoot: string;
 
-beforeEach(() => {
+beforeEach(async () => {
   db = openDatabase(":memory:");
-  applySchema(db);
+  await applySchema(db);
   tmpRoot = mkdtempSync(path.join(tmpdir(), "om-extract-session-"));
 });
 
-afterEach(() => {
-  closeDatabase(db);
+afterEach(async () => {
+  await closeDatabase(db);
   rmSync(tmpRoot, { recursive: true, force: true });
 });
 
@@ -105,18 +105,18 @@ function recording() {
   return { provider, calls, summaries };
 }
 
-function factRows() {
-  return db
+async function factRows() {
+  return (await db
     .prepare(
       `SELECT sf.session_id AS session_id, sf.content AS content
          FROM session_facts sf
         ORDER BY sf.created_at ASC`,
     )
-    .all() as Array<{ session_id: string; content: string }>;
+    .all()) as Array<{ session_id: string; content: string }>;
 }
 
-function provenanceSessions(factContent: string) {
-  return db
+async function provenanceSessions(factContent: string) {
+  return (await db
     .prepare(
       `SELECT e.client_session_id AS client_session_id,
               e.mcp_session_id AS mcp_session_id,
@@ -126,7 +126,7 @@ function provenanceSessions(factContent: string) {
          JOIN session_facts sf ON sf.id = s.session_fact_id
         WHERE sf.content = ?`,
     )
-    .all(factContent) as Array<{
+    .all(factContent)) as Array<{
     client_session_id: string | null;
     mcp_session_id: string | null;
     type: string;
@@ -146,7 +146,7 @@ describe("extraction groups by conversation, not by pull batch", () => {
       userLine("sess-bbb", factB),
     ]);
 
-    const pulled = pullSources(db, [{ kind: "claude-code", home }]);
+    const pulled = await pullSources(db, [{ kind: "claude-code", home }]);
     expect(pulled.events_inserted).toBe(2);
 
     const { provider, calls } = recording();
@@ -161,7 +161,7 @@ describe("extraction groups by conversation, not by pull batch", () => {
     // First extract: working memory is empty (nothing pre-watermark). The
     // disjoint `events` arrays are what prove the batch was not concatenated.
 
-    const facts = factRows();
+    const facts = await factRows();
     expect(facts).toEqual(
       expect.arrayContaining([
         { session_id: "sess-aaa", content: factA },
@@ -169,10 +169,10 @@ describe("extraction groups by conversation, not by pull batch", () => {
       ]),
     );
 
-    const srcA = provenanceSessions(factA);
+    const srcA = await provenanceSessions(factA);
     expect(srcA.length).toBeGreaterThan(0);
     expect(srcA.every((s) => s.client_session_id === "sess-aaa")).toBe(true);
-    const srcB = provenanceSessions(factB);
+    const srcB = await provenanceSessions(factB);
     expect(srcB.length).toBeGreaterThan(0);
     expect(srcB.every((s) => s.client_session_id === "sess-bbb")).toBe(true);
   });
@@ -189,7 +189,7 @@ describe("extraction groups by conversation, not by pull batch", () => {
     const priorB = "Alex previously mentioned a shellfish allergy.";
     writeJsonl(fileA, [userLine("sess-aaa", priorA)]);
     writeJsonl(fileB, [userLine("sess-bbb", priorB)]);
-    pullSources(db, [{ kind: "claude-code", home }]);
+    await pullSources(db, [{ kind: "claude-code", home }]);
     await consolidate(db, recording().provider as never, {
       extraction: { enabled: true } as never,
     });
@@ -198,7 +198,7 @@ describe("extraction groups by conversation, not by pull batch", () => {
     const nextB = "Alex is allergic to shellfish.";
     appendFileSync(fileA, userLine("sess-aaa", nextA) + "\n");
     appendFileSync(fileB, userLine("sess-bbb", nextB) + "\n");
-    const secondPull = pullSources(db, [{ kind: "claude-code", home }]);
+    const secondPull = await pullSources(db, [{ kind: "claude-code", home }]);
     expect(secondPull.events_inserted).toBe(2);
 
     const { provider, calls } = recording();
@@ -219,13 +219,13 @@ describe("extraction groups by conversation, not by pull batch", () => {
   });
 
   it("contextual provenance does not spray onto the other conversation", async () => {
-    insertEvent(db, {
+    await insertEvent(db, {
       client_session_id: "sess-aaa",
       event_type: "message",
       role: "user",
       content: "Alex mentioned oat milk at Acme this morning.",
     });
-    insertEvent(db, {
+    await insertEvent(db, {
       client_session_id: "sess-bbb",
       event_type: "message",
       role: "user",
@@ -251,12 +251,12 @@ describe("extraction groups by conversation, not by pull batch", () => {
       extraction: { enabled: true } as never,
     });
 
-    const oat = provenanceSessions("The user drinks oat milk.");
+    const oat = await provenanceSessions("The user drinks oat milk.");
     expect(oat.length).toBeGreaterThan(0);
     expect(oat.every((s) => s.client_session_id === "sess-aaa")).toBe(true);
     expect(oat.every((s) => s.type === "contextual")).toBe(true);
 
-    const allergy = provenanceSessions("The user has a shellfish allergy.");
+    const allergy = await provenanceSessions("The user has a shellfish allergy.");
     expect(allergy.length).toBeGreaterThan(0);
     expect(allergy.every((s) => s.client_session_id === "sess-bbb")).toBe(true);
   });
@@ -272,7 +272,7 @@ describe("extraction groups by conversation, not by pull batch", () => {
     utimesSync(fileA, stamp, stamp);
     utimesSync(fileB, stamp, stamp);
 
-    pullSources(db, [{ kind: "claude-code", home }]);
+    await pullSources(db, [{ kind: "claude-code", home }]);
     const { provider, calls } = recording();
     await consolidate(db, provider as never, {
       extraction: { enabled: true } as never,
@@ -291,7 +291,7 @@ describe("extraction groups by conversation, not by pull batch", () => {
     writeJsonl(path.join(home, "projects", group, "sess-bbb.jsonl"), [
       userLine("sess-bbb", "Alex is allergic to shellfish."),
     ]);
-    pullSources(db, [{ kind: "claude-code", home }]);
+    await pullSources(db, [{ kind: "claude-code", home }]);
 
     const { provider, summaries } = recording();
     await consolidate(db, provider as never, {
@@ -303,14 +303,14 @@ describe("extraction groups by conversation, not by pull batch", () => {
       expect.arrayContaining([["sess-aaa"], ["sess-bbb"]]),
     );
 
-    const satellites = db
+    const satellites = (await db
       .prepare(
         `SELECT session_id, summary, facts_graduated, last_event_sequence
            FROM consolidations
           WHERE session_id IS NOT NULL AND summary IS NOT NULL
           ORDER BY session_id`,
       )
-      .all() as Array<{
+      .all()) as Array<{
       session_id: string;
       summary: string;
       facts_graduated: number;
@@ -322,15 +322,15 @@ describe("extraction groups by conversation, not by pull batch", () => {
       "sess-aaa",
       "sess-bbb",
     ]);
-    const watermark = db
+    const watermark = (await db
       .prepare(`SELECT MAX(last_event_sequence) AS seq FROM consolidations`)
-      .get() as { seq: number };
+      .get()) as { seq: number };
     expect(watermark.seq).toBeGreaterThan(0);
     expect(satellites.every((r) => r.last_event_sequence === watermark.seq)).toBe(
       true,
     );
 
-    insertEvent(db, {
+    await insertEvent(db, {
       client_session_id: "sess-aaa",
       event_type: "message",
       role: "user",
@@ -357,12 +357,12 @@ describe("extraction groups by conversation, not by pull batch", () => {
     writeJsonl(path.join(home, "projects", group, "sess-bbb.jsonl"), [
       userLine("sess-bbb", "Alex is allergic to shellfish."),
     ]);
-    pullSources(db, [{ kind: "claude-code", home }]);
+    await pullSources(db, [{ kind: "claude-code", home }]);
 
     // What `log-event` without --session-id does: create/reuse a sessions row
     // and store it as mcp_session_id. Pull must not inherit that id.
-    const mcp = createSession(db, { source_tool: "cli", project: null }).id;
-    insertEvent(db, {
+    const mcp = (await createSession(db, { source_tool: "cli", project: null })).id;
+    await insertEvent(db, {
       mcp_session_id: mcp,
       event_type: "message",
       role: "user",
@@ -375,7 +375,7 @@ describe("extraction groups by conversation, not by pull batch", () => {
     });
 
     expect(calls).toHaveLength(3);
-    const facts = factRows();
+    const facts = await factRows();
     expect(facts).toEqual(
       expect.arrayContaining([
         {
@@ -397,13 +397,13 @@ describe("extraction groups by conversation, not by pull batch", () => {
   });
 
   it("does not persist a successful group when another group in the batch is degraded", async () => {
-    insertEvent(db, {
+    await insertEvent(db, {
       client_session_id: "sess-aaa",
       event_type: "message",
       role: "user",
       content: "Alex prefers oat milk at Acme.",
     });
-    insertEvent(db, {
+    await insertEvent(db, {
       client_session_id: "sess-bbb",
       event_type: "message",
       role: "user",
@@ -442,10 +442,10 @@ describe("extraction groups by conversation, not by pull batch", () => {
       extraction: { enabled: true } as never,
     });
     expect(first.extractionDegraded).toBe(true);
-    expect(factRows()).toEqual([]);
-    const watermark = db
+    expect(await factRows()).toEqual([]);
+    const watermark = (await db
       .prepare(`SELECT COALESCE(MAX(last_event_sequence), 0) AS seq FROM consolidations`)
-      .get() as { seq: number };
+      .get()) as { seq: number };
     expect(watermark.seq).toBe(0);
 
     const { provider } = recording();
@@ -453,7 +453,7 @@ describe("extraction groups by conversation, not by pull batch", () => {
       extraction: { enabled: true } as never,
     });
     expect(second.extractionDegraded).toBe(false);
-    expect(factRows().map((f) => f.session_id).sort()).toEqual([
+    expect((await factRows()).map((f) => f.session_id).sort()).toEqual([
       "sess-aaa",
       "sess-bbb",
     ]);
@@ -462,23 +462,23 @@ describe("extraction groups by conversation, not by pull batch", () => {
 
 describe("working memory is kind-branched", () => {
   it("includes dual-id MCP rows in the client window and excludes mcp-only collisions", async () => {
-    insertEvent(db, {
+    await insertEvent(db, {
       mcp_session_id: "mcp-x",
       client_session_id: "sess-aaa",
       event_type: "message",
       role: "user",
       content: "dual-id prior from the same Claude chat",
     });
-    insertEvent(db, {
+    await insertEvent(db, {
       mcp_session_id: "sess-aaa",
       event_type: "message",
       role: "user",
       content: "mcp-only collision with the client id string",
     });
-    const watermarkSeq = db
+    const watermarkSeq = (await db
       .prepare(`SELECT MAX(sequence) AS seq FROM session_events`)
-      .get() as { seq: number };
-    db.prepare(
+      .get()) as { seq: number };
+    await db.prepare(
       `INSERT INTO consolidations
          (id, session_id, facts_in, facts_graduated, facts_rejected,
           entities_created, entities_linked, supersessions,
@@ -486,7 +486,7 @@ describe("working memory is kind-branched", () => {
        VALUES ('wm-mark', NULL, 0, 0, 0, 0, 0, 0, NULL, NULL, ?, datetime('now'))`,
     ).run(watermarkSeq.seq);
 
-    insertEvent(db, {
+    await insertEvent(db, {
       client_session_id: "sess-aaa",
       event_type: "message",
       role: "user",

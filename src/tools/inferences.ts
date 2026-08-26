@@ -46,9 +46,9 @@ export function registerInferenceTools(
             "A guess with no evidence is not this tool.",
         ),
     },
-    (args) => {
+    async (args) => {
       try {
-        const inference = insertInference(db, {
+        const inference = await insertInference(db, {
           hypothesis: args.hypothesis,
           evidence_fact_ids: args.evidence,
         });
@@ -79,9 +79,9 @@ export function registerInferenceTools(
         .optional()
         .describe("Why it was confirmed or rejected"),
     },
-    (args) => {
+    async (args) => {
       try {
-        const result = validateInference(db, {
+        const result = await validateInference(db, {
           id: args.inference_id,
           confirmed: args.confirmed,
           reason: args.reason,
@@ -114,9 +114,9 @@ export function registerInferenceTools(
         .optional()
         .describe("Which gate state to list. Omit for pending."),
     },
-    (args) => {
+    async (args) => {
       const status = (args.status ?? "pending") as InferenceStatus;
-      const inferences = listInferences(db, status);
+      const inferences = await listInferences(db, status);
       return jsonResult({ status, inferences });
     },
   );

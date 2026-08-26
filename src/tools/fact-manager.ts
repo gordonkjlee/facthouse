@@ -43,10 +43,10 @@ export interface FactManager {
     importance?: number | null;
     capture_context?: string | null;
     source_event_id?: string | null;
-  }): SessionFact | null;
+  }): Promise<SessionFact | null>;
 
   /** Retrieve session facts for the current or specified session. */
-  getSessionContext(sessionId?: string): SessionFact[];
+  getSessionContext(sessionId?: string): Promise<SessionFact[]>;
 
   /** Run the consolidation pipeline. Default `full` (D→I then I→K). */
   runConsolidate(phase?: ConsolidatePhase): Promise<ConsolidationResult>;
@@ -110,22 +110,22 @@ export function createFactManager(
   }
 
   /** Auto-link to the last N events in the session as contextual sources. */
-  function autoLinkRecentEvents(sessionFactId: string, sessionId: string): void {
+  async function autoLinkRecentEvents(sessionFactId: string, sessionId: string): Promise<void> {
     if (linkCount <= 0) return;
 
     // Match either column — events may be tagged with the MCP session id
     // (tool-originated) or the client session id (hook-originated). See schema v2.
-    const rows = db
+    const rows = (await db
       .prepare(
         `SELECT id FROM session_events
          WHERE mcp_session_id = ? OR client_session_id = ?
          ORDER BY sequence DESC
          LIMIT ?`,
       )
-      .all(sessionId, sessionId, linkCount) as Array<{ id: string }>;
+      .all(sessionId, sessionId, linkCount)) as Array<{ id: string }>;
 
     for (const row of rows) {
-      linkFactSource(db, {
+      await linkFactSource(db, {
         session_fact_id: sessionFactId,
         event_id: row.id,
         relevance: 0.5,
@@ -135,7 +135,7 @@ export function createFactManager(
   }
 
   const manager: FactManager = {
-    captureFact(input) {
+    async captureFact(input) {
       const session = sessionManager.getActiveSession();
       if (!session) {
         throw new Error("No active session. Call startSession() first.");
@@ -148,10 +148,10 @@ export function createFactManager(
       const importance = resolveImportance(input.importance);
 
       const sourceEvent = input.source_event_id
-        ? getEventById(db, input.source_event_id)
+        ? await getEventById(db, input.source_event_id)
         : null;
 
-      const fact = insertSessionFact(db, {
+      const fact = await insertSessionFact(db, {
         session_id: session.id,
         content: input.content,
         source_origin: "explicit",
@@ -183,7 +183,7 @@ export function createFactManager(
 
       // Link explicit source first (primary takes priority over contextual)
       if (input.source_event_id) {
-        linkFactSource(db, {
+        await linkFactSource(db, {
           session_fact_id: fact.id,
           event_id: input.source_event_id,
           relevance: 1.0,
@@ -192,15 +192,15 @@ export function createFactManager(
       }
 
       // Auto-link to recent events (INSERT OR IGNORE skips already-linked primary)
-      autoLinkRecentEvents(fact.id, session.id);
+      await autoLinkRecentEvents(fact.id, session.id);
 
       return fact;
     },
 
-    getSessionContext(sessionId) {
+    async getSessionContext(sessionId) {
       const id = sessionId ?? sessionManager.getActiveSession()?.id;
       if (!id) return [];
-      return getUnconsolidatedSessionFacts(db, id);
+      return await getUnconsolidatedSessionFacts(db, id);
     },
 
     async runConsolidate(phase: ConsolidatePhase = "full") {
@@ -268,12 +268,12 @@ export function createFactManager(
             .optional()
             .describe("ID of the event that prompted this capture"),
         },
-        (args) => {
+        async (args) => {
           try {
             // Normalise domain_hint to prevent silent domain proliferation from
             // case/whitespace typos ("medicaL " → three silent sibling domains).
             const normalisedHint = args.domain_hint?.toLowerCase().trim() || undefined;
-            const fact = manager.captureFact({
+            const fact = await manager.captureFact({
               content: args.content,
               domain_hint: normalisedHint,
               confidence: args.confidence,
@@ -332,8 +332,8 @@ export function createFactManager(
               "Session to query. Omit for the current session.",
             ),
         },
-        (args) => {
-          const facts = manager.getSessionContext(args.session_id);
+        async (args) => {
+          const facts = await manager.getSessionContext(args.session_id);
 
           return {
             content: [
@@ -344,7 +344,7 @@ export function createFactManager(
                     args.session_id ??
                     sessionManager.getActiveSession()?.id ??
                     null,
-                  briefing: buildBriefing(db),
+                  briefing: await buildBriefing(db),
                   count: facts.length,
                   facts: facts.map((f) => ({
                     id: f.id,

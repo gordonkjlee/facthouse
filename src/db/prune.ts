@@ -80,15 +80,15 @@ const RANKED = `
  *   `extraction.working_memory_size` so the guard tracks the setting it exists
  *   to protect rather than a second copy of the number.
  */
-export function prunableEvents(db: Db, keepPerSession: number): PruneStats {
-  const row = db
+export async function prunableEvents(db: Db, keepPerSession: number): Promise<PruneStats> {
+  const row = (await db
     .prepare(
       `${RANKED}
        SELECT COUNT(*) AS events, COALESCE(SUM(r.size), 0) AS bytes
          FROM ranked r
         WHERE ${UNREACHABLE}`,
     )
-    .get(Math.max(0, keepPerSession) as SqlParam) as
+    .get(Math.max(0, keepPerSession) as SqlParam)) as
     | { events: number; bytes: number }
     | undefined;
   return { events: row?.events ?? 0, bytes: row?.bytes ?? 0 };
@@ -100,20 +100,22 @@ export function prunableEvents(db: Db, keepPerSession: number): PruneStats {
  * Counts before deleting and inside the same transaction, so the number
  * reported is the number removed even if something writes concurrently.
  */
-export function pruneEvents(db: Db, keepPerSession: number): PruneStats {
+export async function pruneEvents(db: Db, keepPerSession: number): Promise<PruneStats> {
   const keep = Math.max(0, keepPerSession) as SqlParam;
 
-  db.exec("BEGIN IMMEDIATE");
+  await db.exec("BEGIN IMMEDIATE");
   try {
-    const before = prunableEvents(db, keepPerSession);
-    db.prepare(
-      `DELETE FROM session_events
+    const before = await prunableEvents(db, keepPerSession);
+    await db
+      .prepare(
+        `DELETE FROM session_events
         WHERE id IN (${RANKED} SELECT r.id FROM ranked r WHERE ${UNREACHABLE})`,
-    ).run(keep);
-    db.exec("COMMIT");
+      )
+      .run(keep);
+    await db.exec("COMMIT");
     return before;
   } catch (err) {
-    db.exec("ROLLBACK");
+    await db.exec("ROLLBACK");
     throw err;
   }
 }
@@ -127,6 +129,6 @@ export function pruneEvents(db: Db, keepPerSession: number): PruneStats {
  * cannot run inside a transaction — so the caller should choose it knowingly
  * rather than discover it as a pause.
  */
-export function vacuum(db: Db): void {
-  db.exec("VACUUM");
+export async function vacuum(db: Db): Promise<void> {
+  await db.exec("VACUUM");
 }

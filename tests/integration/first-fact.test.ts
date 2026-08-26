@@ -114,11 +114,11 @@ describe("first-fact pipeline (recording extractor)", () => {
     expect(existsSync(FIXTURE)).toBe(true);
 
     const db = openDatabase(":memory:");
-    applySchema(db);
+    await applySchema(db);
     const home = path.join(tmp("om-first-fact-"), "claude-home");
     plantTranscript(home);
 
-    const pulled = pullSources(db, [
+    const pulled = await pullSources(db, [
       { kind: "claude-code", home, cwd: PROJECT_CWD },
     ]);
     expect(pulled.events_inserted).toBeGreaterThan(0);
@@ -168,22 +168,22 @@ describe("first-fact pipeline (recording extractor)", () => {
     // K is no longer thin — D stays off the response.
     expect(found.episodes).toEqual([]);
 
-    closeDatabase(db);
+    await closeDatabase(db);
   });
 
   it("heuristic extract does not mint a searchable fact from the same fixture", async () => {
     const db = openDatabase(":memory:");
-    applySchema(db);
+    await applySchema(db);
     const home = path.join(tmp("om-first-fact-h-"), "claude-home");
     plantTranscript(home);
 
-    pullSources(db, [{ kind: "claude-code", home, cwd: PROJECT_CWD }]);
+    await pullSources(db, [{ kind: "claude-code", home, cwd: PROJECT_CWD }]);
     await consolidate(db, createHeuristicProvider(), {
       extraction: { enabled: true } as never,
     });
     const found = await searchWithProvider(db, QUERY, null);
     expect(hitsKaleidoscope(found)).toBe(false);
-    closeDatabase(db);
+    await closeDatabase(db);
   });
 });
 

@@ -16,26 +16,26 @@ const { buildProfile, buildBriefing, PROFILE_URI, BRIEFING_URI } = await import(
 let db: Db;
 let sourceId: string;
 
-beforeEach(() => {
+beforeEach(async () => {
   db = openDatabase(":memory:");
-  applySchema(db);
-  sourceId = createSource(db, {
+  await applySchema(db);
+  sourceId = (await createSource(db, {
     type: "test",
     tool_id: null,
     raw_content: "x",
     metadata: {},
-  }).id;
+  })).id;
 });
 
-afterEach(() => closeDatabase(db));
+afterEach(async () => { await closeDatabase(db); });
 
-function fact(
+async function fact(
   content: string,
   domain: string,
   subdomain: string | null = null,
   importance = 0.5,
 ) {
-  return insertFact(db, {
+  return await insertFact(db, {
     content,
     domain,
     subdomain,
@@ -51,13 +51,13 @@ function fact(
 }
 
 /** Insert a consolidation row directly — open_threads is JSON-encoded TEXT. */
-function consolidation(
+async function consolidation(
   id: string,
   summary: string | null,
   openThreads: string[] | null,
   createdAt: string,
 ) {
-  db.prepare(
+  await db.prepare(
     `INSERT INTO consolidations
        (id, session_id, facts_in, facts_graduated, facts_rejected,
         entities_created, entities_linked, supersessions,
@@ -67,48 +67,48 @@ function consolidation(
 }
 
 describe("consolidation read helpers", () => {
-  it("returns null when nothing has consolidated", () => {
-    expect(getLatestConsolidation(db)).toBeNull();
-    expect(getLatestSummarised(db)).toBeNull();
+  it("returns null when nothing has consolidated", async () => {
+    expect(await getLatestConsolidation(db)).toBeNull();
+    expect(await getLatestSummarised(db)).toBeNull();
   });
 
-  it("parses open_threads back from its JSON column", () => {
-    consolidation("c1", "did a thing", ["follow up on X", "confirm Y"], "2026-01-01T00:00:00Z");
-    const c = getLatestConsolidation(db);
+  it("parses open_threads back from its JSON column", async () => {
+    await consolidation("c1", "did a thing", ["follow up on X", "confirm Y"], "2026-01-01T00:00:00Z");
+    const c = await getLatestConsolidation(db);
     expect(c!.open_threads).toEqual(["follow up on X", "confirm Y"]);
   });
 
-  it("survives malformed open_threads rather than throwing", () => {
-    consolidation("c1", "s", null, "2026-01-01T00:00:00Z");
-    db.prepare(`UPDATE consolidations SET open_threads = ? WHERE id = ?`).run("{not json", "c1");
-    expect(getLatestConsolidation(db)!.open_threads).toBeNull();
+  it("survives malformed open_threads rather than throwing", async () => {
+    await consolidation("c1", "s", null, "2026-01-01T00:00:00Z");
+    await db.prepare(`UPDATE consolidations SET open_threads = ? WHERE id = ?`).run("{not json", "c1");
+    expect((await getLatestConsolidation(db))!.open_threads).toBeNull();
   });
 
-  it("getLatestSummarised skips a newer row that has no summary yet", () => {
+  it("getLatestSummarised skips a newer row that has no summary yet", async () => {
     // A run records its row before its summary exists, and no-op runs never get
     // one — so the newest row is often not the newest narrative.
-    consolidation("older", "the real narrative", ["thread"], "2026-01-01T00:00:00Z");
-    consolidation("newer", null, null, "2026-06-01T00:00:00Z");
+    await consolidation("older", "the real narrative", ["thread"], "2026-01-01T00:00:00Z");
+    await consolidation("newer", null, null, "2026-06-01T00:00:00Z");
 
-    expect(getLatestConsolidation(db)!.id).toBe("newer");
-    expect(getLatestSummarised(db)!.id).toBe("older");
-    expect(getLatestSummarised(db)!.summary).toBe("the real narrative");
+    expect((await getLatestConsolidation(db))!.id).toBe("newer");
+    expect((await getLatestSummarised(db))!.id).toBe("older");
+    expect((await getLatestSummarised(db))!.summary).toBe("the real narrative");
   });
 });
 
 describe("memory://profile", () => {
-  it("says so plainly when nothing is known", () => {
-    expect(buildProfile(db)).toContain("Nothing captured yet");
-    expect(buildProfile(db)).toMatch(/openmemory pull/);
+  it("says so plainly when nothing is known", async () => {
+    expect(await buildProfile(db)).toContain("Nothing captured yet");
+    expect(await buildProfile(db)).toMatch(/openmemory pull/);
   });
 
-  it("tells you to consolidate when events are waiting", () => {
-    insertEvent(db, {
+  it("tells you to consolidate when events are waiting", async () => {
+    await insertEvent(db, {
       event_type: "message",
       role: "user",
       content: "The demo store prefers dark mode.",
     });
-    const md = buildProfile(db);
+    const md = await buildProfile(db);
     expect(md).toContain("Nothing captured yet");
     expect(md).toMatch(/`consolidate`/);
     expect(md).toMatch(/openmemory consolidate/);
@@ -116,74 +116,74 @@ describe("memory://profile", () => {
     expect(md).not.toMatch(/openmemory pull/);
   });
 
-  it("does not promise a session-start flush after a large backfill", () => {
+  it("does not promise a session-start flush after a large backfill", async () => {
     for (let i = 0; i < 51; i++) {
-      insertEvent(db, {
+      await insertEvent(db, {
         event_type: "message",
         role: "user",
         content: `Synthetic waiting event ${i}.`,
       });
     }
-    const md = buildProfile(db);
+    const md = await buildProfile(db);
     expect(md).toMatch(/never auto-flushed/);
     expect(md).not.toMatch(/session start will flush/);
   });
 
-  it("names heuristic no-op extraction when a run produced no facts", () => {
-    insertEvent(db, {
+  it("names heuristic no-op extraction when a run produced no facts", async () => {
+    await insertEvent(db, {
       event_type: "message",
       role: "user",
       content: "The demo store prefers dark mode.",
     });
-    db.prepare(
+    await db.prepare(
       `INSERT INTO consolidations
          (id, session_id, facts_in, facts_graduated, facts_rejected,
           entities_created, entities_linked, supersessions,
           summary, open_threads, last_event_sequence, created_at)
        VALUES ('c-empty', NULL, 0, 0, 0, 0, 0, 0, NULL, NULL, 1, ?)`,
     ).run(new Date().toISOString());
-    const md = buildProfile(db);
+    const md = await buildProfile(db);
     expect(md).toMatch(/heuristic/);
     expect(md).not.toMatch(/openmemory pull/);
   });
 
-  it("renders key facts as markdown bullets", () => {
-    fact("The sev1 outage had a postmortem", "incidents", null, 0.95);
-    const md = buildProfile(db);
+  it("renders key facts as markdown bullets", async () => {
+    await fact("The sev1 outage had a postmortem", "incidents", null, 0.95);
+    const md = await buildProfile(db);
     expect(md).toContain("# Key facts");
     expect(md).toContain("- The sev1 outage had a postmortem");
   });
 
-  it("orders by importance, most important first", () => {
-    fact("Minor detail", "general", null, 0.1);
-    fact("Core fact", "incidents", null, 0.99);
-    const md = buildProfile(db);
+  it("orders by importance, most important first", async () => {
+    await fact("Minor detail", "general", null, 0.1);
+    await fact("Core fact", "incidents", null, 0.99);
+    const md = await buildProfile(db);
     expect(md.indexOf("Core fact")).toBeLessThan(md.indexOf("Minor detail"));
   });
 
-  it("includes the most important facts from any domain, not one fixed domain", () => {
+  it("includes the most important facts from any domain, not one fixed domain", async () => {
     // The inverse of the old assertion. This used to require domain='profile'
     // only — the hardcoded weld. A general store's key facts span whatever
     // domains it uses; importance decides what leads, not a domain name.
-    fact("The sev1 outage had a postmortem", "incidents", null, 0.95);
-    fact("The Acme contract renews in March", "clients", null, 0.7);
-    const md = buildProfile(db);
+    await fact("The sev1 outage had a postmortem", "incidents", null, 0.95);
+    await fact("The Acme contract renews in March", "clients", null, 0.7);
+    const md = await buildProfile(db);
     expect(md).toContain("sev1 outage");
     expect(md).toContain("Acme contract");
   });
 });
 
 describe("memory://briefing", () => {
-  it("says so plainly when nothing is known", () => {
-    expect(buildBriefing(db)).toContain("No knowledge captured yet");
+  it("says so plainly when nothing is known", async () => {
+    expect(await buildBriefing(db)).toContain("No knowledge captured yet");
   });
 
-  it("assembles profile, narrative, open threads and recent knowledge", () => {
-    fact("The user is called Alex", "profile", null, 0.9);
-    fact("Prefers dark roast", "preferences", "food", 0.5);
-    consolidation("c1", "Learned about coffee.", ["Confirm meeting times"], "2026-01-01T00:00:00Z");
+  it("assembles profile, narrative, open threads and recent knowledge", async () => {
+    await fact("The user is called Alex", "profile", null, 0.9);
+    await fact("Prefers dark roast", "preferences", "food", 0.5);
+    await consolidation("c1", "Learned about coffee.", ["Confirm meeting times"], "2026-01-01T00:00:00Z");
 
-    const md = buildBriefing(db);
+    const md = await buildBriefing(db);
     expect(md).toContain("# OpenMemory Briefing");
     expect(md).toContain("## Key facts");
     expect(md).toContain("The user is called Alex");
@@ -195,26 +195,26 @@ describe("memory://briefing", () => {
     expect(md).toContain("**preferences/food** — Prefers dark roast");
   });
 
-  it("uses the last narrative, not a newer summary-less run", () => {
-    fact("The user is called Alex", "profile", null, 0.9);
-    consolidation("older", "the real narrative", null, "2026-01-01T00:00:00Z");
-    consolidation("newer", null, null, "2026-06-01T00:00:00Z");
-    expect(buildBriefing(db)).toContain("the real narrative");
+  it("uses the last narrative, not a newer summary-less run", async () => {
+    await fact("The user is called Alex", "profile", null, 0.9);
+    await consolidation("older", "the real narrative", null, "2026-01-01T00:00:00Z");
+    await consolidation("newer", null, null, "2026-06-01T00:00:00Z");
+    expect(await buildBriefing(db)).toContain("the real narrative");
   });
 
-  it("omits sections that have no content rather than showing empty headings", () => {
-    fact("The user is called Alex", "profile", null, 0.9);
-    const md = buildBriefing(db);
+  it("omits sections that have no content rather than showing empty headings", async () => {
+    await fact("The user is called Alex", "profile", null, 0.9);
+    const md = await buildBriefing(db);
     expect(md).not.toContain("## Last consolidation");
     expect(md).not.toContain("## Open threads");
   });
 
-  it("stays within its ~100 line budget even with a lot of knowledge", () => {
-    for (let i = 0; i < 60; i++) fact(`Profile detail ${i}`, "profile", null, 0.5);
-    for (let i = 0; i < 60; i++) fact(`Preference ${i}`, "preferences", "food", 0.5);
-    consolidation("c1", "A summary.", Array.from({ length: 20 }, (_, i) => `Thread ${i}`), "2026-01-01T00:00:00Z");
+  it("stays within its ~100 line budget even with a lot of knowledge", async () => {
+    for (let i = 0; i < 60; i++) await fact(`Profile detail ${i}`, "profile", null, 0.5);
+    for (let i = 0; i < 60; i++) await fact(`Preference ${i}`, "preferences", "food", 0.5);
+    await consolidation("c1", "A summary.", Array.from({ length: 20 }, (_, i) => `Thread ${i}`), "2026-01-01T00:00:00Z");
 
-    const lines = buildBriefing(db).split("\n").length;
+    const lines = (await buildBriefing(db)).split("\n").length;
     expect(lines).toBeLessThanOrEqual(100);
   });
 
@@ -234,7 +234,7 @@ describe("consolidation notifies subscribers", () => {
     const factMod = await import("../../src/tools/fact-manager.js");
     const heuristicMod = await import("../../src/intelligence/heuristic.js");
     const sessionManager = sessionMod.createSessionManager(db);
-    sessionManager.startSession("test-client", null);
+    await sessionManager.startSession("test-client", null);
     const factManager = factMod.createFactManager(db, sessionManager, {
       intelligence: heuristicMod.createHeuristicProvider(PERSONAL_VOCABULARY),
       onConsolidated,
@@ -245,7 +245,7 @@ describe("consolidation notifies subscribers", () => {
   it("fires after a run that did work", async () => {
     let fired = 0;
     const { factManager } = await setup(() => fired++);
-    factManager.captureFact({ content: "The user is called Alex" });
+    await factManager.captureFact({ content: "The user is called Alex" });
 
     const result = await factManager.runConsolidate();
     expect(result.skipped).toBe(false);
@@ -258,7 +258,7 @@ describe("consolidation notifies subscribers", () => {
 
     // Hold the advisory lock so the run skips.
     const lockMod = await import("../../src/db/consolidation-lock.js");
-    lockMod.acquireLock(db, "someone-else");
+    await lockMod.acquireLock(db, "someone-else");
 
     const result = await factManager.runConsolidate();
     expect(result.skipped).toBe(true);
@@ -269,7 +269,7 @@ describe("consolidation notifies subscribers", () => {
     const { factManager } = await setup(() => {
       throw new Error("notification blew up");
     });
-    factManager.captureFact({ content: "The user is called Alex" });
+    await factManager.captureFact({ content: "The user is called Alex" });
 
     // The facts are already written by this point; a notification problem must
     // not surface as a consolidation failure.

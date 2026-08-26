@@ -31,7 +31,7 @@ export interface PullResult {
 
 interface SourceAdapter {
   discover: (source: ResolvedCaptureSource) => string[];
-  ingest: (db: Db, filePath: string) => JsonlFilePull;
+  ingest: (db: Db, filePath: string) => Promise<JsonlFilePull>;
 }
 
 const adapters: Record<CaptureSourceKind, SourceAdapter> = {
@@ -87,7 +87,7 @@ export function shouldTickAfterCliPull(
  * Throws on an unknown kind or a malformed source — a typo must not look
  * like "nothing to pull". An empty list returns zeros and inserts nothing.
  */
-export function pullSources(db: Db, sources: unknown): PullResult {
+export async function pullSources(db: Db, sources: unknown): Promise<PullResult> {
   const resolved = resolveSources(sources);
   const result: PullResult = {
     sources: resolved.length,
@@ -101,7 +101,7 @@ export function pullSources(db: Db, sources: unknown): PullResult {
     const files = adapter.discover(source);
     result.files += files.length;
     for (const file of files) {
-      const fileResult = adapter.ingest(db, file);
+      const fileResult = await adapter.ingest(db, file);
       result.events_inserted += fileResult.inserted;
       result.events_skipped += fileResult.skipped;
     }

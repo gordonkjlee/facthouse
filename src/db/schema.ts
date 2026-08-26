@@ -7,64 +7,64 @@ import { pragmaRead, pragmaWrite } from "./connection.js";
 import type { Db } from "./connection.js";
 
 /** Read the current schema version from the database. */
-export function getSchemaVersion(db: Db): number {
+export async function getSchemaVersion(db: Db): Promise<number> {
   return pragmaRead(db, "user_version");
 }
 
 /** Apply any pending schema migrations. */
-export function applySchema(db: Db): void {
-  const version = getSchemaVersion(db);
+export async function applySchema(db: Db): Promise<void> {
+  const version = await getSchemaVersion(db);
 
   if (version < 1) {
-    applyV1(db);
+    await applyV1(db);
   }
   if (version < 2) {
-    applyV2(db);
+    await applyV2(db);
   }
   if (version < 3) {
-    applyV3(db);
+    await applyV3(db);
   }
   if (version < 4) {
-    applyV4(db);
+    await applyV4(db);
   }
   if (version < 5) {
-    applyV5(db);
+    await applyV5(db);
   }
   if (version < 6) {
-    applyV6(db);
+    await applyV6(db);
   }
   if (version < 7) {
-    applyV7(db);
+    await applyV7(db);
   }
   if (version < 8) {
-    applyV8(db);
+    await applyV8(db);
   }
   if (version < 9) {
-    applyV9(db);
+    await applyV9(db);
   }
   if (version < 10) {
-    applyV10(db);
+    await applyV10(db);
   }
   if (version < 11) {
-    applyV11(db);
+    await applyV11(db);
   }
   if (version < 12) {
-    applyV12(db);
+    await applyV12(db);
   }
   if (version < 13) {
-    applyV13(db);
+    await applyV13(db);
   }
   if (version < 14) {
-    applyV14(db);
+    await applyV14(db);
   }
   if (version < 15) {
-    applyV15(db);
+    await applyV15(db);
   }
   if (version < 16) {
-    applyV16(db);
+    await applyV16(db);
   }
   if (version < 17) {
-    applyV17(db);
+    await applyV17(db);
   }
 }
 
@@ -72,8 +72,8 @@ export function applySchema(db: Db): void {
 // Schema version 1 — sessions + session_events (DIKW Data layer)
 // ---------------------------------------------------------------------------
 
-function applyV1(db: Db): void {
-  db.exec(`
+async function applyV1(db: Db): Promise<void> {
+  await db.exec(`
     CREATE TABLE IF NOT EXISTS sessions (
       id TEXT PRIMARY KEY,
       source_tool TEXT,
@@ -100,18 +100,18 @@ function applyV1(db: Db): void {
       ON session_events(session_id, sequence);
   `);
 
-  pragmaWrite(db, "user_version = 1");
+  await pragmaWrite(db, "user_version = 1");
 }
 
 // ---------------------------------------------------------------------------
 // Schema version 2 — drop FK, split session_id into two nullable columns
 // ---------------------------------------------------------------------------
 
-function applyV2(db: Db): void {
+async function applyV2(db: Db): Promise<void> {
   // foreign_keys pragma cannot be changed inside a transaction.
-  pragmaWrite(db, "foreign_keys = OFF");
+  await pragmaWrite(db, "foreign_keys = OFF");
 
-  db.exec(`
+  await db.exec(`
     CREATE TABLE session_events_new (
       id TEXT PRIMARY KEY,
       mcp_session_id TEXT,
@@ -140,8 +140,8 @@ function applyV2(db: Db): void {
     CREATE INDEX idx_session_events_client ON session_events(client_session_id);
   `);
 
-  pragmaWrite(db, "foreign_keys = ON");
-  pragmaWrite(db, "user_version = 2");
+  await pragmaWrite(db, "foreign_keys = ON");
+  await pragmaWrite(db, "user_version = 2");
 }
 
 // ---------------------------------------------------------------------------
@@ -151,8 +151,8 @@ function applyV2(db: Db): void {
 // integrity via findOrCreateEntity, claimForConsolidation, etc.
 // ---------------------------------------------------------------------------
 
-function applyV3(db: Db): void {
-  db.exec(`
+async function applyV3(db: Db): Promise<void> {
+  await db.exec(`
     CREATE TABLE IF NOT EXISTS session_facts (
       id TEXT PRIMARY KEY,
       session_id TEXT NOT NULL,
@@ -201,15 +201,15 @@ function applyV3(db: Db): void {
     );
   `);
 
-  pragmaWrite(db, "user_version = 3");
+  await pragmaWrite(db, "user_version = 3");
 }
 
 // ---------------------------------------------------------------------------
 // Schema version 4 — Knowledge layer: facts + FTS5 + entities + graph + sources + consolidations
 // ---------------------------------------------------------------------------
 
-function applyV4(db: Db): void {
-  db.exec(`
+async function applyV4(db: Db): Promise<void> {
+  await db.exec(`
     CREATE TABLE IF NOT EXISTS facts (
       id TEXT PRIMARY KEY,
       content TEXT NOT NULL,
@@ -318,7 +318,7 @@ function applyV4(db: Db): void {
     CREATE INDEX IF NOT EXISTS idx_entity_edges_to ON entity_edges(to_entity);
   `);
 
-  pragmaWrite(db, "user_version = 4");
+  await pragmaWrite(db, "user_version = 4");
 }
 
 // ---------------------------------------------------------------------------
@@ -329,13 +329,13 @@ function applyV4(db: Db): void {
 // when a run emits zero facts).
 // ---------------------------------------------------------------------------
 
-function applyV5(db: Db): void {
-  db.exec(`
+async function applyV5(db: Db): Promise<void> {
+  await db.exec(`
     ALTER TABLE consolidations ADD COLUMN last_event_sequence INTEGER NOT NULL DEFAULT 0;
     CREATE INDEX IF NOT EXISTS idx_consolidations_created ON consolidations(created_at);
   `);
 
-  pragmaWrite(db, "user_version = 5");
+  await pragmaWrite(db, "user_version = 5");
 }
 
 // ---------------------------------------------------------------------------
@@ -347,8 +347,8 @@ function applyV5(db: Db): void {
 // re-invoking the LLM. All nullable so the heuristic provider stays conformant.
 // ---------------------------------------------------------------------------
 
-function applyV6(db: Db): void {
-  db.exec(`
+async function applyV6(db: Db): Promise<void> {
+  await db.exec(`
     ALTER TABLE facts ADD COLUMN source_quality TEXT NOT NULL DEFAULT 'heuristic'
       CHECK (source_quality IN ('heuristic', 'cli', 'sampling', 'explicit'));
 
@@ -362,7 +362,7 @@ function applyV6(db: Db): void {
       CHECK (source_quality IN ('heuristic', 'cli', 'sampling', 'explicit'));
   `);
 
-  pragmaWrite(db, "user_version = 6");
+  await pragmaWrite(db, "user_version = 6");
 }
 
 // ---------------------------------------------------------------------------
@@ -373,9 +373,9 @@ function applyV6(db: Db): void {
 // this is the standard table-rebuild dance.
 // ---------------------------------------------------------------------------
 
-function applyV7(db: Db): void {
-  pragmaWrite(db, "foreign_keys = OFF");
-  db.exec(`
+async function applyV7(db: Db): Promise<void> {
+  await pragmaWrite(db, "foreign_keys = OFF");
+  await db.exec(`
     CREATE TABLE consolidations_new (
       id TEXT PRIMARY KEY,
       session_id TEXT,
@@ -405,8 +405,8 @@ function applyV7(db: Db): void {
 
     CREATE INDEX IF NOT EXISTS idx_consolidations_created ON consolidations(created_at);
   `);
-  pragmaWrite(db, "foreign_keys = ON");
-  pragmaWrite(db, "user_version = 7");
+  await pragmaWrite(db, "foreign_keys = ON");
+  await pragmaWrite(db, "user_version = 7");
 }
 
 // ---------------------------------------------------------------------------
@@ -426,8 +426,8 @@ function applyV7(db: Db): void {
  * routing decision, and its entities are unresolved — keyword is the only signal
  * that means anything before consolidation.
  */
-function applyV8(db: Db): void {
-  db.exec(`
+async function applyV8(db: Db): Promise<void> {
+  await db.exec(`
     CREATE VIRTUAL TABLE IF NOT EXISTS session_facts_fts USING fts5(
       content,
       content=session_facts, content_rowid=rowid
@@ -454,12 +454,12 @@ function applyV8(db: Db): void {
   // Backfill. Triggers only catch rows inserted from now on, so without this
   // every fact captured before this migration stays invisible to search — the
   // exact bug this migration exists to fix, preserved for existing users.
-  db.exec(`
+  await db.exec(`
     INSERT INTO session_facts_fts(rowid, content)
     SELECT rowid, content FROM session_facts;
   `);
 
-  pragmaWrite(db, "user_version = 8");
+  await pragmaWrite(db, "user_version = 8");
 }
 
 // ---------------------------------------------------------------------------
@@ -488,15 +488,15 @@ function applyV8(db: Db): void {
 // `type` is deliberately freeform vocabulary — spending it on a structural flag
 // would put a shipped word back into an engine that ships none.
 // ---------------------------------------------------------------------------
-function applyV9(db: Db): void {
+async function applyV9(db: Db): Promise<void> {
   // SQLite cannot add a column conditionally, and this migration must be safe
   // to run against a store already carrying entities. DEFAULT 0 backfills every
   // existing row as "not the user", which is correct: none of them was.
-  db.exec(`
+  await db.exec(`
     ALTER TABLE entities ADD COLUMN is_self INTEGER NOT NULL DEFAULT 0;
   `);
 
-  db.exec(`
+  await db.exec(`
     -- Partial, so it constrains only the single row that claims to be the user
     -- and leaves every other entity unaffected. A second self becomes an error
     -- at the database rather than a duplicate nobody notices.
@@ -504,7 +504,7 @@ function applyV9(db: Db): void {
       ON entities(is_self) WHERE is_self = 1;
   `);
 
-  pragmaWrite(db, "user_version = 9");
+  await pragmaWrite(db, "user_version = 9");
 }
 
 // ---------------------------------------------------------------------------
@@ -529,8 +529,8 @@ function applyV9(db: Db): void {
 // stops fitting there, which is why `dimensions` is configurable: halving it
 // doubles the facts that fit in the same budget.
 // ---------------------------------------------------------------------------
-function applyV10(db: Db): void {
-  db.exec(`
+async function applyV10(db: Db): Promise<void> {
+  await db.exec(`
     CREATE TABLE IF NOT EXISTS fact_embeddings (
       fact_id TEXT PRIMARY KEY,
       -- The model and dimension that produced this vector. NOT metadata:
@@ -551,7 +551,7 @@ function applyV10(db: Db): void {
       ON fact_embeddings(model, dimensions);
   `);
 
-  pragmaWrite(db, "user_version = 10");
+  await pragmaWrite(db, "user_version = 10");
 }
 
 // ---------------------------------------------------------------------------
@@ -569,8 +569,8 @@ function applyV10(db: Db): void {
 // size, so a rewrite (compaction) that keeps the same header is still
 // detected rather than tailed from a now-invalid offset.
 // ---------------------------------------------------------------------------
-function applyV11(db: Db): void {
-  db.exec(`
+async function applyV11(db: Db): Promise<void> {
+  await db.exec(`
     CREATE TABLE IF NOT EXISTS source_watermarks (
       path TEXT PRIMARY KEY,
       byte_offset INTEGER NOT NULL,
@@ -580,7 +580,7 @@ function applyV11(db: Db): void {
     );
   `);
 
-  pragmaWrite(db, "user_version = 11");
+  await pragmaWrite(db, "user_version = 11");
 }
 
 // ---------------------------------------------------------------------------
@@ -592,8 +592,8 @@ function applyV11(db: Db): void {
 // nows (gist + referents + sequence range). Nullable so existing INSERT
 // column lists keep working.
 // ---------------------------------------------------------------------------
-function applyV12(db: Db): void {
-  db.exec(`
+async function applyV12(db: Db): Promise<void> {
+  await db.exec(`
     ALTER TABLE consolidations ADD COLUMN now TEXT;
     ALTER TABLE consolidations ADD COLUMN now_start_sequence INTEGER;
     ALTER TABLE consolidations ADD COLUMN now_referents TEXT;
@@ -601,7 +601,7 @@ function applyV12(db: Db): void {
     CREATE INDEX IF NOT EXISTS idx_consolidations_session ON consolidations(session_id);
   `);
 
-  pragmaWrite(db, "user_version = 12");
+  await pragmaWrite(db, "user_version = 12");
 }
 
 // ---------------------------------------------------------------------------
@@ -617,8 +617,8 @@ function applyV12(db: Db): void {
 // Only `content` is indexed. Events are append-only: nothing UPDATEs content
 // (prune DELETEs). INSERT and DELETE triggers; no UPDATE trigger.
 // ---------------------------------------------------------------------------
-function applyV13(db: Db): void {
-  db.exec(`
+async function applyV13(db: Db): Promise<void> {
+  await db.exec(`
     CREATE VIRTUAL TABLE IF NOT EXISTS session_events_fts USING fts5(
       content,
       content=session_events, content_rowid=rowid
@@ -636,12 +636,12 @@ function applyV13(db: Db): void {
     END;
   `);
 
-  db.exec(`
+  await db.exec(`
     INSERT INTO session_events_fts(rowid, content)
     SELECT rowid, content FROM session_events WHERE content IS NOT NULL;
   `);
 
-  pragmaWrite(db, "user_version = 13");
+  await pragmaWrite(db, "user_version = 13");
 }
 
 // ---------------------------------------------------------------------------
@@ -657,12 +657,12 @@ function applyV13(db: Db): void {
 // Not a fact-layer clock. Sequence remains conversation order; this column
 // does not reorder extract.
 // ---------------------------------------------------------------------------
-function applyV14(db: Db): void {
-  db.exec(`
+async function applyV14(db: Db): Promise<void> {
+  await db.exec(`
     ALTER TABLE session_events ADD COLUMN occurred_at TEXT;
   `);
 
-  pragmaWrite(db, "user_version = 14");
+  await pragmaWrite(db, "user_version = 14");
 }
 
 // ---------------------------------------------------------------------------
@@ -674,8 +674,8 @@ function applyV14(db: Db): void {
 // source_type = 'inference' and provenance pointing here. Default-off: the
 // table exists so a store can opt in without a second migration.
 // ---------------------------------------------------------------------------
-function applyV15(db: Db): void {
-  db.exec(`
+async function applyV15(db: Db): Promise<void> {
+  await db.exec(`
     CREATE TABLE IF NOT EXISTS inferences (
       id TEXT PRIMARY KEY,
       hypothesis TEXT NOT NULL,
@@ -696,7 +696,7 @@ function applyV15(db: Db): void {
     );
   `);
 
-  pragmaWrite(db, "user_version = 15");
+  await pragmaWrite(db, "user_version = 15");
 }
 
 // ---------------------------------------------------------------------------
@@ -706,14 +706,14 @@ function applyV15(db: Db): void {
 // is explicit vs inferred; `source_type` is conversation vs inference. Neither
 // is the event's role. Null when we cannot tell (no primary event).
 // ---------------------------------------------------------------------------
-function applyV16(db: Db): void {
-  db.exec(`
+async function applyV16(db: Db): Promise<void> {
+  await db.exec(`
     ALTER TABLE session_facts ADD COLUMN speaker_role TEXT
       CHECK (speaker_role IS NULL OR speaker_role IN ('user', 'assistant', 'system', 'tool'));
     ALTER TABLE facts ADD COLUMN speaker_role TEXT
       CHECK (speaker_role IS NULL OR speaker_role IN ('user', 'assistant', 'system', 'tool'));
   `);
-  pragmaWrite(db, "user_version = 16");
+  await pragmaWrite(db, "user_version = 16");
 }
 
 // ---------------------------------------------------------------------------
@@ -723,11 +723,11 @@ function applyV16(db: Db): void {
 // role=user; the person's name lives beside it. Null when the transcript has
 // no name. Do not spend a role value on "person".
 // ---------------------------------------------------------------------------
-function applyV17(db: Db): void {
-  db.exec(`
+async function applyV17(db: Db): Promise<void> {
+  await db.exec(`
     ALTER TABLE session_events ADD COLUMN speaker TEXT;
     ALTER TABLE session_facts ADD COLUMN speaker TEXT;
     ALTER TABLE facts ADD COLUMN speaker TEXT;
   `);
-  pragmaWrite(db, "user_version = 17");
+  await pragmaWrite(db, "user_version = 17");
 }

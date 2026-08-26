@@ -14,19 +14,19 @@ const { startScheduler } = await import("../src/scheduler.js");
 let db: Db;
 let sessionId: string;
 
-beforeEach(() => {
+beforeEach(async () => {
   db = openDatabase(":memory:");
-  applySchema(db);
-  sessionId = createSession(db, { source_tool: "test", project: "om" }).id;
+  await applySchema(db);
+  sessionId = (await createSession(db, { source_tool: "test", project: "om" })).id;
 });
 
-afterEach(() => {
-  closeDatabase(db);
+afterEach(async () => {
+  await closeDatabase(db);
 });
 
-function seedEvents(n: number) {
+async function seedEvents(n: number) {
   for (let i = 0; i < n; i++) {
-    insertEvent(db, {
+    await insertEvent(db, {
       mcp_session_id: sessionId,
       event_type: "message",
       role: "user",
@@ -52,7 +52,7 @@ describe("scheduler", () => {
   it("is a no-op when event delta is below threshold", async () => {
     const runConsolidate = vi.fn().mockResolvedValue(STUB_RESULT);
 
-    seedEvents(5);
+    await seedEvents(5);
     const scheduler = startScheduler({ db, runConsolidate, threshold: 10 });
 
     const result = await scheduler.tick();
@@ -65,7 +65,7 @@ describe("scheduler", () => {
   it("fires consolidation when event delta reaches threshold", async () => {
     const runConsolidate = vi.fn().mockResolvedValue(STUB_RESULT);
 
-    seedEvents(10);
+    await seedEvents(10);
     const scheduler = startScheduler({ db, runConsolidate, threshold: 10 });
 
     const result = await scheduler.tick();
@@ -85,11 +85,15 @@ describe("scheduler", () => {
         }),
     );
 
-    seedEvents(20);
+    await seedEvents(20);
     const scheduler = startScheduler({ db, runConsolidate, threshold: 5 });
 
     const first = scheduler.tick();
     const second = scheduler.tick();
+    // tick() awaits SQL before calling runConsolidate; resolve once it has.
+    while (runConsolidate.mock.calls.length === 0) {
+      await Promise.resolve();
+    }
     resolver({ consolidationId: "x", factsIn: 0 } as any);
     await Promise.all([first, second]);
 
@@ -109,16 +113,16 @@ describe("scheduler", () => {
     );
 
     const readerDb = openDatabase(tmp);
-    applySchema(readerDb);
+    await applySchema(readerDb);
     const writerDb = openDatabase(tmp);
-    const writerSessionId = createSession(writerDb, {
+    const writerSessionId = (await createSession(writerDb, {
       source_tool: "test",
       project: "om",
-    }).id;
+    })).id;
 
-    function writeEvents(n: number) {
+    async function writeEvents(n: number) {
       for (let i = 0; i < n; i++) {
-        insertEvent(writerDb, {
+        await insertEvent(writerDb, {
           mcp_session_id: writerSessionId,
           event_type: "message",
           role: "user",
@@ -129,20 +133,20 @@ describe("scheduler", () => {
 
     const runConsolidate = vi.fn().mockResolvedValue(STUB_RESULT);
 
-    writeEvents(3);
+    await writeEvents(3);
     const scheduler = startScheduler({ db: readerDb, runConsolidate, threshold: 10 });
 
     await scheduler.tick();
     await scheduler.tick(); // same version → fast path
     expect(runConsolidate).not.toHaveBeenCalled();
 
-    writeEvents(10);
+    await writeEvents(10);
     await scheduler.tick();
     expect(runConsolidate).toHaveBeenCalledTimes(1);
 
     scheduler.stop();
-    closeDatabase(writerDb);
-    closeDatabase(readerDb);
+    await closeDatabase(writerDb);
+    await closeDatabase(readerDb);
     try {
       fs.unlinkSync(tmp);
       fs.unlinkSync(`${tmp}-wal`);
@@ -162,7 +166,7 @@ describe("scheduler", () => {
   it("respects minIntervalMs between tick-driven runs", async () => {
     const runConsolidate = vi.fn().mockResolvedValue(STUB_RESULT);
 
-    seedEvents(20);
+    await seedEvents(20);
     const scheduler = startScheduler({
       db,
       runConsolidate,

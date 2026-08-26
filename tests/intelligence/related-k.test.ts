@@ -12,13 +12,13 @@ const dbMod = await import("../../src/db/index.js");
 
 let db: Db;
 
-beforeEach(() => {
+beforeEach(async () => {
   db = dbMod.openDatabase(":memory:");
-  dbMod.applySchema(db);
+  await dbMod.applySchema(db);
 });
 
-afterEach(() => {
-  dbMod.closeDatabase(db);
+afterEach(async () => {
+  await dbMod.closeDatabase(db);
 });
 
 function event(content: string): SessionEvent {
@@ -39,25 +39,25 @@ function event(content: string): SessionEvent {
 }
 
 describe("relatedFactsForExtract", () => {
-  it("returns nothing when there are no events or no facts", () => {
-    expect(relatedFactsForExtract(db, [])).toEqual([]);
+  it("returns nothing when there are no events or no facts", async () => {
+    expect(await relatedFactsForExtract(db, [])).toEqual([]);
     expect(
-      relatedFactsForExtract(db, [event("Alex prefers coffee.")]),
+      await relatedFactsForExtract(db, [event("Alex prefers coffee.")]),
     ).toEqual([]);
   });
 
-  it("returns related graduated facts and not the whole store", () => {
-    dbMod.insertFact(db, {
+  it("returns related graduated facts and not the whole store", async () => {
+    await dbMod.insertFact(db, {
       content: "Alex prefers coffee.",
       domain: "preferences",
       source_type: "conversation",
     });
-    dbMod.insertFact(db, {
+    await dbMod.insertFact(db, {
       content: "Robin keeps a brass kaleidoscope on the desk at Acme.",
       domain: "preferences",
       source_type: "conversation",
     });
-    const related = relatedFactsForExtract(db, [
+    const related = await relatedFactsForExtract(db, [
       event("Alex no longer drinks coffee."),
     ]);
     expect(related.some((f) => f.content.includes("coffee"))).toBe(true);
@@ -65,15 +65,15 @@ describe("relatedFactsForExtract", () => {
     expect(related.length).toBeLessThanOrEqual(EXTRACT_RELATED_K_CAP);
   });
 
-  it("caps even when many facts share a token", () => {
+  it("caps even when many facts share a token", async () => {
     for (let i = 0; i < 20; i++) {
-      dbMod.insertFact(db, {
+      await dbMod.insertFact(db, {
         content: `Alex likes coffee blend number ${i} at Acme.`,
         domain: "preferences",
         source_type: "conversation",
       });
     }
-    const related = relatedFactsForExtract(db, [
+    const related = await relatedFactsForExtract(db, [
       event("Alex ordered coffee at Acme."),
     ]);
     expect(related.length).toBe(EXTRACT_RELATED_K_CAP);

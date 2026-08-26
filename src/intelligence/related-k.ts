@@ -36,18 +36,18 @@ function tokensFromEvents(events: SessionEvent[], cap: number): string[] {
  * Bounded related-K for this candidate batch. Empty events or an empty
  * store yield []. Never the whole `facts` table.
  */
-export function relatedFactsForExtract(
+export async function relatedFactsForExtract(
   db: Db,
   events: SessionEvent[],
   cap: number = EXTRACT_RELATED_K_CAP,
-): Fact[] {
+): Promise<Fact[]> {
   if (cap <= 0) return [];
   const tokens = tokensFromEvents(events, cap);
   if (tokens.length === 0) return [];
 
   const seen = new Map<string, { fact: Fact; score: number }>();
   for (const token of tokens) {
-    const response = hybridSearch(db, token, { limit: cap });
+    const response = await hybridSearch(db, token, { limit: cap });
     for (const row of response.results) {
       const prev = seen.get(row.fact.id);
       if (!prev || row.score > prev.score) {

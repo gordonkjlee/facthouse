@@ -29,14 +29,14 @@ const { PERSONAL_VOCABULARY } = await import("../fixtures/vocabulary.js");
 let db: Db;
 let tmpRoot: string;
 
-beforeEach(() => {
+beforeEach(async () => {
   db = openDatabase(":memory:");
-  applySchema(db);
+  await applySchema(db);
   tmpRoot = mkdtempSync(path.join(tmpdir(), "om-extract-ctx-"));
 });
 
-afterEach(() => {
-  closeDatabase(db);
+afterEach(async () => {
+  await closeDatabase(db);
   rmSync(tmpRoot, { recursive: true, force: true });
 });
 
@@ -47,28 +47,28 @@ interface ExtractCall {
   extras: ExtractExtras | undefined;
 }
 
-function factRows() {
-  return db
+async function factRows() {
+  return (await db
     .prepare(
       `SELECT sf.session_id AS session_id, sf.content AS content
          FROM session_facts sf
         ORDER BY sf.created_at ASC`,
     )
-    .all() as Array<{ session_id: string; content: string }>;
+    .all()) as Array<{ session_id: string; content: string }>;
 }
 
-function watermark() {
+async function watermark() {
   return (
-    db
+    (await db
       .prepare(
         `SELECT COALESCE(MAX(last_event_sequence), 0) AS seq FROM consolidations`,
       )
-      .get() as { seq: number }
+      .get()) as { seq: number }
   ).seq;
 }
 
-function situation(sessionId: string) {
-  const s = latestConversationSituation(db, sessionId);
+async function situation(sessionId: string) {
+  const s = await latestConversationSituation(db, sessionId);
   if (!s) return undefined;
   return {
     now: s.now,
@@ -129,12 +129,12 @@ function fromCandidates(events: SessionEvent[]): ExtractionOutcome {
 
 describe("K is cue not veto", () => {
   it("extracts a contradicting line rather than dropping it because K disagreed", async () => {
-    insertFact(db, {
+    await insertFact(db, {
       content: "Alex prefers coffee.",
       domain: "preferences",
       source_type: "conversation",
     });
-    insertEvent(db, {
+    await insertEvent(db, {
       client_session_id: "sess-aaa",
       event_type: "message",
       role: "user",
@@ -159,7 +159,7 @@ describe("K is cue not veto", () => {
     expect(calls[0].extras?.relatedFacts?.some((f) => f.content.includes("coffee"))).toBe(
       true,
     );
-    expect(factRows()).toEqual([
+    expect(await factRows()).toEqual([
       {
         session_id: "sess-aaa",
         content: "Alex no longer drinks coffee.",
@@ -169,17 +169,17 @@ describe("K is cue not veto", () => {
   });
 
   it("does not dump unrelated graduated facts into extract extras", async () => {
-    insertFact(db, {
+    await insertFact(db, {
       content: "Alex prefers coffee.",
       domain: "preferences",
       source_type: "conversation",
     });
-    insertFact(db, {
+    await insertFact(db, {
       content: "Robin keeps a brass kaleidoscope on the desk at Acme.",
       domain: "preferences",
       source_type: "conversation",
     });
-    insertEvent(db, {
+    await insertEvent(db, {
       client_session_id: "sess-aaa",
       event_type: "message",
       role: "user",
@@ -197,7 +197,7 @@ describe("K is cue not veto", () => {
   });
 
   it("does not insert a referent as a session_fact", async () => {
-    insertEvent(db, {
+    await insertEvent(db, {
       client_session_id: "sess-aaa",
       event_type: "message",
       role: "user",
@@ -214,8 +214,8 @@ describe("K is cue not veto", () => {
     await consolidate(db, provider as never, {
       extraction: { enabled: true } as never,
     });
-    expect(factRows()).toEqual([]);
-    const row = situation("sess-aaa");
+    expect(await factRows()).toEqual([]);
+    const row = await situation("sess-aaa");
     expect(row).toBeDefined();
     expect(JSON.parse(row!.now_referents ?? "[]")).toEqual([
       { phrase: "the programme", binding: "this branch" },
@@ -223,7 +223,7 @@ describe("K is cue not veto", () => {
   });
 
   it("extract-only persists now without writing K", async () => {
-    insertEvent(db, {
+    await insertEvent(db, {
       client_session_id: "sess-aaa",
       event_type: "message",
       role: "user",
@@ -247,14 +247,14 @@ describe("K is cue not veto", () => {
       null,
       "extract",
     );
-    expect(factRows()).toEqual([
+    expect(await factRows()).toEqual([
       { session_id: "sess-aaa", content: "Alex prefers oat milk at Acme." },
     ]);
-    const graduated = db
+    const graduated = (await db
       .prepare(`SELECT COUNT(*) AS n FROM facts`)
-      .get() as { n: number };
+      .get()) as { n: number };
     expect(graduated.n).toBe(0);
-    const row = situation("sess-aaa");
+    const row = await situation("sess-aaa");
     expect(row).toBeDefined();
     expect(row!.now).toBe("choosing milk");
     expect(JSON.parse(row!.now_referents ?? "[]")).toEqual([
@@ -265,7 +265,7 @@ describe("K is cue not veto", () => {
 
 describe("forgetfulness reread", () => {
   it("rereads this session once and does not put reminder lines in candidates", async () => {
-    insertEvent(db, {
+    await insertEvent(db, {
       client_session_id: "sess-aaa",
       event_type: "message",
       role: "user",
@@ -274,15 +274,15 @@ describe("forgetfulness reread", () => {
     await consolidate(db, createHeuristicProvider(PERSONAL_VOCABULARY), {
       extraction: { enabled: true } as never,
     });
-    expect(watermark()).toBeGreaterThan(0);
+    expect(await watermark()).toBeGreaterThan(0);
 
-    insertEvent(db, {
+    await insertEvent(db, {
       client_session_id: "sess-aaa",
       event_type: "message",
       role: "user",
       content: "that approach is better",
     });
-    insertEvent(db, {
+    await insertEvent(db, {
       client_session_id: "sess-bbb",
       event_type: "message",
       role: "user",
@@ -326,14 +326,14 @@ describe("forgetfulness reread", () => {
       ),
     ).toBe(true);
     expect(approachCalls[1].events.join(" ")).not.toContain("oat milk");
-    const rows = factRows();
+    const rows = await factRows();
     expect(rows.some((r) => r.content.includes("that approach"))).toBe(true);
     expect(rows.some((r) => r.content.includes("oat milk"))).toBe(false);
     expect(rows.some((r) => r.content.includes("shellfish"))).toBe(true);
   });
 
   it("does not reread a heuristic-style confident empty extract", async () => {
-    insertEvent(db, {
+    await insertEvent(db, {
       client_session_id: "sess-aaa",
       event_type: "message",
       role: "user",
@@ -348,11 +348,11 @@ describe("forgetfulness reread", () => {
       extraction: { enabled: true } as never,
     });
     expect(calls).toBe(1);
-    expect(watermark()).toBeGreaterThan(0);
+    expect(await watermark()).toBeGreaterThan(0);
   });
 
   it("holds the watermark when the provider could not run", async () => {
-    insertEvent(db, {
+    await insertEvent(db, {
       client_session_id: "sess-aaa",
       event_type: "message",
       role: "user",
@@ -368,12 +368,12 @@ describe("forgetfulness reread", () => {
     });
     expect(result.extractionDegraded).toBe(true);
     expect(calls).toBe(1);
-    expect(factRows()).toEqual([]);
-    expect(watermark()).toBe(0);
+    expect(await factRows()).toEqual([]);
+    expect(await watermark()).toBe(0);
   });
 
   it("advances after an unconfident reread rather than holding", async () => {
-    insertEvent(db, {
+    await insertEvent(db, {
       client_session_id: "sess-aaa",
       event_type: "message",
       role: "user",
@@ -388,15 +388,15 @@ describe("forgetfulness reread", () => {
       extraction: { enabled: true } as never,
     });
     expect(result.extractionDegraded).toBe(false);
-    expect(factRows()).toEqual([]);
-    expect(watermark()).toBeGreaterThan(0);
-    expect(situation("sess-aaa")).toBeUndefined();
+    expect(await factRows()).toEqual([]);
+    expect(await watermark()).toBeGreaterThan(0);
+    expect(await situation("sess-aaa")).toBeUndefined();
   });
 });
 
 describe("now, referents, segments", () => {
   it("does not close a segment when only a referent rebinds", async () => {
-    insertEvent(db, {
+    await insertEvent(db, {
       client_session_id: "sess-aaa",
       event_type: "message",
       role: "user",
@@ -412,9 +412,9 @@ describe("now, referents, segments", () => {
     await consolidate(db, first.provider as never, {
       extraction: { enabled: true } as never,
     });
-    const start = situation("sess-aaa")!.now_start_sequence;
+    const start = (await situation("sess-aaa"))!.now_start_sequence;
 
-    insertEvent(db, {
+    await insertEvent(db, {
       client_session_id: "sess-aaa",
       event_type: "message",
       role: "user",
@@ -431,7 +431,7 @@ describe("now, referents, segments", () => {
       extraction: { enabled: true } as never,
     });
 
-    const row = situation("sess-aaa")!;
+    const row = (await situation("sess-aaa"))!;
     expect(row.now).toBe("changing D→I");
     expect(row.now_start_sequence).toBe(start);
     expect(JSON.parse(row.now_referents ?? "[]")).toEqual([
@@ -440,7 +440,7 @@ describe("now, referents, segments", () => {
     expect(JSON.parse(row.segments ?? "[]")).toEqual([]);
   });
 
-  it("picks the later run when two rows share a created_at", () => {
+  it("picks the later run when two rows share a created_at", async () => {
     const ts = "2026-08-25T12:00:00.000Z";
     const insert = db.prepare(
       `INSERT INTO consolidations
@@ -453,26 +453,26 @@ describe("now, referents, segments", () => {
     );
     // Higher watermark first so a rowid-only ORDER BY would pick the wrong
     // row. created_at alone is what flaked on Node 24 CI.
-    insert.run(
+    await insert.run(
       "c-later",
       2,
       ts,
       JSON.stringify([{ phrase: "the file", binding: "sampling.ts" }]),
     );
-    insert.run(
+    await insert.run(
       "c-earlier",
       1,
       ts,
       JSON.stringify([{ phrase: "the file", binding: "consolidate.ts" }]),
     );
-    const row = situation("sess-aaa")!;
+    const row = (await situation("sess-aaa"))!;
     expect(JSON.parse(row.now_referents ?? "[]")).toEqual([
       { phrase: "the file", binding: "sampling.ts" },
     ]);
   });
 
   it("restores gist and referents from a closed segment on topic return", async () => {
-    insertEvent(db, {
+    await insertEvent(db, {
       client_session_id: "sess-aaa",
       event_type: "message",
       role: "user",
@@ -494,7 +494,7 @@ describe("now, referents, segments", () => {
       { extraction: { enabled: true } as never },
     );
 
-    insertEvent(db, {
+    await insertEvent(db, {
       client_session_id: "sess-aaa",
       event_type: "message",
       role: "user",
@@ -517,7 +517,7 @@ describe("now, referents, segments", () => {
       { extraction: { enabled: true } as never },
     );
 
-    const afterShift = situation("sess-aaa")!;
+    const afterShift = (await situation("sess-aaa"))!;
     const segs = JSON.parse(afterShift.segments ?? "[]") as Array<{
       gist: string;
       referents: Array<{ phrase: string; binding: string }>;
@@ -528,13 +528,13 @@ describe("now, referents, segments", () => {
       { phrase: "the programme", binding: "oat milk" },
     ]);
 
-    insertEvent(db, {
+    await insertEvent(db, {
       client_session_id: "sess-aaa",
       event_type: "message",
       role: "user",
       content: "back to the programme",
     });
-    insertEvent(db, {
+    await insertEvent(db, {
       client_session_id: "sess-bbb",
       event_type: "message",
       role: "user",
@@ -568,7 +568,7 @@ describe("now, referents, segments", () => {
   });
 
   it("stores at most eight referents from the model's list", async () => {
-    insertEvent(db, {
+    await insertEvent(db, {
       client_session_id: "sess-aaa",
       event_type: "message",
       role: "user",
@@ -588,7 +588,7 @@ describe("now, referents, segments", () => {
       })).provider as never,
       { extraction: { enabled: true } as never },
     );
-    const stored = JSON.parse(situation("sess-aaa")!.now_referents ?? "[]");
+    const stored = JSON.parse((await situation("sess-aaa"))!.now_referents ?? "[]");
     expect(stored).toHaveLength(8);
     expect(stored[0].phrase).toBe("p0");
     expect(stored[7].phrase).toBe("p7");
@@ -596,7 +596,7 @@ describe("now, referents, segments", () => {
 
   it("passes a short evidence prefix, not the whole spared pool", async () => {
     for (let i = 0; i < 20; i++) {
-      insertEvent(db, {
+      await insertEvent(db, {
         client_session_id: "sess-aaa",
         event_type: "message",
         role: "user",
@@ -607,7 +607,7 @@ describe("now, referents, segments", () => {
       extraction: { enabled: true } as never,
     });
 
-    insertEvent(db, {
+    await insertEvent(db, {
       client_session_id: "sess-aaa",
       event_type: "message",
       role: "user",

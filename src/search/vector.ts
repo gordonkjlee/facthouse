@@ -102,7 +102,7 @@ export function cosineSimilarity(a: Float32Array, b: Float32Array): number {
  * happens in SQL, so a store still holding a previous model's vectors never
  * materialises them.
  */
-export function vectorSearch(
+export async function vectorSearch(
   db: Db,
   queryVector: Float32Array,
   model: string,
@@ -114,14 +114,14 @@ export function vectorSearch(
    * instant rather than only currently-true rows. Already parsed.
    */
   asOfSystemTime?: string,
-): Fact[] {
+): Promise<Fact[]> {
   if (queryVector.length !== dimensions) {
     throw new Error(
       `query vector has ${queryVector.length} dimensions, store holds ${dimensions}`,
     );
   }
 
-  const stored = getEmbeddings(db, model, dimensions);
+  const stored = await getEmbeddings(db, model, dimensions);
   if (stored.length === 0) return [];
 
   const scored: Array<{ id: string; score: number }> = [];
@@ -166,11 +166,11 @@ export function vectorSearch(
   // load every fact row.
   const topIds = kept.slice(0, limit).map((s) => s.id);
   const byId = new Map(
-    getFactsByIds(
+    (await getFactsByIds(
       db,
       topIds,
       asOfSystemTime ? { asOfSystemTime } : undefined,
-    ).map((f) => [f.id, f]),
+    )).map((f) => [f.id, f]),
   );
 
   // Re-project through the ranked id list so similarity order survives, and

@@ -22,13 +22,13 @@ const src = (rel: string) =>
 
 let db: Db;
 
-beforeEach(() => {
+beforeEach(async () => {
   db = dbMod.openDatabase(":memory:");
-  dbMod.applySchema(db);
+  await dbMod.applySchema(db);
 });
 
-afterEach(() => {
-  dbMod.closeDatabase(db);
+afterEach(async () => {
+  await dbMod.closeDatabase(db);
 });
 
 describe("SESSION_BOOTSTRAP_INSTRUCTIONS", () => {
@@ -51,13 +51,13 @@ describe("SESSION_BOOTSTRAP_INSTRUCTIONS", () => {
 });
 
 describe("get_session_context briefing", () => {
-  it("is buildBriefing of this store, not a second schema", () => {
-    dbMod.insertFact(db, {
+  it("is buildBriefing of this store, not a second schema", async () => {
+    await dbMod.insertFact(db, {
       content: "Alex prefers dark roast coffee",
       domain: "preferences",
       source_type: "conversation",
     });
-    expect(buildBriefing(db)).toContain("Alex prefers dark roast coffee");
-    expect(buildBriefing(db)).toMatch(/^# OpenMemory Briefing/);
+    expect(await buildBriefing(db)).toContain("Alex prefers dark roast coffee");
+    expect(await buildBriefing(db)).toMatch(/^# OpenMemory Briefing/);
   });
 });

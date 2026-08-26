@@ -50,17 +50,17 @@ export interface JsonlIngestOptions {
  * Tail one JSONL file into session_events from its watermark. Inserts and the
  * watermark update share a transaction so a crash cannot duplicate a line.
  */
-export function ingestJsonlFile(
+export async function ingestJsonlFile(
   db: Db,
   filePath: string,
   opts: JsonlIngestOptions,
-): JsonlFilePull {
+): Promise<JsonlFilePull> {
   const abs = path.resolve(filePath);
   const fd = openSync(abs, "r");
   try {
     const size = fstatSync(fd).size;
     const current = fileFingerprint(fd, size);
-    const existing = getWatermark(db, abs);
+    const existing = await getWatermark(db, abs);
     const resume =
       existing &&
       existing.byte_offset <= size &&
@@ -80,7 +80,7 @@ export function ingestJsonlFile(
       // line is detected as growth and resumed from this offset.
       // Still record the conversation's project so a store that was pulled
       // before sessions.project was written gets provenance on the next pull.
-      ensureSession(db, {
+      await ensureSession(db, {
         id: sessionId,
         source_tool: opts.sourceTool,
         project,
@@ -91,7 +91,7 @@ export function ingestJsonlFile(
     let skipped = 0;
     let lineNumber = startLine;
 
-    withTransaction(db, () => {
+    await withTransaction(db, async () => {
       const seen = new Set<string>();
       for (const line of lines) {
         lineNumber += 1;
@@ -104,17 +104,17 @@ export function ingestJsonlFile(
           const conversation = event.client_session_id || sessionId;
           if (!seen.has(conversation)) {
             seen.add(conversation);
-            ensureSession(db, {
+            await ensureSession(db, {
               id: conversation,
               source_tool: opts.sourceTool,
               project,
             });
           }
-          insertEvent(db, event);
+          await insertEvent(db, event);
           inserted += 1;
         }
       }
-      upsertWatermark(db, {
+      await upsertWatermark(db, {
         path: abs,
         byte_offset: endOffset,
         line_number: lineNumber,
