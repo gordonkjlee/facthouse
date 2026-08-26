@@ -10,6 +10,7 @@ import type { VectorSearchOpts } from "../search/vector.js";
 import type { EmbeddingProvider } from "../embedding/types.js";
 import { findEntity, getEntityEdges } from "../db/entities.js";
 import { getFactsByEntity, parseSystemTime } from "../db/facts.js";
+import { lookupNamedSubject } from "../search/entity.js";
 import { getDomains } from "../db/domains.js";
 import { getStats } from "../db/stats.js";
 import type { TemporalConfig } from "../types/config.js";
@@ -162,7 +163,10 @@ export function registerReadTools(
       `Treat the difference as real when you answer: "Alex's transfer was ` +
       `approved by Robin" is worth knowing when asked about Robin, but it is a ` +
       `fact about Alex, and reporting it as something you know about Robin ` +
-      `would be wrong.`,
+      `would be wrong.\n\n` +
+      `If this store has no entity by that exact name, facts that mention the ` +
+      `wording still come back (is_subject false) rather than an empty miss. ` +
+      `found is whether an entity row exists, not whether anything is known.`,
     {
       name: z
         .string()
@@ -185,36 +189,18 @@ export function registerReadTools(
       // vocabulary either — a corporate store's subjects are systems and
       // suppliers, not people — so defaulting to a fixed type would make most
       // subjects invisible to the one tool meant to find them.
-      const entity = findEntity(db, args.name, args.type);
-
-      if (!entity) {
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: JSON.stringify({
-                found: false,
-                name: args.name,
-                facts: [],
-                relationships: [],
-              }),
-            },
-          ],
-        };
-      }
-
-      const facts = getFactsByEntity(db, entity.id);
-      const edges = getEntityEdges(db, entity.id);
+      const lookup = lookupNamedSubject(db, args.name, args.type);
 
       return {
         content: [
           {
             type: "text" as const,
             text: JSON.stringify({
-              found: true,
-              entity,
-              facts,
-              relationships: edges,
+              found: lookup.found,
+              name: lookup.name,
+              entity: lookup.entity,
+              facts: lookup.facts,
+              relationships: lookup.relationships,
             }),
           },
         ],

@@ -5,6 +5,7 @@ import path from "node:path";
 import {
   EXTRACT_CONTEXT_CONTRACT,
   EXTRACT_RELATED_K_CAP,
+  SUBJECT_MARKING_CONTRACT,
   REFERENT_CAP,
   capReferents,
   extractEventPayload,
@@ -74,6 +75,14 @@ describe("EXTRACT_CONTEXT_CONTRACT", () => {
       /EXTRACT_CONTEXT_CONTRACT/,
     );
     expect(src("intelligence/cli.ts")).toMatch(/EXTRACT_CONTEXT_CONTRACT/);
+  });
+
+  it("subject marking is one contract both entity extractors import", () => {
+    expect(SUBJECT_MARKING_CONTRACT).toMatch(/subject_of/);
+    expect(SUBJECT_MARKING_CONTRACT).toMatch(/entities list ONLY/);
+    expect(src("intelligence/cli.ts")).toMatch(/SUBJECT_MARKING_CONTRACT/);
+    expect(src("intelligence/sampling.ts")).toMatch(/SUBJECT_MARKING_CONTRACT/);
+    expect(src("intelligence/heuristic.ts")).not.toMatch(/SUBJECT_MARKING_CONTRACT/);
   });
 
   it("caps referents at eight without merging", () => {

@@ -8,6 +8,7 @@
  */
 
 import type { Referent } from "../types/data.js";
+import { SUBJECT_OF } from "../db/entities.js";
 
 /** Live deictics kept for the current activity. Last-known only. */
 export const REFERENT_CAP = 8;
@@ -35,6 +36,17 @@ export const EXTRACT_REREAD_CONFIDENCE = 0.5;
  * set from hybrid search. Cue, not veto.
  */
 export const EXTRACT_RELATED_K_CAP = 8;
+
+/**
+ * How to mark the one thing a fact is about. One definition: CLI extract,
+ * CLI extractEntities, and sampling extractEntities all interpolate this.
+ * A wrong subject files a fact under the wrong name with nothing downstream
+ * to catch it — mark nothing when unsure.
+ */
+export const SUBJECT_MARKING_CONTRACT = `
+For each fact, mark the ONE thing it is about by setting that entity's relationship to exactly '${SUBJECT_OF}'. Every other named thing in the same fact keeps a descriptive relationship of your own wording. If a fact is about something unnamed, or you are unsure which thing it is about, use no ${SUBJECT_OF} at all — a wrong subject is worse than none.
+This applies to the entities list ONLY: never list the user themselves as a named thing — not as 'the user', 'user', 'me' or by their own name. The store represents them already. Facts ABOUT the user are among the most valuable things to extract and must still be extracted in full, exactly as any other fact — they simply carry no entity for the user. Other people, including people close to the user, ARE listed as entities normally.
+`.trim();
 
 export const EXTRACT_CONTEXT_CONTRACT = `
 Extract-context fields (do not paraphrase these jobs):

@@ -610,9 +610,9 @@ export async function consolidate(
         // mode"), which is precisely the fact that most needs an anchor and the
         // one an extractor returns nothing for.
         //
-        // Only the deterministic case is handled here. Subject identification
-        // in general is a model's job, and no provider emits it yet — a fact
-        // about Robin will still carry only mention links until they do.
+        // Only the deterministic self-case is handled here. Third-party
+        // subjects come from the provider's entity list (subject_of). A wrong
+        // automatic guess is worse than a mention-only link.
         if (isAboutTheUser(graduatedFact.content)) {
           linkFactEntity(db, graduatedFact.id, ensureSelfEntity(db).id, SUBJECT_OF);
           entitiesLinked++;
