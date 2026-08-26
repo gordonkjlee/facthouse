@@ -384,6 +384,7 @@ openmemory log-event --role user --event-type message --content "hello world"
 #   --event-type    message | tool_call | tool_result | artifact (default: message)
 #   --content-type  text | json | image | audio | binary (default: text)
 #   --content       Event content (or pipe via stdin)
+#   --speaker       Named participant when the transcript has one
 #   --session-id    Target session (default: most recent)
 #   --data          Data directory (default: ~/.openmemory or $OPENMEMORY_DATA)
 ```

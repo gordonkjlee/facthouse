@@ -15,6 +15,7 @@ const {
   getClaimedFacts,
   linkFactSource,
   getFactSources,
+  speakerNameOf,
 } = await import("../../src/db/session-facts.js");
 
 let db: Db;
@@ -29,6 +30,18 @@ beforeEach(() => {
 
 afterEach(() => {
   closeDatabase(db);
+});
+
+describe("speakerNameOf", () => {
+  it("trims display names and treats empty as missing", () => {
+    expect(speakerNameOf("Alex")).toBe("Alex");
+    expect(speakerNameOf("  Alex Rivera  ")).toBe("Alex Rivera");
+    expect(speakerNameOf("")).toBeNull();
+    expect(speakerNameOf("   ")).toBeNull();
+    expect(speakerNameOf(null)).toBeNull();
+    expect(speakerNameOf(undefined)).toBeNull();
+    expect(speakerNameOf(1)).toBeNull();
+  });
 });
 
 describe("session facts", () => {
@@ -58,6 +71,17 @@ describe("session facts", () => {
     expect(fact!.capture_context).toBe("settings discussion");
     expect(fact!.consolidation_id).toBeNull();
     expect(fact!.created_at).toBeTruthy();
+    expect(fact!.speaker).toBeNull();
+    expect(fact!.speaker_role).toBeNull();
+  });
+
+  it("stores a named speaker when given", () => {
+    const fact = insertSessionFact(db, {
+      session_id: sessionId,
+      content: "Bookings are the grain of the orders mart at Acme.",
+      speaker: "  Alex  ",
+    });
+    expect(fact!.speaker).toBe("Alex");
   });
 
   it("computes content_hash automatically", () => {

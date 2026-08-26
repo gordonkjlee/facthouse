@@ -87,6 +87,11 @@ export interface SessionEvent {
   content: string | null;
   /** URI or path for non-text content. Reference, not embed. */
   content_ref: string | null;
+  /**
+   * Named participant when the transcript has one. Role stays the channel.
+   * Null for ordinary user/assistant turns with no name.
+   */
+  speaker: string | null;
   metadata: Record<string, unknown> | null;
   /** When OpenMemory wrote this row. */
   created_at: string;
@@ -141,6 +146,8 @@ export interface SessionFact {
    * explicit capture with no source event). Not who the fact is about.
    */
   speaker_role: SpeakerRole | null;
+  /** Named participant copied from the primary event. Null when unnamed. */
+  speaker: string | null;
   created_at: string;
 }
 
@@ -187,6 +194,8 @@ export interface Fact {
    * source_type (conversation vs inference).
    */
   speaker_role: SpeakerRole | null;
+  /** Named participant copied from staging. Null when unnamed. */
+  speaker: string | null;
 }
 
 export interface Entity {

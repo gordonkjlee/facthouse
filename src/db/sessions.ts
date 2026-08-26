@@ -7,6 +7,7 @@ import { randomUUID } from "node:crypto";
 import { withTransaction } from "./connection.js";
 import type { Db } from "./connection.js";
 import type { Session, SessionEvent } from "../types/data.js";
+import { speakerNameOf } from "./session-facts.js";
 
 // ---------------------------------------------------------------------------
 // Input types
@@ -31,6 +32,7 @@ export interface NewSessionEvent {
    * unknown — do not copy ingest time here.
    */
   occurred_at?: string | null;
+  speaker?: string | null;
 }
 
 export interface GetEventsOpts {
@@ -183,6 +185,7 @@ export function insertEvent(
   const contentRef = event.content_ref ?? null;
   const metadata = event.metadata ? JSON.stringify(event.metadata) : null;
   const occurredAt = event.occurred_at || null;
+  const speaker = speakerNameOf(event.speaker);
 
   const result = withTransaction(db, () => {
     const seqRow = db
@@ -196,8 +199,9 @@ export function insertEvent(
     db.prepare(
       `INSERT INTO session_events
          (id, mcp_session_id, client_session_id, sequence, event_type, role,
-          content_type, content, content_ref, metadata, created_at, occurred_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          content_type, content, content_ref, metadata, created_at, occurred_at,
+          speaker)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(
       id,
       mcpSessionId,
@@ -211,6 +215,7 @@ export function insertEvent(
       metadata,
       now,
       occurredAt,
+      speaker,
     );
 
     if (mcpSessionId) {
@@ -232,6 +237,7 @@ export function insertEvent(
       metadata: event.metadata ?? null,
       created_at: now,
       occurred_at: occurredAt,
+      speaker,
     } satisfies SessionEvent;
   });
 

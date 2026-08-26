@@ -581,6 +581,7 @@ async function runLogEvent() {
       "content-type": { type: "string", default: "text" },
       content: { type: "string" },
       "session-id": { type: "string" },
+      speaker: { type: "string" },
       data: { type: "string", default: process.env.OPENMEMORY_DATA ?? DEFAULT_DATA_DIR },
     },
     strict: true,
@@ -634,6 +635,7 @@ async function runLogEvent() {
       content,
       contentType,
       sessionId,
+      speaker: (values.speaker as string | undefined) ?? null,
       dataDir: resolveTilde(values.data as string),
     });
 

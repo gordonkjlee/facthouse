@@ -46,7 +46,8 @@ export function registerReadTools(
     `Three fields come back. \`results\` is integrated knowledge: deduplicated, ` +
     `reconciled against everything else known, entities resolved. Each result ` +
     `carries speaker_role when the primary event is known (user, assistant, ` +
-    `system, or tool) — who uttered it, not who it is about. \`pending\` ` +
+    `system, or tool) and speaker when the transcript named the person — ` +
+    `who uttered it, not who it is about. \`pending\` ` +
     `is what was captured recently and not yet consolidated — real, and ` +
     `usually the most recent thing you were told, but not yet checked against ` +
     `existing knowledge, so it may duplicate or contradict a fact in results. ` +

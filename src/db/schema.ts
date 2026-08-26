@@ -63,6 +63,9 @@ export function applySchema(db: Db): void {
   if (version < 16) {
     applyV16(db);
   }
+  if (version < 17) {
+    applyV17(db);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -711,4 +714,20 @@ function applyV16(db: Db): void {
       CHECK (speaker_role IS NULL OR speaker_role IN ('user', 'assistant', 'system', 'tool'));
   `);
   pragmaWrite(db, "user_version = 16");
+}
+
+// ---------------------------------------------------------------------------
+// Schema version 17 — named speaker on D, I, and K
+//
+// Role is the channel (user/assistant/system/tool). A Teams line is still
+// role=user; the person's name lives beside it. Null when the transcript has
+// no name. Do not spend a role value on "person".
+// ---------------------------------------------------------------------------
+function applyV17(db: Db): void {
+  db.exec(`
+    ALTER TABLE session_events ADD COLUMN speaker TEXT;
+    ALTER TABLE session_facts ADD COLUMN speaker TEXT;
+    ALTER TABLE facts ADD COLUMN speaker TEXT;
+  `);
+  pragmaWrite(db, "user_version = 17");
 }

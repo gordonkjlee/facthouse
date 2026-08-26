@@ -23,6 +23,7 @@ export interface LogEventArgs {
   contentType?: SessionEvent["content_type"];
   sessionId?: string;
   dataDir: string;
+  speaker?: string | null;
 }
 
 /**
@@ -91,6 +92,7 @@ export async function logEvent(args: LogEventArgs): Promise<SessionEvent> {
       // ingest there can be hours later, and a missing JSONL timestamp stays
       // null rather than copying created_at.
       occurred_at: new Date().toISOString(),
+      speaker: args.speaker ?? null,
     });
   } finally {
     closeDatabase(db);

@@ -82,7 +82,9 @@ export function formatSearch(response: SearchResponse, query: string): string {
       `score ${r.score.toFixed(3)}`,
       `confidence ${f.confidence.toFixed(2)}`,
     ];
-    if (f.speaker_role) {
+    if (f.speaker) {
+      meta.push(`speaker ${f.speaker}`);
+    } else if (f.speaker_role) {
       meta.push(`speaker ${f.speaker_role}`);
     }
     if (r.entities.length) {

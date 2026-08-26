@@ -10,6 +10,7 @@ import type { Fact, EntityFact, SpeakerRole } from "../types/data.js";
 // The one reserved relationship value. Imported rather than repeated, because a
 // second copy of a magic string is a second definition with its own future.
 import { SUBJECT_OF } from "./entities.js";
+import { speakerNameOf } from "./session-facts.js";
 
 // ---------------------------------------------------------------------------
 // Input types
@@ -30,6 +31,7 @@ export interface NewFact {
   /** Which intelligence provider produced this fact. Defaults to 'heuristic'. */
   source_quality?: "heuristic" | "cli" | "sampling" | "explicit";
   speaker_role?: SpeakerRole | null;
+  speaker?: string | null;
 }
 
 /** Options for a supersession write. */
@@ -129,6 +131,7 @@ export function insertFact(db: Db, fact: NewFact): Fact {
   const captureContext = fact.capture_context ?? null;
   const sourceQuality = fact.source_quality ?? "heuristic";
   const speakerRole = fact.speaker_role ?? null;
+  const speaker = speakerNameOf(fact.speaker);
 
   const result = db.prepare(
     `INSERT INTO facts
@@ -136,9 +139,9 @@ export function insertFact(db: Db, fact: NewFact): Fact {
         source_type, source_tool, source_id, status, superseded_by,
         is_latest, created_at, valid_from, valid_until,
         system_retired_at, session_id, capture_context, access_count, source_quality,
-        speaker_role)
+        speaker_role, speaker)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', NULL,
-             1, ?, ?, NULL, NULL, ?, ?, 0, ?, ?)`,
+             1, ?, ?, NULL, NULL, ?, ?, 0, ?, ?, ?)`,
   ).run(
     id,
     fact.content,
@@ -155,6 +158,7 @@ export function insertFact(db: Db, fact: NewFact): Fact {
     captureContext,
     sourceQuality,
     speakerRole,
+    speaker,
   );
 
   if (result.changes === 0) {
@@ -183,6 +187,7 @@ export function insertFact(db: Db, fact: NewFact): Fact {
     access_count: 0,
     source_quality: sourceQuality,
     speaker_role: speakerRole,
+    speaker,
   };
 }
 
@@ -334,6 +339,7 @@ export function supersedeFact(
   const captureContext = newFact.capture_context ?? null;
   const sourceQuality = newFact.source_quality ?? "heuristic";
   const speakerRole = newFact.speaker_role ?? null;
+  const speaker = speakerNameOf(newFact.speaker);
   const retireSystemTime = opts?.retireSystemTime === true;
   const validFrom =
     newFact.valid_from !== undefined && newFact.valid_from !== null
@@ -364,9 +370,9 @@ export function supersedeFact(
           source_type, source_tool, source_id, status, superseded_by,
           is_latest, created_at, valid_from, valid_until,
           system_retired_at, session_id, capture_context, access_count, source_quality,
-          speaker_role)
+          speaker_role, speaker)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', NULL,
-               1, ?, ?, NULL, NULL, ?, ?, 0, ?, ?)`,
+               1, ?, ?, NULL, NULL, ?, ?, 0, ?, ?, ?)`,
     ).run(
       newId,
       newFact.content,
@@ -383,6 +389,7 @@ export function supersedeFact(
       captureContext,
       sourceQuality,
       speakerRole,
+      speaker,
     );
 
     return {
@@ -407,6 +414,7 @@ export function supersedeFact(
       access_count: 0,
       source_quality: sourceQuality,
       speaker_role: speakerRole,
+      speaker,
     } satisfies Fact;
   });
 

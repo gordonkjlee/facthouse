@@ -49,6 +49,7 @@ describe("fact manager", () => {
     expect(fact!.consolidation_id).toBeNull();
     expect(fact!.source_tool).toBe("test-client");
     expect(fact!.speaker_role).toBeNull();
+    expect(fact!.speaker).toBeNull();
   });
 
   it("copies speaker_role from the source event", () => {
@@ -64,6 +65,25 @@ describe("fact manager", () => {
       content: "The user prefers tea",
       source_event_id: event.id,
     });
+    expect(fact!.speaker_role).toBe("user");
+    expect(fact!.speaker).toBeNull();
+  });
+
+  it("copies a named speaker from the source event", () => {
+    const { sessionManager, factManager } = setup();
+    const session = sessionManager.getActiveSession()!;
+    const event = dbMod.insertEvent(db, {
+      mcp_session_id: session.id,
+      event_type: "message",
+      role: "user",
+      content: "The grain is bookings",
+      speaker: "Alex",
+    });
+    const fact = factManager.captureFact({
+      content: "Bookings are the grain of the orders mart at Acme.",
+      source_event_id: event.id,
+    });
+    expect(fact!.speaker).toBe("Alex");
     expect(fact!.speaker_role).toBe("user");
   });
 

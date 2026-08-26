@@ -24,6 +24,23 @@ export function speakerRoleOf(role: string | null | undefined): SpeakerRole | nu
 }
 
 /**
+ * Named participant on a transcript line. Empty and non-strings are missing.
+ * Not lowercased: display is preserved; entity match uses canonical_name.
+ */
+export function speakerNameOf(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed === "" ? null : trimmed;
+}
+
+/**
+ * Fact→entity relationship used when a named speaker already exists as an
+ * entity. Not reserved like subject_of — the fact is still *about* its
+ * subject; this only records who said it.
+ */
+export const UTTERED_BY = "uttered_by";
+
+/**
  * The event that stated this fact, if its text still contains the sentence.
  * Rewritten extracts often match none — then there is no primary, and no
  * speaker, rather than guessing the first line in the batch.
@@ -65,6 +82,7 @@ export interface NewSessionFact {
   capture_context?: string | null;
   consolidation_id?: string | null;
   speaker_role?: SpeakerRole | null;
+  speaker?: string | null;
 }
 
 export interface NewFactSource {
@@ -115,6 +133,7 @@ export function insertSessionFact(
   const captureContext = fact.capture_context ?? null;
   const consolidationId = fact.consolidation_id ?? null;
   const speakerRole = fact.speaker_role ?? null;
+  const speaker = speakerNameOf(fact.speaker);
 
   return withTransaction(db, () => {
     const result = db.prepare(
@@ -124,8 +143,8 @@ export function insertSessionFact(
           confidence_signal, importance_signal,
           valid_from_hint, valid_until_hint, entities_json, source_quality,
           source_tool, capture_context,
-          consolidation_id, created_at, speaker_role)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          consolidation_id, created_at, speaker_role, speaker)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(
       id,
       fact.session_id,
@@ -148,6 +167,7 @@ export function insertSessionFact(
       consolidationId,
       now,
       speakerRole,
+      speaker,
     );
 
     if (result.changes === 0) {
@@ -176,6 +196,7 @@ export function insertSessionFact(
       consolidation_id: consolidationId,
       created_at: now,
       speaker_role: speakerRole,
+      speaker,
     } satisfies SessionFact;
   });
 }
