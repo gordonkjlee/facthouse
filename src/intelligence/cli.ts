@@ -35,7 +35,12 @@ import type { IntelligenceProvider, ExtractedFact, ExtractedEntity, Referent } f
 import { createHeuristicProvider } from "./heuristic.js";
 import { domainRoutingInstruction, normaliseDomainName } from "../schemas/domains.js";
 import type { DomainDef } from "../types/config.js";
-import { EXTRACT_CONTEXT_CONTRACT } from "./extract-prompt.js";
+import {
+  EXTRACT_CONTEXT_CONTRACT,
+  extractEventPayload,
+  extractTodayUtcDate,
+  parseExtractedIso,
+} from "./extract-prompt.js";
 
 // ---------------------------------------------------------------------------
 // Config
@@ -674,12 +679,10 @@ export function createCliProvider(
             content: f.content,
             domain: f.domain,
           })),
-          recent_events: workingMemory.map((e) => ({ role: e.role, content: e.content })),
-          reminder_events: (extras?.reminderEvents ?? []).map((e) => ({
-            role: e.role,
-            content: e.content,
-          })),
-          candidate_events: events.map((e) => ({ role: e.role, content: e.content })),
+          extract_today: extractTodayUtcDate(),
+          recent_events: workingMemory.map(extractEventPayload),
+          reminder_events: (extras?.reminderEvents ?? []).map(extractEventPayload),
+          candidate_events: events.map(extractEventPayload),
         },
         STAGE_1_SCHEMA,
       );
@@ -706,8 +709,8 @@ export function createCliProvider(
         confidence_signal: typeof f.confidence === "number" ? f.confidence : null,
         importance_signal: typeof f.importance === "number" ? f.importance : null,
         capture_context: f.capture_context ?? null,
-        valid_from: f.valid_from ?? null,
-        valid_until: f.valid_until ?? null,
+        valid_from: parseExtractedIso(f.valid_from),
+        valid_until: parseExtractedIso(f.valid_until),
         entities: Array.isArray(f.entities)
           ? f.entities.map((e) => ({
               name: e.name,

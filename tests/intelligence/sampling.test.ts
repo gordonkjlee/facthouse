@@ -82,7 +82,13 @@ describe("sampling intelligence provider", () => {
       PERSONAL_VOCABULARY,
     );
     const result = await provider.extractFactsFromEvents(
-      [{ role: "user", content: "oat milk" } as never],
+      [
+        {
+          role: "user",
+          content: "oat milk",
+          occurred_at: "2026-08-25T18:00:00.000Z",
+        } as never,
+      ],
       [],
     );
     expect(result.degraded).toBe(false);
@@ -95,7 +101,53 @@ describe("sampling intelligence provider", () => {
     const prompt = (server.createMessage as ReturnType<typeof vi.fn>).mock
       .calls[0][0].systemPrompt as string;
     expect(prompt).toContain("CONTRADICTS long_term_memory");
+    expect(prompt).toContain("Never guess a calendar day");
     expect(prompt).not.toMatch(/pronoun resolution/i);
+    const userText = (server.createMessage as ReturnType<typeof vi.fn>).mock
+      .calls[0][0].messages[0].content.text as string;
+    const payload = JSON.parse(userText) as {
+      extract_today: string;
+      candidate_events: Array<{ said_at: string | null }>;
+    };
+    expect(payload.extract_today).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(payload.candidate_events[0].said_at).toBe("2026-08-25T18:00:00.000Z");
+  });
+
+  it("keeps a stated ISO valid_from and drops a hedge", async () => {
+    const server = makeServer({
+      createMessage: vi.fn().mockResolvedValue({
+        content: {
+          type: "text",
+          text: JSON.stringify({
+            facts: [
+              {
+                content: "The user went to the beach on 25 August 2026.",
+                domain_hint: "profile",
+                valid_from: "2026-08-25",
+                valid_until: null,
+              },
+              {
+                content: "The user worked in a bar when younger.",
+                domain_hint: "work",
+                valid_from: "about five years ago",
+                valid_until: null,
+              },
+            ],
+          }),
+        },
+      }),
+    });
+    const provider = createSamplingProvider(
+      server,
+      createHeuristicProvider(PERSONAL_VOCABULARY),
+      PERSONAL_VOCABULARY,
+    );
+    const result = await provider.extractFactsFromEvents(
+      [{ role: "user", content: "beach" } as never],
+      [],
+    );
+    expect(result.facts[0].valid_from).toBe("2026-08-25T00:00:00.000Z");
+    expect(result.facts[1].valid_from).toBeNull();
   });
 
   it("treats a legacy JSON array as facts-only", async () => {

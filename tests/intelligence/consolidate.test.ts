@@ -114,6 +114,37 @@ describe("consolidation pipeline", () => {
 
     const medFacts = getFactsByDomain(db, "medical");
     expect(medFacts.length).toBeGreaterThanOrEqual(1);
+
+    // Untimed extracts must not look as if they became true at graduation.
+    expect(profileFacts.every((f) => f.valid_from === null)).toBe(true);
+    expect(prefFacts.every((f) => f.valid_from === null)).toBe(true);
+    expect(medFacts.every((f) => f.valid_from === null)).toBe(true);
+  });
+
+  it("graduates a stated valid_from_hint and leaves an untimed fact undated", async () => {
+    const sessionId = setupSession();
+    insertSessionFact(db, {
+      session_id: sessionId,
+      content: "The user went to the beach on 25 August 2026",
+      domain_hint: "profile",
+      valid_from_hint: "2026-08-25T00:00:00.000Z",
+    });
+    insertSessionFact(db, {
+      session_id: sessionId,
+      content: "The user worked in a bar when younger",
+      domain_hint: "work",
+    });
+
+    await consolidate(db, createHeuristicProvider(PERSONAL_VOCABULARY));
+
+    const beach = getFactsByDomain(db, "profile").find((f) =>
+      f.content.includes("beach"),
+    );
+    const bar = getFactsByDomain(db, "work").find((f) => f.content.includes("bar"));
+    expect(beach).toBeDefined();
+    expect(bar).toBeDefined();
+    expect(beach!.valid_from).toBe("2026-08-25T00:00:00.000Z");
+    expect(bar!.valid_from).toBeNull();
   });
 
   it("creates entities from facts mentioning people", async () => {
