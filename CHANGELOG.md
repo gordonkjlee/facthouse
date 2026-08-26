@@ -1,5 +1,31 @@
 # Changelog
 
+## [0.19.0](https://github.com/gordonkjlee/openmemory/compare/v0.18.0...v0.19.0) (2026-08-26)
+
+
+### Features
+
+* **cli:** add Cursor JSONL pull adapter ([#173](https://github.com/gordonkjlee/openmemory/issues/173)) ([0255303](https://github.com/gordonkjlee/openmemory/commit/0255303506a4839e1c464ae5c389a281ee699c41))
+* **cli:** treat two data dirs as two brains ([#167](https://github.com/gordonkjlee/openmemory/issues/167)) ([08fd73e](https://github.com/gordonkjlee/openmemory/commit/08fd73e018ea31b667d8fe06f549b844f19b9737))
+* **config:** refuse unshipped storage engines ([#179](https://github.com/gordonkjlee/openmemory/issues/179)) ([a15e90f](https://github.com/gordonkjlee/openmemory/commit/a15e90f19fb748c06c45fdb10711f6e6748f64d1))
+* **db:** add named speaker beside role ([#178](https://github.com/gordonkjlee/openmemory/issues/178)) ([979279a](https://github.com/gordonkjlee/openmemory/commit/979279aa8b2824a3c3fa527f376ea4b05ae20cde))
+* **db:** add Postgres dialect against PGlite ([#181](https://github.com/gordonkjlee/openmemory/issues/181)) ([629bf87](https://github.com/gordonkjlee/openmemory/commit/629bf87ffc32571b402c320bc3886417d0c8c88f))
+* **db:** make the database handle async ([#180](https://github.com/gordonkjlee/openmemory/issues/180)) ([3aff6ed](https://github.com/gordonkjlee/openmemory/commit/3aff6ed6635193e9f73af7f2f8390be33f4ce18b))
+* **db:** stamp speaker role on extracted facts ([#177](https://github.com/gordonkjlee/openmemory/issues/177)) ([c2a3150](https://github.com/gordonkjlee/openmemory/commit/c2a31507d694b6f91141c468635af1ebb49b33a6))
+* **intelligence:** bind extract dates to said_at ([#171](https://github.com/gordonkjlee/openmemory/issues/171)) ([14c0369](https://github.com/gordonkjlee/openmemory/commit/14c0369e7729773d4f1de9718a7c0296cd357446))
+* **intelligence:** unify durable-fact instruction ([#175](https://github.com/gordonkjlee/openmemory/issues/175)) ([422120e](https://github.com/gordonkjlee/openmemory/commit/422120ecba691ef53ba5a14a59d3a84d68f2f883))
+* **search:** add as-of system-time recall ([#168](https://github.com/gordonkjlee/openmemory/issues/168)) ([2b2e686](https://github.com/gordonkjlee/openmemory/commit/2b2e686e79f5bbbe27c1c9262054a1425041c470))
+* **sources:** store JSONL time on pulled events ([#169](https://github.com/gordonkjlee/openmemory/issues/169)) ([371f100](https://github.com/gordonkjlee/openmemory/commit/371f100a169c4985092a282dc42ee50d9d64cce9))
+* **tools:** add gated inference capture ([#174](https://github.com/gordonkjlee/openmemory/issues/174)) ([a5a98b7](https://github.com/gordonkjlee/openmemory/commit/a5a98b75e0ca5ec32f935647d68c0c434e62db0c))
+* **tools:** get_entity falls back to mention search ([#172](https://github.com/gordonkjlee/openmemory/issues/172)) ([c5d2e23](https://github.com/gordonkjlee/openmemory/commit/c5d2e23ea12d4c82691e31f2e3968a2eed95e0de))
+
+
+### Bug Fixes
+
+* **cli:** stamp hook time as occurred_at ([#170](https://github.com/gordonkjlee/openmemory/issues/170)) ([3bb2582](https://github.com/gordonkjlee/openmemory/commit/3bb2582338d28ba22ce74e9ef28e77244f4d28b9))
+* **db:** record project provenance on sessions ([#164](https://github.com/gordonkjlee/openmemory/issues/164)) ([462c2fd](https://github.com/gordonkjlee/openmemory/commit/462c2fd90db4e2adad0b2dfbb8c4eaa979f88079)), closes [#161](https://github.com/gordonkjlee/openmemory/issues/161)
+* **sources:** record project on a no-op pull ([#166](https://github.com/gordonkjlee/openmemory/issues/166)) ([4aa5856](https://github.com/gordonkjlee/openmemory/commit/4aa5856ffd2f30a9a544e86dbe1f4c29bfd05229))
+
 ## [0.18.0](https://github.com/gordonkjlee/openmemory/compare/v0.17.0...v0.18.0) (2026-08-25)
 
 
