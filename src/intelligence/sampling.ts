@@ -28,6 +28,7 @@ import { domainRoutingInstruction } from "../schemas/domains.js";
 import type { DomainDef } from "../types/config.js";
 import {
   EXTRACT_CONTEXT_CONTRACT,
+  SUBJECT_MARKING_CONTRACT,
   extractEventPayload,
   extractTodayUtcDate,
   parseExtractedIso,
@@ -224,11 +225,9 @@ export function createSamplingProvider(
             "You extract the named things (entities) from facts. An entity is " +
               "any subject the knowledge is about: a person, organisation, place, " +
               "project, product or system — whatever the facts concern. " +
-              "For each fact, list the entities mentioned. Each has: name (as " +
-              "written); type (a short lowercase noun for what it is — person, " +
-              "organisation, project, place, system, ...); relationship (how it " +
-              "relates to the other entities, as a short snake_case label, e.g. " +
-              "'works_for', 'located_in', 'depends_on', 'reports_to', 'mentioned'). " +
+              "Each has: name (as written); type (a short lowercase noun for what " +
+              "it is — person, organisation, project, place, system, ...). " +
+              SUBJECT_MARKING_CONTRACT + " " +
               "Respond with JSON only: {factId: [{name, type, relationship}, ...]}. " +
               "Omit facts with no entities. No prose.",
             `Extract entities from:\n${JSON.stringify(payload)}`,

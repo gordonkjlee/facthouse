@@ -37,6 +37,7 @@ import { domainRoutingInstruction, normaliseDomainName } from "../schemas/domain
 import type { DomainDef } from "../types/config.js";
 import {
   EXTRACT_CONTEXT_CONTRACT,
+  SUBJECT_MARKING_CONTRACT,
   extractEventPayload,
   extractTodayUtcDate,
   parseExtractedIso,
@@ -647,23 +648,7 @@ export function createCliProvider(
           "optional subdomain, confidence 0-1, importance 0-1, and any named " +
           "things mentioned (people, organisations, places, projects, products, " +
           "systems, concepts — whatever the fact concerns), each with a short lowercase type. " +
-          // Subject marking. Retrieval ranks facts ABOUT a thing above facts that
-          // merely name it, and only the extractor can tell them apart: "Alex's
-          // transfer was approved by Robin" names both and is about Alex.
-          "For each fact, mark the ONE thing it is about by setting that entity's " +
-          "relationship to exactly 'subject_of'. Every other named thing in the same " +
-          "fact keeps a descriptive relationship of your own wording. If a fact is " +
-          "about something unnamed, or you are unsure which thing it is about, use no " +
-          "subject_of at all — a wrong subject is worse than none. " +
-          // The user is represented by a dedicated entity the store creates at setup,
-          // and facts about them are recognised without the model's help. Extracting
-          // them as an ordinary named thing produced a second, competing "user" entity.
-          "This applies to the entities list ONLY: never list the user themselves as " +
-          "a named thing — not as 'the user', 'user', 'me' or by their own name. " +
-          "The store represents them already. Facts ABOUT the user are among the most " +
-          "valuable things to extract and must still be extracted in full, exactly as " +
-          "any other fact — they simply carry no entity for the user. Other people, " +
-          "including people close to the user, ARE listed as entities normally. " +
+          SUBJECT_MARKING_CONTRACT + " " +
           EXTRACT_CONTEXT_CONTRACT + " " +
           "If an entity matches one of the entities referenced in long_term_memory (by name or " +
           "clear reference), set existing_id to the matching id; otherwise omit existing_id " +
@@ -814,16 +799,7 @@ export function createCliProvider(
         "You identify the named things each fact concerns — people, " +
           "organisations, places, projects, products, systems, concepts — " +
           "whatever the fact is about, each with a short lowercase type. " +
-          "For each fact, mark the ONE thing it is about by setting that " +
-          "entity's relationship to exactly 'subject_of'. Every other named " +
-          "thing in the same fact keeps a descriptive relationship of your own " +
-          "wording. If a fact is about something unnamed, or you are unsure " +
-          "which thing it is about, use no subject_of at all — a wrong subject " +
-          "is worse than none. " +
-          "Never list the user themselves as a named thing — not as 'the user', " +
-          "'user', 'me' or by their own name; the store represents them " +
-          "already. Other people, including people close to the user, ARE " +
-          "listed normally. " +
+          SUBJECT_MARKING_CONTRACT + " " +
           "Return an entry for every fact, with an empty list where a fact " +
           "names nothing. Return strictly {facts: [{id, entities}]}.",
         { facts: facts.map((f) => ({ id: f.id, content: f.content })) },
