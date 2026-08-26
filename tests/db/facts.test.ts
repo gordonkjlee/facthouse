@@ -72,6 +72,7 @@ describe("facts", () => {
     expect(fact.access_count).toBe(0);
     expect(fact.created_at).toBeTruthy();
     expect(fact.speaker_role).toBeNull();
+    expect(fact.speaker).toBeNull();
   });
 
   it("stores speaker_role when given", () => {
@@ -83,6 +84,17 @@ describe("facts", () => {
     });
     expect(fact.speaker_role).toBe("assistant");
     expect(getFact(db, fact.id)?.speaker_role).toBe("assistant");
+  });
+
+  it("stores a named speaker when given", () => {
+    const fact = insertFact(db, {
+      content: "Bookings are the grain of the orders mart at Acme.",
+      domain: "pipeline",
+      source_type: "conversation",
+      speaker: "  Alex  ",
+    });
+    expect(fact.speaker).toBe("Alex");
+    expect(getFact(db, fact.id)?.speaker).toBe("Alex");
   });
 
   it("is_latest is boolean true in the returned Fact", () => {

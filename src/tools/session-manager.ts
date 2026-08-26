@@ -37,6 +37,8 @@ export interface SessionManager {
     content_type?: SessionEvent["content_type"];
     content_ref?: string | null;
     metadata?: Record<string, unknown> | null;
+    /** Named participant when the transcript has one. Role stays the channel. */
+    speaker?: string | null;
   }): SessionEvent;
 
   /** Register the log_event MCP tool on the server. */
@@ -80,6 +82,7 @@ export function createSessionManager(
         content_type: opts.content_type,
         content_ref: opts.content_ref,
         metadata: opts.metadata,
+        speaker: opts.speaker ?? null,
         // Live capture: the call is the turn. Same as hook log-event.
         occurred_at: new Date().toISOString(),
       });
@@ -111,7 +114,10 @@ export function createSessionManager(
             .describe("Type of event"),
           role: z
             .enum(["user", "assistant", "system", "tool"])
-            .describe("Who produced this event"),
+            .describe(
+              "Channel that produced this event (user, assistant, system, tool). " +
+                "For a named person on a group transcript, keep role as user and pass speaker.",
+            ),
           content: z
             .string()
             .nullable()
@@ -136,6 +142,14 @@ export function createSessionManager(
             .nullable()
             .optional()
             .describe("Arbitrary metadata"),
+          speaker: z
+            .string()
+            .nullable()
+            .optional()
+            .describe(
+              "Named participant when the transcript has one (e.g. Alex). " +
+                "Role stays the channel — do not invent a person role.",
+            ),
         },
         (args) => {
           const event = manager.logEvent({
@@ -145,6 +159,7 @@ export function createSessionManager(
             content_type: args.content_type,
             content_ref: args.content_ref,
             metadata: args.metadata,
+            speaker: args.speaker,
           });
 
           return {

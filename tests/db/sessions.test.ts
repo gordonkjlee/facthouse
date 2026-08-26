@@ -31,12 +31,12 @@ afterEach(() => {
 
 describe("schema", () => {
   it("applies current version", () => {
-    expect(getSchemaVersion(db)).toBe(16);
+    expect(getSchemaVersion(db)).toBe(17);
   });
 
   it("is idempotent", () => {
     applySchema(db); // second call
-    expect(getSchemaVersion(db)).toBe(16);
+    expect(getSchemaVersion(db)).toBe(17);
   });
 });
 
@@ -214,6 +214,28 @@ describe("session events", () => {
 
     expect(event.content_type).toBe("text");
     expect(event.occurred_at).toBeNull();
+    expect(event.speaker).toBeNull();
+  });
+
+  it("stores a named speaker and leaves it null when omitted", () => {
+    const named = insertEvent(db, {
+      mcp_session_id: sessionId,
+      event_type: "message",
+      role: "user",
+      content: "the grain is bookings",
+      speaker: "  Alex  ",
+    });
+    expect(named.speaker).toBe("Alex");
+    expect(getEvents(db, sessionId)[0].speaker).toBe("Alex");
+
+    const blank = insertEvent(db, {
+      mcp_session_id: sessionId,
+      event_type: "message",
+      role: "user",
+      content: "unnamed turn",
+      speaker: "   ",
+    });
+    expect(blank.speaker).toBeNull();
   });
 
   it("stores occurred_at when given and leaves it null when omitted", () => {

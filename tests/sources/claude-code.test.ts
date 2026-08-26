@@ -25,6 +25,76 @@ describe("mapTranscriptLine", () => {
     expect(events[0].content).toContain("dark mode");
     expect(events[0].client_session_id).toBe("sess-payload");
     expect(events[0].occurred_at).toBeNull();
+    expect(events[0].speaker).toBeNull();
+  });
+
+  it("copies speaker from the JSONL line and does not guess userName or author", () => {
+    const named = mapTranscriptLine(
+      JSON.stringify({
+        type: "user",
+        sessionId: "sess-payload",
+        speaker: "  Alex  ",
+        userName: "Robin",
+        author: "Sam",
+        message: { role: "user", content: "The grain is bookings." },
+      }),
+      "sess-filename",
+      "/tmp/sess-filename.jsonl",
+      1,
+    );
+    expect(named).toHaveLength(1);
+    expect(named[0].role).toBe("user");
+    expect(named[0].speaker).toBe("Alex");
+
+    const guessed = mapTranscriptLine(
+      JSON.stringify({
+        type: "user",
+        sessionId: "sess-payload",
+        userName: "Robin",
+        author: "Sam",
+        message: { role: "user", content: "The grain is bookings." },
+      }),
+      "sess-filename",
+      "/tmp/sess-filename.jsonl",
+      1,
+    );
+    expect(guessed[0].speaker).toBeNull();
+
+    const cursorShaped = mapTranscriptLine(
+      JSON.stringify({
+        role: "user",
+        speaker: "Alex",
+        message: { role: "user", content: "The grain is bookings." },
+      }),
+      "sess-filename",
+      "/tmp/sess-filename.jsonl",
+      1,
+      "cursor",
+    );
+    expect(cursorShaped[0].speaker).toBe("Alex");
+    expect(cursorShaped[0].role).toBe("user");
+  });
+
+  it("copies speaker onto every event split from that line", () => {
+    const events = mapTranscriptLine(
+      JSON.stringify({
+        type: "assistant",
+        sessionId: "sess-aaa",
+        speaker: "Alex",
+        message: {
+          role: "assistant",
+          content: [
+            { type: "text", text: "I will remember the grain is bookings." },
+            { type: "tool_use", id: "toolu_1", name: "Read", input: { path: "config.json" } },
+          ],
+        },
+      }),
+      "sess-aaa",
+      "/tmp/sess-aaa.jsonl",
+      2,
+    );
+    expect(events).toHaveLength(2);
+    expect(events.every((e) => e.speaker === "Alex")).toBe(true);
   });
 
   it("maps the JSONL timestamp as occurred_at, not ingest time", () => {

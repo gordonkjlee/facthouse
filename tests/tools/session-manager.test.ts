@@ -43,6 +43,7 @@ describe("session manager", () => {
     expect(event.content).toBe("hello world");
     expect(event.sequence).toBe(1);
     expect(event.content_type).toBe("text");
+    expect(event.speaker).toBeNull();
     expect(event.occurred_at).not.toBeNull();
     expect(
       Math.abs(Date.parse(event.occurred_at!) - Date.parse(event.created_at)),
@@ -60,6 +61,21 @@ describe("session manager", () => {
     expect(e1.sequence).toBe(1);
     expect(e2.sequence).toBe(2);
     expect(e3.sequence).toBe(3);
+  });
+
+  it("logEvent stores a named speaker without changing role", () => {
+    const manager = createSessionManager(db);
+    manager.startSession(null, null);
+
+    const event = manager.logEvent({
+      event_type: "message",
+      role: "user",
+      content: "the grain is bookings",
+      speaker: "Alex",
+    });
+
+    expect(event.role).toBe("user");
+    expect(event.speaker).toBe("Alex");
   });
 
   it("logEvent updates session last_activity_at", () => {

@@ -157,6 +157,7 @@ export function createFactManager(
         source_origin: "explicit",
         source_event_id: input.source_event_id ?? null,
         speaker_role: speakerRoleOf(sourceEvent?.role),
+        speaker: sourceEvent?.speaker ?? null,
         domain_hint: input.domain_hint ?? null,
         confidence: input.confidence ?? defaultConfidence,
         // Left null when nothing knows yet — deliberately, and this is the

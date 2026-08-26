@@ -146,6 +146,26 @@ describe("logEvent attributes every event to a session", () => {
     expect([...sessions][0]).not.toBeNull();
   });
 
+  it("stores a named speaker on the event", async () => {
+    await logEvent({
+      role: "user",
+      eventType: "message",
+      content: "the grain is bookings",
+      speaker: "Alex",
+      dataDir,
+    });
+    const conn = dbMod.openDatabase(path.join(dataDir, "memory.db"));
+    try {
+      const row = conn
+        .prepare(`SELECT speaker, role FROM session_events`)
+        .get() as { speaker: string | null; role: string };
+      expect(row.role).toBe("user");
+      expect(row.speaker).toBe("Alex");
+    } finally {
+      dbMod.closeDatabase(conn);
+    }
+  });
+
   it("stamps occurred_at as hook time, not null", async () => {
     const before = new Date().toISOString();
     await logEvent({

@@ -17,6 +17,7 @@
 import { readdirSync } from "node:fs";
 import path from "node:path";
 import type { Db } from "../db/connection.js";
+import { speakerNameOf } from "../db/session-facts.js";
 import type { NewSessionEvent } from "../db/sessions.js";
 import {
   ingestJsonlFile,
@@ -136,12 +137,21 @@ export function mapTranscriptLine(
   // Transcript clock, not ingest time. Null when the line has no usable
   // timestamp — copying created_at would pretend we know when it was said.
   const occurredAt = parseJsonlTimestamp(row.timestamp);
+  // Named participant only when the line has `speaker`. Do not guess
+  // userName / author — those are not this field.
+  const speaker = speakerNameOf(row.speaker);
 
   if (type === "user" || type === "human") {
-    return mapUserOrToolResult(message ?? row, sessionId, provenance, occurredAt);
+    return mapUserOrToolResult(
+      message ?? row,
+      sessionId,
+      provenance,
+      occurredAt,
+      speaker,
+    );
   }
   if (type === "assistant") {
-    return mapAssistant(message ?? row, sessionId, provenance, occurredAt);
+    return mapAssistant(message ?? row, sessionId, provenance, occurredAt, speaker);
   }
   if (type === "tool_result") {
     const content = extractToolResultContent(row);
@@ -155,6 +165,7 @@ export function mapTranscriptLine(
         content_type: looksLikeJson(content) ? "json" : "text",
         metadata: provenance,
         occurred_at: occurredAt,
+        speaker,
       }),
     ];
   }
@@ -170,6 +181,7 @@ export function mapTranscriptLine(
         content_type: "json",
         metadata: provenance,
         occurred_at: occurredAt,
+        speaker,
       }),
     ];
   }
@@ -179,10 +191,16 @@ export function mapTranscriptLine(
   // lines do — mapping `row` here missed every Cursor user/assistant turn.
   const role = typeof row.role === "string" ? row.role : undefined;
   if (role === "user" || role === "human") {
-    return mapUserOrToolResult(message ?? row, sessionId, provenance, occurredAt);
+    return mapUserOrToolResult(
+      message ?? row,
+      sessionId,
+      provenance,
+      occurredAt,
+      speaker,
+    );
   }
   if (role === "assistant") {
-    return mapAssistant(message ?? row, sessionId, provenance, occurredAt);
+    return mapAssistant(message ?? row, sessionId, provenance, occurredAt, speaker);
   }
 
   return [];
@@ -212,6 +230,7 @@ function mapUserOrToolResult(
   sessionId: string,
   provenance: Record<string, unknown>,
   occurredAt: string | null,
+  speaker: string | null,
 ): NewSessionEvent[] {
   const content = message.content;
   if (typeof content === "string") {
@@ -225,6 +244,7 @@ function mapUserOrToolResult(
         content: text,
         metadata: provenance,
         occurred_at: occurredAt,
+        speaker,
       }),
     ];
   }
@@ -247,6 +267,7 @@ function mapUserOrToolResult(
           content_type: looksLikeJson(result) ? "json" : "text",
           metadata: provenance,
           occurred_at: occurredAt,
+          speaker,
         }),
       );
       continue;
@@ -263,6 +284,7 @@ function mapUserOrToolResult(
         content: texts.join("\n"),
         metadata: provenance,
         occurred_at: occurredAt,
+        speaker,
       }),
     );
   }
@@ -274,6 +296,7 @@ function mapAssistant(
   sessionId: string,
   provenance: Record<string, unknown>,
   occurredAt: string | null,
+  speaker: string | null,
 ): NewSessionEvent[] {
   const content = message.content;
   if (typeof content === "string") {
@@ -287,6 +310,7 @@ function mapAssistant(
         content: text,
         metadata: provenance,
         occurred_at: occurredAt,
+        speaker,
       }),
     ];
   }
@@ -309,6 +333,7 @@ function mapAssistant(
           content_type: "json",
           metadata: provenance,
           occurred_at: occurredAt,
+          speaker,
         }),
       );
       continue;
@@ -326,6 +351,7 @@ function mapAssistant(
         content: texts.join("\n"),
         metadata: provenance,
         occurred_at: occurredAt,
+        speaker,
       }),
     );
   }
@@ -416,6 +442,7 @@ function event(opts: {
   content_type?: NewSessionEvent["content_type"];
   metadata: Record<string, unknown>;
   occurred_at?: string | null;
+  speaker?: string | null;
 }): NewSessionEvent {
   return {
     client_session_id: opts.sessionId,
@@ -425,5 +452,6 @@ function event(opts: {
     content_type: opts.content_type ?? "text",
     metadata: opts.metadata,
     occurred_at: opts.occurred_at ?? null,
+    speaker: opts.speaker ?? null,
   };
 }

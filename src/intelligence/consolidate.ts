@@ -50,6 +50,8 @@ import {
   linkFactSource,
   primaryEventForFact,
   speakerRoleOf,
+  speakerNameOf,
+  UTTERED_BY,
 } from "../db/session-facts.js";
 import {
   conversationRef,
@@ -63,6 +65,7 @@ import {
 import { createSource } from "../db/sources.js";
 import {
   findOrCreateEntity,
+  findEntity,
   getEntityById,
   linkFactEntity,
   upsertEntityEdge,
@@ -540,6 +543,7 @@ export async function consolidate(
               capture_context: captureContext,
               source_quality: sessionFact.source_quality,
               speaker_role: sessionFact.speaker_role,
+              speaker: sessionFact.speaker,
               valid_from: validFrom,
             }, {
               // Fourth clock is config-gated: simple mode (the default) never
@@ -560,6 +564,7 @@ export async function consolidate(
               capture_context: captureContext,
               source_quality: sessionFact.source_quality,
               speaker_role: sessionFact.speaker_role,
+              speaker: sessionFact.speaker,
               valid_from: validFrom,
             });
         graduatedFacts.push(graduatedFact);
@@ -620,6 +625,16 @@ export async function consolidate(
         if (isAboutTheUser(graduatedFact.content)) {
           linkFactEntity(db, graduatedFact.id, ensureSelfEntity(db).id, SUBJECT_OF);
           entitiesLinked++;
+        }
+
+        // Named speaker is source, not subject. Link only when the person
+        // already exists — do not mint an entity from a Teams display name.
+        if (sessionFact.speaker) {
+          const named = findEntity(db, sessionFact.speaker);
+          if (named) {
+            linkFactEntity(db, graduatedFact.id, named.id, UTTERED_BY);
+            entitiesLinked++;
+          }
         }
       }
 
@@ -1197,6 +1212,7 @@ async function extractFactsFromEvents(
         entities_json: item.entities ? JSON.stringify(item.entities) : null,
         source_quality: item.source_quality ?? "heuristic",
         speaker_role: speakerRoleOf(primary?.role),
+        speaker: speakerNameOf(primary?.speaker),
         // Unclaimed: a later graduate-only flush (PreCompact) picks these up.
         consolidation_id: null,
       });

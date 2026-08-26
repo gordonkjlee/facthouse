@@ -11,7 +11,9 @@ import { insertSessionFact } from "../../src/db/session-facts.js";
 import {
   primaryEventForFact,
   speakerRoleOf,
+  UTTERED_BY,
 } from "../../src/db/session-facts.js";
+import { createEntity, findEntity } from "../../src/db/entities.js";
 import { consolidate } from "../../src/intelligence/consolidate.js";
 import { createHeuristicProvider } from "../../src/intelligence/heuristic.js";
 import { DEFAULT_CONFIG } from "../../src/types/config.js";
@@ -103,9 +105,73 @@ describe("extract stamps speaker_role from the primary event", () => {
       extraction: { enabled: false } as never,
     });
     const graduated = db
-      .prepare(`SELECT speaker_role FROM facts WHERE content = ?`)
-      .get(GRAIN) as { speaker_role: string | null };
+      .prepare(`SELECT speaker_role, speaker FROM facts WHERE content = ?`)
+      .get(GRAIN) as { speaker_role: string | null; speaker: string | null };
     expect(graduated.speaker_role).toBeNull();
+    expect(graduated.speaker).toBeNull();
+  });
+
+  it("copies a named speaker from the primary event onto I and K", async () => {
+    const session = createSession(db, { source_tool: "test", project: null });
+    insertEvent(db, {
+      mcp_session_id: session.id,
+      event_type: "message",
+      role: "user",
+      content: GRAIN,
+      speaker: "Alex",
+    });
+    await consolidate(db, recording([{ content: GRAIN }]) as never, {
+      extraction: { ...DEFAULT_CONFIG.extraction, enabled: true } as never,
+    });
+    const staged = db
+      .prepare(`SELECT speaker, speaker_role FROM session_facts WHERE content = ?`)
+      .get(GRAIN) as { speaker: string | null; speaker_role: string | null };
+    expect(staged.speaker).toBe("Alex");
+    expect(staged.speaker_role).toBe("user");
+    const graduated = db
+      .prepare(`SELECT speaker, speaker_role FROM facts WHERE content = ?`)
+      .get(GRAIN) as { speaker: string | null; speaker_role: string | null };
+    expect(graduated.speaker).toBe("Alex");
+    expect(graduated.speaker_role).toBe("user");
+  });
+
+  it("does not mint an entity from a display name", async () => {
+    const session = createSession(db, { source_tool: "test", project: null });
+    insertEvent(db, {
+      mcp_session_id: session.id,
+      event_type: "message",
+      role: "user",
+      content: GRAIN,
+      speaker: "Alex",
+    });
+    await consolidate(db, recording([{ content: GRAIN }]) as never, {
+      extraction: { ...DEFAULT_CONFIG.extraction, enabled: true } as never,
+    });
+    expect(findEntity(db, "Alex")).toBeNull();
+  });
+
+  it("links uttered_by when the named speaker already exists", async () => {
+    const session = createSession(db, { source_tool: "test", project: null });
+    const person = createEntity(db, { type: "person", name: "Alex" });
+    insertEvent(db, {
+      mcp_session_id: session.id,
+      event_type: "message",
+      role: "user",
+      content: GRAIN,
+      speaker: "Alex",
+    });
+    await consolidate(db, recording([{ content: GRAIN }]) as never, {
+      extraction: { ...DEFAULT_CONFIG.extraction, enabled: true } as never,
+    });
+    const link = db
+      .prepare(
+        `SELECT fe.relationship
+           FROM fact_entities fe
+           JOIN facts f ON f.id = fe.fact_id
+          WHERE fe.entity_id = ? AND f.content = ?`,
+      )
+      .get(person.id, GRAIN) as { relationship: string };
+    expect(link.relationship).toBe(UTTERED_BY);
   });
 });
 
@@ -136,5 +202,35 @@ describe("CLI search names the speaker when known", () => {
       "bookings",
     );
     expect(out).toContain("speaker assistant");
+  });
+
+  it("prefers a named speaker over the role", () => {
+    const out = formatSearch(
+      {
+        results: [
+          {
+            fact: {
+              content: GRAIN,
+              domain: "pipeline",
+              subdomain: null,
+              confidence: 0.9,
+              speaker_role: "user",
+              speaker: "Alex",
+            },
+            score: 0.5,
+            entities: [],
+            source: null,
+          },
+        ],
+        pending: [],
+        episodes: [],
+        coverage_estimate: 1,
+        result_confidence: 1,
+        suggested_refinement: null,
+      } as unknown as SearchResponse,
+      "bookings",
+    );
+    expect(out).toContain("speaker Alex");
+    expect(out).not.toContain("speaker user");
   });
 });
