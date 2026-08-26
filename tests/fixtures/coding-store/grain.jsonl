@@ -1,0 +1,2 @@
+{"role":"user","message":{"content":[{"type":"text","text":"<user_query>\nBookings are the grain of the orders mart at Acme. The model lives in models/stg_orders.sql but that file is not the grain.\n</user_query>"}]}}
+{"role":"assistant","message":{"content":[{"type":"text","text":"Understood. I will treat bookings as the grain of the orders mart."}]}}

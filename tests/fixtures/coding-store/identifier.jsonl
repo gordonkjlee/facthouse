@@ -1,0 +1,2 @@
+{"role":"user","message":{"content":[{"type":"text","text":"<user_query>\nstg_orders is missing booked_at. That relation is not the bookings grain.\n</user_query>"}]}}
+{"role":"assistant","message":{"content":[{"type":"text","text":"I will add booked_at to stg_orders."}]}}
