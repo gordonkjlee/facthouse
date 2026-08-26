@@ -289,8 +289,8 @@ describe("pullSources", () => {
 
   it("rejects an unknown kind without inserting anything", () => {
     expect(() =>
-      pullSources(db, [{ kind: "cursor", home: path.join(root, "nope") }]),
-    ).toThrow(/Unknown source kind "cursor"/);
+      pullSources(db, [{ kind: "grok", home: path.join(root, "nope") }]),
+    ).toThrow(/Unknown source kind "grok"/);
     expect(events(db)).toHaveLength(0);
   });
 

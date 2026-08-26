@@ -8,12 +8,15 @@
  * no-op — pull is off.
  */
 
+import type { CaptureSourceKind } from "../types/config.js";
 import type { Db } from "../db/connection.js";
 import {
   discoverClaudeCodeFiles,
   ingestClaudeCodeFile,
 } from "./claude-code.js";
-import { resolveSources } from "./resolve.js";
+import { discoverCursorFiles, ingestCursorFile } from "./cursor.js";
+import type { JsonlFilePull } from "./jsonl-ingest.js";
+import { resolveSources, type ResolvedCaptureSource } from "./resolve.js";
 
 export interface PullResult {
   /** How many configured sources were resolved and walked. */
@@ -25,6 +28,22 @@ export interface PullResult {
   /** Complete lines that could not be mapped honestly (system/meta/empty). */
   events_skipped: number;
 }
+
+interface SourceAdapter {
+  discover: (source: ResolvedCaptureSource) => string[];
+  ingest: (db: Db, filePath: string) => JsonlFilePull;
+}
+
+const adapters: Record<CaptureSourceKind, SourceAdapter> = {
+  "claude-code": {
+    discover: discoverClaudeCodeFiles,
+    ingest: ingestClaudeCodeFile,
+  },
+  cursor: {
+    discover: discoverCursorFiles,
+    ingest: ingestCursorFile,
+  },
+};
 
 /**
  * A first pull of a whole Claude home can insert thousands of events.
@@ -78,10 +97,11 @@ export function pullSources(db: Db, sources: unknown): PullResult {
   };
 
   for (const source of resolved) {
-    const files = discoverClaudeCodeFiles(source);
+    const adapter = adapters[source.kind];
+    const files = adapter.discover(source);
     result.files += files.length;
     for (const file of files) {
-      const fileResult = ingestClaudeCodeFile(db, file);
+      const fileResult = adapter.ingest(db, file);
       result.events_inserted += fileResult.inserted;
       result.events_skipped += fileResult.skipped;
     }

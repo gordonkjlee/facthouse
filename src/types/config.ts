@@ -236,29 +236,39 @@ export interface EmbeddingConfig {
  * Empty `sources` (the default) means pull is off: nothing is discovered, and
  * MCP `log_event` / `capture_fact` keep working as they do today. A source is
  * explicit — `{ kind, home, cwd? }` — and scoped to this store. OpenMemory
- * does not auto-glob `~/.claude*` or honour `CLAUDE_CONFIG_DIR` as implicit
- * discovery; that variable is only useful as an example of what `home` is
- * (the Claude Code config dir).
+ * does not auto-glob `~/.claude*` / `~/.cursor*` or honour `CLAUDE_CONFIG_DIR`
+ * as implicit discovery; that variable is only useful as an example of what
+ * `home` is (the client config dir).
  *
- * This slice understands `kind: "claude-code"` only. Other clients (Grok,
- * Codex, Cursor) are later adapters.
+ * `claude-code` tails session JSONL. `cursor` tails Cursor Agent JSONL under
+ * home/projects/<group>/agent-transcripts/ only — not Composer SQLite, not
+ * `state.vscdb`. Grok and Codex remain later adapters.
  */
-export type CaptureSourceKind = "claude-code";
+export const CAPTURE_SOURCE_KINDS = ["claude-code", "cursor"] as const;
+export type CaptureSourceKind = (typeof CAPTURE_SOURCE_KINDS)[number];
+
+export function isCaptureSourceKind(value: unknown): value is CaptureSourceKind {
+  return (
+    typeof value === "string" &&
+    (CAPTURE_SOURCE_KINDS as readonly string[]).includes(value)
+  );
+}
 
 export interface CaptureSource {
-  /** Adapter to run. Only `"claude-code"` is implemented in this version. */
+  /** Adapter to run. `"claude-code"` or `"cursor"` in this version. */
   kind: CaptureSourceKind;
   /**
-   * Claude Code config dir — the directory `CLAUDE_CONFIG_DIR` would point
-   * at, e.g. `~/.claude` or `C:\\Users\\alex\\.claude`.
-   * Transcripts are read from `home/projects/<encoded-cwd>/` only.
+   * Client config dir, e.g. `~/.claude` / `C:\\Users\\alex\\.claude` for
+   * Claude Code, `~/.cursor` / `C:\\Users\\alex\\.cursor` for Cursor.
+   * Transcripts are read from `home/projects/` only.
    */
   home: string;
   /**
    * Strongly recommended. Restricts ingest to that project's transcript
-   * group (`C:\\dev\\app` encodes as `C--dev-app`). A bare
-   * `home` walks every project group under `projects/` — a first pull of a
-   * shared Claude home can be thousands of files.
+   * group. Encodings differ by client: Claude Code turns `C:\\dev\\app`
+   * into `C--dev-app`; Cursor into `c-dev-app`. A bare `home` walks every
+   * project group under `projects/` — a first pull of a shared home can be
+   * thousands of files.
    */
   cwd?: string;
 }
