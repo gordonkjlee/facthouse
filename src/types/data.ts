@@ -85,7 +85,14 @@ export interface SessionEvent {
   /** URI or path for non-text content. Reference, not embed. */
   content_ref: string | null;
   metadata: Record<string, unknown> | null;
+  /** When OpenMemory wrote this row. */
   created_at: string;
+  /**
+   * When the turn was said, if the source recorded it (Claude Code JSONL
+   * `timestamp`). Null when unknown — hook `log-event` has no transcript clock,
+   * and a line without a usable timestamp is not filled in from ingest time.
+   */
+  occurred_at: string | null;
 }
 
 /**

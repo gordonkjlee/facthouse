@@ -24,6 +24,62 @@ describe("mapTranscriptLine", () => {
     expect(events[0].event_type).toBe("message");
     expect(events[0].content).toContain("dark mode");
     expect(events[0].client_session_id).toBe("sess-payload");
+    expect(events[0].occurred_at).toBeNull();
+  });
+
+  it("maps the JSONL timestamp as occurred_at, not ingest time", () => {
+    const events = mapTranscriptLine(
+      JSON.stringify({
+        type: "user",
+        sessionId: "sess-payload",
+        timestamp: "2024-11-14T23:57:23.004Z",
+        message: { role: "user", content: "The demo store prefers dark mode." },
+      }),
+      "sess-filename",
+      "/tmp/sess-filename.jsonl",
+      1,
+    );
+    expect(events).toHaveLength(1);
+    expect(events[0].occurred_at).toBe("2024-11-14T23:57:23.004Z");
+  });
+
+  it("copies the line timestamp onto every event split from that line", () => {
+    const events = mapTranscriptLine(
+      JSON.stringify({
+        type: "assistant",
+        sessionId: "sess-aaa",
+        timestamp: "2025-01-02T03:04:05.000Z",
+        message: {
+          role: "assistant",
+          content: [
+            { type: "text", text: "I will remember the dark mode preference." },
+            { type: "tool_use", id: "toolu_1", name: "Read", input: { path: "config.json" } },
+          ],
+        },
+      }),
+      "sess-aaa",
+      "/tmp/sess-aaa.jsonl",
+      2,
+    );
+    expect(events).toHaveLength(2);
+    expect(events.every((e) => e.occurred_at === "2025-01-02T03:04:05.000Z")).toBe(
+      true,
+    );
+  });
+
+  it("ignores a JSONL timestamp that is not an ISO instant", () => {
+    const events = mapTranscriptLine(
+      JSON.stringify({
+        type: "user",
+        sessionId: "sess-payload",
+        timestamp: "this afternoon",
+        message: { role: "user", content: "The demo store prefers dark mode." },
+      }),
+      "sess-filename",
+      "/tmp/sess-filename.jsonl",
+      1,
+    );
+    expect(events[0].occurred_at).toBeNull();
   });
 
   it("maps a tool_result nested in a user turn as role:tool, not role:user", () => {

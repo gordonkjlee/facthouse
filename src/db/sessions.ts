@@ -26,6 +26,11 @@ export interface NewSessionEvent {
   content: string | null;
   content_ref?: string | null;
   metadata?: Record<string, unknown> | null;
+  /**
+   * When the turn was said, if the source recorded it. Omit or null when
+   * unknown — do not copy ingest time here.
+   */
+  occurred_at?: string | null;
 }
 
 export interface GetEventsOpts {
@@ -177,6 +182,7 @@ export function insertEvent(
   const contentType = event.content_type ?? "text";
   const contentRef = event.content_ref ?? null;
   const metadata = event.metadata ? JSON.stringify(event.metadata) : null;
+  const occurredAt = event.occurred_at || null;
 
   const result = withTransaction(db, () => {
     const seqRow = db
@@ -190,8 +196,8 @@ export function insertEvent(
     db.prepare(
       `INSERT INTO session_events
          (id, mcp_session_id, client_session_id, sequence, event_type, role,
-          content_type, content, content_ref, metadata, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          content_type, content, content_ref, metadata, created_at, occurred_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(
       id,
       mcpSessionId,
@@ -204,6 +210,7 @@ export function insertEvent(
       contentRef,
       metadata,
       now,
+      occurredAt,
     );
 
     if (mcpSessionId) {
@@ -224,6 +231,7 @@ export function insertEvent(
       content_ref: contentRef,
       metadata: event.metadata ?? null,
       created_at: now,
+      occurred_at: occurredAt,
     } satisfies SessionEvent;
   });
 

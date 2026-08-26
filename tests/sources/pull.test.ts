@@ -150,6 +150,33 @@ describe("pullSources", () => {
     expect(session.project).toBe(group);
   });
 
+  it("records the JSONL timestamp as occurred_at, distinct from ingest created_at", () => {
+    const home = path.join(root, "claude-home");
+    const group = encodeProjectDir("C:\\dev\\app");
+    const file = path.join(home, "projects", group, "sess-time.jsonl");
+    const said = "2024-11-14T23:57:23.004Z";
+    writeJsonl(file, [
+      JSON.stringify({
+        type: "user",
+        sessionId: "sess-time",
+        timestamp: said,
+        message: { role: "user", content: "Remember the demo store prefers dark mode." },
+      }),
+    ]);
+
+    const before = new Date().toISOString();
+    pullSources(db, [{ kind: "claude-code", home }]);
+    const row = db
+      .prepare(
+        `SELECT occurred_at, created_at FROM session_events WHERE client_session_id = ?`,
+      )
+      .get("sess-time") as { occurred_at: string | null; created_at: string };
+
+    expect(row.occurred_at).toBe(said);
+    expect(row.created_at >= before).toBe(true);
+    expect(row.created_at).not.toBe(said);
+  });
+
   it("a second pull of the same file is a no-op", () => {
     const home = path.join(root, "claude-home");
     const file = path.join(

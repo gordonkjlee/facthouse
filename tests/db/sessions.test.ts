@@ -30,12 +30,12 @@ afterEach(() => {
 
 describe("schema", () => {
   it("applies current version", () => {
-    expect(getSchemaVersion(db)).toBe(13);
+    expect(getSchemaVersion(db)).toBe(14);
   });
 
   it("is idempotent", () => {
     applySchema(db); // second call
-    expect(getSchemaVersion(db)).toBe(13);
+    expect(getSchemaVersion(db)).toBe(14);
   });
 });
 
@@ -212,6 +212,23 @@ describe("session events", () => {
     });
 
     expect(event.content_type).toBe("text");
+    expect(event.occurred_at).toBeNull();
+  });
+
+  it("stores occurred_at when given and leaves it null when omitted", () => {
+    const said = "2024-06-01T12:00:00.000Z";
+    const withTime = insertEvent(db, {
+      mcp_session_id: sessionId,
+      event_type: "message",
+      role: "user",
+      content: "from the transcript",
+      occurred_at: said,
+    });
+    expect(withTime.occurred_at).toBe(said);
+    expect(withTime.created_at).not.toBe(said);
+
+    const retrieved = getEvents(db, sessionId);
+    expect(retrieved[0].occurred_at).toBe(said);
   });
 
   it("stores and retrieves content_ref for non-text events", () => {

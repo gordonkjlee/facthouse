@@ -254,7 +254,7 @@ The server side of this is covered by tests that spawn the real binary twice aga
 
 For Claude Code, the D-layer is **pull**. You name a source; transcripts land in `session_events`; consolidation graduates facts from those events. The model does not have to call `capture_fact` for a conversation to be remembered.
 
-1. **Pull** — A named `sources` entry (`kind: "claude-code"`, `home`, and `cwd` — set it) is tailed into `session_events` by `openmemory pull` from the CLI (first backfill) or by the MCP server at session start. Empty `sources` means pull is off. A Stop hook may pull later, once that first backfill has run.
+1. **Pull** — A named `sources` entry (`kind: "claude-code"`, `home`, and `cwd` — set it) is tailed into `session_events` by `openmemory pull` from the CLI (first backfill) or by the MCP server at session start. Empty `sources` means pull is off. A Stop hook may pull later, once that first backfill has run. When a transcript line carries a timestamp, that is stored as when the turn was said, separately from when OpenMemory ingested it. Lines without one, and hook `log-event`, leave that clock empty rather than copying ingest time.
 
 2. **Batch consolidation** — Two speeds. Pull and Stop **extract** self-contained facts from new transcript lines when the threshold is due. PreCompact **flush** (and shutdown) **graduates** those pending facts: classifying domains, extracting and typing entities (people, organisations, projects, places — whatever the conversation is about), detecting duplicates and contradictions, and building a knowledge graph. `openmemory consolidate` and the MCP `consolidate` tool still run both steps.
 
