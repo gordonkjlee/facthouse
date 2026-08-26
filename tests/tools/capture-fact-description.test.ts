@@ -6,6 +6,7 @@ import {
   captureFactDescription,
   storeHasNamedSources,
 } from "../../src/tools/capture-fact-description.js";
+import { DURABLE_FACT } from "../../src/intelligence/extract-prompt.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const src = (rel: string) =>
@@ -35,8 +36,11 @@ describe("captureFactDescription", () => {
   it("tells an empty-sources store to capture proactively", () => {
     const text = captureFactDescription([]);
     expect(text).toMatch(/proactively whenever you learn/i);
+    expect(text).toContain(DURABLE_FACT);
     expect(text).toMatch(/Capture is fast/);
     expect(text).toMatch(/Capture frequently/);
+    expect(text).not.toMatch(/medical information/i);
+    expect(text).not.toMatch(/personal details/i);
     expect(text.length).toBeGreaterThanOrEqual(120);
   });
 
@@ -44,9 +48,11 @@ describe("captureFactDescription", () => {
     const text = captureFactDescription(PULL_SOURCES);
     expect(text).toMatch(/when you need to correct/i);
     expect(text).toMatch(/rather than whenever you learn/i);
+    expect(text).toContain(DURABLE_FACT);
     expect(text).not.toMatch(/proactively/i);
     expect(text).not.toMatch(/Capture frequently/);
     expect(text).toMatch(/Capture is fast/);
+    expect(text).not.toMatch(/medical information/i);
     expect(text.length).toBeGreaterThanOrEqual(120);
   });
 
@@ -86,5 +92,12 @@ describe("README instruction layer for capture and identity", () => {
     // The tool description is generated. A pasted copy in the README is a
     // second definition that will drift the moment either side changes.
     expect(README).not.toMatch(/proactively whenever you learn/i);
+  });
+
+  it("does not tell clients to search only personal categories", () => {
+    expect(README).not.toMatch(
+      /questions about preferences, people, or history/i,
+    );
+    expect(README).not.toMatch(/benefit from personal context/i);
   });
 });

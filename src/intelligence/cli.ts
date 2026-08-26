@@ -37,6 +37,7 @@ import { domainRoutingInstruction, normaliseDomainName } from "../schemas/domain
 import type { DomainDef } from "../types/config.js";
 import {
   EXTRACT_CONTEXT_CONTRACT,
+  EXTRACT_DURABLE_JOB,
   SUBJECT_MARKING_CONTRACT,
   extractEventPayload,
   extractTodayUtcDate,
@@ -638,12 +639,8 @@ export function createCliProvider(
         confidence?: number;
       }>(
         "stage-1-extract",
-        "You extract durable facts from conversation events — facts worth " +
-          "remembering across future sessions. A durable fact is a stable piece " +
-          "of knowledge about whatever this store is used for: its subjects, " +
-          "their attributes, their relationships, decisions, and context. " +
-          "Ignore ephemeral statements (current tasks, transient mood). " +
-          "Each fact must be a complete, self-contained sentence — rewrite from the source as needed. " +
+        EXTRACT_DURABLE_JOB +
+          " " +
           `${domainRoutingInstruction(vocabulary)} ` +
           "optional subdomain, confidence 0-1, importance 0-1, and any named " +
           "things mentioned (people, organisations, places, projects, products, " +

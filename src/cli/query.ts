@@ -4,7 +4,7 @@
  * Both are thin renderers over the same functions the MCP tools use
  * (`hybridSearch`, `getStats`), so what you see on the command line is exactly
  * what an AI client would see. They are the answer to "what does it actually
- * know about me?" without wiring up a client.
+ * know?" without wiring up a client.
  *
  * Default output is human-readable; `--json` emits the raw tool payload for
  * scripting.
