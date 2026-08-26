@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, rmSync, existsSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -61,6 +61,19 @@ describe("initDataDir", () => {
     // Pull is off until the user names a source. The empty list must be
     // written so the knob is discoverable rather than invisible.
     expect(written.sources).toEqual([]);
+    expect(written.storage.provider).toBe("sqlite");
+  });
+
+  it("refuses postgres before creating memory.db", () => {
+    const dataDir = path.join(root, "pg");
+    mkdirSync(dataDir, { recursive: true });
+    writeFileSync(
+      path.join(dataDir, CONFIG_FILENAME),
+      JSON.stringify({ storage: { provider: "postgres" } }),
+    );
+    expect(() => initDataDir({ dataDir })).toThrow(/postgres/);
+    expect(() => initDataDir({ dataDir })).toThrow(/SQLite was not opened/);
+    expect(existsSync(path.join(dataDir, "memory.db"))).toBe(false);
   });
 
   it("is idempotent — a second run preserves an edited config", () => {

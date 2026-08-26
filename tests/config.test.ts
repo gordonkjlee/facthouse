@@ -2,7 +2,18 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { loadConfig, ensureBitemporalSince, SYSTEM_TIME_INCOMPLETE_WARNING, systemTimeWarning } from "../src/config.js";
+import {
+  loadConfig,
+  loadShippedStoreConfig,
+  configuredStorageProvider,
+  assertShippedStorage,
+  unshippedStorageMessage,
+  SHIPPED_STORAGE_PROVIDER,
+  defaultServerConfig,
+  ensureBitemporalSince,
+  SYSTEM_TIME_INCOMPLETE_WARNING,
+  systemTimeWarning,
+} from "../src/config.js";
 
 let dir: string;
 
@@ -16,6 +27,65 @@ afterEach(() => {
   } catch {
     /* best effort */
   }
+});
+
+describe("storage provider", () => {
+  it("defaults to sqlite", () => {
+    expect(configuredStorageProvider(defaultServerConfig(), {})).toBe(
+      SHIPPED_STORAGE_PROVIDER,
+    );
+    expect(loadConfig(dir).storage.provider).toBe("sqlite");
+  });
+
+  it("reads storage.provider from config.json", () => {
+    writeFileSync(
+      path.join(dir, "config.json"),
+      JSON.stringify({ storage: { provider: "postgres" } }),
+    );
+    expect(configuredStorageProvider(loadConfig(dir), {})).toBe("postgres");
+  });
+
+  it("treats a string storage value as the provider", () => {
+    writeFileSync(
+      path.join(dir, "config.json"),
+      JSON.stringify({ storage: "postgres" }),
+    );
+    expect(configuredStorageProvider(loadConfig(dir), {})).toBe("postgres");
+    expect(() => loadShippedStoreConfig(dir)).toThrow(/postgres/);
+  });
+
+  it("lets OPENMEMORY_STORAGE override config.json", () => {
+    writeFileSync(
+      path.join(dir, "config.json"),
+      JSON.stringify({ storage: { provider: "sqlite" } }),
+    );
+    expect(
+      configuredStorageProvider(loadConfig(dir), { OPENMEMORY_STORAGE: "postgres" }),
+    ).toBe("postgres");
+  });
+
+  it("accepts sqlite and refuses anything else", () => {
+    expect(() => assertShippedStorage("sqlite")).not.toThrow();
+    expect(() => assertShippedStorage("postgres")).toThrow(
+      unshippedStorageMessage("postgres"),
+    );
+    expect(() => assertShippedStorage("turso")).toThrow(
+      unshippedStorageMessage("turso"),
+    );
+    expect(unshippedStorageMessage("postgres")).toMatch(/SQLite was not opened/);
+    expect(unshippedStorageMessage("postgres")).toMatch(/engine swap/);
+  });
+
+  it("does not create memory.db when postgres is requested", () => {
+    writeFileSync(
+      path.join(dir, "config.json"),
+      JSON.stringify({ storage: { provider: "postgres" } }),
+    );
+    expect(() => loadShippedStoreConfig(dir)).toThrow(
+      unshippedStorageMessage("postgres"),
+    );
+    expect(existsSync(path.join(dir, "memory.db"))).toBe(false);
+  });
 });
 
 describe("config loader", () => {

@@ -32,7 +32,12 @@ import type { IntelligenceProvider } from "../intelligence/types.js";
 import type { EmbeddingProvider } from "../embedding/types.js";
 import { DEFAULT_CONFIG, type ServerConfig } from "../types/config.js";
 import type { SessionEvent } from "../types/data.js";
-import { loadConfig, ensureBitemporalSince, systemTimeWarning } from "../config.js";
+import {
+  loadConfig,
+  loadShippedStoreConfig,
+  ensureBitemporalSince,
+  systemTimeWarning,
+} from "../config.js";
 import { parseSystemTime } from "../db/facts.js";
 import { sendSchedulerSignal, type SignalKind } from "../ipc/scheduler-ipc.js";
 import { pullSources, shouldTickAfterCliPull } from "../sources/pull.js";
@@ -222,6 +227,7 @@ async function withDbAsync<T>(
   dataDir: string,
   fn: (db: ReturnType<typeof openDatabase>) => Promise<T>,
 ): Promise<T> {
+  loadShippedStoreConfig(dataDir);
   if (!existsSync(path.join(dataDir, "memory.db"))) {
     console.error(
       `No database at ${dataDir}. Run 'openmemory init ${dataDir}' first, ` +
@@ -244,6 +250,7 @@ async function withDbAsync<T>(
  * than surfacing a raw SQLite error.
  */
 function withDb<T>(dataDir: string, fn: (db: ReturnType<typeof openDatabase>) => T): T {
+  loadShippedStoreConfig(dataDir);
   if (!existsSync(path.join(dataDir, "memory.db"))) {
     console.error(
       `No database at ${dataDir}. Run 'openmemory init ${dataDir}' first, ` +
@@ -552,6 +559,7 @@ export async function consolidateInProcess(
   embedding: EmbeddingProvider | null = null,
   phase: ConsolidatePhase = "full",
 ): Promise<void> {
+  loadShippedStoreConfig(dataDir);
   const dbPath = path.join(dataDir, "memory.db");
   const db = openDatabase(dbPath);
 

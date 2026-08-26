@@ -7,6 +7,7 @@ import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { openDatabase, closeDatabase } from "../db/connection.js";
 import { applySchema } from "../db/schema.js";
+import { loadShippedStoreConfig } from "../config.js";
 import {
   insertEvent,
   getLatestSession,
@@ -56,6 +57,7 @@ export interface LogEventArgs {
  * nobody sees it.
  */
 export async function logEvent(args: LogEventArgs): Promise<SessionEvent> {
+  loadShippedStoreConfig(args.dataDir);
   mkdirSync(args.dataDir, { recursive: true });
   const dbPath = path.join(args.dataDir, "memory.db");
   const db = openDatabase(dbPath);

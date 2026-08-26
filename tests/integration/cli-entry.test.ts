@@ -21,6 +21,9 @@ import { fileURLToPath } from "node:url";
 const CLI = path.resolve(
   fileURLToPath(new URL("../../dist/cli/index.js", import.meta.url)),
 );
+const SERVER = path.resolve(
+  fileURLToPath(new URL("../../dist/index.js", import.meta.url)),
+);
 
 
 // The CLI must be built to spawn it; sqlite itself is built into Node.
@@ -35,6 +38,7 @@ function run(args: string[], extraEnv: Record<string, string> = {}) {
   const env: Record<string, string | undefined> = { ...process.env };
   delete env.OPENMEMORY_DATA;
   delete env.OPENMEMORY_SUBPROCESS;
+  delete env.OPENMEMORY_STORAGE;
   // Default to the provider that costs nothing to report on. `init` probes for
   // the claude CLI when `cli` is selected, and that probe spawns subprocesses —
   // seconds per run, on a machine that may or may not have the CLI installed.
@@ -116,6 +120,56 @@ describe.skipIf(!runnable)("cli entry — init argument precedence", () => {
     const r = run(["init", target]);
     expect(r.status).toBe(1);
     expect(r.stderr).toMatch(/Failed to initialise/i);
+  });
+
+  it("refuses postgres instead of creating a sqlite file", () => {
+    const dir = path.join(root, "pg-init");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(
+      path.join(dir, "config.json"),
+      JSON.stringify({ storage: { provider: "postgres" } }),
+    );
+    const r = run(["init", dir]);
+    expect(r.status).toBe(1);
+    expect(r.stderr).toMatch(/postgres/);
+    expect(r.stderr).toMatch(/SQLite was not opened/);
+    expect(existsSync(path.join(dir, "memory.db"))).toBe(false);
+  });
+
+  it("refuses OPENMEMORY_STORAGE=postgres even when config says sqlite", () => {
+    const dir = path.join(root, "pg-env");
+    const init = run(["init", dir]);
+    expect(init.status).toBe(0);
+    expect(existsSync(path.join(dir, "memory.db"))).toBe(true);
+    const r = run(["search", "bookings", "--data", dir], {
+      OPENMEMORY_STORAGE: "postgres",
+    });
+    expect(r.status).toBe(1);
+    expect(r.stderr).toMatch(/postgres/);
+    expect(r.stderr).toMatch(/SQLite was not opened/);
+  });
+
+  it("MCP server refuses postgres before creating memory.db", () => {
+    const dir = path.join(root, "pg-server");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(
+      path.join(dir, "config.json"),
+      JSON.stringify({ storage: { provider: "postgres" } }),
+    );
+    const env: Record<string, string | undefined> = { ...process.env };
+    delete env.OPENMEMORY_DATA;
+    delete env.OPENMEMORY_SUBPROCESS;
+    delete env.OPENMEMORY_STORAGE;
+    env.OPENMEMORY_PROVIDER = "heuristic";
+    const r = spawnSync(process.execPath, [SERVER, "--data", dir], {
+      encoding: "utf-8",
+      env: env as NodeJS.ProcessEnv,
+      timeout: 8_000,
+    });
+    expect(r.status).toBe(1);
+    expect(r.stderr).toMatch(/postgres/);
+    expect(r.stderr).toMatch(/SQLite was not opened/);
+    expect(existsSync(path.join(dir, "memory.db"))).toBe(false);
   });
 });
 

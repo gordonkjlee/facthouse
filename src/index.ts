@@ -25,7 +25,7 @@ import { registerReadTools } from "./tools/read-tools.js";
 import { registerInferenceTools } from "./tools/inferences.js";
 import { registerResources, SESSION_BOOTSTRAP_INSTRUCTIONS } from "./tools/resources.js";
 import { startScheduler, type Scheduler } from "./scheduler.js";
-import { loadConfig, ensureBitemporalSince } from "./config.js";
+import { loadShippedStoreConfig, ensureBitemporalSince } from "./config.js";
 import { startSchedulerListener, type SchedulerListener } from "./ipc/scheduler-ipc.js";
 import { pullSources, shouldFlushAfterSessionStartPull } from "./sources/pull.js";
 
@@ -52,6 +52,17 @@ const dataDir = rawDataDir.startsWith("~/")
     ? homedir()
     : rawDataDir;
 mkdirSync(dataDir, { recursive: true });
+
+// Storage check before SQLite. A postgres (or unknown) request must not
+// create or open memory.db. Print the message and exit rather than dumping
+// a stack into the MCP stdio stream.
+let loadedConfig;
+try {
+  loadedConfig = loadShippedStoreConfig(dataDir);
+} catch (err) {
+  console.error(err instanceof Error ? err.message : String(err));
+  process.exit(1);
+}
 
 // ---------------------------------------------------------------------------
 // Database
@@ -94,10 +105,9 @@ const sessionManager = createSessionManager(db, clientSessionId);
 sessionManager.registerTools(server);
 registerSessionReadTools(server, sessionManager, db);
 
-// Load config (reads <dataDir>/config.json if present, otherwise defaults).
 // A store that has just switched to bi-temporal mode gets `bitemporal_since`
 // stamped here — historical supersessions cannot be backfilled.
-const config = ensureBitemporalSince(dataDir, loadConfig(dataDir));
+const config = ensureBitemporalSince(dataDir, loadedConfig);
 const triggers = new Set(config.consolidation.triggers);
 
 // Provider selector — heuristic is always the terminal fallback. Defaults to

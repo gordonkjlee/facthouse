@@ -281,6 +281,11 @@ export interface CaptureSource {
 
 /** Top-level server configuration (loaded from config.json in data dir). */
 export interface ServerConfig {
+  /**
+   * Transactional engine. sqlite is the only shipped value. A request for
+   * postgres (config or OPENMEMORY_STORAGE) is refused — it is an engine swap,
+   * not a connection string, and must not silently open SQLite.
+   */
   storage: {
     provider: "sqlite";
     sqlite?: { path: string };
