@@ -569,14 +569,16 @@ npm run build
 npm test
 ```
 
-`npm test` always runs a hermetic first-fact pipeline (fixture JSONL → pull →
-extract → search) with a recording extractor, and skips two live evals that
-need a real model:
+`npm test` always runs hermetic pipelines (fixture JSONL → pull → extract →
+search) with a recording extractor, and skips live evals that need a real
+model:
 
 - Semantic recall needs Ollama with `nomic-embed-text`. Start it, then
   `npm run test:semantic`.
 - The live first-fact eval needs the `claude` CLI, the same path as Quick
   Start. Run `npm run test:first-fact`.
+- The live coding-store eval (warehouse-shaped Cursor transcripts) also
+  needs the `claude` CLI. Run `npm run test:coding-store`.
 
 Each of those scripts fails rather than skips when its dependency is missing,
 so a green run means the claim was actually verified rather than quietly

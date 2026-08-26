@@ -1,0 +1,2 @@
+{"role":"assistant","message":{"content":[{"type":"text","text":"Bookings are the grain of the orders mart at Acme. We should model it that way."}]}}
+{"role":"user","message":{"content":[{"type":"text","text":"<user_query>\nYes, use that grain going forward.\n</user_query>"}]}}
