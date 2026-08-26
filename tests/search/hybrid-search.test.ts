@@ -283,3 +283,41 @@ describe("hybridSearch surfaces the entity graph", () => {
     expect(result.entities).toEqual([]);
   });
 });
+
+describe("hybridSearch as-of system time", () => {
+  function waitUntilAfter(iso: string): void {
+    while (new Date().toISOString() <= iso) {
+      /* millisecond clock */
+    }
+  }
+
+  it("returns the superseded fact at the earlier instant and the replacement now", () => {
+    const old = dbMod.insertFact(db, {
+      content: "User lives in Lisbon",
+      domain: "profile",
+      source_type: "conversation",
+    });
+    waitUntilAfter(old.created_at);
+    const replacement = dbMod.supersedeFact(
+      db,
+      old.id,
+      {
+        content: "User lives in Manchester",
+        domain: "profile",
+        source_type: "conversation",
+      },
+      { retireSystemTime: true },
+    );
+
+    const now = searchMod.hybridSearch(db, "lives");
+    expect(now.results.map((r) => r.fact.id)).toEqual([replacement.id]);
+    expect(now.pending).toEqual([]);
+
+    const then = searchMod.hybridSearch(db, "lives", {
+      asOfSystemTime: old.created_at,
+    });
+    expect(then.results.map((r) => r.fact.id)).toEqual([old.id]);
+    expect(then.pending).toEqual([]);
+    expect(then.episodes).toEqual([]);
+  });
+});

@@ -271,7 +271,7 @@ The result is a structured, evolving knowledge graph that any AI tool can query 
 - **Entity graph** — Whatever the conversation is about — people, organisations, projects, places, products — extracted, typed and linked automatically. Relationship strength tracks corroboration.
 - **Hybrid search** — BM25 keyword + structured domain + entity-graph paths, merged via Reciprocal Rank Fusion with temporal decay. Add an embedding provider and semantic similarity joins the merge as a fourth path: it ranks, it does not gate, so a fact with no embedding is still found by its words. When no graduated fact matches, a short raw-log window around a keyword hit is returned separately as `episodes` — not knowledge, not mixed into `results`.
 - **In-session memory** — `get_session_context` returns the working briefing (same markdown as `memory://briefing`) plus facts captured this session, even before consolidation. Tools-only clients are told to call it at session start.
-- **Immutable history** — Facts are never deleted, only superseded. Full history preserved.
+- **Immutable history** — Facts are never deleted, only superseded. The default records when a fact was learned and when it was true. Set `temporal.mode` to `bitemporal` to also record when the system retracted a belief, so search can answer what the store believed at an instant.
 - **Source traceability** — Every fact links back to the conversation events that produced it.
 - **Manual consolidation** — Call `consolidate` at natural breakpoints (topic change, task completion, pre-compaction). No reliance on session boundaries.
 - **One directory, one brain** — Work and personal are two `OPENMEMORY_DATA` directories and two MCP server names. Isolation is the directory, not a column.

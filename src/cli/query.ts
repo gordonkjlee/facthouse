@@ -25,6 +25,8 @@ export interface SearchArgs {
   query: string;
   domain?: string;
   limit?: number;
+  /** ISO 8601 instant; already parsed. Bi-temporal as-of-system-time read. */
+  asOfSystemTime?: string;
 }
 
 /** Run a hybrid search — the same call `search_knowledge` makes. */
@@ -40,6 +42,7 @@ export async function runSearch(
   return searchWithProvider(db, args.query, embedding, {
     domain: args.domain,
     limit: args.limit,
+    asOfSystemTime: args.asOfSystemTime,
     tuning,
   });
 }
@@ -49,11 +52,18 @@ export function formatSearch(response: SearchResponse, query: string): string {
   if (response.results.length === 0) {
     const episodes = response.episodes ?? [];
     if (episodes.length > 0) {
-      return formatEpisodes(query, episodes, response.suggested_refinement);
+      return formatEpisodes(
+        query,
+        episodes,
+        response.suggested_refinement,
+        response.system_time_warning,
+      );
     }
-    const hint = response.suggested_refinement
-      ? `\n\n${response.suggested_refinement}`
-      : "";
+    const extras = [
+      response.suggested_refinement,
+      response.system_time_warning,
+    ].filter(Boolean);
+    const hint = extras.length > 0 ? `\n\n${extras.join("\n")}` : "";
     return `No knowledge found for "${query}".${hint}`;
   }
 
@@ -88,6 +98,9 @@ export function formatSearch(response: SearchResponse, query: string): string {
   if (response.suggested_refinement) {
     lines.push(`  ${response.suggested_refinement}`);
   }
+  if (response.system_time_warning) {
+    lines.push(`  ${response.system_time_warning}`);
+  }
 
   return lines.join("\n");
 }
@@ -96,6 +109,7 @@ function formatEpisodes(
   query: string,
   episodes: EpisodeSlice[],
   refinement: string | null,
+  systemTimeWarning?: string | null,
 ): string {
   const lines: string[] = [
     `No graduated facts for "${query}". Raw log window:`,
@@ -111,6 +125,7 @@ function formatEpisodes(
     lines.push("");
   }
   if (refinement) lines.push(`  ${refinement}`);
+  if (systemTimeWarning) lines.push(`  ${systemTimeWarning}`);
   return lines.join("\n");
 }
 

@@ -32,7 +32,8 @@ import type { IntelligenceProvider } from "../intelligence/types.js";
 import type { EmbeddingProvider } from "../embedding/types.js";
 import { DEFAULT_CONFIG, type ServerConfig } from "../types/config.js";
 import type { SessionEvent } from "../types/data.js";
-import { loadConfig } from "../config.js";
+import { loadConfig, ensureBitemporalSince, systemTimeWarning } from "../config.js";
+import { parseSystemTime } from "../db/facts.js";
 import { sendSchedulerSignal, type SignalKind } from "../ipc/scheduler-ipc.js";
 import { pullSources, shouldTickAfterCliPull } from "../sources/pull.js";
 
@@ -266,6 +267,7 @@ async function runSearchCmd() {
       data: { type: "string", default: process.env.OPENMEMORY_DATA ?? DEFAULT_DATA_DIR },
       domain: { type: "string" },
       limit: { type: "string" },
+      "as-of-system": { type: "string" },
       json: { type: "boolean", default: false },
     },
     allowPositionals: true,
@@ -275,7 +277,7 @@ async function runSearchCmd() {
   const query = positionals.join(" ").trim();
   if (!query) {
     console.error(
-      `Usage: openmemory search <query> [--domain <d>] [--limit <n>] [--json]`,
+      `Usage: openmemory search <query> [--domain <d>] [--limit <n>] [--as-of-system <t>] [--json]`,
     );
     process.exit(1);
   }
@@ -287,17 +289,39 @@ async function runSearchCmd() {
   }
 
   const dataDir = path.resolve(resolveTilde(values.data as string));
+  const config = ensureBitemporalSince(dataDir, loadConfig(dataDir));
+  const rawAsOf = values["as-of-system"] as string | undefined;
+  if (rawAsOf && config.temporal.mode !== "bitemporal") {
+    console.error(
+      `as-of system time needs temporal.mode "bitemporal" in config.json. ` +
+        `The default simple mode does not record when the system retracted a belief.`,
+    );
+    process.exit(1);
+  }
+  let asOfSystemTime: string | undefined;
+  if (rawAsOf) {
+    try {
+      asOfSystemTime = parseSystemTime(rawAsOf);
+    } catch (err: unknown) {
+      console.error(errorMessage(err));
+      process.exit(1);
+    }
+  }
   // Semantic recall if this store configured it. Reported when configured but
   // unusable, rather than silently searching keyword-only — from the command
   // line there is a person to tell.
-  const config = loadConfig(dataDir);
   const embedding = createEmbeddingProvider(config.embedding, {
     onUnavailable: (reason) => console.error(`[openmemory] ${reason}`),
   });
   const response = await withDbAsync(dataDir, (db) =>
     runSearch(
       db,
-      { query, domain: values.domain as string | undefined, limit },
+      {
+        query,
+        domain: values.domain as string | undefined,
+        limit,
+        asOfSystemTime,
+      },
       embedding,
       {
         minSimilarityRatio: config.embedding?.min_similarity_ratio,
@@ -305,6 +329,12 @@ async function runSearchCmd() {
       },
     ),
   );
+  if (asOfSystemTime) {
+    response.system_time_warning = systemTimeWarning(
+      asOfSystemTime,
+      config.temporal.bitemporal_since,
+    );
+  }
 
   console.log(
     values.json ? JSON.stringify(response, null, 2) : formatSearch(response, query),
@@ -460,7 +490,7 @@ async function runSignal() {
     await consolidateInProcess(
       dataDir,
       createHeuristicProvider(),
-      DEFAULT_CONFIG,
+      loadConfig(dataDir),
       null,
       "graduate",
     );
@@ -486,7 +516,7 @@ async function runConsolidate() {
   // selection degrades to heuristic; `cli` spawns `claude -p` directly. The
   // OPENMEMORY_SUBPROCESS guard at the top of main() prevents recursion when
   // this runs inside a provider subprocess.
-  const config = loadConfig(dataDir);
+  const config = ensureBitemporalSince(dataDir, loadConfig(dataDir));
   if (resolveProviderType(config.intelligence.provider) === "heuristic") {
     console.error(
       "[openmemory] intelligence.provider is heuristic — it does not extract " +

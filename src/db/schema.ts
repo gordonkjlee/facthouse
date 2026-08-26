@@ -229,9 +229,10 @@ function applyV4(db: Db): void {
     -- FTS5 external content sync triggers.
     -- Only INSERT and DELETE are needed: facts are immutable so the
     -- FTS5-indexed columns (content, domain, subdomain) are never UPDATEd.
-    -- supersedeFact only updates status/is_latest/valid_until, which are not
-    -- in the FTS5 index. DELETE trigger is a safety net — facts are never
-    -- deleted in normal operation, but if one were, FTS5 must stay in sync.
+    -- supersedeFact only updates status/is_latest/valid_until (and, in
+    -- bi-temporal mode, system_retired_at), which are not in the FTS5 index.
+    -- DELETE trigger is a safety net — facts are never deleted in normal
+    -- operation, but if one were, FTS5 must stay in sync.
     CREATE TRIGGER IF NOT EXISTS facts_ai AFTER INSERT ON facts BEGIN
       INSERT INTO facts_fts(rowid, content, domain, subdomain)
       VALUES (new.rowid, new.content, new.domain, new.subdomain);

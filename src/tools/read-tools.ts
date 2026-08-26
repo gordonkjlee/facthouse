@@ -9,9 +9,11 @@ import { hybridSearch, searchWithProvider } from "../search/index.js";
 import type { VectorSearchOpts } from "../search/vector.js";
 import type { EmbeddingProvider } from "../embedding/types.js";
 import { findEntity, getEntityEdges } from "../db/entities.js";
-import { getFactsByEntity } from "../db/facts.js";
+import { getFactsByEntity, parseSystemTime } from "../db/facts.js";
 import { getDomains } from "../db/domains.js";
 import { getStats } from "../db/stats.js";
+import type { TemporalConfig } from "../types/config.js";
+import { systemTimeWarning } from "../config.js";
 
 // ---------------------------------------------------------------------------
 // Registration
@@ -24,57 +26,104 @@ export function registerReadTools(
   embedding: EmbeddingProvider | null = null,
   /** How much of the semantic ranking survives. Store-configured. */
   tuning?: VectorSearchOpts,
+  /**
+   * Temporal mode. Bi-temporal exposes `as_of_system_time` on search;
+   * simple (the default) omits it so the tool description costs no extra tokens.
+   */
+  temporal?: TemporalConfig,
 ): void {
+  const bitemporal = temporal?.mode === "bitemporal";
   // -----------------------------------------------------------------
   // search_knowledge
   // -----------------------------------------------------------------
-  server.tool(
-    "search_knowledge",
+  const searchDescription =
     `Search the knowledge base. Call this BEFORE answering ` +
-      `questions that might benefit from what this store knows — preferences, ` +
-      `history, relationships, medical info, work context. If you have not ` +
-      `called get_session_context (or loaded memory://briefing) this conversation, ` +
-      `do that first — otherwise you start not knowing the user. Returns facts ` +
-      `ranked by relevance with source attribution and confidence scores.\n\n` +
-      `Three fields come back. \`results\` is integrated knowledge: deduplicated, ` +
-      `reconciled against everything else known, entities resolved. \`pending\` ` +
-      `is what was captured recently and not yet consolidated — real, and ` +
-      `usually the most recent thing you were told, but not yet checked against ` +
-      `existing knowledge, so it may duplicate or contradict a fact in results. ` +
-      `Trust results first; use pending to avoid forgetting something you were ` +
-      `told minutes ago. \`episodes\` is filled only when results are empty: a ` +
-      `short raw-log window around a keyword hit in the pulled transcript, not ` +
-      `yet extracted. It is not knowledge of the same standing — do not report ` +
-      `it as a graduated fact.
+    `questions that might benefit from what this store knows — preferences, ` +
+    `history, relationships, medical info, work context. If you have not ` +
+    `called get_session_context (or loaded memory://briefing) this conversation, ` +
+    `do that first — otherwise you start not knowing the user. Returns facts ` +
+    `ranked by relevance with source attribution and confidence scores.\n\n` +
+    `Three fields come back. \`results\` is integrated knowledge: deduplicated, ` +
+    `reconciled against everything else known, entities resolved. \`pending\` ` +
+    `is what was captured recently and not yet consolidated — real, and ` +
+    `usually the most recent thing you were told, but not yet checked against ` +
+    `existing knowledge, so it may duplicate or contradict a fact in results. ` +
+    `Trust results first; use pending to avoid forgetting something you were ` +
+    `told minutes ago. \`episodes\` is filled only when results are empty: a ` +
+    `short raw-log window around a keyword hit in the pulled transcript, not ` +
+    `yet extracted. It is not knowledge of the same standing — do not report ` +
+    `it as a graduated fact.
 
 ` +
-      `When semantic search is enabled, \`results\` also matches on meaning, so a ` +
-      `query can surface a fact that shares none of its words. \`pending\` and ` +
-      `\`episodes\` never do — they are keyword-only. A just-captured fact is ` +
-      `findable by its own words but not yet by a paraphrase of them.`,
-    {
-      query: z.string().describe("What to search for"),
-      domain: z
-        .string()
-        .optional()
-        .describe(
-          `Prioritise a domain. Domains are whatever this store uses — they are ` +
-            `not a fixed list, so call get_schemas to see them rather than ` +
-            `guessing. This biases ranking rather than filtering: facts in the ` +
-            `domain are surfaced and rank higher, but a strong match elsewhere ` +
-            `still appears. Domains are assigned by a classifier and are ` +
-            `approximate, so a hard filter would hide a fact filed under a ` +
-            `near-synonym. Omit it to search everything.`,
-        ),
-    },
+    `When semantic search is enabled, \`results\` also matches on meaning, so a ` +
+    `query can surface a fact that shares none of its words. \`pending\` and ` +
+    `\`episodes\` never do — they are keyword-only. A just-captured fact is ` +
+    `findable by its own words but not yet by a paraphrase of them.` +
+    (bitemporal
+      ? `\n\nThis store records when the system retracted a belief. When you ` +
+        `need what it believed at a past instant — not what is true now, and ` +
+        `not when a fact was true in the world — pass as_of_system_time as an ` +
+        `ISO 8601 instant. Superseded facts the system still held then come ` +
+        `back; facts it learned afterwards do not. Omit it for current ` +
+        `knowledge, which is almost always what you want. Queries before this ` +
+        `store switched on that recording may be incomplete; the response then ` +
+        `includes system_time_warning.`
+      : "");
+
+  const searchSchema = {
+    query: z.string().describe("What to search for"),
+    domain: z
+      .string()
+      .optional()
+      .describe(
+        `Prioritise a domain. Domains are whatever this store uses — they are ` +
+          `not a fixed list, so call get_schemas to see them rather than ` +
+          `guessing. This biases ranking rather than filtering: facts in the ` +
+          `domain are surfaced and rank higher, but a strong match elsewhere ` +
+          `still appears. Domains are assigned by a classifier and are ` +
+          `approximate, so a hard filter would hide a fact filed under a ` +
+          `near-synonym. Omit it to search everything.`,
+      ),
+    ...(bitemporal
+      ? {
+          as_of_system_time: z
+            .string()
+            .optional()
+            .describe(
+              `ISO 8601 instant (e.g. 2026-03-15T12:00:00Z). Returns facts ` +
+                `the system believed at that instant, including ones it later ` +
+                `superseded. Omit for current knowledge.`,
+            ),
+        }
+      : {}),
+  };
+
+  server.tool(
+    "search_knowledge",
+    searchDescription,
+    searchSchema,
     async (args) => {
       // Async only because embedding the query is a network or subprocess
       // call. With no provider configured this resolves without one, and the
       // search itself stays a synchronous index read.
+      const rawAsOf =
+        bitemporal &&
+        "as_of_system_time" in args &&
+        typeof args.as_of_system_time === "string"
+          ? args.as_of_system_time
+          : undefined;
+      const asOfSystemTime = rawAsOf ? parseSystemTime(rawAsOf) : undefined;
       const response = await searchWithProvider(db, args.query, embedding, {
         domain: args.domain,
         tuning,
+        asOfSystemTime,
       });
+      if (asOfSystemTime) {
+        response.system_time_warning = systemTimeWarning(
+          asOfSystemTime,
+          temporal?.bitemporal_since ?? null,
+        );
+      }
 
       return {
         content: [

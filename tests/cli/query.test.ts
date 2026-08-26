@@ -52,6 +52,22 @@ describe("formatSearch", () => {
     expect(out).toContain("Try a broader term.");
   });
 
+  it("includes a system-time warning on empty and non-empty results", () => {
+    const warning = "Results may be incomplete: earlier supersessions did not stamp it.";
+    expect(
+      formatSearch(response({ system_time_warning: warning }), "coffee"),
+    ).toContain(warning);
+    expect(
+      formatSearch(
+        response({
+          results: [result("Prefers tea")] as any,
+          system_time_warning: warning,
+        }),
+        "tea",
+      ),
+    ).toContain(warning);
+  });
+
   it("renders the fact, its scope, score and confidence", () => {
     const out = formatSearch(
       response({ results: [result("Prefers dark roast coffee")] as any }),

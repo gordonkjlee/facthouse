@@ -385,6 +385,77 @@ describe.skipIf(!runnable)("cli entry — search and stats", () => {
     expect(r.status).toBe(1);
   });
 
+  it("search --as-of-system on a simple store exits non-zero", () => {
+    const dir = path.join(root, "as-of-simple");
+    run(["init", dir]);
+    const r = run([
+      "search",
+      "coffee",
+      "--as-of-system",
+      "2026-01-01T00:00:00Z",
+      "--data",
+      dir,
+    ]);
+    expect(r.status).toBe(1);
+    expect(r.stderr).toMatch(/bitemporal/);
+  });
+
+  it("search --as-of-system on a bitemporal store returns the fact believed then", async () => {
+    const dir = path.join(root, "as-of-bi");
+    run(["init", dir]);
+    const configPath = path.join(dir, "config.json");
+    const config = JSON.parse(readFileSync(configPath, "utf-8"));
+    config.temporal = { mode: "bitemporal", bitemporal_since: "2000-01-01T00:00:00.000Z" };
+    writeFileSync(configPath, JSON.stringify(config, null, 2));
+
+    const { openDatabase, closeDatabase } = await import(
+      "../../src/db/connection.js"
+    );
+    const { insertFact, supersedeFact } = await import("../../src/db/facts.js");
+    const db = openDatabase(path.join(dir, "memory.db"));
+    const old = insertFact(db, {
+      content: "Prefers tea",
+      domain: "preferences",
+      source_type: "conversation",
+    });
+    while (new Date().toISOString() <= old.created_at) {
+      /* millisecond clock */
+    }
+    supersedeFact(
+      db,
+      old.id,
+      {
+        content: "Prefers coffee",
+        domain: "preferences",
+        source_type: "conversation",
+      },
+      { retireSystemTime: true },
+    );
+    closeDatabase(db);
+
+    const now = run(["search", "Prefers", "--json", "--data", dir]);
+    expect(now.status).toBe(0);
+    const nowBody = JSON.parse(now.stdout);
+    expect(nowBody.results.map((r: { fact: { content: string } }) => r.fact.content)).toEqual(
+      ["Prefers coffee"],
+    );
+
+    const then = run([
+      "search",
+      "Prefers",
+      "--as-of-system",
+      old.created_at,
+      "--json",
+      "--data",
+      dir,
+    ]);
+    expect(then.status).toBe(0);
+    const thenBody = JSON.parse(then.stdout);
+    expect(thenBody.results.map((r: { fact: { content: string } }) => r.fact.content)).toEqual(
+      ["Prefers tea"],
+    );
+  });
+
   it.each(["search", "stats", "pull"])(
     "%s points at init rather than leaking a raw SQLite error when there is no database",
     (cmd) => {

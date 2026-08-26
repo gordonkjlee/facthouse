@@ -478,6 +478,31 @@ describe("consolidation pipeline", () => {
     const superseded = getFact(db, oldFact.id);
     expect(superseded!.status).toBe("superseded");
     expect(superseded!.is_latest).toBe(false);
+    expect(superseded!.system_retired_at).toBeNull();
+  });
+
+  it("stamps system_retired_at on supersede when temporal mode is bitemporal", async () => {
+    const session = createSession(db, { source_tool: "test", project: null });
+    const oldFact = insertFact(db, {
+      content: "I prefer dark roast coffee every morning",
+      domain: "preferences",
+      source_type: "conversation",
+    });
+    insertSessionFact(db, {
+      session_id: session.id,
+      content: "I no longer prefer dark roast coffee every morning",
+      domain_hint: "preferences",
+    });
+
+    await consolidate(db, createHeuristicProvider(PERSONAL_VOCABULARY), {
+      temporal: { mode: "bitemporal", bitemporal_since: null },
+    });
+
+    const { getFact } = await import("../../src/db/facts.js");
+    const superseded = getFact(db, oldFact.id);
+    expect(superseded!.status).toBe("superseded");
+    expect(superseded!.system_retired_at).toBe(superseded!.valid_until);
+    expect(superseded!.system_retired_at).not.toBeNull();
   });
 
   it("surfaces dropped supersessions via openThreads when two candidates target the same prior", async () => {

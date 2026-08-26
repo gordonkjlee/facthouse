@@ -6,7 +6,7 @@
  * warning (non-fatal — we'd rather run with sane defaults than fail to boot).
  */
 
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { DEFAULT_CONFIG, type ServerConfig } from "./types/config.js";
 
@@ -87,4 +87,70 @@ export function loadConfig(dataDir: string): ServerConfig {
   }
 
   return deepMerge(base, parsed);
+}
+
+/**
+ * Warning on an as-of-system-time read whose instant precedes the switch to
+ * bi-temporal recording. One string, used by the MCP tool and the CLI so they
+ * cannot disagree about what "incomplete" means.
+ */
+export const SYSTEM_TIME_INCOMPLETE_WARNING =
+  "Results may be incomplete: this store started recording when the system " +
+  "retracted a belief after the requested instant, and earlier supersessions " +
+  "did not stamp it.";
+
+/** Warning text when T precedes `bitemporal_since`, or the stamp is missing. */
+export function systemTimeWarning(at: string, since: string | null): string | null {
+  if (!since || at < since) return SYSTEM_TIME_INCOMPLETE_WARNING;
+  return null;
+}
+
+/**
+ * When a store has just switched to bi-temporal mode, record `bitemporal_since`
+ * so as-of-system-time reads can warn about the unstamped era.
+ *
+ * Historical supersessions cannot be backfilled — simple mode never wrote
+ * `system_retired_at`. The stamp is the earliest instant at which that column
+ * is trustworthy. Idempotent: a store that already has a stamp is left alone.
+ */
+export function ensureBitemporalSince(
+  dataDir: string,
+  config: ServerConfig,
+): ServerConfig {
+  if (config.temporal.mode !== "bitemporal") return config;
+  if (config.temporal.bitemporal_since) return config;
+
+  const since = new Date().toISOString();
+  persistBitemporalSince(dataDir, since);
+  return {
+    ...config,
+    temporal: { ...config.temporal, bitemporal_since: since },
+  };
+}
+
+function persistBitemporalSince(dataDir: string, since: string): void {
+  const configPath = path.join(dataDir, CONFIG_FILENAME);
+  let parsed: Record<string, unknown> = {};
+  try {
+    const raw = JSON.parse(readFileSync(configPath, "utf-8")) as unknown;
+    if (raw !== null && typeof raw === "object" && !Array.isArray(raw)) {
+      parsed = raw as Record<string, unknown>;
+    }
+  } catch {
+    // Missing or unreadable — write a stub so the stamp survives a restart.
+    // loadConfig merges, so a temporal-only file still yields full defaults.
+  }
+
+  const existing =
+    parsed.temporal !== null &&
+    typeof parsed.temporal === "object" &&
+    !Array.isArray(parsed.temporal)
+      ? { ...(parsed.temporal as Record<string, unknown>) }
+      : {};
+  if (typeof existing.bitemporal_since === "string" && existing.bitemporal_since) {
+    return;
+  }
+  existing.bitemporal_since = since;
+  parsed.temporal = existing;
+  writeFileSync(configPath, JSON.stringify(parsed, null, 2) + "\n", "utf-8");
 }
