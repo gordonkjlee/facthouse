@@ -223,6 +223,7 @@ describe("sourcesStatusLines", () => {
     const text = sourcesStatusLines([]).join("\n");
     expect(text).toMatch(/pull is off/i);
     expect(text).toMatch(/claude-code/);
+    expect(text).toMatch(/cursor/);
     expect(text).toMatch(/cwd/);
     expect(text).toContain("C:\\dev\\app");
     expect(text).toMatch(/openmemory pull/);

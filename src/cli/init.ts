@@ -166,8 +166,8 @@ export function sourcesStatusLines(sources: unknown): string[] {
   }
   if (n === 0) {
     return [
-      `Capture: pull is off (sources is empty). Add a claude-code source to`,
-      `config.json — kind, home (e.g. ~/.claude), cwd (e.g. C:\\dev\\app).`,
+      `Capture: pull is off (sources is empty). Add a claude-code or cursor source to`,
+      `config.json — kind, home (e.g. ~/.claude or ~/.cursor), cwd (e.g. C:\\dev\\app).`,
       `Set cwd. Then run openmemory pull. A first pull of more than 50 events`,
       `needs openmemory consolidate; a later session start will flush a smaller leftover.`,
     ];

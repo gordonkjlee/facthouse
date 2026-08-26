@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { homedir } from "node:os";
 import path from "node:path";
 import {
+  encodeCursorProjectDir,
   encodeProjectDir,
   resolveSources,
   resolveUserPath,
@@ -19,6 +20,29 @@ describe("encodeProjectDir", () => {
   it("strips trailing slashes so they do not become a different group", () => {
     expect(encodeProjectDir("C:\\dev\\app\\")).toBe("C--dev-app");
     expect(encodeProjectDir("/home/me/app/")).toBe("-home-me-app");
+  });
+});
+
+describe("encodeCursorProjectDir", () => {
+  it("encodes a Windows cwd the way Cursor does on disk", () => {
+    expect(encodeCursorProjectDir("C:\\dev\\app")).toBe("c-dev-app");
+  });
+
+  it("encodes a POSIX cwd without a leading hyphen", () => {
+    expect(encodeCursorProjectDir("/home/me/app")).toBe("home-me-app");
+  });
+
+  it("turns dots into hyphens so a workspace file matches the folder", () => {
+    expect(encodeCursorProjectDir("C:\\dev\\app.code-workspace")).toBe(
+      "c-dev-app-code-workspace",
+    );
+  });
+
+  it("is not Claude Code's encoding", () => {
+    expect(encodeProjectDir("C:\\dev\\app")).toBe("C--dev-app");
+    expect(encodeCursorProjectDir("C:\\dev\\app")).not.toBe(
+      encodeProjectDir("C:\\dev\\app"),
+    );
   });
 });
 
@@ -49,6 +73,16 @@ describe("resolveSources", () => {
     expect(encodeProjectDir(resolved[0].cwd!)).toBe("C--dev-app");
   });
 
+  it("resolves a cursor source and expands home", () => {
+    const resolved = resolveSources([{ kind: "cursor", home: "~/.cursor" }]);
+    expect(resolved).toEqual([
+      {
+        kind: "cursor",
+        home: path.join(homedir(), ".cursor"),
+      },
+    ]);
+  });
+
   it("rejects an unknown kind with a clear error", () => {
     expect(() =>
       resolveSources([{ kind: "grok", home: "~/.grok" }]),
@@ -56,6 +90,9 @@ describe("resolveSources", () => {
     expect(() =>
       resolveSources([{ kind: "grok", home: "~/.grok" }]),
     ).toThrow(/claude-code/);
+    expect(() =>
+      resolveSources([{ kind: "grok", home: "~/.grok" }]),
+    ).toThrow(/cursor/);
   });
 
   it("rejects a source missing home", () => {

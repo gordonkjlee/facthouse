@@ -114,7 +114,7 @@ function emptyStoreNextStep(db: Db): string {
     );
   }
   return (
-    "Nothing captured yet. If this store has a claude-code source, run " +
+    "Nothing captured yet. If this store has a named source, run " +
     "`openmemory pull`, then call `consolidate`."
   );
 }

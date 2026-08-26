@@ -9,14 +9,17 @@
 
 import { homedir } from "node:os";
 import path from "node:path";
-
-export const SUPPORTED_SOURCE_KIND = "claude-code" as const;
+import {
+  CAPTURE_SOURCE_KINDS,
+  isCaptureSourceKind,
+  type CaptureSourceKind,
+} from "../types/config.js";
 
 export interface ResolvedCaptureSource {
-  kind: typeof SUPPORTED_SOURCE_KIND;
-  /** Absolute, tilde-expanded Claude Code config dir. */
+  kind: CaptureSourceKind;
+  /** Absolute, tilde-expanded client config dir. */
   home: string;
-  /** Project cwd as Claude Code would have seen it, when the source is filtered. */
+  /** Project cwd as the client would have seen it, when the source is filtered. */
   cwd?: string;
 }
 
@@ -44,7 +47,25 @@ export function encodeProjectDir(cwd: string): string {
 }
 
 /**
- * Turn the configured `sources` value into a list of resolved Claude Code
+ * Cursor's on-disk project group name under `~/.cursor/projects/`.
+ * Lowercase, non-alphanumeric runs become one `-`, edges stripped.
+ * `C:\dev\app` → `c-dev-app`; `/home/me/app` → `home-me-app`.
+ * Not Claude Code's encoding (`C--dev-app`) — the two must not be mixed.
+ */
+export function encodeCursorProjectDir(cwd: string): string {
+  const trimmed = cwd.replace(/[\\/]+$/, "");
+  return trimmed
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+function supportedKindsList(): string {
+  return CAPTURE_SOURCE_KINDS.map((k) => `"${k}"`).join(" and ");
+}
+
+/**
+ * Turn the configured `sources` value into a list of resolved capture
  * homes. Empty / omitted is a successful no-op — pull is off. Anything else
  * that is not a supported source throws.
  */
@@ -67,23 +88,23 @@ export function resolveSources(sources: unknown): ResolvedCaptureSource[] {
     }
     const entry = raw as Record<string, unknown>;
     const kind = entry.kind;
-    if (kind !== SUPPORTED_SOURCE_KIND) {
+    if (!isCaptureSourceKind(kind)) {
       throw new Error(
         "Unknown source kind " +
           JSON.stringify(kind) +
           " at sources[" +
           index +
-          ']. This version only supports "' +
-          SUPPORTED_SOURCE_KIND +
-          '".',
+          "]. This version supports " +
+          supportedKindsList() +
+          ".",
       );
     }
     if (typeof entry.home !== "string" || entry.home.trim() === "") {
       throw new Error(
         "config.sources[" +
           index +
-          '] is missing "home" (a Claude Code config dir, ' +
-          "e.g. ~/.claude - the directory CLAUDE_CONFIG_DIR would point at).",
+          '] is missing "home" (the client config dir, ' +
+          "e.g. ~/.claude for claude-code or ~/.cursor for cursor).",
       );
     }
     if (entry.cwd !== undefined && typeof entry.cwd !== "string") {
@@ -93,14 +114,14 @@ export function resolveSources(sources: unknown): ResolvedCaptureSource[] {
     }
 
     const source: ResolvedCaptureSource = {
-      kind: SUPPORTED_SOURCE_KIND,
+      kind,
       home: resolveUserPath(entry.home),
     };
     if (typeof entry.cwd === "string" && entry.cwd.trim() !== "") {
-      // Encode the path Claude Code itself would have used. Do not
+      // Encode the path the client itself would have used. Do not
       // path.resolve it: a Windows cwd in config (C:\dev\app)
-      // must still become C--dev-app when this process is on
-      // Linux, and resolve() would prefix the local working directory.
+      // must still become the client's on-disk group when this process
+      // is on Linux, and resolve() would prefix the local working directory.
       source.cwd = expandTilde(entry.cwd);
     }
     resolved.push(source);

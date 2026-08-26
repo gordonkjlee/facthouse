@@ -189,6 +189,102 @@ describe("mapTranscriptLine", () => {
     expect(events[0].client_session_id).toBe("sess-from-filename");
   });
 
+  it("still maps a role-only line with content on the row when message is absent", () => {
+    const events = mapTranscriptLine(
+      JSON.stringify({
+        role: "user",
+        content: "The demo store prefers dark mode.",
+      }),
+      "sess-export",
+      "/tmp/sess-export.jsonl",
+      1,
+    );
+    expect(events).toHaveLength(1);
+    expect(events[0].content).toContain("dark mode");
+  });
+
+  it("maps a role-only line through message.content (Cursor Agent JSONL)", () => {
+    const events = mapTranscriptLine(
+      JSON.stringify({
+        role: "user",
+        message: {
+          content: [
+            { type: "text", text: "The demo store prefers dark mode." },
+          ],
+        },
+      }),
+      "sess-cursor",
+      "/tmp/sess-cursor.jsonl",
+      1,
+      "cursor",
+    );
+    expect(events).toHaveLength(1);
+    expect(events[0].role).toBe("user");
+    expect(events[0].content).toContain("dark mode");
+    expect(events[0].occurred_at).toBeNull();
+    expect(events[0].metadata).toMatchObject({ source: "cursor" });
+  });
+
+  it("maps a role-only assistant line with text and tool_use", () => {
+    const events = mapTranscriptLine(
+      JSON.stringify({
+        role: "assistant",
+        message: {
+          content: [
+            { type: "text", text: "I will remember the dark mode preference." },
+            { type: "tool_use", name: "Read", input: { path: "config.json" } },
+          ],
+        },
+      }),
+      "sess-cursor",
+      "/tmp/sess-cursor.jsonl",
+      2,
+      "cursor",
+    );
+    expect(events.map((e) => [e.role, e.event_type])).toEqual([
+      ["assistant", "message"],
+      ["assistant", "tool_call"],
+    ]);
+    expect(events[1].content).toContain("Read");
+  });
+
+  it("unwraps <user_query> and drops the surrounding chrome", () => {
+    const events = mapTranscriptLine(
+      JSON.stringify({
+        role: "user",
+        message: {
+          content: [
+            {
+              type: "text",
+              text:
+                "<timestamp>Thursday, 1 January 2026, 12:00 PM</timestamp>\n" +
+                "<user_query>\nRemember the demo store prefers dark mode.\n</user_query>",
+            },
+          ],
+        },
+      }),
+      "sess-cursor",
+      "/tmp/sess-cursor.jsonl",
+      1,
+      "cursor",
+    );
+    expect(events).toHaveLength(1);
+    expect(events[0].content).toBe("Remember the demo store prefers dark mode.");
+    expect(events[0].content).not.toMatch(/timestamp/i);
+  });
+
+  it("skips turn_ended markers", () => {
+    expect(
+      mapTranscriptLine(
+        JSON.stringify({ type: "turn_ended", status: "success" }),
+        "sess-cursor",
+        "/tmp/sess-cursor.jsonl",
+        9,
+        "cursor",
+      ),
+    ).toEqual([]);
+  });
+
   it("skips empty, invalid JSON, and thinking-only assistant turns", () => {
     expect(mapTranscriptLine("", "s", "/tmp/s.jsonl", 1)).toEqual([]);
     expect(mapTranscriptLine("{not json", "s", "/tmp/s.jsonl", 1)).toEqual([]);

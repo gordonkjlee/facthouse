@@ -55,7 +55,7 @@ om init
 ```
 <!-- x-release-please-end -->
 
-`init` writes `config.json` with `"sources": []` (pull off) and prints that. Add **one** source. `home` is the Claude Code config dir (`~/.claude`, or whatever `CLAUDE_CONFIG_DIR` would point at — that variable is an example of the path, not extra discovery). Set `cwd` to this project; a bare `home` walks every project group:
+`init` writes `config.json` with `"sources": []` (pull off) and prints that. Add **one** source. `home` is the client config dir (`~/.claude` for Claude Code, `~/.cursor` for Cursor — those variables are examples of the path, not extra discovery). Set `cwd` to this project; a bare `home` walks every project group:
 
 ```json
 {
@@ -63,6 +63,20 @@ om init
     {
       "kind": "claude-code",
       "home": "~/.claude",
+      "cwd": "C:\\dev\\app"
+    }
+  ]
+}
+```
+
+Cursor Agent JSONL is the same knob with a different `kind`. It reads `home/projects/*/agent-transcripts/**/*.jsonl` only — not Composer SQLite, not `state.vscdb`. Cursor encodes `C:\\dev\\app` as `c-dev-app` (Claude Code uses `C--dev-app`); some Cursor folders are opaque numeric ids and are only ingested when `cwd` is omitted or set to that id.
+
+```json
+{
+  "sources": [
+    {
+      "kind": "cursor",
+      "home": "~/.cursor",
       "cwd": "C:\\dev\\app"
     }
   ]
@@ -254,19 +268,19 @@ The server side of this is covered by tests that spawn the real binary twice aga
 
 For Claude Code, the D-layer is **pull**. You name a source; transcripts land in `session_events`; consolidation graduates facts from those events. The model does not have to call `capture_fact` for a conversation to be remembered.
 
-1. **Pull** — A named `sources` entry (`kind: "claude-code"`, `home`, and `cwd` — set it) is tailed into `session_events` by `openmemory pull` from the CLI (first backfill) or by the MCP server at session start. Empty `sources` means pull is off. A Stop hook may pull later, once that first backfill has run. When a transcript line carries a timestamp, that is stored as when the turn was said, separately from when OpenMemory ingested it. A line without one stays empty rather than copying ingest time. Hook `log-event` and MCP `log_event` stamp when they ran — those fire at the turn. Extract resolves "yesterday" against that utterance time into the sentence; it does not invent a calendar day for "about five years ago" or "when I was younger".
+1. **Pull** — A named `sources` entry (`kind: "claude-code"` or `"cursor"`, `home`, and `cwd` — set it) is tailed into `session_events` by `openmemory pull` from the CLI (first backfill) or by the MCP server at session start. Empty `sources` means pull is off. A Stop hook may pull later, once that first backfill has run. When a transcript line carries a timestamp, that is stored as when the turn was said, separately from when OpenMemory ingested it. A line without one stays empty rather than copying ingest time — Cursor Agent JSONL has no clock, so those turns stay empty on this field. Hook `log-event` and MCP `log_event` stamp when they ran — those fire at the turn. Extract resolves "yesterday" against that utterance time into the sentence; it does not invent a calendar day for "about five years ago" or "when I was younger".
 
 2. **Batch consolidation** — Two speeds. Pull and Stop **extract** self-contained facts from new transcript lines when the threshold is due. PreCompact **flush** (and shutdown) **graduates** those pending facts: classifying domains, extracting and typing entities (people, organisations, projects, places — whatever the conversation is about), detecting duplicates and contradictions, and building a knowledge graph. `openmemory consolidate` and the MCP `consolidate` tool still run both steps.
 
 3. **Optional correction** — `capture_fact` remains available when the assistant should store a judgement that is not in the transcript, or a fact extraction missed. It is a correction, not the Claude Code capture path.
 
-Other MCP clients that have no pull adapter yet still use `log_event` / `openmemory log-event` or `capture_fact`. Grok, Codex, and Cursor are later adapters.
+Other MCP clients that have no pull adapter yet still use `log_event` / `openmemory log-event` or `capture_fact`. Query is already any tool; capture is Claude Code JSONL and Cursor Agent JSONL. Grok and Codex are later adapters. Cursor Composer SQLite is not this adapter.
 
 The result is a structured, evolving knowledge graph that any AI tool can query via MCP.
 
 ## Features
 
-- **Pull, then consolidate** — Claude Code conversations are pulled from a named source into `session_events`. Extract runs on pull/Stop; graduate runs on PreCompact flush (or on a manual `consolidate`). `capture_fact` is an optional correction, not how those conversations get in.
+- **Pull, then consolidate** — Claude Code and Cursor Agent JSONL conversations are pulled from a named source into `session_events`. Extract runs on pull/Stop; graduate runs on PreCompact flush (or on a manual `consolidate`). `capture_fact` is an optional correction, not how those conversations get in.
 - **Batch consolidation** — Periodic processing integrates pending captures into the long-term knowledge graph: classifies domains, extracts entities, resolves duplicates, detects contradictions.
 - **Entity graph** — Whatever the conversation is about — people, organisations, projects, places, products — extracted, typed and linked automatically. Relationship strength tracks corroboration.
 - **Hybrid search** — BM25 keyword + structured domain + entity-graph paths, merged via Reciprocal Rank Fusion with temporal decay. Add an embedding provider and semantic similarity joins the merge as a fourth path: it ranks, it does not gate, so a fact with no embedding is still found by its words. When no graduated fact matches, a short raw-log window around a keyword hit is returned separately as `episodes` — not knowledge, not mixed into `results`.
@@ -313,7 +327,7 @@ OpenMemory captures every interaction as a `SessionEvent` — the DIKW Data laye
 
 Choose one mechanism.
 
-**Recommended — pull.** Name a `claude-code` source (set `cwd`; a bare `home` walks every project group) and run `openmemory pull` from the CLI first. Do not hang a first backfill on a Stop hook. After that, optional Stop / PreCompact hooks (npx or a global install — a bare `openmemory` is not on PATH after `npx`). The MCP server also pulls once at session start. Grok, Codex, and Cursor are later adapters. Unknown `kind` values are rejected with a clear error.
+**Recommended — pull.** Name a `claude-code` or `cursor` source (set `cwd`; a bare `home` walks every project group) and run `openmemory pull` from the CLI first. Do not hang a first backfill on a Stop hook. After that, optional Stop / PreCompact hooks (npx or a global install — a bare `openmemory` is not on PATH after `npx`). The MCP server also pulls once at session start. Cursor pull is the Agent JSONL export only: user and assistant text plus tool *calls*, not tool *results*, not Composer `store.db`, not `state.vscdb`. Grok and Codex are later adapters. Unknown `kind` values are rejected with a clear error.
 
 ```bash
 openmemory pull
@@ -353,7 +367,7 @@ The generated `config.json` is where you change consolidation behaviour — most
 
 #### `openmemory log-event`
 
-Inserts events directly into the database (no running server needed). Supported for demos and for stores that have no `claude-code` source. Not the Claude Code default — that is `sources` plus `openmemory pull`.
+Inserts events directly into the database (no running server needed). Supported for demos and for stores that have no named source. Not the Claude Code or Cursor default — that is `sources` plus `openmemory pull`.
 
 ```bash
 # From a hook (reads JSON payload from stdin):
@@ -457,7 +471,7 @@ OpenMemory's tool descriptions tell assistants when to search and when a correct
 
 ### Without Configuration
 
-Claude Code: name a `sources` entry (set `cwd`) and pull from the CLI first. MCP session start also pulls. The `search_knowledge` description still says to search before answering questions that might benefit from personal context. `capture_fact` is there if the assistant needs to correct or add something pull-plus-extraction will not produce.
+Claude Code or Cursor: name a `sources` entry (set `cwd`) and pull from the CLI first. MCP session start also pulls. The `search_knowledge` description still says to search before answering questions that might benefit from personal context. `capture_fact` is there if the assistant needs to correct or add something pull-plus-extraction will not produce.
 
 Clients with no pull adapter still rely on `log_event` / `capture_fact` until their adapter exists.
 
@@ -513,7 +527,7 @@ When the openmemory MCP server is available:
 - When context is getting long, call consolidate to process pending facts before they are lost
 ```
 
-Cursor and Windsurf consume tools but not resources, so `memory://profile` will not load on its own there — `search_knowledge` and `get_entity` cover the same ground on demand.
+Cursor and Windsurf consume tools but not resources, so `memory://profile` will not load on its own there — `search_knowledge` and `get_entity` cover the same ground on demand. Cursor conversations themselves are pulled with `kind: "cursor"` (JSONL under `~/.cursor/projects/`, not the SQLite composer store).
 
 ### Claude Desktop / Other MCP Clients
 
