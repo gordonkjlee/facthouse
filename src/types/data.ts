@@ -67,6 +67,9 @@ export interface Consolidation {
   created_at: string;
 }
 
+/** Who uttered a session event — channel, not a named participant. */
+export type SpeakerRole = "user" | "assistant" | "system" | "tool";
+
 /**
  * DIKW: Data — raw interaction event. Append-only, never server-purged.
  * The episodic ground truth. Events are grouped into episodes at consolidation.
@@ -79,7 +82,7 @@ export interface SessionEvent {
   client_session_id: string | null;
   sequence: number;
   event_type: "message" | "tool_call" | "tool_result" | "artifact";
-  role: "user" | "assistant" | "system" | "tool";
+  role: SpeakerRole;
   content_type: "text" | "json" | "image" | "audio" | "binary";
   content: string | null;
   /** URI or path for non-text content. Reference, not embed. */
@@ -132,6 +135,12 @@ export interface SessionFact {
   capture_context: string | null;
   /** UUID of the consolidation run that claimed this fact (null = unclaimed). */
   consolidation_id: string | null;
+  /**
+   * Role of the primary event this fact was extracted from. Null when there
+   * is no primary (rewritten sentences that do not appear in any event, or
+   * explicit capture with no source event). Not who the fact is about.
+   */
+  speaker_role: SpeakerRole | null;
   created_at: string;
 }
 
@@ -172,6 +181,12 @@ export interface Fact {
   /** Which intelligence provider produced this fact. Enables provenance
    *  tracking and future reprocess passes that upgrade heuristic-era facts. */
   source_quality: "heuristic" | "cli" | "sampling" | "explicit";
+  /**
+   * Role of the primary event, copied from session_facts at graduation.
+   * Null when unknown. Distinct from source_origin (how it entered I) and
+   * source_type (conversation vs inference).
+   */
+  speaker_role: SpeakerRole | null;
 }
 
 export interface Entity {

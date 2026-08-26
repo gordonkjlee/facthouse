@@ -16,7 +16,9 @@ import {
   insertSessionFact,
   getUnconsolidatedSessionFacts,
   linkFactSource,
+  speakerRoleOf,
 } from "../db/session-facts.js";
+import { getEventById } from "../db/sessions.js";
 import {
   consolidate,
   type ConsolidationResult,
@@ -145,11 +147,16 @@ export function createFactManager(
 
       const importance = resolveImportance(input.importance);
 
+      const sourceEvent = input.source_event_id
+        ? getEventById(db, input.source_event_id)
+        : null;
+
       const fact = insertSessionFact(db, {
         session_id: session.id,
         content: input.content,
         source_origin: "explicit",
         source_event_id: input.source_event_id ?? null,
+        speaker_role: speakerRoleOf(sourceEvent?.role),
         domain_hint: input.domain_hint ?? null,
         confidence: input.confidence ?? defaultConfidence,
         // Left null when nothing knows yet — deliberately, and this is the

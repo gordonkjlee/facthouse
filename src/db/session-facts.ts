@@ -6,7 +6,34 @@
 import { randomUUID, createHash } from "node:crypto";
 import { withTransaction } from "./connection.js";
 import type { Db } from "./connection.js";
-import type { SessionFact, SessionFactSource } from "../types/data.js";
+import type { SessionEvent, SessionFact, SessionFactSource, SpeakerRole } from "../types/data.js";
+
+const SPEAKER_ROLES: readonly SpeakerRole[] = [
+  "user",
+  "assistant",
+  "system",
+  "tool",
+];
+
+/** Channel of an event, or null if it is not a known speaker role. */
+export function speakerRoleOf(role: string | null | undefined): SpeakerRole | null {
+  if (role && (SPEAKER_ROLES as readonly string[]).includes(role)) {
+    return role as SpeakerRole;
+  }
+  return null;
+}
+
+/**
+ * The event that stated this fact, if its text still contains the sentence.
+ * Rewritten extracts often match none — then there is no primary, and no
+ * speaker, rather than guessing the first line in the batch.
+ */
+export function primaryEventForFact(
+  events: SessionEvent[],
+  factContent: string,
+): SessionEvent | null {
+  return events.find((e) => e.content && e.content.includes(factContent)) ?? null;
+}
 
 // ---------------------------------------------------------------------------
 // Input types
@@ -37,6 +64,7 @@ export interface NewSessionFact {
   source_tool?: string | null;
   capture_context?: string | null;
   consolidation_id?: string | null;
+  speaker_role?: SpeakerRole | null;
 }
 
 export interface NewFactSource {
@@ -86,6 +114,7 @@ export function insertSessionFact(
   const sourceTool = fact.source_tool ?? null;
   const captureContext = fact.capture_context ?? null;
   const consolidationId = fact.consolidation_id ?? null;
+  const speakerRole = fact.speaker_role ?? null;
 
   return withTransaction(db, () => {
     const result = db.prepare(
@@ -95,8 +124,8 @@ export function insertSessionFact(
           confidence_signal, importance_signal,
           valid_from_hint, valid_until_hint, entities_json, source_quality,
           source_tool, capture_context,
-          consolidation_id, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          consolidation_id, created_at, speaker_role)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(
       id,
       fact.session_id,
@@ -118,6 +147,7 @@ export function insertSessionFact(
       captureContext,
       consolidationId,
       now,
+      speakerRole,
     );
 
     if (result.changes === 0) {
@@ -145,6 +175,7 @@ export function insertSessionFact(
       capture_context: captureContext,
       consolidation_id: consolidationId,
       created_at: now,
+      speaker_role: speakerRole,
     } satisfies SessionFact;
   });
 }

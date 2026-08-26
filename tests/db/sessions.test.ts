@@ -12,6 +12,7 @@ const {
   getSession,
   getLatestSession,
   insertEvent,
+  getEventById,
   getEvents,
   getEventCount,
   conversationRef,
@@ -30,12 +31,12 @@ afterEach(() => {
 
 describe("schema", () => {
   it("applies current version", () => {
-    expect(getSchemaVersion(db)).toBe(15);
+    expect(getSchemaVersion(db)).toBe(16);
   });
 
   it("is idempotent", () => {
     applySchema(db); // second call
-    expect(getSchemaVersion(db)).toBe(15);
+    expect(getSchemaVersion(db)).toBe(16);
   });
 });
 
@@ -271,6 +272,20 @@ describe("session events", () => {
 
     const events = getEvents(db, sessionId);
     expect(events[0].metadata).toBeNull();
+  });
+
+  it("getEventById returns the row or null", () => {
+    const created = insertEvent(db, {
+      mcp_session_id: sessionId,
+      event_type: "message",
+      role: "assistant",
+      content: "the grain is bookings",
+    });
+    const found = getEventById(db, created.id);
+    expect(found?.id).toBe(created.id);
+    expect(found?.role).toBe("assistant");
+    expect(found?.content).toBe("the grain is bookings");
+    expect(getEventById(db, "missing")).toBeNull();
   });
 
   it("getEvents returns ordered by sequence", () => {

@@ -44,7 +44,9 @@ export function registerReadTools(
     `do that first — otherwise you start without this store's context. Returns facts ` +
     `ranked by relevance with source attribution and confidence scores.\n\n` +
     `Three fields come back. \`results\` is integrated knowledge: deduplicated, ` +
-    `reconciled against everything else known, entities resolved. \`pending\` ` +
+    `reconciled against everything else known, entities resolved. Each result ` +
+    `carries speaker_role when the primary event is known (user, assistant, ` +
+    `system, or tool) — who uttered it, not who it is about. \`pending\` ` +
     `is what was captured recently and not yet consolidated — real, and ` +
     `usually the most recent thing you were told, but not yet checked against ` +
     `existing knowledge, so it may duplicate or contradict a fact in results. ` +

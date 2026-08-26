@@ -238,6 +238,22 @@ export function insertEvent(
   return result;
 }
 
+/** Look up one event by id. */
+export function getEventById(db: Db, id: string): SessionEvent | null {
+  const row = db
+    .prepare(`SELECT * FROM session_events WHERE id = ?`)
+    .get(id) as
+    | (Omit<SessionEvent, "metadata"> & { metadata: string | null })
+    | undefined;
+  if (!row) return null;
+  return {
+    ...row,
+    metadata: row.metadata
+      ? (JSON.parse(row.metadata) as Record<string, unknown>)
+      : null,
+  };
+}
+
 /** Retrieve events for a session, ordered by sequence. */
 export function getEvents(
   db: Db,

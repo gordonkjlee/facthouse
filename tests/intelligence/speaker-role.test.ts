@@ -1,0 +1,140 @@
+/**
+ * Speaker role on I and K — the primary event's channel, not capture path.
+ */
+
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import type { Db } from "../../src/db/connection.js";
+import { openDatabase, closeDatabase } from "../../src/db/connection.js";
+import { applySchema } from "../../src/db/schema.js";
+import { createSession, insertEvent } from "../../src/db/sessions.js";
+import { insertSessionFact } from "../../src/db/session-facts.js";
+import {
+  primaryEventForFact,
+  speakerRoleOf,
+} from "../../src/db/session-facts.js";
+import { consolidate } from "../../src/intelligence/consolidate.js";
+import { createHeuristicProvider } from "../../src/intelligence/heuristic.js";
+import { DEFAULT_CONFIG } from "../../src/types/config.js";
+import type { SessionEvent } from "../../src/types/data.js";
+import { formatSearch } from "../../src/cli/query.js";
+import type { SearchResponse } from "../../src/types/data.js";
+
+const GRAIN = "Bookings are the grain of the orders mart at Acme.";
+
+function recording(facts: Array<{ content: string }>) {
+  const heuristic = createHeuristicProvider();
+  return {
+    ...heuristic,
+    async extractFactsFromEvents(events: SessionEvent[]) {
+      const hit = events.some((e) => (e.content ?? "").includes(GRAIN));
+      return {
+        facts: hit ? facts.map((f) => ({ content: f.content, domain_hint: "pipeline" })) : [],
+        degraded: false,
+      };
+    },
+  };
+}
+
+describe("speakerRoleOf / primaryEventForFact", () => {
+  it("accepts the four event roles and declines anything else", () => {
+    expect(speakerRoleOf("user")).toBe("user");
+    expect(speakerRoleOf("assistant")).toBe("assistant");
+    expect(speakerRoleOf("system")).toBe("system");
+    expect(speakerRoleOf("tool")).toBe("tool");
+    expect(speakerRoleOf("human")).toBeNull();
+    expect(speakerRoleOf(null)).toBeNull();
+  });
+
+  it("picks the first event whose text still contains the fact", () => {
+    const events = [
+      { id: "a", content: "noise", role: "user" },
+      { id: "b", content: `Yes. ${GRAIN}`, role: "assistant" },
+      { id: "c", content: GRAIN, role: "user" },
+    ] as SessionEvent[];
+    expect(primaryEventForFact(events, GRAIN)?.id).toBe("b");
+    expect(primaryEventForFact(events, "unsaid")?.id).toBeUndefined();
+  });
+});
+
+describe("extract stamps speaker_role from the primary event", () => {
+  let db: Db;
+
+  beforeEach(() => {
+    db = openDatabase(":memory:");
+    applySchema(db);
+  });
+
+  afterEach(() => {
+    closeDatabase(db);
+  });
+
+  async function run(role: "user" | "assistant") {
+    const session = createSession(db, { source_tool: "test", project: null });
+    insertEvent(db, {
+      mcp_session_id: session.id,
+      event_type: "message",
+      role,
+      content: GRAIN,
+    });
+    await consolidate(db, recording([{ content: GRAIN }]) as never, {
+      extraction: { ...DEFAULT_CONFIG.extraction, enabled: true } as never,
+    });
+    return db
+      .prepare(`SELECT speaker_role FROM facts WHERE content = ?`)
+      .get(GRAIN) as { speaker_role: string | null };
+  }
+
+  it("is user when the user stated the sentence", async () => {
+    expect((await run("user")).speaker_role).toBe("user");
+  });
+
+  it("is assistant when the assistant stated the sentence", async () => {
+    expect((await run("assistant")).speaker_role).toBe("assistant");
+  });
+
+  it("is null when I has no primary event", async () => {
+    const session = createSession(db, { source_tool: "test", project: null });
+    insertSessionFact(db, {
+      session_id: session.id,
+      content: GRAIN,
+      source_origin: "inferred",
+    });
+    await consolidate(db, createHeuristicProvider(), {
+      extraction: { enabled: false } as never,
+    });
+    const graduated = db
+      .prepare(`SELECT speaker_role FROM facts WHERE content = ?`)
+      .get(GRAIN) as { speaker_role: string | null };
+    expect(graduated.speaker_role).toBeNull();
+  });
+});
+
+describe("CLI search names the speaker when known", () => {
+  it("renders speaker assistant on a result", () => {
+    const out = formatSearch(
+      {
+        results: [
+          {
+            fact: {
+              content: GRAIN,
+              domain: "pipeline",
+              subdomain: null,
+              confidence: 0.9,
+              speaker_role: "assistant",
+            },
+            score: 0.5,
+            entities: [],
+            source: null,
+          },
+        ],
+        pending: [],
+        episodes: [],
+        coverage_estimate: 1,
+        result_confidence: 1,
+        suggested_refinement: null,
+      } as unknown as SearchResponse,
+      "bookings",
+    );
+    expect(out).toContain("speaker assistant");
+  });
+});

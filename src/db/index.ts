@@ -18,6 +18,7 @@ export {
   getSession,
   getLatestSession,
   insertEvent,
+  getEventById,
   getEvents,
   getEventCount,
   conversationRef,
