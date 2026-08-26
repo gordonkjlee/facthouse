@@ -22,6 +22,7 @@ import { createFactManager } from "./tools/fact-manager.js";
 import { createHeuristicProvider } from "./intelligence/heuristic.js";
 import { createIntelligenceProvider } from "./intelligence/provider.js";
 import { registerReadTools } from "./tools/read-tools.js";
+import { registerInferenceTools } from "./tools/inferences.js";
 import { registerResources, SESSION_BOOTSTRAP_INSTRUCTIONS } from "./tools/resources.js";
 import { startScheduler, type Scheduler } from "./scheduler.js";
 import { loadConfig, ensureBitemporalSince } from "./config.js";
@@ -137,6 +138,11 @@ const factManager = createFactManager(db, sessionManager, {
   onConsolidated: () => resources.notifyUpdated(),
 });
 factManager.registerTools(server);
+if (config.inferences.enabled) {
+  registerInferenceTools(server, db, {
+    onConfirmed: () => resources.notifyUpdated(),
+  });
+}
 registerReadTools(
   server,
   db,

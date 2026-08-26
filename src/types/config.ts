@@ -154,6 +154,12 @@ export interface RetentionConfig {
   prune_keep_per_session: number | null;
 }
 
+/** Gated hypotheses. Off until a store opts in. */
+export interface InferencesConfig {
+  /** When false (default), inference tools are not registered. */
+  enabled: boolean;
+}
+
 /** Which embedding backend produces vectors, if any. */
 export type EmbeddingProviderType = "voyage" | "ollama";
 
@@ -289,6 +295,14 @@ export interface ServerConfig {
   retention: RetentionConfig;
 
   /**
+   * Invented knowledge with a gate. Default off: consolidate never mints a
+   * sentence nobody said. When enabled, `capture_inference` / `validate_inference`
+   * / `list_inferences` are registered; a confirmed hypothesis becomes a fact
+   * with `source_type: "inference"` and supporting fact ids as provenance.
+   */
+  inferences: InferencesConfig;
+
+  /**
    * Named capture sources to pull into `session_events`. Default `[]` — pull
    * is off until the user names a source. Replaced (not merged) like every
    * other config array: a user-supplied list is the whole list.
@@ -343,6 +357,9 @@ export const DEFAULT_CONFIG: Omit<ServerConfig, "storage" | "temporal"> = {
   },
   retention: {
     prune_keep_per_session: null,
+  },
+  inferences: {
+    enabled: false,
   },
   sources: [],
 };

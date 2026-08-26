@@ -82,6 +82,13 @@ afterAll(async () => {
 const TIMING = /\b(before|after|when|whenever|while|during|proactively|at the (start|end)|rather than|instead of|prefer)\b/i;
 
 describe.skipIf(!runnable)("tool descriptions are an instruction layer", () => {
+  it("does not expose inference tools while they are off (the default)", () => {
+    const names = tools.map((t) => t.name);
+    expect(names).not.toContain("capture_inference");
+    expect(names).not.toContain("validate_inference");
+    expect(names).not.toContain("list_inferences");
+  });
+
   it("registers the full tool surface", () => {
     // Guards the assertions below: if registration broke, every per-tool test
     // would vacuously pass over an empty list.
