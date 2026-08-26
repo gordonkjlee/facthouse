@@ -7,14 +7,14 @@
  *   Data         SessionEvent    Raw interactions, uninterpreted, append-only
  *   Information  SessionFact     LLM-extracted, tagged, awaiting integration
  *   Knowledge    Fact            Graduated, entity-linked, deduplicated, routed
- *   Wisdom       Inference       Applied judgement — hypotheses from patterns (not yet implemented)
+ *   Wisdom       Inference       Gated hypotheses. Default off. Not produced by I→K.
  *
  * Each transformation is explicit:
  *   Data → Information    Pull / log-event fill session_events; capture_fact is
  *                          an optional explicit correction; extraction runs at
  *                          consolidation
  *   Information → Knowledge   Event-driven batch consolidation
- *   Knowledge → Wisdom        Inference pipeline (not yet implemented)
+ *   Knowledge → Wisdom        capture_inference then validate_inference (opt-in)
  *
  * Session scopes the MCP connection. Conversation identity is written at
  * insert (`client_session_id`, else `mcp_session_id`). Consolidation extracts
@@ -211,19 +211,6 @@ export interface Source {
   metadata: Record<string, unknown> | null;
 }
 
-/** DIKW: Wisdom — applied judgement. Hypotheses derived from patterns across facts (not yet implemented). */
-export interface Inference {
-  id: string;
-  hypothesis: string;
-  evidence: string[];
-  confidence: number;
-  status: "pending" | "confirmed" | "rejected";
-  rejection_reason: string | null;
-  no_reinfer_until: string | null;
-  created_at: string;
-  validated_at: string | null;
-}
-
 /**
  * A fact retrieved via an entity, carrying how it relates to that entity.
  *
@@ -234,6 +221,25 @@ export interface Inference {
  * approver should not be repeated back as a fact about Robin.
  */
 export type EntityFact = Fact & { is_subject: boolean };
+
+/**
+ * A hypothesis awaiting (or after) a validation gate. Not knowledge until
+ * confirmed. Wisdom-layer judgement, gated: I→K never writes these.
+ */
+export type InferenceStatus = "pending" | "confirmed" | "rejected";
+
+export interface Inference {
+  id: string;
+  hypothesis: string;
+  status: InferenceStatus;
+  /** Fact ids cited as support. Required at capture; never empty. */
+  evidence_fact_ids: string[];
+  reason: string | null;
+  /** Graduated fact id, set only when confirmed. */
+  fact_id: string | null;
+  created_at: string;
+  validated_at: string | null;
+}
 
 export interface SearchResult {
   fact: Fact;

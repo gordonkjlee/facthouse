@@ -37,3 +37,4 @@ export * from "./sources.js";
 export * from "./watermarks.js";
 export * from "./consolidations.js";
 export * from "./stats.js";
+export * from "./inferences.js";

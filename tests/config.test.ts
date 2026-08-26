@@ -30,6 +30,7 @@ describe("config loader", () => {
     ]);
     expect(cfg.consolidation.threshold).toBe(10);
     expect(cfg.extraction.enabled).toBe(true);
+    expect(cfg.inferences.enabled).toBe(false);
   });
 
   it("merges user overrides onto defaults", () => {

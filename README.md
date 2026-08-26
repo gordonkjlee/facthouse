@@ -83,6 +83,8 @@ Cursor Agent JSONL is the same knob with a different `kind`. It reads `home/proj
 }
 ```
 
+Always set `cwd`. Pull copies this project's transcripts into the raw log. A bare `home` (`~/.claude` or `~/.cursor` with no `cwd`) walks every project group — a first pull can be thousands of files, and a personal store that shares a Claude home with work will ingest both.
+
 Then:
 
 ```bash
@@ -314,6 +316,7 @@ Both are read-only views over the same database the tools query, so they can't d
 ### Writing
 - `capture_fact` — Store a fact. On a pull store this is a correction for something extraction missed; on a store with empty `sources` it is how facts get in. The description the assistant sees is generated from that same rule. Fast append with session tagging; full intelligence deferred to consolidation.
 - `consolidate` — Integrate pending facts into long-term knowledge. Extracts entities, resolves duplicates, detects contradictions, builds the knowledge graph. Call at natural breakpoints or before context compaction.
+- Inference tools — Opt-in, off by default (`inferences.enabled` in config.json). A hypothesis cites existing fact ids and stays pending until confirmed; confirmation graduates a labelled inference fact. Those tools are not registered until you turn the gate on. Consolidate never invents a sentence nobody said.
 
 ### Meta
 - `get_schemas` — Available domains and structure
@@ -396,7 +399,7 @@ openmemory pull
 #   --data     Data directory (default: ~/.openmemory or $OPENMEMORY_DATA)
 ```
 
-It walks each named Claude Code `home`, tails JSONL transcripts that are new since the last watermark, and inserts them into `session_events`. Prints a JSON summary. Unknown source kinds exit non-zero with an error rather than being skipped silently. Set `cwd` on the source unless you intend to ingest every project group. Do not also run `log-event` hooks on this store.
+It walks each named source, tails JSONL transcripts that are new since the last watermark, and inserts them into `session_events`. Prints a JSON summary. Unknown source kinds exit non-zero with an error rather than being skipped silently. Set `cwd` on the source unless you intend to ingest every project group. Do not also run `log-event` hooks on this store.
 
 #### `openmemory consolidate`
 

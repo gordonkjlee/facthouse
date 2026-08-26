@@ -57,6 +57,9 @@ export function applySchema(db: Db): void {
   if (version < 14) {
     applyV14(db);
   }
+  if (version < 15) {
+    applyV15(db);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -654,4 +657,38 @@ function applyV14(db: Db): void {
   `);
 
   pragmaWrite(db, "user_version = 14");
+}
+
+// ---------------------------------------------------------------------------
+// Schema version 15 — gated inferences (hypotheses, not speech)
+//
+// A hypothesis is not a fact. I→K still only graduates what was said (or
+// capture_fact). These rows are the gate: pending until validate_inference
+// confirms or rejects. Confirming inserts a facts row with
+// source_type = 'inference' and provenance pointing here. Default-off: the
+// table exists so a store can opt in without a second migration.
+// ---------------------------------------------------------------------------
+function applyV15(db: Db): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS inferences (
+      id TEXT PRIMARY KEY,
+      hypothesis TEXT NOT NULL,
+      status TEXT NOT NULL CHECK (status IN ('pending', 'confirmed', 'rejected')),
+      reason TEXT,
+      fact_id TEXT,
+      created_at TEXT NOT NULL,
+      validated_at TEXT
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_inferences_status
+      ON inferences(status, created_at);
+
+    CREATE TABLE IF NOT EXISTS inference_evidence (
+      inference_id TEXT NOT NULL,
+      fact_id TEXT NOT NULL,
+      PRIMARY KEY (inference_id, fact_id)
+    );
+  `);
+
+  pragmaWrite(db, "user_version = 15");
 }
