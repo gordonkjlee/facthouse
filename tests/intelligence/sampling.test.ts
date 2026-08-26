@@ -102,7 +102,10 @@ describe("sampling intelligence provider", () => {
       .calls[0][0].systemPrompt as string;
     expect(prompt).toContain("CONTRADICTS long_term_memory");
     expect(prompt).toContain("Never guess a calendar day");
+    expect(prompt).toContain("whatever this store is used for");
     expect(prompt).not.toMatch(/pronoun resolution/i);
+    expect(prompt).not.toMatch(/medical information/i);
+    expect(prompt).not.toMatch(/personal details/i);
     const userText = (server.createMessage as ReturnType<typeof vi.fn>).mock
       .calls[0][0].messages[0].content.text as string;
     const payload = JSON.parse(userText) as {

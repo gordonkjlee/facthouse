@@ -28,6 +28,7 @@ import { domainRoutingInstruction } from "../schemas/domains.js";
 import type { DomainDef } from "../types/config.js";
 import {
   EXTRACT_CONTEXT_CONTRACT,
+  EXTRACT_DURABLE_JOB,
   SUBJECT_MARKING_CONTRACT,
   extractEventPayload,
   extractTodayUtcDate,
@@ -250,13 +251,8 @@ export function createSamplingProvider(
       return withFallback<ExtractionOutcome>(
         async () => {
           const raw = await ask(
-            "You extract durable facts from a conversation — facts worth " +
-              "remembering across future sessions. " +
-              "A fact is something the user wants remembered for future conversations: " +
-              "preferences, personal details, medical information, relationships, " +
-              "work context, opinions, decisions. " +
-              "Ignore ephemeral statements (current tasks, transient mood). " +
-              "Each fact should be a complete, self-contained sentence — rewrite as needed. " +
+            EXTRACT_DURABLE_JOB +
+              " " +
               EXTRACT_CONTEXT_CONTRACT + " " +
               "Respond with JSON only: {facts: [{content, domain_hint, valid_from, valid_until}], session_now?, referents?, topic_shifted?, confidence?}. " +
               `domain_hint is a domain already in use, a new short lowercase noun if none fits, or null. ` +

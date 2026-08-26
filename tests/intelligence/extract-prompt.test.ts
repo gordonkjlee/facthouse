@@ -3,7 +3,9 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import {
+  DURABLE_FACT,
   EXTRACT_CONTEXT_CONTRACT,
+  EXTRACT_DURABLE_JOB,
   EXTRACT_RELATED_K_CAP,
   SUBJECT_MARKING_CONTRACT,
   REFERENT_CAP,
@@ -75,6 +77,40 @@ describe("EXTRACT_CONTEXT_CONTRACT", () => {
       /EXTRACT_CONTEXT_CONTRACT/,
     );
     expect(src("intelligence/cli.ts")).toMatch(/EXTRACT_CONTEXT_CONTRACT/);
+  });
+
+  it("is the only definition of a durable fact", () => {
+    expect(DURABLE_FACT).toMatch(/whatever this store is used for/);
+    expect(DURABLE_FACT).toMatch(/Ignore ephemeral statements/);
+    expect(DURABLE_FACT).not.toMatch(/medical information/i);
+    expect(DURABLE_FACT).not.toMatch(/personal details/i);
+    expect(EXTRACT_DURABLE_JOB.startsWith("You extract durable facts from conversation events")).toBe(
+      true,
+    );
+    expect(EXTRACT_DURABLE_JOB).toContain(DURABLE_FACT);
+
+    expect(src("intelligence/cli.ts")).toMatch(/EXTRACT_DURABLE_JOB/);
+    expect(src("intelligence/sampling.ts")).toMatch(/EXTRACT_DURABLE_JOB/);
+    expect(src("tools/capture-fact-description.ts")).toMatch(/DURABLE_FACT/);
+
+    // A second inlined copy is how sampling listed medical/preferences while
+    // CLI was already general. Import the constant; do not paraphrase it.
+    expect(src("intelligence/cli.ts")).not.toMatch(
+      /A durable fact is a stable piece/,
+    );
+    expect(src("intelligence/sampling.ts")).not.toMatch(
+      /A durable fact is a stable piece/,
+    );
+    expect(src("intelligence/sampling.ts")).not.toMatch(/medical information/i);
+    expect(src("intelligence/sampling.ts")).not.toMatch(/personal details/i);
+    expect(src("tools/capture-fact-description.ts")).not.toMatch(
+      /medical information/i,
+    );
+    expect(src("tools/capture-fact-description.ts")).not.toMatch(
+      /personal details/i,
+    );
+    expect(src("tools/read-tools.ts")).not.toMatch(/medical info/i);
+    expect(src("tools/read-tools.ts")).not.toMatch(/not knowing the user/);
   });
 
   it("subject marking is one contract both entity extractors import", () => {

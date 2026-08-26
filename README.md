@@ -430,7 +430,7 @@ openmemory signal flush   # graduate pending facts — for PreCompact hooks
 
 #### `openmemory search <query>`
 
-Search the knowledge base from the command line. This runs the same hybrid search the `search_knowledge` tool runs, so it answers "what does it actually know about me?" — and "why did the AI say that?" — without wiring up a client:
+Search the knowledge base from the command line. This runs the same hybrid search the `search_knowledge` tool runs, so it answers "what does it actually know?" — and "why did the AI say that?" — without wiring up a client:
 
 ```bash
 openmemory search "coffee"
@@ -474,7 +474,7 @@ OpenMemory's tool descriptions tell assistants when to search and when a correct
 
 ### Without Configuration
 
-Claude Code or Cursor: name a `sources` entry (set `cwd`) and pull from the CLI first. MCP session start also pulls. The `search_knowledge` description still says to search before answering questions that might benefit from personal context. `capture_fact` is there if the assistant needs to correct or add something pull-plus-extraction will not produce.
+Claude Code or Cursor: name a `sources` entry (set `cwd`) and pull from the CLI first. MCP session start also pulls. The `search_knowledge` description still says to search before answering questions that might benefit from what this store knows. `capture_fact` is there if the assistant needs to correct or add something pull-plus-extraction will not produce.
 
 Clients with no pull adapter still rely on `log_event` / `capture_fact` until their adapter exists.
 
@@ -484,7 +484,7 @@ Clients with no pull adapter still rely on `log_event` / `capture_fact` until th
 |---|---|---|---|
 | Session start | Conversation begins | `memory://profile` (automatic), `search_knowledge` | AI knows who you are from message one |
 | Correction | A durable fact is missing from the store | `capture_fact` | Optional; Claude Code conversations are already in `session_events` via pull |
-| Pre-response search | Before generating a reply | `search_knowledge`, `get_context` | Responses informed by personal knowledge |
+| Pre-response search | Before generating a reply | `search_knowledge`, `get_context` | Responses informed by stored knowledge |
 | Pre-compaction | Before context window compression | `consolidate` or `openmemory signal flush` | Graduates pending facts before context is wiped — does not re-read the transcript or insert events |
 | Natural breakpoints | Topic change, task completion | `consolidate` (optional) | Keeps knowledge graph current |
 
@@ -500,7 +500,7 @@ Create `.claude/rules/openmemory.md` in your project (or `~/.claude/rules/openme
 - Conversations are pulled from the named Claude Code source (first backfill: `openmemory pull` on the CLI)
 - Do not install log-event hooks on this store
 - Identity context loads automatically from the `memory://profile` resource — no tool call needed
-- Before answering questions about preferences, people, or history, call `search_knowledge`
+- Before answering questions this store might already know, call `search_knowledge`
 - Call `capture_fact` only to correct or add something that is not in the transcript
 - When the conversation is getting long, call `consolidate` (or rely on PreCompact `openmemory signal flush`)
 - At natural breakpoints (topic change, task completion), call `consolidate` to keep the knowledge graph current
@@ -524,7 +524,7 @@ Add to `.cursorrules` (Cursor) or `.windsurfrules` (Windsurf) in your project ro
 
 ```
 When the openmemory MCP server is available:
-- Before answering questions about preferences, people, or history, call search_knowledge
+- Before answering questions this store might already know, call search_knowledge
 - To find out everything known about a particular person, project, or thing, call get_entity
 - Call capture_fact only to correct or add something pull or extraction missed
 - When context is getting long, call consolidate to process pending facts before they are lost

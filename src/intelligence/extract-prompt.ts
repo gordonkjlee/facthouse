@@ -1,14 +1,33 @@
 /**
- * One definition of what D→I extract-context fields *are*.
+ * One definition of what D→I extract-context fields *are*, and of what a
+ * durable fact is.
  *
- * Sampling and CLI previously drifted: sampling shrank recent_events to
- * "pronoun resolution" while CLI kept topical flow. The jobs below are the
- * contract; each provider may still describe what a durable fact is in its
- * own voice.
+ * Sampling and CLI previously drifted on recent_events (pronoun resolution vs
+ * topical flow) and again on what counts as a fact (CLI was general; sampling
+ * listed medical / preferences). The jobs below are the contract. Providers
+ * interpolate them; they do not paraphrase what a fact is.
  */
 
 import type { Referent } from "../types/data.js";
 import { SUBJECT_OF } from "../db/entities.js";
+
+/**
+ * What a durable fact is. One definition, interpolated by CLI extract, sampling
+ * extract, and the capture_fact tool description. A personal example list here
+ * is a second vocabulary: a warehouse store would never extract grain.
+ */
+export const DURABLE_FACT =
+  "A durable fact is a stable piece of knowledge about whatever this store is used for: its subjects, their attributes, their relationships, decisions, and context. Ignore ephemeral statements (current tasks, transient mood).";
+
+/**
+ * Opening job of D→I extract. CLI and sampling both start here so they cannot
+ * disagree about what to pull out of a turn.
+ */
+export const EXTRACT_DURABLE_JOB =
+  "You extract durable facts from conversation events — facts worth " +
+  "remembering across future sessions. " +
+  DURABLE_FACT +
+  " Each fact must be a complete, self-contained sentence — rewrite from the source as needed.";
 
 /** Live deictics kept for the current activity. Last-known only. */
 export const REFERENT_CAP = 8;

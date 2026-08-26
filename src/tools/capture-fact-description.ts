@@ -7,9 +7,11 @@
  * to live as a hardcoded proactive string in the tool and a correction story
  * in the README, and they already disagreed.
  *
- * The server registers whichever lead matches this store. Shared paragraphs
- * (speed, dedup) are written once.
+ * What a durable fact *is* lives in extract-prompt.ts (DURABLE_FACT) so extract
+ * and capture cannot disagree. The leads here only say when to call.
  */
+
+import { DURABLE_FACT } from "../intelligence/extract-prompt.js";
 
 /** Named sources mean pull is on. Malformed entries still count: the user
  *  intended a pull store. Empty / omitted is proactive capture. */
@@ -18,13 +20,14 @@ export function storeHasNamedSources(sources: unknown): boolean {
 }
 
 const PROACTIVE_LEAD =
-  "Store a durable fact worth remembering across sessions. Call this proactively whenever you learn " +
-  "something useful for future conversations — preferences, personal details, " +
-  "medical information, relationships, work context, opinions, or decisions.";
+  "Store a durable fact worth remembering across sessions. " +
+  DURABLE_FACT +
+  " Call this proactively whenever you learn something this store should keep.";
 
 const CORRECTION_LEAD =
   "Store a durable fact that pull-plus-extraction missed, or a judgement that is not in the transcript. " +
-  "Named sources already ingest conversations — do not recapture what the user just said. " +
+  DURABLE_FACT +
+  " Named sources already ingest conversations — do not recapture what the user just said. " +
   "Call this when you need to correct the knowledge, rather than whenever you learn something.";
 
 const FAST =
