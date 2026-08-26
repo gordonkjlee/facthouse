@@ -60,6 +60,9 @@ export function applySchema(db: Db): void {
   if (version < 15) {
     applyV15(db);
   }
+  if (version < 16) {
+    applyV16(db);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -691,4 +694,21 @@ function applyV15(db: Db): void {
   `);
 
   pragmaWrite(db, "user_version = 15");
+}
+
+// ---------------------------------------------------------------------------
+// Schema version 16 — speaker on I and K
+//
+// Who uttered the line is source monitoring, not capture path. `source_origin`
+// is explicit vs inferred; `source_type` is conversation vs inference. Neither
+// is the event's role. Null when we cannot tell (no primary event).
+// ---------------------------------------------------------------------------
+function applyV16(db: Db): void {
+  db.exec(`
+    ALTER TABLE session_facts ADD COLUMN speaker_role TEXT
+      CHECK (speaker_role IS NULL OR speaker_role IN ('user', 'assistant', 'system', 'tool'));
+    ALTER TABLE facts ADD COLUMN speaker_role TEXT
+      CHECK (speaker_role IS NULL OR speaker_role IN ('user', 'assistant', 'system', 'tool'));
+  `);
+  pragmaWrite(db, "user_version = 16");
 }

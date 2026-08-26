@@ -48,6 +48,23 @@ describe("fact manager", () => {
     expect(fact!.capture_context).toBe("introduction");
     expect(fact!.consolidation_id).toBeNull();
     expect(fact!.source_tool).toBe("test-client");
+    expect(fact!.speaker_role).toBeNull();
+  });
+
+  it("copies speaker_role from the source event", () => {
+    const { sessionManager, factManager } = setup();
+    const session = sessionManager.getActiveSession()!;
+    const event = dbMod.insertEvent(db, {
+      mcp_session_id: session.id,
+      event_type: "message",
+      role: "user",
+      content: "I prefer tea",
+    });
+    const fact = factManager.captureFact({
+      content: "The user prefers tea",
+      source_event_id: event.id,
+    });
+    expect(fact!.speaker_role).toBe("user");
   });
 
   it("rejects exact duplicate content in the same session", () => {

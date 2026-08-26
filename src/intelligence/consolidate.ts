@@ -48,6 +48,8 @@ import {
   getClaimedFacts,
   insertSessionFact,
   linkFactSource,
+  primaryEventForFact,
+  speakerRoleOf,
 } from "../db/session-facts.js";
 import {
   conversationRef,
@@ -537,6 +539,7 @@ export async function consolidate(
               session_id: sessionFact.session_id,
               capture_context: captureContext,
               source_quality: sessionFact.source_quality,
+              speaker_role: sessionFact.speaker_role,
               valid_from: validFrom,
             }, {
               // Fourth clock is config-gated: simple mode (the default) never
@@ -556,6 +559,7 @@ export async function consolidate(
               session_id: sessionFact.session_id,
               capture_context: captureContext,
               source_quality: sessionFact.source_quality,
+              speaker_role: sessionFact.speaker_role,
               valid_from: validFrom,
             });
         graduatedFacts.push(graduatedFact);
@@ -1178,6 +1182,7 @@ async function extractFactsFromEvents(
 
   for (const { group, facts } of pending) {
     for (const item of facts) {
+      const primary = primaryEventForFact(group.events, item.content);
       const fact = insertSessionFact(db, {
         session_id: group.ref.id,
         content: item.content,
@@ -1191,6 +1196,7 @@ async function extractFactsFromEvents(
         valid_until_hint: item.valid_until ?? null,
         entities_json: item.entities ? JSON.stringify(item.entities) : null,
         source_quality: item.source_quality ?? "heuristic",
+        speaker_role: speakerRoleOf(primary?.role),
         // Unclaimed: a later graduate-only flush (PreCompact) picks these up.
         consolidation_id: null,
       });
