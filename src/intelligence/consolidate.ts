@@ -536,6 +536,11 @@ export async function consolidate(
               capture_context: captureContext,
               source_quality: sessionFact.source_quality,
               valid_from: validFrom,
+            }, {
+              // Fourth clock is config-gated: simple mode (the default) never
+              // writes system_retired_at. Bi-temporal mode stamps the instant
+              // the system retracted belief in the old fact.
+              retireSystemTime: config?.temporal?.mode === "bitemporal",
             })
           : insertFact(db, {
               content: item.content,

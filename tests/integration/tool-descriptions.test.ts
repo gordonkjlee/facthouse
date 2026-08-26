@@ -125,6 +125,11 @@ describe.skipIf(!runnable)("tool descriptions are an instruction layer", () => {
     const search = tools.find((t) => t.name === "search_knowledge")!;
     expect(search.description).toMatch(/\bbefore\b/i);
     expect(search.description).toMatch(/get_session_context/);
+    // Simple mode (the default) must not spend tokens on system-time replay.
+    expect(search.description).not.toMatch(/as_of_system_time/);
+    expect(JSON.stringify(search.inputSchema ?? {})).not.toContain(
+      "as_of_system_time",
+    );
 
     const sessionCtx = tools.find((t) => t.name === "get_session_context")!;
     expect(sessionCtx.description).toBe(sessionContextDescription());
@@ -259,6 +264,60 @@ describe.skipIf(!runnable)(
       expect(captureFact.description).not.toMatch(/proactively/i);
       expect((captureFact.description ?? "").length).toBeGreaterThanOrEqual(120);
       expect(TIMING.test(captureFact.description ?? "")).toBe(true);
+    });
+  },
+);
+
+describe.skipIf(!runnable)(
+  "search_knowledge exposes as-of system time only in bitemporal mode",
+  () => {
+    let biRoot: string;
+    let biClient: Client;
+    let biTools: Array<{
+      name: string;
+      description?: string;
+      inputSchema?: unknown;
+    }> = [];
+
+    beforeAll(async () => {
+      biRoot = mkdtempSync(path.join(tmpdir(), "om-desc-bi-"));
+      spawnSync(process.execPath, [CLI, "init", biRoot], { encoding: "utf-8" });
+      const configPath = path.join(biRoot, "config.json");
+      const config = JSON.parse(readFileSync(configPath, "utf-8"));
+      config.temporal = { mode: "bitemporal", bitemporal_since: null };
+      writeFileSync(configPath, JSON.stringify(config, null, 2));
+
+      const env: Record<string, string> = {};
+      for (const [k, v] of Object.entries(process.env)) if (v !== undefined) env[k] = v;
+      env.OPENMEMORY_DATA = biRoot;
+      env.OPENMEMORY_PROVIDER = "heuristic";
+
+      const transport = new StdioClientTransport({
+        command: process.execPath,
+        args: [SERVER],
+        env,
+        stderr: "ignore",
+      });
+      biClient = new Client(
+        { name: "desc-audit-bi", version: "1.0.0" },
+        { capabilities: {} },
+      );
+      await biClient.connect(transport);
+      biTools = (await biClient.listTools()).tools;
+    }, 60_000);
+
+    afterAll(async () => {
+      await biClient?.close().catch(() => {});
+      if (biRoot) rmSync(biRoot, { recursive: true, force: true });
+    });
+
+    it("registers as_of_system_time and says when to use it", () => {
+      const search = biTools.find((t) => t.name === "search_knowledge")!;
+      expect(search.description).toMatch(/as_of_system_time/);
+      expect(JSON.stringify(search.inputSchema ?? {})).toContain(
+        "as_of_system_time",
+      );
+      expect(search.description).toMatch(/believed/);
     });
   },
 );

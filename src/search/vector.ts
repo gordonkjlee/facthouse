@@ -109,6 +109,11 @@ export function vectorSearch(
   dimensions: number,
   limit: number,
   opts: VectorSearchOpts = {},
+  /**
+   * ISO 8601 instant. When set, hydrate facts the system believed at that
+   * instant rather than only currently-true rows. Already parsed.
+   */
+  asOfSystemTime?: string,
 ): Fact[] {
   if (queryVector.length !== dimensions) {
     throw new Error(
@@ -160,7 +165,13 @@ export function vectorSearch(
   // Hydrate only the winners. The scan touches every vector; it must not also
   // load every fact row.
   const topIds = kept.slice(0, limit).map((s) => s.id);
-  const byId = new Map(getFactsByIds(db, topIds).map((f) => [f.id, f]));
+  const byId = new Map(
+    getFactsByIds(
+      db,
+      topIds,
+      asOfSystemTime ? { asOfSystemTime } : undefined,
+    ).map((f) => [f.id, f]),
+  );
 
   // Re-project through the ranked id list so similarity order survives, and
   // drop any fact the id lookup did not return — an embedding can outlive the

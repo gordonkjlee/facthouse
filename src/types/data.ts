@@ -286,6 +286,13 @@ export interface SearchResponse {
   result_confidence: number;
   /** Suggested query refinement when results look thin. */
   suggested_refinement: string | null;
+  /**
+   * Set when searching as-of system time and the requested instant is before
+   * this store started recording `system_retired_at`. Supersessions from the
+   * simple-mode era left that column null, so a fact the system had already
+   * replaced can still appear as believed at T.
+   */
+  system_time_warning?: string | null;
 }
 
 /** One event inside an episode slice. */

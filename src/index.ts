@@ -24,7 +24,7 @@ import { createIntelligenceProvider } from "./intelligence/provider.js";
 import { registerReadTools } from "./tools/read-tools.js";
 import { registerResources, SESSION_BOOTSTRAP_INSTRUCTIONS } from "./tools/resources.js";
 import { startScheduler, type Scheduler } from "./scheduler.js";
-import { loadConfig } from "./config.js";
+import { loadConfig, ensureBitemporalSince } from "./config.js";
 import { startSchedulerListener, type SchedulerListener } from "./ipc/scheduler-ipc.js";
 import { pullSources, shouldFlushAfterSessionStartPull } from "./sources/pull.js";
 
@@ -94,7 +94,9 @@ sessionManager.registerTools(server);
 registerSessionReadTools(server, sessionManager, db);
 
 // Load config (reads <dataDir>/config.json if present, otherwise defaults).
-const config = loadConfig(dataDir);
+// A store that has just switched to bi-temporal mode gets `bitemporal_since`
+// stamped here — historical supersessions cannot be backfilled.
+const config = ensureBitemporalSince(dataDir, loadConfig(dataDir));
 const triggers = new Set(config.consolidation.triggers);
 
 // Provider selector — heuristic is always the terminal fallback. Defaults to
@@ -124,7 +126,7 @@ const resources = registerResources(server, db);
 const factManager = createFactManager(db, sessionManager, {
   intelligence,
   embedding: embeddingProvider,
-  serverConfig: { extraction: config.extraction },
+  serverConfig: { extraction: config.extraction, temporal: config.temporal },
   // Both of these shipped in the default config and never reached the code that
   // reads them, so the hardcoded defaults always won whatever a store set.
   captureConfig: config.capture,
@@ -143,6 +145,7 @@ registerReadTools(
     minSimilarityRatio: config.embedding?.min_similarity_ratio,
     minSimilarity: config.embedding?.min_similarity ?? undefined,
   },
+  config.temporal,
 );
 
 const scheduler: Scheduler = startScheduler({

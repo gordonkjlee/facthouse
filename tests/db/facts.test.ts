@@ -9,11 +9,20 @@ const {
   getFact,
   getFactsByDomain,
   getFactsByEntity,
+  getFactsAsOfSystemTime,
+  parseSystemTime,
   supersedeFact,
   keywordSearch,
   sanitiseFtsQuery,
   incrementFactAccess,
 } = await import("../../src/db/facts.js");
+
+/** Spin until the ISO clock is strictly after `iso` so as-of tests can split instants. */
+function waitUntilAfter(iso: string): void {
+  while (new Date().toISOString() <= iso) {
+    /* millisecond clock */
+  }
+}
 const { createEntity, linkFactEntity } = await import("../../src/db/entities.js");
 
 let db: Db;
@@ -203,6 +212,8 @@ describe("supersession", () => {
     expect(oldFact!.status).toBe("superseded");
     expect(oldFact!.is_latest).toBe(false);
     expect(oldFact!.superseded_by).toBe(replacement.id);
+    // Simple mode — the default — never writes the fourth clock.
+    expect(oldFact!.system_retired_at).toBeNull();
   });
 
   it("supersedeFact sets valid_until on old fact and valid_from on new fact", () => {
@@ -390,6 +401,138 @@ describe("bitemporal valid_from", () => {
 
     expect(fact.valid_from).not.toBeNull();
     expect(fact.valid_from! >= before).toBe(true);
+  });
+});
+
+describe("system_retired_at and as-of system time", () => {
+  it("supersedeFact leaves system_retired_at null unless retireSystemTime is set", () => {
+    const old = insertFact(db, {
+      content: "Prefers tea",
+      domain: "preferences",
+      source_type: "explicit",
+    });
+    supersedeFact(db, old.id, {
+      content: "Prefers coffee",
+      domain: "preferences",
+      source_type: "explicit",
+    });
+    expect(getFact(db, old.id)!.system_retired_at).toBeNull();
+  });
+
+  it("retireSystemTime stamps system_retired_at on the old fact to the same instant as valid_until", () => {
+    const old = insertFact(db, {
+      content: "Prefers tea",
+      domain: "preferences",
+      source_type: "explicit",
+    });
+    const replacement = supersedeFact(
+      db,
+      old.id,
+      {
+        content: "Prefers coffee",
+        domain: "preferences",
+        source_type: "explicit",
+      },
+      { retireSystemTime: true },
+    );
+    const retired = getFact(db, old.id)!;
+    expect(retired.system_retired_at).toBe(retired.valid_until);
+    expect(retired.system_retired_at).toBe(replacement.created_at);
+    expect(replacement.system_retired_at).toBeNull();
+  });
+
+  it("getFactsAsOfSystemTime returns the fact believed at each instant in a chain", () => {
+    const a = insertFact(db, {
+      content: "Version A",
+      domain: "profile",
+      source_type: "explicit",
+    });
+    waitUntilAfter(a.created_at);
+    const b = supersedeFact(
+      db,
+      a.id,
+      { content: "Version B", domain: "profile", source_type: "explicit" },
+      { retireSystemTime: true },
+    );
+    waitUntilAfter(b.created_at);
+    const c = supersedeFact(
+      db,
+      b.id,
+      { content: "Version C", domain: "profile", source_type: "explicit" },
+      { retireSystemTime: true },
+    );
+
+    expect(b.created_at > a.created_at).toBe(true);
+    expect(c.created_at > b.created_at).toBe(true);
+
+    const atA = getFactsAsOfSystemTime(db, a.created_at).map((f) => f.id);
+    expect(atA).toEqual([a.id]);
+
+    const atB = getFactsAsOfSystemTime(db, b.created_at).map((f) => f.id);
+    expect(atB).toEqual([b.id]);
+
+    const atC = getFactsAsOfSystemTime(db, c.created_at).map((f) => f.id);
+    expect(atC).toEqual([c.id]);
+
+    const beforeA = getFactsAsOfSystemTime(db, "2000-01-01T00:00:00.000Z");
+    expect(beforeA).toHaveLength(0);
+  });
+
+  it("as-of in simple mode includes superseded facts because system_retired_at is null", () => {
+    // Why the read is gated on bi-temporal mode: without the fourth clock,
+    // "believed at T" cannot tell a replaced fact from one still held.
+    const old = insertFact(db, {
+      content: "Prefers tea",
+      domain: "preferences",
+      source_type: "explicit",
+    });
+    waitUntilAfter(old.created_at);
+    const replacement = supersedeFact(db, old.id, {
+      content: "Prefers coffee",
+      domain: "preferences",
+      source_type: "explicit",
+    });
+    const believed = getFactsAsOfSystemTime(db, replacement.created_at).map(
+      (f) => f.id,
+    );
+    expect(believed).toContain(old.id);
+    expect(believed).toContain(replacement.id);
+  });
+
+  it("keywordSearch as-of finds a superseded fact the system still held then", () => {
+    const old = insertFact(db, {
+      content: "User lives in Lisbon",
+      domain: "profile",
+      source_type: "explicit",
+    });
+    waitUntilAfter(old.created_at);
+    supersedeFact(
+      db,
+      old.id,
+      {
+        content: "User lives in Manchester",
+        domain: "profile",
+        source_type: "explicit",
+      },
+      { retireSystemTime: true },
+    );
+
+    const current = keywordSearch(db, "Lisbon");
+    expect(current).toHaveLength(0);
+
+    const asOf = keywordSearch(db, "Lisbon", 20, {
+      asOfSystemTime: old.created_at,
+    });
+    expect(asOf).toHaveLength(1);
+    expect(asOf[0].fact.id).toBe(old.id);
+  });
+
+  it("parseSystemTime rejects values that are not an ISO date", () => {
+    expect(() => parseSystemTime("coffee")).toThrow(/ISO 8601/);
+    expect(() => parseSystemTime("")).toThrow(/ISO 8601/);
+    expect(parseSystemTime("2026-03-15T12:00:00Z")).toBe(
+      "2026-03-15T12:00:00.000Z",
+    );
   });
 });
 

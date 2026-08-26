@@ -31,9 +31,87 @@ export interface NewFact {
   source_quality?: "heuristic" | "cli" | "sampling" | "explicit";
 }
 
+/** Options for a supersession write. */
+export interface SupersedeOpts {
+  /**
+   * When true, stamp `system_retired_at` on the old fact (bi-temporal mode).
+   * Default false — simple mode never writes the fourth clock.
+   */
+  retireSystemTime?: boolean;
+}
+
+/**
+ * Optional as-of system-time filter on a fact read.
+ *
+ * `asOfSystemTime` must already be an ISO 8601 instant (`parseSystemTime`).
+ * When set, the query is "what the system believed at T" rather than "what
+ * is currently true": `created_at <= T AND (system_retired_at IS NULL OR
+ * system_retired_at > T)`. That includes superseded facts the store still
+ * held at T, and excludes facts it learned afterwards.
+ */
+export interface FactReadOpts {
+  asOfSystemTime?: string;
+}
+
 // ---------------------------------------------------------------------------
 // Facts
 // ---------------------------------------------------------------------------
+
+type FactRow = Omit<Fact, "is_latest"> & { is_latest: number };
+
+function mapFact(row: FactRow): Fact {
+  return { ...row, is_latest: row.is_latest === 1 };
+}
+
+/**
+ * Normalise an as-of system-time argument to an ISO 8601 instant.
+ *
+ * Stored clocks are `Date.toISOString()` values. Comparing a date-only string
+ * against those lexicographically drops every fact written later that UTC day,
+ * so this parses through `Date` and re-emits the same format the columns use.
+ */
+export function parseSystemTime(input: string): string {
+  const trimmed = input.trim();
+  if (!/^\d{4}-\d{2}-\d{2}/.test(trimmed)) {
+    throw new Error(
+      `Invalid as-of system time '${input}'. Use an ISO 8601 instant, e.g. 2026-03-15T12:00:00Z.`,
+    );
+  }
+  const parsed = new Date(trimmed);
+  if (Number.isNaN(parsed.getTime())) {
+    throw new Error(
+      `Invalid as-of system time '${input}'. Use an ISO 8601 instant, e.g. 2026-03-15T12:00:00Z.`,
+    );
+  }
+  return parsed.toISOString();
+}
+
+/**
+ * Currency predicate for a fact read — currently true, or believed at T.
+ *
+ * One definition. Callers that inlined `status = 'active' AND is_latest = 1`
+ * would drift the first time either side of this fork changed.
+ */
+function currencyClause(
+  alias: string,
+  asOfSystemTime?: string,
+): { sql: string; params: SqlParam[] } {
+  const c = alias ? `${alias}.` : "";
+  if (asOfSystemTime !== undefined) {
+    return {
+      sql:
+        `${c}created_at <= ? AND (${c}system_retired_at IS NULL OR ` +
+        `${c}system_retired_at > ?)`,
+      params: [asOfSystemTime, asOfSystemTime],
+    };
+  }
+  return {
+    sql:
+      `${c}status = 'active' AND ${c}is_latest = 1 ` +
+      `AND (${c}valid_until IS NULL OR ${c}valid_until > datetime('now'))`,
+    params: [],
+  };
+}
 
 /** Insert a graduated fact. Returns the created Fact.
  *  valid_from defaults to now if not provided. Pass null explicitly for unknown validity start (e.g., historical imports). */
@@ -106,49 +184,53 @@ export function insertFact(db: Db, fact: NewFact): Fact {
 /** Retrieve a fact by ID. */
 export function getFact(db: Db, id: string): Fact | null {
   const row = db.prepare(`SELECT * FROM facts WHERE id = ?`).get(id) as
-    | (Omit<Fact, "is_latest"> & { is_latest: number })
+    | FactRow
     | undefined;
   if (!row) return null;
-  return { ...row, is_latest: row.is_latest === 1 };
+  return mapFact(row);
 }
 
 /**
- * Retrieve several facts by id, currently-true only.
+ * Retrieve several facts by id, currently-true only — or believed at T when
+ * `opts.asOfSystemTime` is set.
  *
  * For hydrating the winners of a ranked scan: the semantic path scores every
  * stored vector but only needs the top handful of fact rows, and one query
  * beats N round trips through `getFact`.
  *
  * Returns in arbitrary order and silently omits ids that are missing or no
- * longer current — callers hold their own ranking and re-project through it.
+ * longer in the requested set — callers hold their own ranking and re-project
+ * through it.
  */
-export function getFactsByIds(db: Db, ids: string[]): Fact[] {
+export function getFactsByIds(
+  db: Db,
+  ids: string[],
+  opts?: FactReadOpts,
+): Fact[] {
   if (ids.length === 0) return [];
   const placeholders = ids.map(() => "?").join(",");
+  const currency = currencyClause("", opts?.asOfSystemTime);
   const rows = db
     .prepare(
       `SELECT * FROM facts
         WHERE id IN (${placeholders})
-          AND status = 'active' AND is_latest = 1
-          AND (valid_until IS NULL OR valid_until > datetime('now'))`,
+          AND ${currency.sql}`,
     )
-    .all(...(ids as SqlParam[])) as Array<Omit<Fact, "is_latest"> & { is_latest: number }>;
-  return rows.map((row) => ({ ...row, is_latest: row.is_latest === 1 }));
+    .all(...(ids as SqlParam[]), ...currency.params) as FactRow[];
+  return rows.map(mapFact);
 }
 
-/** Get all active, latest facts for a domain. */
+/** Get all currently-true facts for a domain — or those believed at T. */
 export function getFactsByDomain(
   db: Db,
   domain: string,
   subdomain?: string,
+  opts?: FactReadOpts,
 ): Fact[] {
-  // is_latest is the canonical current-state predicate. The valid_until guard
-  // is defence-in-depth: if any code path ever mutates a fact with is_latest=1
-  // AND valid_until set, we still exclude it from current-state results.
+  const currency = currencyClause("", opts?.asOfSystemTime);
   let sql = `SELECT * FROM facts
-             WHERE domain = ? AND status = 'active' AND is_latest = 1
-               AND (valid_until IS NULL OR valid_until > datetime('now'))`;
-  const params: SqlParam[] = [domain];
+             WHERE domain = ? AND ${currency.sql}`;
+  const params: SqlParam[] = [domain, ...currency.params];
 
   if (subdomain !== undefined) {
     sql += ` AND subdomain = ?`;
@@ -158,18 +240,17 @@ export function getFactsByDomain(
   // Deterministic ordering: newest first. Required for stable supersession candidate selection.
   sql += ` ORDER BY created_at DESC`;
 
-  const rows = db.prepare(sql).all(...params) as Array<
-    Omit<Fact, "is_latest"> & { is_latest: number }
-  >;
-
-  return rows.map((row) => ({ ...row, is_latest: row.is_latest === 1 }));
+  const rows = db.prepare(sql).all(...params) as FactRow[];
+  return rows.map(mapFact);
 }
 
 /** Get facts linked to an entity. */
 export function getFactsByEntity(
   db: Db,
   entityId: string,
+  opts?: FactReadOpts,
 ): EntityFact[] {
+  const currency = currencyClause("f", opts?.asOfSystemTime);
   const rows = db
     .prepare(
       // Facts *about* this entity come first, then facts that merely name it,
@@ -188,13 +269,12 @@ export function getFactsByEntity(
       `SELECT f.*, MAX(fe.relationship = ?) AS is_subject
          FROM facts f
          JOIN fact_entities fe ON f.id = fe.fact_id
-        WHERE fe.entity_id = ? AND f.status = 'active' AND f.is_latest = 1
-          AND (f.valid_until IS NULL OR f.valid_until > datetime('now'))
+        WHERE fe.entity_id = ? AND ${currency.sql}
         GROUP BY f.id
         ORDER BY is_subject DESC, f.importance DESC, f.created_at DESC`,
     )
-    .all(SUBJECT_OF, entityId) as Array<
-    Omit<Fact, "is_latest"> & { is_latest: number; is_subject: number }
+    .all(SUBJECT_OF, entityId, ...currency.params) as Array<
+    FactRow & { is_subject: number }
   >;
 
   return rows.map((row) => ({
@@ -204,13 +284,37 @@ export function getFactsByEntity(
   }));
 }
 
+/**
+ * Facts the system believed at instant T.
+ *
+ * `created_at <= T AND (system_retired_at IS NULL OR system_retired_at > T)`.
+ * In simple mode `system_retired_at` is never written, so this is not a
+ * meaningful audit — callers that expose it must gate on bi-temporal mode.
+ */
+export function getFactsAsOfSystemTime(db: Db, at: string, limit = 100): Fact[] {
+  const instant = parseSystemTime(at);
+  const currency = currencyClause("", instant);
+  const rows = db
+    .prepare(
+      `SELECT * FROM facts
+        WHERE ${currency.sql}
+        ORDER BY created_at DESC
+        LIMIT ?`,
+    )
+    .all(...currency.params, limit) as FactRow[];
+  return rows.map(mapFact);
+}
+
 /** Supersede a fact: mark old as superseded, insert new. Returns the new Fact.
  *  valid_from on the replacement is always set to now — the replacement becomes true at supersession time.
- *  Throws if oldId does not exist. */
+ *  Throws if oldId does not exist.
+ *  `system_retired_at` is written only when `opts.retireSystemTime` is true
+ *  (bi-temporal mode). Simple mode — the default — never populates it. */
 export function supersedeFact(
   db: Db,
   oldId: string,
   newFact: NewFact,
+  opts?: SupersedeOpts,
 ): Fact {
   const newId = randomUUID();
   const now = new Date().toISOString();
@@ -222,13 +326,21 @@ export function supersedeFact(
   const sessionId = newFact.session_id ?? null;
   const captureContext = newFact.capture_context ?? null;
   const sourceQuality = newFact.source_quality ?? "heuristic";
+  const retireSystemTime = opts?.retireSystemTime === true;
 
   const result = withTransaction(db, () => {
-    const updated = db.prepare(
-      `UPDATE facts
-       SET status = 'superseded', superseded_by = ?, is_latest = 0, valid_until = ?
-       WHERE id = ?`,
-    ).run(newId, now, oldId);
+    const updated = retireSystemTime
+      ? db.prepare(
+          `UPDATE facts
+           SET status = 'superseded', superseded_by = ?, is_latest = 0,
+               valid_until = ?, system_retired_at = ?
+           WHERE id = ?`,
+        ).run(newId, now, now, oldId)
+      : db.prepare(
+          `UPDATE facts
+           SET status = 'superseded', superseded_by = ?, is_latest = 0, valid_until = ?
+           WHERE id = ?`,
+        ).run(newId, now, oldId);
 
     if (updated.changes === 0) {
       throw new Error(`Cannot supersede fact '${oldId}': not found`);
@@ -305,26 +417,27 @@ export function keywordSearch(
   db: Db,
   query: string,
   limit?: number,
+  opts?: FactReadOpts,
 ): Array<{ fact: Fact; rank: number }> {
   const effectiveLimit = limit ?? 20;
+  const currency = currencyClause("f", opts?.asOfSystemTime);
 
   const rows = db
     .prepare(
       `SELECT f.*, fts.rank
        FROM facts_fts fts
        JOIN facts f ON f.rowid = fts.rowid
-       WHERE facts_fts MATCH ? AND f.status = 'active' AND f.is_latest = 1
-         AND (f.valid_until IS NULL OR f.valid_until > datetime('now'))
+       WHERE facts_fts MATCH ? AND ${currency.sql}
        ORDER BY fts.rank
        LIMIT ?`,
     )
-    .all(query, effectiveLimit) as Array<
-    Omit<Fact, "is_latest"> & { is_latest: number; rank: number }
+    .all(query, ...currency.params, effectiveLimit) as Array<
+    FactRow & { rank: number }
   >;
 
   return rows.map((row) => {
     const { rank, ...rest } = row;
-    return { fact: { ...rest, is_latest: rest.is_latest === 1 }, rank };
+    return { fact: mapFact(rest), rank };
   });
 }
 

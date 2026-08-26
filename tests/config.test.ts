@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { loadConfig } from "../src/config.js";
+import { loadConfig, ensureBitemporalSince, SYSTEM_TIME_INCOMPLETE_WARNING, systemTimeWarning } from "../src/config.js";
 
 let dir: string;
 
@@ -108,5 +108,57 @@ describe("config loader", () => {
     // change how capture_fact works.
     expect(cfg.extraction.enabled).toBe(true);
     expect(cfg.consolidation.threshold).toBe(10);
+  });
+});
+
+describe("ensureBitemporalSince", () => {
+  it("does not stamp simple mode", () => {
+    const cfg = ensureBitemporalSince(dir, loadConfig(dir));
+    expect(cfg.temporal.mode).toBe("simple");
+    expect(cfg.temporal.bitemporal_since).toBeNull();
+    expect(existsSync(path.join(dir, "config.json"))).toBe(false);
+  });
+
+  it("stamps bitemporal_since once when switching to bitemporal", () => {
+    writeFileSync(
+      path.join(dir, "config.json"),
+      JSON.stringify({ temporal: { mode: "bitemporal" } }),
+    );
+    const first = ensureBitemporalSince(dir, loadConfig(dir));
+    expect(first.temporal.mode).toBe("bitemporal");
+    expect(first.temporal.bitemporal_since).toMatch(
+      /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}.\d{3}Z$/,
+    );
+    const written = JSON.parse(
+      readFileSync(path.join(dir, "config.json"), "utf-8"),
+    );
+    expect(written.temporal.mode).toBe("bitemporal");
+    expect(written.temporal.bitemporal_since).toBe(first.temporal.bitemporal_since);
+
+    const second = ensureBitemporalSince(dir, loadConfig(dir));
+    expect(second.temporal.bitemporal_since).toBe(first.temporal.bitemporal_since);
+  });
+
+  it("leaves an existing stamp alone", () => {
+    writeFileSync(
+      path.join(dir, "config.json"),
+      JSON.stringify({
+        temporal: { mode: "bitemporal", bitemporal_since: "2024-01-01T00:00:00.000Z" },
+      }),
+    );
+    const cfg = ensureBitemporalSince(dir, loadConfig(dir));
+    expect(cfg.temporal.bitemporal_since).toBe("2024-01-01T00:00:00.000Z");
+  });
+});
+
+describe("systemTimeWarning", () => {
+  it("warns when T is before the stamp or the stamp is missing", () => {
+    expect(systemTimeWarning("2020-01-01T00:00:00.000Z", "2024-01-01T00:00:00.000Z")).toBe(
+      SYSTEM_TIME_INCOMPLETE_WARNING,
+    );
+    expect(systemTimeWarning("2024-06-01T00:00:00.000Z", null)).toBe(
+      SYSTEM_TIME_INCOMPLETE_WARNING,
+    );
+    expect(systemTimeWarning("2024-06-01T00:00:00.000Z", "2024-01-01T00:00:00.000Z")).toBeNull();
   });
 });

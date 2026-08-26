@@ -20,6 +20,7 @@ import {
   sanitiseFtsQuery,
   getFactsByDomain,
   getFactsByEntity,
+  type FactReadOpts,
 } from "../db/facts.js";
 import { findEntity, getEntitiesForFacts } from "../db/entities.js";
 import { keywordSearchPending } from "../db/session-facts.js";
@@ -38,6 +39,11 @@ export interface StructuredFilters {
   status?: string;
   is_latest?: boolean;
   limit?: number;
+  /**
+   * ISO 8601 instant. When set, return facts the system believed at that
+   * instant rather than what is currently true. Already parsed.
+   */
+  asOfSystemTime?: string;
 }
 
 /**
@@ -50,16 +56,25 @@ export function structuredSearch(
 ): Fact[] {
   const limit = filters.limit ?? 20;
 
+  const readOpts: FactReadOpts | undefined = filters.asOfSystemTime
+    ? { asOfSystemTime: filters.asOfSystemTime }
+    : undefined;
+
   // Entity-based path
   if (filters.entity_id) {
-    const facts = getFactsByEntity(db, filters.entity_id);
-    // getFactsByEntity already filters active + is_latest; apply limit
+    const facts = getFactsByEntity(db, filters.entity_id, readOpts);
+    // getFactsByEntity already applies currency; apply limit
     return facts.slice(0, limit);
   }
 
   // Domain-based path
   if (filters.domain) {
-    const facts = getFactsByDomain(db, filters.domain, filters.subdomain);
+    const facts = getFactsByDomain(
+      db,
+      filters.domain,
+      filters.subdomain,
+      readOpts,
+    );
     return facts.slice(0, limit);
   }
 
@@ -67,13 +82,24 @@ export function structuredSearch(
   const conditions: string[] = [];
   const params: SqlParam[] = [];
 
-  const status = filters.status ?? "active";
-  conditions.push("status = ?");
-  params.push(status);
+  if (filters.asOfSystemTime) {
+    conditions.push(
+      "created_at <= ? AND (system_retired_at IS NULL OR system_retired_at > ?)",
+    );
+    params.push(filters.asOfSystemTime, filters.asOfSystemTime);
+  } else {
+    const status = filters.status ?? "active";
+    conditions.push("status = ?");
+    params.push(status);
 
-  const isLatest = filters.is_latest ?? true;
-  conditions.push("is_latest = ?");
-  params.push(isLatest ? 1 : 0);
+    const isLatest = filters.is_latest ?? true;
+    conditions.push("is_latest = ?");
+    params.push(isLatest ? 1 : 0);
+
+    // Defence-in-depth: exclude facts whose validity window has closed,
+    // matching getFactsByDomain/getFactsByEntity/keywordSearch in facts.ts.
+    conditions.push("(valid_until IS NULL OR valid_until > datetime('now'))");
+  }
 
   // Only apply subdomain filter when domain is also specified — subdomains
   // are not globally unique ("beverages" in preferences vs medical).
@@ -81,10 +107,6 @@ export function structuredSearch(
     conditions.push("subdomain = ?");
     params.push(filters.subdomain);
   }
-
-  // Defence-in-depth: exclude facts whose validity window has closed,
-  // matching getFactsByDomain/getFactsByEntity/keywordSearch in facts.ts.
-  conditions.push("(valid_until IS NULL OR valid_until > datetime('now'))");
 
   const sql = `SELECT * FROM facts WHERE ${conditions.join(" AND ")} ORDER BY created_at DESC LIMIT ?`;
   params.push(limit);
@@ -286,6 +308,11 @@ export interface HybridSearchOpts {
   domain?: string;
   limit?: number;
   /**
+   * ISO 8601 instant. When set, search facts the system believed at that
+   * instant rather than what is currently true. Already parsed.
+   */
+  asOfSystemTime?: string;
+  /**
    * Pre-computed embedding of the query, plus the model and dimension it came
    * from. Omit for keyword-only search — the shipped default.
    *
@@ -332,6 +359,10 @@ export function hybridSearch(
 ): SearchResponse {
   const limit = opts?.limit ?? 20;
   const domain = opts?.domain;
+  const asOf = opts?.asOfSystemTime;
+  const readOpts: FactReadOpts | undefined = asOf
+    ? { asOfSystemTime: asOf }
+    : undefined;
 
   // How many candidates each recall path contributes to the merge, before the
   // final cut to `limit`.
@@ -350,7 +381,9 @@ export function hybridSearch(
 
   // 1. FTS5 keyword search (sanitise to prevent FTS5 syntax errors)
   const sanitised = sanitiseFtsQuery(query);
-  const ftsResults = sanitised ? fts5Search(db, sanitised, candidatePool) : [];
+  const ftsResults = sanitised
+    ? fts5Search(db, sanitised, candidatePool, readOpts)
+    : [];
   const ftsFacts = ftsResults.map((r) => r.fact);
 
   // 2. Structured domain path (if a domain was named). This is what makes the
@@ -362,7 +395,10 @@ export function hybridSearch(
 
   if (domain) {
     // getFactsByDomain already orders by created_at DESC
-    const domainFacts = getFactsByDomain(db, domain).slice(0, candidatePool);
+    const domainFacts = getFactsByDomain(db, domain, undefined, readOpts).slice(
+      0,
+      candidatePool,
+    );
     searchLists.push({ name: "domain", facts: domainFacts });
   }
 
@@ -382,7 +418,7 @@ export function hybridSearch(
   for (const term of terms) {
     const entity = findEntity(db, term);
     if (entity) {
-      for (const fact of getFactsByEntity(db, entity.id)) {
+      for (const fact of getFactsByEntity(db, entity.id, readOpts)) {
         if (!seenEntityFactIds.has(fact.id)) {
           seenEntityFactIds.add(fact.id);
           entityFacts.push(fact);
@@ -416,6 +452,7 @@ export function hybridSearch(
       dimensions,
       candidatePool,
       tuning,
+      asOf,
     );
     if (semanticFacts.length > 0) {
       searchLists.push({ name: "semantic", facts: semanticFacts });
@@ -453,7 +490,7 @@ export function hybridSearch(
   // "filter to a specific domain". The description was the thing that was wrong.
   // See docs/design/data-model.md § Domains.
   //
-  // (upstream DAL queries already filter by status='active' AND is_latest=1)
+  // (upstream DAL queries already apply current-state or as-of-system-time)
   scored.sort((a, b) => b.score - a.score);
   const topResults = scored.slice(0, limit);
 
@@ -493,17 +530,21 @@ export function hybridSearch(
   // what is already known nor reconciled with a fact it may contradict. It is
   // real knowledge and must be findable; it is not yet knowledge of the same
   // standing.
-  const pending: PendingFact[] = (
-    sanitised ? keywordSearchPending(db, sanitised, limit) : []
-  ).map((sf) => ({
-    id: sf.id,
-    content: sf.content,
-    source_origin: sf.source_origin,
-    domain_hint: sf.domain_hint,
-    confidence: sf.confidence,
-    created_at: sf.created_at,
-    session_id: sf.session_id,
-  }));
+  // As-of system time asks what K believed at T. Pending (I) and episodes (D)
+  // are the current staging and raw log, not a reconstruction of that instant.
+  const pending: PendingFact[] = asOf
+    ? []
+    : (
+        sanitised ? keywordSearchPending(db, sanitised, limit) : []
+      ).map((sf) => ({
+        id: sf.id,
+        content: sf.content,
+        source_origin: sf.source_origin,
+        domain_hint: sf.domain_hint,
+        confidence: sf.confidence,
+        created_at: sf.created_at,
+        session_id: sf.session_id,
+      }));
 
   // 9. Compute retrieval quality signals.
   // Deliberately computed from graduated results only: these signals describe
@@ -518,7 +559,7 @@ export function hybridSearch(
   // D only when K is empty. Always-on event search would be a second
   // retrieval product; a pulled line that never graduated is the named gap.
   let episodes: EpisodeSlice[] = [];
-  if (results.length === 0 && sanitised) {
+  if (!asOf && results.length === 0 && sanitised) {
     episodes = searchEpisodes(db, sanitised);
     if (episodes.length > 0) {
       quality.suggested_refinement = EPISODE_REFINEMENT;
