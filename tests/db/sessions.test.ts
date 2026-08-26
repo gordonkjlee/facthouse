@@ -5,7 +5,7 @@ import type { Db } from "../../src/db/connection.js";
 
 
 const { openDatabase, closeDatabase } = await import("../../src/db/connection.js");
-const { applySchema, getSchemaVersion } = await import("../../src/db/schema.js");
+const { applySchema, getSchemaVersion, SCHEMA_VERSION } = await import("../../src/db/schema.js");
 const {
   createSession,
   ensureSession,
@@ -31,12 +31,12 @@ afterEach(async () => {
 
 describe("schema", () => {
   it("applies current version", async () => {
-    expect(await getSchemaVersion(db)).toBe(17);
+    expect(await getSchemaVersion(db)).toBe(SCHEMA_VERSION);
   });
 
   it("is idempotent", async () => {
     await applySchema(db); // second call
-    expect(await getSchemaVersion(db)).toBe(17);
+    expect(await getSchemaVersion(db)).toBe(SCHEMA_VERSION);
   });
 });
 

@@ -42,6 +42,9 @@ export interface Statement {
   all(...params: SqlParam[]): Promise<unknown[]>;
 }
 
+/** Which engine is behind this handle. */
+export type Dialect = "sqlite" | "postgres";
+
 /**
  * The database handle type. Import this rather than the driver directly.
  *
@@ -49,6 +52,7 @@ export interface Statement {
  * stay SQLite-only and live beside this type.
  */
 export interface Db {
+  readonly dialect: Dialect;
   exec(sql: string): Promise<void>;
   prepare(sql: string): Statement;
   close(): Promise<void>;
@@ -80,6 +84,7 @@ class SqliteStatement implements Statement {
 }
 
 class SqliteDb implements Db {
+  readonly dialect = "sqlite" as const;
   constructor(private readonly raw: DatabaseSync) {}
 
   async exec(sql: string): Promise<void> {

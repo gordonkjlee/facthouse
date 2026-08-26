@@ -9,8 +9,10 @@ export {
   pragmaRead,
   pragmaWrite,
 } from "./connection.js";
-export type { Db } from "./connection.js";
-export { applySchema, getSchemaVersion } from "./schema.js";
+export type { Db, Dialect } from "./connection.js";
+export { applySchema, getSchemaVersion, SCHEMA_VERSION } from "./schema.js";
+export { attachPostgres, rewriteToPostgres } from "./postgres.js";
+export type { PostgresBackend } from "./postgres.js";
 export {
   createSession,
   ensureSession,

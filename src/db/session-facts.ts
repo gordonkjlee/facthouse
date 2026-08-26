@@ -326,6 +326,21 @@ export async function keywordSearchPending(
 ): Promise<SessionFact[]> {
   const effectiveLimit = limit ?? 20;
 
+  if (db.dialect === "postgres") {
+    const text = query.replace(/"/g, " ").replace(/\s+/g, " ").trim();
+    if (!text) return [];
+    return (await db
+      .prepare(
+        `SELECT sf.*
+         FROM session_facts sf, plainto_tsquery('simple', ?) q
+         WHERE sf.content_tsv @@ q
+           AND sf.consolidation_id IS NULL
+         ORDER BY ts_rank(sf.content_tsv, q) DESC
+         LIMIT ?`,
+      )
+      .all(text, effectiveLimit)) as unknown as SessionFact[];
+  }
+
   const rows = (await db
     .prepare(
       `SELECT sf.*

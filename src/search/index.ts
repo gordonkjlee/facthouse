@@ -112,10 +112,13 @@ export async function structuredSearch(
   params.push(limit);
 
   const rows = (await db.prepare(sql).all(...params)) as Array<
-    Omit<Fact, "is_latest"> & { is_latest: number }
+    Omit<Fact, "is_latest"> & { is_latest: number | boolean }
   >;
 
-  return rows.map((row) => ({ ...row, is_latest: row.is_latest === 1 }));
+  return rows.map((row) => ({
+    ...row,
+    is_latest: row.is_latest === 1 || row.is_latest === true,
+  }));
 }
 
 // ---------------------------------------------------------------------------
