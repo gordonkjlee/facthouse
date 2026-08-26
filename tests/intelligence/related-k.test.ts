@@ -34,6 +34,7 @@ function event(content: string): SessionEvent {
     content_ref: null,
     metadata: null,
     created_at: new Date().toISOString(),
+    occurred_at: null,
   };
 }
 

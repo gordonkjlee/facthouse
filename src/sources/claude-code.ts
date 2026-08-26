@@ -215,12 +215,15 @@ export function mapTranscriptLine(
     path: filePath,
     line: lineNumber,
   };
+  // Transcript clock, not ingest time. Null when the line has no usable
+  // timestamp — copying created_at would pretend we know when it was said.
+  const occurredAt = parseJsonlTimestamp(row.timestamp);
 
   if (type === "user" || type === "human") {
-    return mapUserOrToolResult(message ?? row, sessionId, provenance);
+    return mapUserOrToolResult(message ?? row, sessionId, provenance, occurredAt);
   }
   if (type === "assistant") {
-    return mapAssistant(message ?? row, sessionId, provenance);
+    return mapAssistant(message ?? row, sessionId, provenance, occurredAt);
   }
   if (type === "tool_result") {
     const content = extractToolResultContent(row);
@@ -233,6 +236,7 @@ export function mapTranscriptLine(
         content,
         content_type: looksLikeJson(content) ? "json" : "text",
         metadata: provenance,
+        occurred_at: occurredAt,
       }),
     ];
   }
@@ -247,6 +251,7 @@ export function mapTranscriptLine(
         content,
         content_type: "json",
         metadata: provenance,
+        occurred_at: occurredAt,
       }),
     ];
   }
@@ -254,10 +259,10 @@ export function mapTranscriptLine(
   // Bare role/content records (some exports drop `type`).
   const role = typeof row.role === "string" ? row.role : undefined;
   if (role === "user" || role === "human") {
-    return mapUserOrToolResult(row, sessionId, provenance);
+    return mapUserOrToolResult(row, sessionId, provenance, occurredAt);
   }
   if (role === "assistant") {
-    return mapAssistant(row, sessionId, provenance);
+    return mapAssistant(row, sessionId, provenance, occurredAt);
   }
 
   return [];
@@ -411,6 +416,7 @@ function mapUserOrToolResult(
   message: Record<string, unknown>,
   sessionId: string,
   provenance: Record<string, unknown>,
+  occurredAt: string | null,
 ): NewSessionEvent[] {
   const content = message.content;
   if (typeof content === "string") {
@@ -423,6 +429,7 @@ function mapUserOrToolResult(
         role: "user",
         content: text,
         metadata: provenance,
+        occurred_at: occurredAt,
       }),
     ];
   }
@@ -444,6 +451,7 @@ function mapUserOrToolResult(
           content: result,
           content_type: looksLikeJson(result) ? "json" : "text",
           metadata: provenance,
+          occurred_at: occurredAt,
         }),
       );
       continue;
@@ -459,6 +467,7 @@ function mapUserOrToolResult(
         role: "user",
         content: texts.join("\n"),
         metadata: provenance,
+        occurred_at: occurredAt,
       }),
     );
   }
@@ -469,6 +478,7 @@ function mapAssistant(
   message: Record<string, unknown>,
   sessionId: string,
   provenance: Record<string, unknown>,
+  occurredAt: string | null,
 ): NewSessionEvent[] {
   const content = message.content;
   if (typeof content === "string") {
@@ -481,6 +491,7 @@ function mapAssistant(
         role: "assistant",
         content: text,
         metadata: provenance,
+        occurred_at: occurredAt,
       }),
     ];
   }
@@ -502,6 +513,7 @@ function mapAssistant(
           content: formatted,
           content_type: "json",
           metadata: provenance,
+          occurred_at: occurredAt,
         }),
       );
       continue;
@@ -518,6 +530,7 @@ function mapAssistant(
         role: "assistant",
         content: texts.join("\n"),
         metadata: provenance,
+        occurred_at: occurredAt,
       }),
     );
   }
@@ -577,6 +590,15 @@ function looksLikeJson(text: string): boolean {
   );
 }
 
+function parseJsonlTimestamp(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (!/^\d{4}-\d{2}-\d{2}/.test(trimmed)) return null;
+  const parsed = new Date(trimmed);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed.toISOString();
+}
+
 function event(opts: {
   sessionId: string;
   event_type: NewSessionEvent["event_type"];
@@ -584,6 +606,7 @@ function event(opts: {
   content: string;
   content_type?: NewSessionEvent["content_type"];
   metadata: Record<string, unknown>;
+  occurred_at?: string | null;
 }): NewSessionEvent {
   return {
     client_session_id: opts.sessionId,
@@ -592,5 +615,6 @@ function event(opts: {
     content: opts.content,
     content_type: opts.content_type ?? "text",
     metadata: opts.metadata,
+    occurred_at: opts.occurred_at ?? null,
   };
 }

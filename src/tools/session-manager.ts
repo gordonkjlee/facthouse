@@ -236,6 +236,7 @@ export function registerSessionReadTools(
                 content_ref: e.content_ref,
                 metadata: e.metadata,
                 created_at: e.created_at,
+                occurred_at: e.occurred_at,
               })),
             }),
           },

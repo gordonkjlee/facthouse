@@ -54,6 +54,9 @@ export function applySchema(db: Db): void {
   if (version < 13) {
     applyV13(db);
   }
+  if (version < 14) {
+    applyV14(db);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -630,4 +633,25 @@ function applyV13(db: Db): void {
   `);
 
   pragmaWrite(db, "user_version = 13");
+}
+
+// ---------------------------------------------------------------------------
+// Schema version 14 — when a session event was said, vs when it was ingested
+//
+// `created_at` is when OpenMemory wrote the row. Claude Code JSONL lines
+// already carry a top-level ISO `timestamp` for when the turn was recorded;
+// pull used to drop it, so a backfill looked like it all happened at ingest.
+// `occurred_at` is that transcript clock, nullable: hook `log-event` has no
+// JSONL line, and a line without a usable timestamp stays null rather than
+// copying ingest time (that would collapse the two axes).
+//
+// Not a fact-layer clock. Sequence remains conversation order; this column
+// does not reorder extract.
+// ---------------------------------------------------------------------------
+function applyV14(db: Db): void {
+  db.exec(`
+    ALTER TABLE session_events ADD COLUMN occurred_at TEXT;
+  `);
+
+  pragmaWrite(db, "user_version = 14");
 }
