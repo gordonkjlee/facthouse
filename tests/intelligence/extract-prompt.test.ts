@@ -7,6 +7,9 @@ import {
   EXTRACT_RELATED_K_CAP,
   REFERENT_CAP,
   capReferents,
+  extractEventPayload,
+  extractTodayUtcDate,
+  parseExtractedIso,
 } from "../../src/intelligence/extract-prompt.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -22,6 +25,40 @@ describe("EXTRACT_CONTEXT_CONTRACT", () => {
     expect(EXTRACT_CONTEXT_CONTRACT).toMatch(/small set of related graduated facts/);
     expect(EXTRACT_CONTEXT_CONTRACT).toMatch(/reminder_events/);
     expect(EXTRACT_CONTEXT_CONTRACT).not.toMatch(/pronoun resolution/i);
+    expect(EXTRACT_CONTEXT_CONTRACT).toMatch(/said_at/);
+    expect(EXTRACT_CONTEXT_CONTRACT).toMatch(/Never guess a calendar day/);
+  });
+
+  it("said_at is utterance time, never ingest time", () => {
+    expect(
+      extractEventPayload({
+        role: "user",
+        content: "I went to the beach yesterday",
+        occurred_at: "2026-08-25T18:00:00.000Z",
+      }).said_at,
+    ).toBe("2026-08-25T18:00:00.000Z");
+    expect(
+      extractEventPayload({
+        role: "user",
+        content: "I went to the beach yesterday",
+      }).said_at,
+    ).toBeNull();
+  });
+
+  it("parseExtractedIso keeps real days and drops hedges", () => {
+    expect(parseExtractedIso("2026-08-25")).toBe("2026-08-25T00:00:00.000Z");
+    expect(parseExtractedIso("2026-08-25T18:00:00Z")).toBe(
+      "2026-08-25T18:00:00.000Z",
+    );
+    expect(parseExtractedIso("yesterday")).toBeNull();
+    expect(parseExtractedIso("about 2019")).toBeNull();
+    expect(parseExtractedIso(null)).toBeNull();
+  });
+
+  it("extractTodayUtcDate is a calendar day", () => {
+    expect(extractTodayUtcDate(new Date("2026-08-26T12:00:00.000Z"))).toBe(
+      "2026-08-26",
+    );
   });
 
   it("caps related K at eight", () => {

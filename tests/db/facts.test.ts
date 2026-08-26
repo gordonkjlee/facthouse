@@ -237,6 +237,22 @@ describe("supersession", () => {
     expect(oldFact!.valid_until).toBe(replacement.valid_from);
   });
 
+  it("supersedeFact uses a stated valid_from rather than now", () => {
+    const old = insertFact(db, {
+      content: "Worked in a bar around then",
+      domain: "work",
+      source_type: "conversation",
+    });
+    const replacement = supersedeFact(db, old.id, {
+      content: "Worked in a bar in 2019",
+      domain: "work",
+      source_type: "conversation",
+      valid_from: "2019-01-01T00:00:00.000Z",
+    });
+    expect(replacement.valid_from).toBe("2019-01-01T00:00:00.000Z");
+    expect(replacement.created_at).not.toBe(replacement.valid_from);
+  });
+
   it("supersedeFact chain: A superseded by B, B superseded by C — only C is_latest", () => {
     const a = insertFact(db, {
       content: "Version A",

@@ -143,8 +143,41 @@ describe("createCliProvider — extractFactsFromEvents", () => {
     expect(result.facts[0].confidence_signal).toBe(0.9);
     expect(result.facts[0].source_quality).toBe("cli");
     expect(result.facts[0].entities?.[0]?.name).toBe("aspirin");
+    expect(result.facts[0].valid_from).toBeNull();
     // The extractor ran, so the caller may advance its watermark.
     expect(result.degraded).toBe(false);
+  });
+
+  it("accepts an ISO valid_from and drops a hedge", async () => {
+    nextMockChildBehaviour = respondWith({
+      is_error: false,
+      result: "ok",
+      structured_output: {
+        facts: [
+          {
+            content: "Went to the beach on 25 August 2026",
+            domain: "profile",
+            valid_from: "2026-08-25",
+            valid_until: null,
+            entities: [],
+          },
+          {
+            content: "Worked in a bar when younger",
+            domain: "work",
+            valid_from: "about five years ago",
+            valid_until: null,
+            entities: [],
+          },
+        ],
+      },
+    });
+    const provider = createCliProvider();
+    const result = await provider.extractFactsFromEvents(
+      [{ id: "e1", role: "user", content: "beach", sequence: 1 } as any],
+      [],
+    );
+    expect(result.facts[0].valid_from).toBe("2026-08-25T00:00:00.000Z");
+    expect(result.facts[1].valid_from).toBeNull();
   });
 
   it("spawns with --setting-sources user and OPENMEMORY_SUBPROCESS=1", async () => {

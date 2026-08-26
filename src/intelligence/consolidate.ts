@@ -519,8 +519,10 @@ export async function consolidate(
         const captureContext =
           sessionFact.capture_context ?? null;
 
-        // valid_from: prefer LLM-extracted timestamp when stated.
-        const validFrom = sessionFact.valid_from_hint ?? undefined;
+        // World time if extract stated a real ISO day; explicit null if not.
+        // Do not omit the field — insertFact would then default to now, and a
+        // past event would look as if it became true at graduation.
+        const validFrom = sessionFact.valid_from_hint;
 
         const graduatedFact = supersededId
           ? supersedeFact(db, supersededId, {

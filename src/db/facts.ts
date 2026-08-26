@@ -306,7 +306,9 @@ export function getFactsAsOfSystemTime(db: Db, at: string, limit = 100): Fact[] 
 }
 
 /** Supersede a fact: mark old as superseded, insert new. Returns the new Fact.
- *  valid_from on the replacement is always set to now — the replacement becomes true at supersession time.
+ *  valid_from on the replacement is the stated world-time if given, otherwise
+ *  now — a preference change becomes true at supersession; a dated correction
+ *  keeps the day extract resolved.
  *  Throws if oldId does not exist.
  *  `system_retired_at` is written only when `opts.retireSystemTime` is true
  *  (bi-temporal mode). Simple mode — the default — never populates it. */
@@ -327,6 +329,10 @@ export function supersedeFact(
   const captureContext = newFact.capture_context ?? null;
   const sourceQuality = newFact.source_quality ?? "heuristic";
   const retireSystemTime = opts?.retireSystemTime === true;
+  const validFrom =
+    newFact.valid_from !== undefined && newFact.valid_from !== null
+      ? newFact.valid_from
+      : now;
 
   const result = withTransaction(db, () => {
     const updated = retireSystemTime
@@ -365,7 +371,7 @@ export function supersedeFact(
       sourceTool,
       sourceId,
       now,
-      now,
+      validFrom,
       sessionId,
       captureContext,
       sourceQuality,
@@ -385,7 +391,7 @@ export function supersedeFact(
       superseded_by: null,
       is_latest: true,
       created_at: now,
-      valid_from: now,
+      valid_from: validFrom,
       valid_until: null,
       system_retired_at: null,
       session_id: sessionId,

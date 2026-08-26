@@ -23,11 +23,15 @@ import type {
   SessionSummary,
   Referent,
 } from "./types.js";
-import type { SessionEvent } from "../types/data.js";
 import { createHeuristicProvider } from "./heuristic.js";
 import { domainRoutingInstruction } from "../schemas/domains.js";
 import type { DomainDef } from "../types/config.js";
-import { EXTRACT_CONTEXT_CONTRACT } from "./extract-prompt.js";
+import {
+  EXTRACT_CONTEXT_CONTRACT,
+  extractEventPayload,
+  extractTodayUtcDate,
+  parseExtractedIso,
+} from "./extract-prompt.js";
 
 // Conservative token budgets. Prompts are short; responses are JSON-only.
 const DEFAULT_MAX_TOKENS = 2048;
@@ -41,7 +45,12 @@ function readText(result: { content: { type: string; text?: string } }): string 
 }
 
 interface ShapedExtract {
-  facts: Array<{ content: string; domain_hint: string | null }>;
+  facts: Array<{
+    content: string;
+    domain_hint: string | null;
+    valid_from: string | null;
+    valid_until: string | null;
+  }>;
   now?: string | null;
   referents?: Referent[];
   topic_shifted?: boolean;
@@ -74,9 +83,16 @@ function asReferents(value: unknown): Referent[] | undefined {
 function shapeExtractPayload(parsed: unknown): ShapedExtract {
   if (Array.isArray(parsed)) {
     return {
-      facts: parsed.map((p: { content?: string; domain_hint?: string | null }) => ({
+      facts: parsed.map((p: {
+        content?: string;
+        domain_hint?: string | null;
+        valid_from?: unknown;
+        valid_until?: unknown;
+      }) => ({
         content: typeof p?.content === "string" ? p.content : "",
         domain_hint: p?.domain_hint ?? null,
+        valid_from: parseExtractedIso(p?.valid_from),
+        valid_until: parseExtractedIso(p?.valid_until),
       })).filter((p) => p.content),
     };
   }
@@ -84,7 +100,12 @@ function shapeExtractPayload(parsed: unknown): ShapedExtract {
     throw new Error("sampling: unparseable extraction output");
   }
   const obj = parsed as {
-    facts: Array<{ content?: string; domain_hint?: string | null }>;
+    facts: Array<{
+      content?: string;
+      domain_hint?: string | null;
+      valid_from?: unknown;
+      valid_until?: unknown;
+    }>;
     session_now?: string | null;
     now?: string | null;
     referents?: unknown;
@@ -95,6 +116,8 @@ function shapeExtractPayload(parsed: unknown): ShapedExtract {
     .map((p) => ({
       content: typeof p?.content === "string" ? p.content : "",
       domain_hint: p?.domain_hint ?? null,
+      valid_from: parseExtractedIso(p?.valid_from),
+      valid_until: parseExtractedIso(p?.valid_until),
     }))
     .filter((p) => p.content);
   const now = obj.session_now ?? obj.now;
@@ -227,10 +250,6 @@ export function createSamplingProvider(
       if (events.length === 0) return { facts: [], degraded: false };
       return withFallback<ExtractionOutcome>(
         async () => {
-          const trim = (e: SessionEvent) => ({
-            role: e.role,
-            content: e.content,
-          });
           const raw = await ask(
             "You extract durable facts from a conversation — facts worth " +
               "remembering across future sessions. " +
@@ -240,10 +259,11 @@ export function createSamplingProvider(
               "Ignore ephemeral statements (current tasks, transient mood). " +
               "Each fact should be a complete, self-contained sentence — rewrite as needed. " +
               EXTRACT_CONTEXT_CONTRACT + " " +
-              "Respond with JSON only: {facts: [{content, domain_hint}], session_now?, referents?, topic_shifted?, confidence?}. " +
+              "Respond with JSON only: {facts: [{content, domain_hint, valid_from, valid_until}], session_now?, referents?, topic_shifted?, confidence?}. " +
               `domain_hint is a domain already in use, a new short lowercase noun if none fits, or null. ` +
-              "facts may be []. A JSON array of {content, domain_hint} is also accepted (facts only). No prose.",
+              "valid_from / valid_until are ISO dates or null. facts may be []. A JSON array of {content, domain_hint} is also accepted (facts only). No prose.",
             JSON.stringify({
+              extract_today: extractTodayUtcDate(),
               session_now: extras?.now ?? null,
               referents: extras?.referents ?? [],
               topic_segments: extras?.segments ?? [],
@@ -252,9 +272,9 @@ export function createSamplingProvider(
                 content: f.content,
                 domain: f.domain,
               })),
-              recent_events: workingMemory.map(trim),
-              reminder_events: (extras?.reminderEvents ?? []).map(trim),
-              candidate_events: events.map(trim),
+              recent_events: workingMemory.map(extractEventPayload),
+              reminder_events: (extras?.reminderEvents ?? []).map(extractEventPayload),
+              candidate_events: events.map(extractEventPayload),
             }),
           );
           const parsed: unknown = parseJson(raw);
@@ -263,6 +283,8 @@ export function createSamplingProvider(
             facts: shaped.facts.map((p) => ({
               content: p.content,
               domain_hint: p.domain_hint,
+              valid_from: p.valid_from,
+              valid_until: p.valid_until,
               source_quality: "sampling" as const,
             })),
             degraded: false,
