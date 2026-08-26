@@ -209,10 +209,10 @@ async function pullCursorAndConsolidate(
   recording: ReturnType<typeof recordingExtractor>["provider"],
 ) {
   const db = openDatabase(":memory:");
-  applySchema(db);
+  await applySchema(db);
   const home = path.join(tmp("om-coding-"), "cursor-home");
   plantCursor(home, sessionId, fixture);
-  const pulled = pullSources(db, [
+  const pulled = await pullSources(db, [
     { kind: "cursor", home, cwd: PROJECT_CWD },
   ]);
   const done = await consolidate(db, recording as never, {
@@ -250,27 +250,27 @@ describe("coding-store pipeline (recording extractor)", () => {
     expect(contentsOf(beforeStyle)).toContain(GRAIN_FACT);
     expect(beforeStyle.episodes).toEqual([]);
 
-    const row = db
+    const row = (await db
       .prepare(`SELECT domain FROM facts WHERE content = ?`)
-      .get(GRAIN_FACT) as { domain: string };
+      .get(GRAIN_FACT)) as { domain: string };
     expect(row.domain).toBe("pipeline");
     expect(row.domain).not.toBe("general");
     expect(row.domain).not.toBe("profile");
     expect(row.domain).not.toBe("work");
 
-    const about = lookupNamedSubject(db, "bookings");
+    const about = await lookupNamedSubject(db, "bookings");
     expect(about.found).toBe(true);
     expect(about.facts.some((f) => f.is_subject && f.content === GRAIN_FACT)).toBe(
       true,
     );
 
-    closeDatabase(db);
+    await closeDatabase(db);
 
     const control = openDatabase(":memory:");
-    applySchema(control);
+    await applySchema(control);
     const home = path.join(tmp("om-coding-h-"), "cursor-home");
     plantCursor(home, "sess-coding-grain", GRAIN_FILE);
-    pullSources(control, [{ kind: "cursor", home, cwd: PROJECT_CWD }]);
+    await pullSources(control, [{ kind: "cursor", home, cwd: PROJECT_CWD }]);
     const emptyK = await searchWithProvider(control, "bookings", null);
     expect(hitsNeedle(emptyK, "bookings")).toBe(false);
     expect(episodeMentions(emptyK, "bookings")).toBe(true);
@@ -280,17 +280,17 @@ describe("coding-store pipeline (recording extractor)", () => {
     });
     const still = await searchWithProvider(control, "bookings", null);
     expect(hitsNeedle(still, "bookings")).toBe(false);
-    closeDatabase(control);
+    await closeDatabase(control);
   });
 
   it("keeps stg_orders and bookings as two entities; does not invent a mapping", async () => {
     const rec = recordingExtractor();
     const db = openDatabase(":memory:");
-    applySchema(db);
+    await applySchema(db);
     const home = path.join(tmp("om-coding-id-"), "cursor-home");
     plantCursor(home, "sess-coding-grain", GRAIN_FILE);
     plantCursor(home, "sess-coding-ident", IDENT_FILE);
-    pullSources(db, [{ kind: "cursor", home, cwd: PROJECT_CWD }]);
+    await pullSources(db, [{ kind: "cursor", home, cwd: PROJECT_CWD }]);
     await consolidate(db, rec.provider as never, {
       extraction: extractionConfig() as never,
     });
@@ -302,13 +302,13 @@ describe("coding-store pipeline (recording extractor)", () => {
       hitsNeedle(await searchWithProvider(db, "stg_orders", null), "booked_at"),
     ).toBe(true);
 
-    const bookings = findEntity(db, "bookings");
-    const staging = findEntity(db, "stg_orders");
+    const bookings = await findEntity(db, "bookings");
+    const staging = await findEntity(db, "stg_orders");
     expect(bookings).not.toBeNull();
     expect(staging).not.toBeNull();
     expect(bookings!.id).not.toBe(staging!.id);
 
-    const aboutStaging = lookupNamedSubject(db, "stg_orders");
+    const aboutStaging = await lookupNamedSubject(db, "stg_orders");
     expect(aboutStaging.found).toBe(true);
     expect(
       aboutStaging.facts.some((f) => f.is_subject && f.content === IDENT_FACT),
@@ -317,12 +317,12 @@ describe("coding-store pipeline (recording extractor)", () => {
       aboutStaging.facts.some((f) => f.is_subject && f.content === GRAIN_FACT),
     ).toBe(false);
 
-    const unified = db
+    const unified = (await db
       .prepare(`SELECT content FROM facts WHERE content LIKE ?`)
-      .all("%stg_orders%bookings%") as Array<{ content: string }>;
+      .all("%stg_orders%bookings%")) as Array<{ content: string }>;
     expect(unified).toEqual([]);
 
-    closeDatabase(db);
+    await closeDatabase(db);
   });
 
   it("does not graduate a failing-join task; episodes still show the raw log", async () => {
@@ -338,7 +338,7 @@ describe("coding-store pipeline (recording extractor)", () => {
     expect(hitsNeedle(found, "failing")).toBe(false);
     expect(found.results).toEqual([]);
     expect(episodeMentions(found, "failing")).toBe(true);
-    closeDatabase(db);
+    await closeDatabase(db);
   });
 
   it("graduates grain when the assistant states it and the user assents", async () => {
@@ -352,13 +352,13 @@ describe("coding-store pipeline (recording extractor)", () => {
     expect(contentsOf(await searchWithProvider(db, "bookings", null))).toContain(
       GRAIN_FACT,
     );
-    closeDatabase(db);
+    await closeDatabase(db);
   });
 
   it("does not mint an entity per table in a truncated tool dump; user prose still graduates", async () => {
     const rec = recordingExtractor();
     const db = openDatabase(":memory:");
-    applySchema(db);
+    await applySchema(db);
     const home = path.join(tmp("om-coding-dump-"), "claude-home");
     const dump = schemaDump();
     plantClaudeLines(home, "sess-coding-dump", [
@@ -381,7 +381,7 @@ describe("coding-store pipeline (recording extractor)", () => {
         },
       }),
     ]);
-    const pulled = pullSources(db, [
+    const pulled = await pullSources(db, [
       { kind: "claude-code", home, cwd: PROJECT_CWD },
     ]);
     expect(pulled.events_inserted).toBeGreaterThanOrEqual(2);
@@ -393,11 +393,11 @@ describe("coding-store pipeline (recording extractor)", () => {
     expect(contentsOf(await searchWithProvider(db, "bookings", null))).toContain(
       GRAIN_FACT,
     );
-    const widgets = db
+    const widgets = (await db
       .prepare(`SELECT name FROM entities WHERE name LIKE 'dim_widget_%'`)
-      .all() as Array<{ name: string }>;
+      .all()) as Array<{ name: string }>;
     expect(widgets).toEqual([]);
-    closeDatabase(db);
+    await closeDatabase(db);
   });
 });
 
@@ -453,7 +453,7 @@ describe.skipIf(!required || unavailable !== null)(
 
     it(
       "grain fixture → pull → consolidate → search hits bookings",
-      () => {
+      async () => {
         const { dir, home } = initPullStore("cursor");
         plantCursor(home, "sess-coding-grain", GRAIN_FILE);
 
@@ -479,14 +479,14 @@ describe.skipIf(!required || unavailable !== null)(
         expect(hitsNeedle(JSON.parse(after.stdout), "grain")).toBe(true);
 
         const db = openDatabase(path.join(dir, "memory.db"));
-        const about = lookupNamedSubject(db, "bookings");
+        const about = await lookupNamedSubject(db, "bookings");
         expect(about.found).toBe(true);
         expect(
           about.facts.some(
             (f) => f.is_subject && /grain/i.test(f.content) && /bookings/i.test(f.content),
           ),
         ).toBe(true);
-        closeDatabase(db);
+        await closeDatabase(db);
       },
       240_000,
     );

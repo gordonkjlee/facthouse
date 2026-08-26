@@ -34,32 +34,32 @@ let db: Db;
 let root: string;
 let factManager: ReturnType<typeof createFactManager>;
 
-beforeEach(() => {
+beforeEach(async () => {
   root = mkdtempSync(path.join(tmpdir(), "om-lat-"));
   db = openDatabase(path.join(root, "memory.db"));
-  applySchema(db);
+  await applySchema(db);
   const sessionManager = createSessionManager(db);
-  sessionManager.startSession("latency-test", null);
+  await sessionManager.startSession("latency-test", null);
   factManager = createFactManager(db, sessionManager, {
     intelligence: createHeuristicProvider(PERSONAL_VOCABULARY),
   });
 });
 
-afterEach(() => {
-  closeDatabase(db);
+afterEach(async () => {
+  await closeDatabase(db);
   rmSync(root, { recursive: true, force: true });
 });
 
 /** Capture `n` facts, returning each call's duration in milliseconds, sorted. */
-function measure(n: number): number[] {
+async function measure(n: number): Promise<number[]> {
   // Warm up first: the first captures pay for statement preparation and page
   // cache misses, which is startup cost rather than per-capture cost.
-  for (let i = 0; i < 20; i++) factManager.captureFact({ content: `Warmup fact ${i}` });
+  for (let i = 0; i < 20; i++) await factManager.captureFact({ content: `Warmup fact ${i}` });
 
   const times: number[] = [];
   for (let i = 0; i < n; i++) {
     const start = process.hrtime.bigint();
-    factManager.captureFact({ content: `The user prefers beverage variant ${i}` });
+    await factManager.captureFact({ content: `The user prefers beverage variant ${i}` });
     times.push(Number(process.hrtime.bigint() - start) / 1e6);
   }
   return times.sort((a, b) => a - b);
@@ -68,8 +68,8 @@ function measure(n: number): number[] {
 const percentile = (sorted: number[], q: number) => sorted[Math.floor(sorted.length * q)];
 
 describe("capture_fact latency", () => {
-  it("stores a fact in well under 10ms at the median", () => {
-    const times = measure(200);
+  it("stores a fact in well under 10ms at the median", async () => {
+    const times = await measure(200);
     const median = percentile(times, 0.5);
 
     // Asserted on the median, not the max. A single capture can exceed 10ms for
@@ -81,24 +81,24 @@ describe("capture_fact latency", () => {
     expect(median).toBeLessThan(10);
   });
 
-  it("has an order of magnitude of headroom, which is what makes the claim safe", () => {
+  it("has an order of magnitude of headroom, which is what makes the claim safe", async () => {
     // Measured at ~1.7ms median against a file-backed db. This bound is loose
     // enough to absorb a slow CI runner and tight enough that adding real work
     // to the capture path — an LLM call, a network hop, a synchronous
     // consolidation — fails it immediately.
-    const median = percentile(measure(200), 0.5);
+    const median = percentile(await measure(200), 0.5);
     expect(median).toBeLessThan(5);
   });
 
-  it("does not degrade as the store grows", () => {
+  it("does not degrade as the store grows", async () => {
     // Capture is an append. If it ever starts scanning what came before —
     // a dedup query, a similarity check — cost grows with the store and the
     // deferred-intelligence design is quietly broken.
-    const early = percentile(measure(150), 0.5);
+    const early = percentile(await measure(150), 0.5);
     for (let i = 0; i < 2000; i++) {
-      factManager.captureFact({ content: `Bulk background fact ${i}` });
+      await factManager.captureFact({ content: `Bulk background fact ${i}` });
     }
-    const late = percentile(measure(150), 0.5);
+    const late = percentile(await measure(150), 0.5);
 
     // Generous ratio: this catches O(n) behaviour, not measurement noise.
     expect(late).toBeLessThan(early * 5 + 5);
@@ -111,12 +111,12 @@ describe("capture_fact latency", () => {
     // genuine hang still fails rather than running for ever.
   }, 30_000);
 
-  it("is synchronous — it returns a fact, not a promise", () => {
+  it("is synchronous — it returns a fact, not a promise", async () => {
     // The latency above only means anything if the call has actually finished
     // when it returns. A promise here would mean the work moved somewhere the
     // timer cannot see.
-    const result = factManager.captureFact({ content: "The user prefers tea" });
+    const result = await factManager.captureFact({ content: "The user prefers tea" });
     expect(result).not.toBeInstanceOf(Promise);
-    expect(result.id).toBeTruthy();
+    expect(result!.id).toBeTruthy();
   });
 });

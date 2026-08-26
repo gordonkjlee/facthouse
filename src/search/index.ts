@@ -50,10 +50,10 @@ export interface StructuredFilters {
  * Query facts via structured filters — domain, subdomain, entity, status.
  * Defaults to active + is_latest = true.
  */
-export function structuredSearch(
+export async function structuredSearch(
   db: Db,
   filters: StructuredFilters,
-): Fact[] {
+): Promise<Fact[]> {
   const limit = filters.limit ?? 20;
 
   const readOpts: FactReadOpts | undefined = filters.asOfSystemTime
@@ -62,14 +62,14 @@ export function structuredSearch(
 
   // Entity-based path
   if (filters.entity_id) {
-    const facts = getFactsByEntity(db, filters.entity_id, readOpts);
+    const facts = await getFactsByEntity(db, filters.entity_id, readOpts);
     // getFactsByEntity already applies currency; apply limit
     return facts.slice(0, limit);
   }
 
   // Domain-based path
   if (filters.domain) {
-    const facts = getFactsByDomain(
+    const facts = await getFactsByDomain(
       db,
       filters.domain,
       filters.subdomain,
@@ -111,7 +111,7 @@ export function structuredSearch(
   const sql = `SELECT * FROM facts WHERE ${conditions.join(" AND ")} ORDER BY created_at DESC LIMIT ?`;
   params.push(limit);
 
-  const rows = db.prepare(sql).all(...params) as Array<
+  const rows = (await db.prepare(sql).all(...params)) as Array<
     Omit<Fact, "is_latest"> & { is_latest: number }
   >;
 
@@ -254,11 +254,10 @@ export function computeRetrievalQuality(
  * Search with semantic recall when a provider is configured, keyword-only when
  * not.
  *
- * The async wrapper exists so `hybridSearch` can stay synchronous. Every other
- * recall path is a local index read; only this one is a network or subprocess
- * call, and it is optional. Callers that have not enabled it should not pay for
- * an async boundary, and the tool and CLI should not each grow their own copy
- * of "embed the query, then search".
+ * Every other recall path is a local index read; only this one is a network or
+ * subprocess call, and it is optional. Callers that have not enabled it should
+ * not pay for an embedding, and the tool and CLI should not each grow their own
+ * copy of "embed the query, then search".
  *
  * **A failed embedding degrades to keyword search rather than failing the
  * search.** Retrieval is a read path: returning fewer results is recoverable,
@@ -272,15 +271,15 @@ export async function searchWithProvider(
   provider: EmbeddingProvider | null,
   opts?: HybridSearchOpts & { tuning?: VectorSearchOpts },
 ): Promise<SearchResponse> {
-  if (!provider) return hybridSearch(db, query, opts);
+  if (!provider) return await hybridSearch(db, query, opts);
 
   try {
     // Embedded as a query, not a document. Retrieval models are trained
     // asymmetrically; using the wrong side degrades every result and raises
     // nothing.
     const r = await provider.embed([query], "query");
-    if (r.vectors.length !== 1 || !r.dimensions) return hybridSearch(db, query, opts);
-    return hybridSearch(db, query, {
+    if (r.vectors.length !== 1 || !r.dimensions) return await hybridSearch(db, query, opts);
+    return await hybridSearch(db, query, {
       ...opts,
       semantic: {
         vector: r.vectors[0],
@@ -296,7 +295,7 @@ export async function searchWithProvider(
       },
     });
   } catch {
-    return hybridSearch(db, query, opts);
+    return await hybridSearch(db, query, opts);
   }
 }
 
@@ -316,11 +315,9 @@ export interface HybridSearchOpts {
    * Pre-computed embedding of the query, plus the model and dimension it came
    * from. Omit for keyword-only search — the shipped default.
    *
-   * Passed in rather than computed here because embedding is async and
-   * `hybridSearch` is synchronous, which is not an accident: every other recall
-   * path is a local index read, and making the whole search async to
-   * accommodate one network call would push that cost onto callers who have not
-   * enabled it.
+   * Passed in rather than computed here because embedding is a network or
+   * subprocess call. `hybridSearch` ranks from a vector it is given;
+   * `searchWithProvider` is the single place that embeds then searches.
    */
   semantic?: {
     vector: Float32Array;
@@ -352,11 +349,11 @@ export interface HybridSearchOpts {
  * appears, because domain labels are approximate and a gate on one would hide a
  * fact filed under a synonym.
  */
-export function hybridSearch(
+export async function hybridSearch(
   db: Db,
   query: string,
   opts?: HybridSearchOpts,
-): SearchResponse {
+): Promise<SearchResponse> {
   const limit = opts?.limit ?? 20;
   const domain = opts?.domain;
   const asOf = opts?.asOfSystemTime;
@@ -382,7 +379,7 @@ export function hybridSearch(
   // 1. FTS5 keyword search (sanitise to prevent FTS5 syntax errors)
   const sanitised = sanitiseFtsQuery(query);
   const ftsResults = sanitised
-    ? fts5Search(db, sanitised, candidatePool, readOpts)
+    ? await fts5Search(db, sanitised, candidatePool, readOpts)
     : [];
   const ftsFacts = ftsResults.map((r) => r.fact);
 
@@ -395,7 +392,7 @@ export function hybridSearch(
 
   if (domain) {
     // getFactsByDomain already orders by created_at DESC
-    const domainFacts = getFactsByDomain(db, domain, undefined, readOpts).slice(
+    const domainFacts = (await getFactsByDomain(db, domain, undefined, readOpts)).slice(
       0,
       candidatePool,
     );
@@ -416,9 +413,9 @@ export function hybridSearch(
   const entityFacts: Fact[] = [];
   const seenEntityFactIds = new Set<string>();
   for (const term of terms) {
-    const entity = findEntity(db, term);
+    const entity = await findEntity(db, term);
     if (entity) {
-      for (const fact of getFactsByEntity(db, entity.id, readOpts)) {
+      for (const fact of await getFactsByEntity(db, entity.id, readOpts)) {
         if (!seenEntityFactIds.has(fact.id)) {
           seenEntityFactIds.add(fact.id);
           entityFacts.push(fact);
@@ -445,7 +442,7 @@ export function hybridSearch(
   // for.
   if (opts?.semantic) {
     const { vector, model, dimensions, tuning } = opts.semantic;
-    const semanticFacts = vectorSearch(
+    const semanticFacts = await vectorSearch(
       db,
       vector,
       model,
@@ -507,7 +504,7 @@ export function hybridSearch(
   //
   // One batched query for the whole page, keyed by fact, rather than a lookup
   // per result.
-  const entitiesByFact = getEntitiesForFacts(db, topResults.map(({ fact }) => fact.id));
+  const entitiesByFact = await getEntitiesForFacts(db, topResults.map(({ fact }) => fact.id));
 
   const results: SearchResult[] = topResults.map(({ fact, score }) => {
     return {
@@ -535,7 +532,7 @@ export function hybridSearch(
   const pending: PendingFact[] = asOf
     ? []
     : (
-        sanitised ? keywordSearchPending(db, sanitised, limit) : []
+        sanitised ? await keywordSearchPending(db, sanitised, limit) : []
       ).map((sf) => ({
         id: sf.id,
         content: sf.content,
@@ -560,7 +557,7 @@ export function hybridSearch(
   // retrieval product; a pulled line that never graduated is the named gap.
   let episodes: EpisodeSlice[] = [];
   if (!asOf && results.length === 0 && sanitised) {
-    episodes = searchEpisodes(db, sanitised);
+    episodes = await searchEpisodes(db, sanitised);
     if (episodes.length > 0) {
       quality.suggested_refinement = EPISODE_REFINEMENT;
     }

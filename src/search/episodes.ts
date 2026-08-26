@@ -52,10 +52,10 @@ interface WindowRow {
 }
 
 /** Keyword-match session_events and return a short window around each hit. */
-export function searchEpisodes(db: Db, sanitisedQuery: string): EpisodeSlice[] {
+export async function searchEpisodes(db: Db, sanitisedQuery: string): Promise<EpisodeSlice[]> {
   if (!sanitisedQuery) return [];
 
-  const hits = db
+  const hits = (await db
     .prepare(
       `SELECT e.id, e.mcp_session_id, e.client_session_id, e.sequence
          FROM session_events_fts fts
@@ -64,7 +64,7 @@ export function searchEpisodes(db: Db, sanitisedQuery: string): EpisodeSlice[] {
         ORDER BY fts.rank
         LIMIT ?`,
     )
-    .all(sanitisedQuery, EPISODE_HIT_CAP) as unknown as HitRow[];
+    .all(sanitisedQuery, EPISODE_HIT_CAP)) as unknown as HitRow[];
 
   if (hits.length === 0) return [];
 
@@ -86,7 +86,7 @@ export function searchEpisodes(db: Db, sanitisedQuery: string): EpisodeSlice[] {
     const seqs = groupHits.map((h) => h.sequence);
     const lo = Math.max(1, Math.min(...seqs) - EPISODE_RADIUS);
     const hi = Math.max(...seqs) + EPISODE_RADIUS;
-    const rows = db
+    const rows = (await db
       .prepare(
         `SELECT id, sequence, event_type, role, content
            FROM session_events
@@ -95,7 +95,7 @@ export function searchEpisodes(db: Db, sanitisedQuery: string): EpisodeSlice[] {
           ORDER BY sequence ASC
           LIMIT ?`,
       )
-      .all(key, lo, hi, EPISODE_EVENT_CAP) as unknown as WindowRow[];
+      .all(key, lo, hi, EPISODE_EVENT_CAP)) as unknown as WindowRow[];
 
     slices.push({
       conversation_id: key,

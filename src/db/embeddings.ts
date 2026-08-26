@@ -1,5 +1,5 @@
 /**
- * Data access for fact embeddings. All functions are synchronous.
+ * Data access for fact embeddings.
  *
  * Two things here carry the whole design.
  *
@@ -68,16 +68,16 @@ export interface NewEmbedding {
  * The whole batch commits or none of it does, so a crash mid-write cannot leave
  * half a consolidation's facts embedded under one model and half under another.
  */
-export function insertEmbeddings(
+export async function insertEmbeddings(
   db: Db,
   embeddings: NewEmbedding[],
   model: string,
   dimensions: number,
-): void {
+): Promise<void> {
   if (embeddings.length === 0) return;
 
   const now = new Date().toISOString();
-  withTransaction(db, () => {
+  await withTransaction(db, async () => {
     const stmt = db.prepare(
       `INSERT OR REPLACE INTO fact_embeddings
          (fact_id, model, dimensions, vector, created_at)
@@ -91,7 +91,7 @@ export function insertEmbeddings(
           `embedding for ${e.fact_id} has ${e.vector.length} dimensions, expected ${dimensions}`,
         );
       }
-      stmt.run(e.fact_id, model, dimensions, packVector(e.vector), now);
+      await stmt.run(e.fact_id, model, dimensions, packVector(e.vector), now);
     }
   });
 }
@@ -112,17 +112,17 @@ export interface StoredEmbedding {
  * working-set size the thing to watch. Filtering happens in SQL so a store
  * holding vectors from a previous model never materialises them.
  */
-export function getEmbeddings(
+export async function getEmbeddings(
   db: Db,
   model: string,
   dimensions: number,
-): StoredEmbedding[] {
-  const rows = db
+): Promise<StoredEmbedding[]> {
+  const rows = (await db
     .prepare(
       `SELECT fact_id, vector FROM fact_embeddings
         WHERE model = ? AND dimensions = ?`,
     )
-    .all(model, dimensions) as Array<{ fact_id: string; vector: Uint8Array }>;
+    .all(model, dimensions)) as Array<{ fact_id: string; vector: Uint8Array }>;
 
   return rows.map((r) => ({
     fact_id: r.fact_id,
@@ -138,13 +138,13 @@ export function getEmbeddings(
  * absence of the row is what schedules the retry. A model change enqueues the
  * whole store by the same rule, with nothing extra to invalidate.
  */
-export function getFactsMissingEmbeddings(
+export async function getFactsMissingEmbeddings(
   db: Db,
   model: string,
   dimensions: number,
   limit: number,
-): Array<{ id: string; content: string }> {
-  return db
+): Promise<Array<{ id: string; content: string }>> {
+  return (await db
     .prepare(
       `SELECT f.id AS id, f.content AS content
          FROM facts f
@@ -155,22 +155,22 @@ export function getFactsMissingEmbeddings(
         ORDER BY f.created_at DESC
         LIMIT ?`,
     )
-    .all(model, dimensions, limit as SqlParam) as Array<{
+    .all(model, dimensions, limit as SqlParam)) as Array<{
     id: string;
     content: string;
   }>;
 }
 
 /** How many facts carry a vector for this model — coverage, for `get_stats`. */
-export function countEmbeddings(
+export async function countEmbeddings(
   db: Db,
   model: string,
   dimensions: number,
-): number {
-  const row = db
+): Promise<number> {
+  const row = (await db
     .prepare(
       `SELECT COUNT(*) AS n FROM fact_embeddings WHERE model = ? AND dimensions = ?`,
     )
-    .get(model, dimensions) as { n: number };
+    .get(model, dimensions)) as { n: number };
   return row.n;
 }

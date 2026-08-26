@@ -1,6 +1,5 @@
 /**
  * Knowledge base statistics.
- * All functions are synchronous.
  *
  * Shared by the `get_stats` MCP tool and the `openmemory stats` CLI so the two
  * can never disagree about what the store contains.
@@ -59,14 +58,14 @@ const current = (alias = "") => {
 
 const CURRENT = current();
 
-function count(db: Db, sql: string): number {
-  const row = db.prepare(sql).get() as { count: number } | undefined;
+async function count(db: Db, sql: string): Promise<number> {
+  const row = (await db.prepare(sql).get()) as { count: number } | undefined;
   return row?.count ?? 0;
 }
 
 /** Snapshot of what the knowledge base currently holds. */
-export function getStats(db: Db): KnowledgeStats {
-  const domainDistribution = db
+export async function getStats(db: Db): Promise<KnowledgeStats> {
+  const domainDistribution = (await db
     .prepare(
       `SELECT domain, COUNT(*) as count FROM facts
        WHERE ${CURRENT}
@@ -74,9 +73,9 @@ export function getStats(db: Db): KnowledgeStats {
        ORDER BY count DESC
        LIMIT 50`,
     )
-    .all() as Array<{ domain: string; count: number }>;
+    .all()) as Array<{ domain: string; count: number }>;
 
-  const embeddingCoverage = db
+  const embeddingCoverage = (await db
     .prepare(
       `SELECT e.model AS model, e.dimensions AS dimensions, COUNT(*) AS count
          FROM fact_embeddings e
@@ -85,23 +84,23 @@ export function getStats(db: Db): KnowledgeStats {
         GROUP BY e.model, e.dimensions
         ORDER BY count DESC`,
     )
-    .all() as Array<{ model: string; dimensions: number; count: number }>;
+    .all()) as Array<{ model: string; dimensions: number; count: number }>;
 
-  const eventVolume = db
+  const eventVolume = (await db
     .prepare(
       `SELECT COUNT(*) AS count, COALESCE(SUM(LENGTH(COALESCE(content, ''))), 0) AS bytes
          FROM session_events`,
     )
-    .get() as { count: number; bytes: number };
+    .get()) as { count: number; bytes: number };
 
   return {
     facts: {
-      active_latest: count(db, `SELECT COUNT(*) as count FROM facts WHERE ${CURRENT}`),
-      total: count(db, `SELECT COUNT(*) as count FROM facts`),
+      active_latest: await count(db, `SELECT COUNT(*) as count FROM facts WHERE ${CURRENT}`),
+      total: await count(db, `SELECT COUNT(*) as count FROM facts`),
     },
-    entities: count(db, `SELECT COUNT(*) as count FROM entities`),
-    domains: count(db, `SELECT COUNT(*) as count FROM domains`),
-    consolidations: count(db, `SELECT COUNT(*) as count FROM consolidations`),
+    entities: await count(db, `SELECT COUNT(*) as count FROM entities`),
+    domains: await count(db, `SELECT COUNT(*) as count FROM domains`),
+    consolidations: await count(db, `SELECT COUNT(*) as count FROM consolidations`),
     domain_distribution: domainDistribution,
     embeddings: embeddingCoverage,
     events: eventVolume,

@@ -20,17 +20,19 @@ export interface NewSource {
 }
 
 /** Insert a provenance source record. Returns the created Source. */
-export function createSource(db: Db, source: NewSource): Source {
+export async function createSource(db: Db, source: NewSource): Promise<Source> {
   const id = randomUUID();
   const now = new Date().toISOString();
   const toolId = source.tool_id ?? null;
   const rawContent = source.raw_content ?? null;
   const metadata = source.metadata ? JSON.stringify(source.metadata) : null;
 
-  db.prepare(
-    `INSERT INTO sources (id, type, tool_id, timestamp, raw_content, metadata)
-     VALUES (?, ?, ?, ?, ?, ?)`,
-  ).run(id, source.type, toolId, now, rawContent, metadata);
+  await db
+    .prepare(
+      `INSERT INTO sources (id, type, tool_id, timestamp, raw_content, metadata)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+    )
+    .run(id, source.type, toolId, now, rawContent, metadata);
 
   return {
     id,
@@ -43,8 +45,8 @@ export function createSource(db: Db, source: NewSource): Source {
 }
 
 /** Retrieve a source by ID. */
-export function getSource(db: Db, id: string): Source | null {
-  const row = db.prepare(`SELECT * FROM sources WHERE id = ?`).get(id) as
+export async function getSource(db: Db, id: string): Promise<Source | null> {
+  const row = (await db.prepare(`SELECT * FROM sources WHERE id = ?`).get(id)) as
     | (Omit<Source, "metadata"> & { metadata: string | null })
     | undefined;
   if (!row) return null;

@@ -22,15 +22,15 @@ let dir: string;
 let db: Db;
 let sessionId: string;
 
-beforeEach(() => {
+beforeEach(async () => {
   dir = mkdtempSync(path.join(tmpdir(), "om-int-"));
   db = openDatabase(path.join(dir, "memory.db"));
-  applySchema(db);
-  sessionId = createSession(db, { source_tool: "test", project: "om" }).id;
+  await applySchema(db);
+  sessionId = (await createSession(db, { source_tool: "test", project: "om" })).id;
 });
 
-afterEach(() => {
-  closeDatabase(db);
+afterEach(async () => {
+  await closeDatabase(db);
   try {
     rmSync(dir, { recursive: true, force: true });
   } catch {
@@ -63,19 +63,19 @@ describe("IPC → scheduler integration", () => {
       // Writer connection simulates the log-event CLI — events must come from
       // a different connection or data_version won't bump.
       const writerDb = openDatabase(path.join(dir, "memory.db"));
-      const writerSession = createSession(writerDb, {
+      const writerSession = (await createSession(writerDb, {
         source_tool: "cli",
         project: "om",
-      }).id;
+      })).id;
       for (let i = 0; i < 5; i++) {
-        insertEvent(writerDb, {
+        await insertEvent(writerDb, {
           mcp_session_id: writerSession,
           event_type: "message",
           role: "user",
           content: `event ${i}`,
         });
       }
-      closeDatabase(writerDb);
+      await closeDatabase(writerDb);
 
       const delivered = await sendSchedulerSignal(dir, "tick");
       expect(delivered).toBe(true);
@@ -100,17 +100,17 @@ describe("IPC → scheduler integration", () => {
 
     try {
       const writerDb = openDatabase(path.join(dir, "memory.db"));
-      const writerSession = createSession(writerDb, {
+      const writerSession = (await createSession(writerDb, {
         source_tool: "cli",
         project: "om",
-      }).id;
-      insertEvent(writerDb, {
+      })).id;
+      await insertEvent(writerDb, {
         mcp_session_id: writerSession,
         event_type: "message",
         role: "user",
         content: "just one event",
       });
-      closeDatabase(writerDb);
+      await closeDatabase(writerDb);
 
       await sendSchedulerSignal(dir, "tick");
       await new Promise((r) => setTimeout(r, 100));

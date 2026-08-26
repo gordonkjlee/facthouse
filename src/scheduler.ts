@@ -44,20 +44,20 @@ export interface Scheduler {
   stop(): void;
 }
 
-function readDataVersion(db: Db): number {
-  const v = pragmaRead(db, "data_version");
+async function readDataVersion(db: Db): Promise<number> {
+  const v = await pragmaRead(db, "data_version");
   return typeof v === "number" ? v : 0;
 }
 
-function eventsSinceLastConsolidation(db: Db): number {
-  const row = db
+async function eventsSinceLastConsolidation(db: Db): Promise<number> {
+  const row = (await db
     .prepare(`SELECT COALESCE(MAX(sequence), 0) AS seq FROM session_events`)
-    .get() as { seq: number };
-  const last = db
+    .get()) as { seq: number };
+  const last = (await db
     .prepare(
       `SELECT COALESCE(MAX(last_event_sequence), 0) AS seq FROM consolidations`,
     )
-    .get() as { seq: number };
+    .get()) as { seq: number };
   return row.seq - last.seq;
 }
 
@@ -74,49 +74,53 @@ export function startScheduler(opts: SchedulerOpts): Scheduler {
   let lastRunAt = 0;
 
   // Serialises scheduler runs so overlapping signals don't start parallel
-  // consolidations. The DB advisory lock is the authoritative guard; this
-  // just avoids the wasted call.
+  // consolidations. Assigned before the first await so two ticks in one
+  // turn cannot both pass the check. The DB advisory lock is the
+  // authoritative guard; this just avoids the wasted call.
   let inFlight: Promise<ConsolidationResult | null> | null = null;
 
-  async function runIfDue(
+  function runIfDue(
     force: boolean,
     phase: ConsolidatePhase,
   ): Promise<ConsolidationResult | null> {
     if (inFlight) return inFlight;
 
-    if (!force) {
-      // Throttle: non-force ticks respect minIntervalMs to protect LLM
-      // providers from rate-limit blowups during event bursts.
-      if (Date.now() - lastRunAt < minIntervalMs) return null;
-
-      try {
-        const current = readDataVersion(opts.db);
-        if (current === lastDataVersion) return null;
-        lastDataVersion = current;
-
-        const delta = eventsSinceLastConsolidation(opts.db);
-        if (delta < opts.threshold) return null;
-      } catch {
-        // Schema not yet applied, DB closed, etc. Skip silently.
-        return null;
-      }
-    }
-
     inFlight = (async () => {
       try {
-        return await opts.runConsolidate(phase);
-      } catch {
-        // The scheduler must not crash the server. Failure is observable
-        // via the consolidations table (no new row written).
-        return null;
+        if (!force) {
+          // Throttle: non-force ticks respect minIntervalMs to protect LLM
+          // providers from rate-limit blowups during event bursts.
+          if (Date.now() - lastRunAt < minIntervalMs) return null;
+
+          try {
+            const current = await readDataVersion(opts.db);
+            if (current === lastDataVersion) return null;
+            lastDataVersion = current;
+
+            const delta = await eventsSinceLastConsolidation(opts.db);
+            if (delta < opts.threshold) return null;
+          } catch {
+            // Schema not yet applied, DB closed, etc. Skip silently.
+            return null;
+          }
+        }
+
+        try {
+          return await opts.runConsolidate(phase);
+        } catch {
+          // The scheduler must not crash the server. Failure is observable
+          // via the consolidations table (no new row written).
+          return null;
+        } finally {
+          lastRunAt = Date.now();
+          try {
+            lastDataVersion = await readDataVersion(opts.db);
+          } catch {
+            /* ignore */
+          }
+        }
       } finally {
         inFlight = null;
-        lastRunAt = Date.now();
-        try {
-          lastDataVersion = readDataVersion(opts.db);
-        } catch {
-          /* ignore */
-        }
       }
     })();
     return inFlight;

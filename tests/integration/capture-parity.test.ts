@@ -136,18 +136,18 @@ interface Captured {
 }
 
 /** Everything a caller would see about the single fact a run produced. */
-function readBack(db: Db): Captured {
-  const fact = db
+async function readBack(db: Db): Promise<Captured> {
+  const fact = (await db
     .prepare(`SELECT id, domain, subdomain FROM facts`)
-    .get() as { id: string; domain: string; subdomain: string | null };
+    .get()) as { id: string; domain: string; subdomain: string | null };
 
-  const links = db
+  const links = (await db
     .prepare(
       `SELECT e.name AS name, fe.relationship AS relationship
          FROM fact_entities fe JOIN entities e ON e.id = fe.entity_id
         WHERE fe.fact_id = ?`,
     )
-    .all(fact.id) as Array<{ name: string; relationship: string }>;
+    .all(fact.id)) as Array<{ name: string; relationship: string }>;
 
   return {
     domain: fact.domain,
@@ -159,39 +159,39 @@ function readBack(db: Db): Captured {
 
 let db: Db;
 
-beforeEach(() => {
+beforeEach(async () => {
   db = openDatabase(":memory:");
-  applySchema(db);
+  await applySchema(db);
 });
 
-afterEach(() => {
-  closeDatabase(db);
+afterEach(async () => {
+  await closeDatabase(db);
   vi.restoreAllMocks();
 });
 
 /** The primary path: an assistant calls capture_fact, which stages the fact. */
 async function viaExplicitCapture(): Promise<Captured> {
-  const session = createSession(db, { source_tool: "test", project: null });
-  insertSessionFact(db, {
+  const session = await createSession(db, { source_tool: "test", project: null });
+  await insertSessionFact(db, {
     session_id: session.id,
     content: CONTENT,
     source_origin: "explicit",
   });
   await consolidate(db, createCliProvider(), { extraction: { enabled: false } as any });
-  return readBack(db);
+  return await readBack(db);
 }
 
 /** The safety net: the same sentence arrives as a raw conversation event. */
 async function viaEventExtraction(): Promise<Captured> {
-  const session = createSession(db, { source_tool: "test", project: null });
-  insertEvent(db, {
+  const session = await createSession(db, { source_tool: "test", project: null });
+  await insertEvent(db, {
     mcp_session_id: session.id,
     event_type: "message",
     role: "user",
     content: CONTENT,
   });
   await consolidate(db, createCliProvider(), { extraction: { enabled: true } as any });
-  return readBack(db);
+  return await readBack(db);
 }
 
 describe("capture paths produce comparable knowledge", () => {
@@ -214,9 +214,9 @@ describe("capture paths produce comparable knowledge", () => {
     // The assertion the codebase was missing. Either path may change; they may
     // not diverge without someone deciding they should.
     const explicit = await viaExplicitCapture();
-    closeDatabase(db);
+    await closeDatabase(db);
     db = openDatabase(":memory:");
-    applySchema(db);
+    await applySchema(db);
     const inferred = await viaEventExtraction();
 
     expect(explicit).toEqual(inferred);

@@ -13,21 +13,21 @@ import { PERSONAL_VOCABULARY } from "../fixtures/vocabulary.js";
 let db: Db;
 let sessionId: string;
 
-beforeEach(() => {
+beforeEach(async () => {
   db = openDatabase(":memory:");
-  applySchema(db);
-  sessionId = createSession(db, { source_tool: "test", project: "om" }).id;
+  await applySchema(db);
+  sessionId = (await createSession(db, { source_tool: "test", project: "om" })).id;
 });
 
-afterEach(() => {
-  closeDatabase(db);
+afterEach(async () => {
+  await closeDatabase(db);
 });
 
 describe("consolidation watermark", () => {
   it("records last_event_sequence when no facts are extracted", async () => {
     // Seed a handful of events the heuristic can't extract facts from.
     for (let i = 0; i < 5; i++) {
-      insertEvent(db, {
+      await insertEvent(db, {
         mcp_session_id: sessionId,
         event_type: "message",
         role: "user",
@@ -42,18 +42,18 @@ describe("consolidation watermark", () => {
     // Empty run — no facts graduated, but a consolidations row still exists.
     expect(result.factsGraduated).toBe(0);
 
-    const row = db
+    const row = (await db
       .prepare(
         `SELECT last_event_sequence FROM consolidations ORDER BY created_at DESC LIMIT 1`,
       )
-      .get() as { last_event_sequence: number };
+      .get()) as { last_event_sequence: number };
 
     expect(row.last_event_sequence).toBe(5);
   });
 
   it("suppresses redundant empty rows when watermark is unchanged", async () => {
     // First run with one event → writes a row at watermark 1.
-    insertEvent(db, {
+    await insertEvent(db, {
       mcp_session_id: sessionId,
       event_type: "message",
       role: "user",
@@ -67,14 +67,14 @@ describe("consolidation watermark", () => {
     // Third run with NO new events — still skipped.
     await consolidate(db, createHeuristicProvider(PERSONAL_VOCABULARY), { extraction: { enabled: true } as any });
 
-    const rows = db
+    const rows = (await db
       .prepare(`SELECT COUNT(*) AS n FROM consolidations`)
-      .get() as { n: number };
+      .get()) as { n: number };
     expect(rows.n).toBe(1);
   });
 
   it("advances watermark across successive runs", async () => {
-    insertEvent(db, {
+    await insertEvent(db, {
       mcp_session_id: sessionId,
       event_type: "message",
       role: "user",
@@ -82,13 +82,13 @@ describe("consolidation watermark", () => {
     });
     await consolidate(db, createHeuristicProvider(PERSONAL_VOCABULARY), { extraction: { enabled: true } as any });
 
-    insertEvent(db, {
+    await insertEvent(db, {
       mcp_session_id: sessionId,
       event_type: "message",
       role: "user",
       content: "event two",
     });
-    insertEvent(db, {
+    await insertEvent(db, {
       mcp_session_id: sessionId,
       event_type: "message",
       role: "user",
@@ -96,9 +96,9 @@ describe("consolidation watermark", () => {
     });
     await consolidate(db, createHeuristicProvider(PERSONAL_VOCABULARY), { extraction: { enabled: true } as any });
 
-    const rows = db
+    const rows = (await db
       .prepare(`SELECT last_event_sequence FROM consolidations ORDER BY created_at ASC`)
-      .all() as Array<{ last_event_sequence: number }>;
+      .all()) as Array<{ last_event_sequence: number }>;
 
     expect(rows).toHaveLength(2);
     expect(rows[0].last_event_sequence).toBe(1);
@@ -126,9 +126,9 @@ describe("the watermark holds when extraction could not run", () => {
     },
   });
 
-  function seed(n: number) {
+  async function seed(n: number) {
     for (let i = 0; i < n; i++) {
-      insertEvent(db, {
+      await insertEvent(db, {
         mcp_session_id: sessionId,
         event_type: "message",
         role: "user",
@@ -138,7 +138,7 @@ describe("the watermark holds when extraction could not run", () => {
   }
 
   it("does not advance past events the extractor never examined", async () => {
-    seed(4);
+    await seed(4);
     const base = createHeuristicProvider(PERSONAL_VOCABULARY);
 
     const result = await consolidate(db, failingProvider(base) as any, {
@@ -148,16 +148,16 @@ describe("the watermark holds when extraction could not run", () => {
     expect(result.extractionDegraded).toBe(true);
 
     // The watermark is what decides whether these events are ever read again.
-    const row = db
+    const row = (await db
       .prepare(`SELECT COALESCE(MAX(last_event_sequence), 0) AS seq FROM consolidations`)
-      .get() as { seq: number };
+      .get()) as { seq: number };
     expect(row.seq).toBe(0);
   });
 
   it("leaves the same events eligible for the next run", async () => {
     // The consequence that matters. A held watermark is only worth anything if
     // a later, working run actually picks the events back up.
-    seed(4);
+    await seed(4);
     const base = createHeuristicProvider(PERSONAL_VOCABULARY);
     await consolidate(db, failingProvider(base) as any, {
       extraction: { enabled: true } as any,
@@ -182,8 +182,8 @@ describe("the watermark holds when extraction could not run", () => {
     // second reason and the gate is never consulted. Explicit captures graduate
     // independently of event extraction — so a run can succeed loudly, write its
     // row, and advance past events that were never read.
-    seed(4);
-    insertSessionFact(db, {
+    await seed(4);
+    await insertSessionFact(db, {
       session_id: sessionId,
       content: "The user prefers dark roast coffee",
       source_origin: "explicit",
@@ -197,15 +197,15 @@ describe("the watermark holds when extraction could not run", () => {
     // A row was written: this is the loud-success path.
     expect(result.factsGraduated).toBeGreaterThan(0);
     expect(result.extractionDegraded).toBe(true);
-    const rows = db
+    const rows = (await db
       .prepare(`SELECT COUNT(*) AS n FROM consolidations`)
-      .get() as { n: number };
+      .get()) as { n: number };
     expect(rows.n).toBe(1);
 
     // ...and it must not claim the events the extractor never saw.
-    const row = db
+    const row = (await db
       .prepare(`SELECT COALESCE(MAX(last_event_sequence), 0) AS seq FROM consolidations`)
-      .get() as { seq: number };
+      .get()) as { seq: number };
     expect(row.seq).toBe(0);
   });
 
@@ -214,16 +214,16 @@ describe("the watermark holds when extraction could not run", () => {
     // zero-dependency provider extracts nothing by design, and must not be
     // treated as failing — its watermark would never move and the backlog would
     // grow without bound.
-    seed(3);
+    await seed(3);
 
     const result = await consolidate(db, createHeuristicProvider(PERSONAL_VOCABULARY), {
       extraction: { enabled: true } as any,
     });
 
     expect(result.extractionDegraded).toBe(false);
-    const row = db
+    const row = (await db
       .prepare(`SELECT COALESCE(MAX(last_event_sequence), 0) AS seq FROM consolidations`)
-      .get() as { seq: number };
+      .get()) as { seq: number };
     expect(row.seq).toBe(3);
   });
 });

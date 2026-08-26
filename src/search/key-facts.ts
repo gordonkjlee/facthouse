@@ -36,15 +36,15 @@ const CURRENT = `status = 'active' AND is_latest = 1
  * freshest lead — which is also the sole ordering when nothing has calibrated
  * importance.
  */
-export function keyFacts(db: Db, limit: number = 200): Fact[] {
-  const rows = db
+export async function keyFacts(db: Db, limit: number = 200): Promise<Fact[]> {
+  const rows = (await db
     .prepare(
       `SELECT * FROM facts
        WHERE ${CURRENT}
        ORDER BY importance DESC, created_at DESC
        LIMIT ?`,
     )
-    .all(limit) as Array<Omit<Fact, "is_latest"> & { is_latest: number }>;
+    .all(limit)) as Array<Omit<Fact, "is_latest"> & { is_latest: number }>;
 
   return rows.map((row) => ({ ...row, is_latest: row.is_latest === 1 }));
 }

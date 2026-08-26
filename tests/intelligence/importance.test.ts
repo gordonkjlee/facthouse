@@ -32,9 +32,9 @@ const { defaultServerConfig } = await import("../../src/config.js");
 
 let db: Db;
 
-function manager(configOverride?: Record<string, unknown>) {
+async function manager(configOverride?: Record<string, unknown>) {
   const sessionManager = createSessionManager(db);
-  sessionManager.startSession("importance-test", null);
+  await sessionManager.startSession("importance-test", null);
   return createFactManager(db, sessionManager, {
     intelligence: createHeuristicProvider(PERSONAL_VOCABULARY),
     // The engine ships no vocabulary, so a test about calibration has to
@@ -48,47 +48,47 @@ function manager(configOverride?: Record<string, unknown>) {
 }
 
 /** Importance of the single graduated fact matching a content fragment. */
-function importanceOf(fragment: string): number {
-  const row = db
+async function importanceOf(fragment: string): Promise<number> {
+  const row = (await db
     .prepare(`SELECT importance FROM facts WHERE content LIKE ?`)
-    .get(`%${fragment}%`) as { importance: number } | undefined;
+    .get(`%${fragment}%`)) as { importance: number } | undefined;
   if (!row) throw new Error(`no graduated fact matching "${fragment}"`);
   return row.importance;
 }
 
-beforeEach(() => {
+beforeEach(async () => {
   db = openDatabase(":memory:");
-  applySchema(db);
+  await applySchema(db);
 });
 
-afterEach(() => closeDatabase(db));
+afterEach(async () => await closeDatabase(db));
 
 describe("importance resolution", () => {
   it("gives a domain's facts that domain's default, with no hint from the caller", async () => {
     // The ordinary case: an assistant captures a fact and passes no importance
     // and no domain_hint. Previously everything here landed on 0.5.
-    const fm = manager();
-    fm.captureFact({ content: "The user is allergic to peanuts" });
-    fm.captureFact({ content: "The user prefers dark roast coffee" });
+    const fm = await manager();
+    await fm.captureFact({ content: "The user is allergic to peanuts" });
+    await fm.captureFact({ content: "The user prefers dark roast coffee" });
     await fm.runConsolidate();
 
-    expect(importanceOf("allergic")).toBe(0.9); // medical
-    expect(importanceOf("dark roast")).toBe(0.4); // preferences
+    expect(await importanceOf("allergic")).toBe(0.9); // medical
+    expect(await importanceOf("dark roast")).toBe(0.4); // preferences
   });
 
   it("ranks safety above casual preference — the calibration that matters", async () => {
-    const fm = manager();
-    fm.captureFact({ content: "The user is allergic to peanuts" });
-    fm.captureFact({ content: "The user prefers dark roast coffee" });
+    const fm = await manager();
+    await fm.captureFact({ content: "The user is allergic to peanuts" });
+    await fm.captureFact({ content: "The user prefers dark roast coffee" });
     await fm.runConsolidate();
 
-    expect(importanceOf("allergic")).toBeGreaterThan(importanceOf("dark roast"));
+    expect(await importanceOf("allergic")).toBeGreaterThan(await importanceOf("dark roast"));
   });
 
   it("does not score every fact identically", async () => {
     // The regression in one assertion: if this collapses to a single value,
     // every ranked retrieval in the product is sorting by a constant.
-    const fm = manager();
+    const fm = await manager();
     for (const content of [
       "The user is allergic to peanuts",
       "The user is called Alex Rivera",
@@ -96,12 +96,12 @@ describe("importance resolution", () => {
       "The user prefers dark roast coffee",
       "Minor trivial detail",
     ]) {
-      fm.captureFact({ content });
+      await fm.captureFact({ content });
     }
     await fm.runConsolidate();
 
     const scores = (
-      db.prepare(`SELECT importance FROM facts`).all() as Array<{ importance: number }>
+      (await db.prepare(`SELECT importance FROM facts`).all()) as Array<{ importance: number }>
     ).map((r) => r.importance);
 
     expect(new Set(scores).size).toBeGreaterThan(1);
@@ -109,34 +109,34 @@ describe("importance resolution", () => {
 
   it("lets the caller's explicit value win over the domain default", async () => {
     // Layer 1. The assistant has conversational context the domain does not.
-    const fm = manager();
-    fm.captureFact({ content: "The user prefers dark roast coffee", importance: 0.95 });
+    const fm = await manager();
+    await fm.captureFact({ content: "The user prefers dark roast coffee", importance: 0.95 });
     await fm.runConsolidate();
 
-    expect(importanceOf("dark roast")).toBe(0.95);
+    expect(await importanceOf("dark roast")).toBe(0.95);
   });
 
   it("lets a user's config override the shipped default", async () => {
     // Layer 2 is the user's calibration, not ours. Someone who does not care
     // about preferences should be able to say so.
-    const fm = manager({
+    const fm = await manager({
       domains: [{ name: "preferences", subdomains: [], patterns: ["prefers?"], importance: 0.1 }],
     });
-    fm.captureFact({ content: "The user prefers dark roast coffee" });
+    await fm.captureFact({ content: "The user prefers dark roast coffee" });
     await fm.runConsolidate();
 
-    expect(importanceOf("dark roast")).toBe(0.1);
+    expect(await importanceOf("dark roast")).toBe(0.1);
   });
 
   it("falls back to the baseline for a domain with no default", async () => {
     // A periphery domain the registry has never heard of.
-    const fm = manager({
+    const fm = await manager({
       domains: [{ name: "medical", subdomains: [], patterns: ["allerg"] }], // no importance declared
     });
-    fm.captureFact({ content: "The user is allergic to peanuts" });
+    await fm.captureFact({ content: "The user is allergic to peanuts" });
     await fm.runConsolidate();
 
-    expect(importanceOf("allergic")).toBe(0.5);
+    expect(await importanceOf("allergic")).toBe(0.5);
   });
 
   it("a vocabulary that declares importance gets it applied", () => {
@@ -170,15 +170,15 @@ describe("importance resolution", () => {
     // route, and saying so is more honest than inventing a vocabulary — which is
     // what made this a personal-only product.
     const sessionManager = createSessionManager(db);
-    sessionManager.startSession("no-vocab", null);
+    await sessionManager.startSession("no-vocab", null);
     const fm = createFactManager(db, sessionManager, {
       intelligence: createHeuristicProvider([]),
       serverConfig: { ...defaultServerConfig(), domains: [] },
     });
-    fm.captureFact({ content: "The user is allergic to peanuts" });
+    await fm.captureFact({ content: "The user is allergic to peanuts" });
     await fm.runConsolidate();
 
-    const row = db.prepare(`SELECT domain FROM facts`).get() as { domain: string };
+    const row = (await db.prepare(`SELECT domain FROM facts`).get()) as { domain: string };
     expect(row.domain).toBe("general");
   });
 });

@@ -24,7 +24,7 @@ export interface SessionManager {
   getActiveSession(): Session | null;
 
   /** Start a new session. Called from server.server.oninitialized. */
-  startSession(sourceTool: string | null, project: string | null): Session;
+  startSession(sourceTool: string | null, project: string | null): Promise<Session>;
 
   /**
    * Log an event in the current session.
@@ -39,7 +39,7 @@ export interface SessionManager {
     metadata?: Record<string, unknown> | null;
     /** Named participant when the transcript has one. Role stays the channel. */
     speaker?: string | null;
-  }): SessionEvent;
+  }): Promise<SessionEvent>;
 
   /** Register the log_event MCP tool on the server. */
   registerTools(server: McpServer): void;
@@ -60,20 +60,20 @@ export function createSessionManager(
       return activeSession;
     },
 
-    startSession(sourceTool, project) {
-      activeSession = dbCreateSession(db, {
+    async startSession(sourceTool, project) {
+      activeSession = await dbCreateSession(db, {
         source_tool: sourceTool,
         project,
       });
       return activeSession;
     },
 
-    logEvent(opts) {
+    async logEvent(opts) {
       if (!activeSession) {
         throw new Error("No active session. Call startSession() first.");
       }
 
-      const event = insertEvent(db, {
+      const event = await insertEvent(db, {
         mcp_session_id: activeSession.id,
         client_session_id: clientSessionId ?? null,
         event_type: opts.event_type,
@@ -88,7 +88,7 @@ export function createSessionManager(
       });
 
       // Keep local copy in sync.
-      activeSession = getSession(db, activeSession.id) ?? activeSession;
+      activeSession = (await getSession(db, activeSession.id)) ?? activeSession;
 
       return event;
     },
@@ -151,8 +151,8 @@ export function createSessionManager(
                 "Role stays the channel — do not invent a person role.",
             ),
         },
-        (args) => {
-          const event = manager.logEvent({
+        async (args) => {
+          const event = await manager.logEvent({
             event_type: args.event_type,
             role: args.role,
             content: args.content,
@@ -219,7 +219,7 @@ export function registerSessionReadTools(
         .default(50)
         .describe("Maximum events to return (default 50)."),
     },
-    (args) => {
+    async (args) => {
       const sessionId = args.session_id ?? manager.getActiveSession()?.id;
       if (!sessionId) {
         return {
@@ -228,12 +228,12 @@ export function registerSessionReadTools(
         };
       }
 
-      const events = getEvents(db, sessionId, {
+      const events = await getEvents(db, sessionId, {
         after_sequence: args.after_sequence,
         limit: args.limit,
       });
 
-      const total = getEventCount(db, sessionId);
+      const total = await getEventCount(db, sessionId);
 
       return {
         content: [
@@ -278,8 +278,8 @@ export function withEventLogging(
   toolName: string,
   handler: ToolCallback,
 ): ToolCallback {
-  const logError = (err: unknown) => {
-    manager.logEvent({
+  const logError = async (err: unknown) => {
+    await manager.logEvent({
       event_type: "tool_result",
       role: "tool",
       content: JSON.stringify({ error: String(err) }),
@@ -288,8 +288,8 @@ export function withEventLogging(
     });
   };
 
-  const logResult = (res: any) => {
-    manager.logEvent({
+  const logResult = async (res: any) => {
+    await manager.logEvent({
       event_type: "tool_result",
       role: "tool",
       content: JSON.stringify(res),
@@ -299,30 +299,21 @@ export function withEventLogging(
     return res;
   };
 
-  return (...args: any[]) => {
+  return async (...args: any[]) => {
     // Log the tool call.
-    manager.logEvent({
+    await manager.logEvent({
       event_type: "tool_call",
       role: "assistant",
       content: JSON.stringify({ tool: toolName, arguments: args[0] }),
       content_type: "json",
     });
 
-    let result: any;
     try {
-      result = handler(...args);
+      const result = await handler(...args);
+      return await logResult(result);
     } catch (err) {
-      logError(err);
+      await logError(err);
       throw err;
     }
-
-    // Handle both sync and async handlers.
-    if (result instanceof Promise) {
-      return result.then(logResult, (err: unknown) => {
-        logError(err);
-        throw err;
-      });
-    }
-    return logResult(result);
   };
 }

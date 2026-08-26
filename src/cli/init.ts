@@ -205,9 +205,8 @@ export interface InitResult {
 
 /**
  * Create (or update) a data directory: database + schema + default config.
- * Synchronous — mirrors the rest of the SQLite data layer.
  */
-export function initDataDir(args: InitArgs): InitResult {
+export async function initDataDir(args: InitArgs): Promise<InitResult> {
   const { dataDir, force = false } = args;
 
   // Refuse a non-sqlite engine *before* mkdir/open — otherwise a postgres
@@ -228,23 +227,23 @@ export function initDataDir(args: InitArgs): InitResult {
   const db = openDatabase(dbPath);
   let schemaVersion: number;
   try {
-    applySchema(db);
-    schemaVersion = pragmaRead(db, "user_version");
+    await applySchema(db);
+    schemaVersion = await pragmaRead(db, "user_version");
     // Seed the domain vocabulary the config declares. The table previously
     // started empty and stayed empty until the first fact graduated, so the
     // earliest facts had no existing vocabulary to be routed against — the
     // point at which consistent routing matters most. ensureDomain is
     // idempotent, so re-running init is safe.
     for (const domain of seedDomains) {
-      ensureDomain(db, domain.name, domain.subdomains);
+      await ensureDomain(db, domain.name, domain.subdomains);
     }
     // The user's own entity, nameless until a fact says otherwise. Created here
     // rather than on first use so that the very first fact captured can already
     // be marked as being about them — there is no window in which facts arrive
     // with nowhere to anchor. Idempotent, so re-running init is safe.
-    ensureSelfEntity(db);
+    await ensureSelfEntity(db);
   } finally {
-    closeDatabase(db);
+    await closeDatabase(db);
   }
 
   // Write defaults only when absent (or forced) — never clobber user settings.

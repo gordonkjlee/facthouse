@@ -61,8 +61,8 @@ export function discoverCursorFiles(source: ResolvedCaptureSource): string[] {
 }
 
 /** Tail one Cursor Agent JSONL file into session_events. */
-export function ingestCursorFile(db: Db, filePath: string): JsonlFilePull {
-  return ingestJsonlFile(db, filePath, {
+export async function ingestCursorFile(db: Db, filePath: string): Promise<JsonlFilePull> {
+  return await ingestJsonlFile(db, filePath, {
     sourceTool: "cursor",
     mapLine: mapTranscriptLine,
   });

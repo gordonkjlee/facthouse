@@ -26,14 +26,14 @@ const { createSamplingProvider } = await import("../../src/intelligence/sampling
 let db: Db;
 let sessionId: string;
 
-beforeEach(() => {
+beforeEach(async () => {
   db = openDatabase(":memory:");
-  applySchema(db);
-  sessionId = createSession(db, { source_tool: "test", project: "om" }).id;
+  await applySchema(db);
+  sessionId = (await createSession(db, { source_tool: "test", project: "om" })).id;
 });
 
-afterEach(() => {
-  closeDatabase(db);
+afterEach(async () => {
+  await closeDatabase(db);
 });
 
 /**
@@ -116,13 +116,13 @@ function makeSamplingStub(): { server: Server; calls: number } {
 describe("end-to-end sampling consolidation", () => {
   it("extracts, classifies, resolves entities, and graduates facts", async () => {
     // Seed raw conversation events.
-    insertEvent(db, {
+    await insertEvent(db, {
       mcp_session_id: sessionId,
       event_type: "message",
       role: "user",
       content: "Yeah I can't eat aspirin — discovered that the hard way.",
     });
-    insertEvent(db, {
+    await insertEvent(db, {
       mcp_session_id: sessionId,
       event_type: "message",
       role: "user",
@@ -141,7 +141,7 @@ describe("end-to-end sampling consolidation", () => {
     expect(result.factsGraduated).toBe(2);
     expect(result.entitiesCreated).toBeGreaterThanOrEqual(1);
 
-    const facts = db.prepare(`SELECT content, domain FROM facts`).all() as Array<{
+    const facts = (await db.prepare(`SELECT content, domain FROM facts`).all()) as Array<{
       content: string;
       domain: string;
     }>;
@@ -149,26 +149,26 @@ describe("end-to-end sampling consolidation", () => {
     expect(facts.some((f) => f.domain === "medical")).toBe(true);
     expect(facts.some((f) => f.domain === "people")).toBe(true);
 
-    const entities = db
+    const entities = (await db
       .prepare(`SELECT name, type FROM entities`)
-      .all() as Array<{ name: string; type: string }>;
+      .all()) as Array<{ name: string; type: string }>;
     expect(entities.some((e) => e.name === "Robin" && e.type === "person")).toBe(true);
 
-    const links = db.prepare(`SELECT COUNT(*) AS n FROM fact_entities`).get() as {
+    const links = (await db.prepare(`SELECT COUNT(*) AS n FROM fact_entities`).get()) as {
       n: number;
     };
     expect(links.n).toBeGreaterThanOrEqual(1);
 
-    const consolidations = db
+    const consolidations = (await db
       .prepare(`SELECT facts_graduated, last_event_sequence FROM consolidations`)
-      .all() as Array<{ facts_graduated: number; last_event_sequence: number }>;
+      .all()) as Array<{ facts_graduated: number; last_event_sequence: number }>;
     expect(consolidations).toHaveLength(1);
     expect(consolidations[0].facts_graduated).toBe(2);
     expect(consolidations[0].last_event_sequence).toBe(2);
   });
 
   it("produces no facts when the LLM returns an empty extraction", async () => {
-    insertEvent(db, {
+    await insertEvent(db, {
       mcp_session_id: sessionId,
       event_type: "message",
       role: "user",
@@ -194,17 +194,17 @@ describe("end-to-end sampling consolidation", () => {
     });
 
     expect(result.factsGraduated).toBe(0);
-    const facts = db.prepare(`SELECT COUNT(*) AS n FROM facts`).get() as { n: number };
+    const facts = (await db.prepare(`SELECT COUNT(*) AS n FROM facts`).get()) as { n: number };
     expect(facts.n).toBe(0);
     // But a watermark row still lands — event was consumed.
-    const consRow = db
+    const consRow = (await db
       .prepare(`SELECT last_event_sequence FROM consolidations`)
-      .get() as { last_event_sequence: number };
+      .get()) as { last_event_sequence: number };
     expect(consRow.last_event_sequence).toBe(1);
   });
 
   it("falls back to heuristic when createMessage throws for one method", async () => {
-    insertEvent(db, {
+    await insertEvent(db, {
       mcp_session_id: sessionId,
       event_type: "message",
       role: "user",
@@ -261,7 +261,7 @@ describe("end-to-end sampling consolidation", () => {
     });
 
     expect(result.factsGraduated).toBe(1);
-    const facts = db.prepare(`SELECT domain FROM facts`).all() as Array<{ domain: string }>;
+    const facts = (await db.prepare(`SELECT domain FROM facts`).all()) as Array<{ domain: string }>;
     expect(facts[0].domain).toBe("medical");
   });
 });

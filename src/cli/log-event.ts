@@ -64,7 +64,7 @@ export async function logEvent(args: LogEventArgs): Promise<SessionEvent> {
 
   let event: SessionEvent;
   try {
-    applySchema(db);
+    await applySchema(db);
 
     // A hook-supplied id is the client's own, opaque to us — it goes in
     // client_session_id. Our fallback resolves a row in `sessions`, so it goes
@@ -73,16 +73,16 @@ export async function logEvent(args: LogEventArgs): Promise<SessionEvent> {
     const project = process.env.OPENMEMORY_PROJECT?.trim() || null;
     const mcpSessionId = args.sessionId
       ? null
-      : resolveOwnSession(db, project);
+      : await resolveOwnSession(db, project);
     if (args.sessionId) {
-      ensureSession(db, {
+      await ensureSession(db, {
         id: args.sessionId,
         source_tool: "cli",
         project,
       });
     }
 
-    event = insertEvent(db, {
+    event = await insertEvent(db, {
       mcp_session_id: mcpSessionId,
       client_session_id: args.sessionId ?? null,
       event_type: args.eventType,
@@ -97,7 +97,7 @@ export async function logEvent(args: LogEventArgs): Promise<SessionEvent> {
       speaker: args.speaker ?? null,
     });
   } finally {
-    closeDatabase(db);
+    await closeDatabase(db);
   }
 
   // Signal the running MCP server. 500ms timeout internally; never throws.
@@ -114,14 +114,14 @@ export async function logEvent(args: LogEventArgs): Promise<SessionEvent> {
  * `project` is OPENMEMORY_PROJECT when set — the same env the MCP session
  * uses — provenance, not a tenant.
  */
-function resolveOwnSession(
+async function resolveOwnSession(
   db: ReturnType<typeof openDatabase>,
   project: string | null,
-): string {
-  const latest = getLatestSession(db);
+): Promise<string> {
+  const latest = await getLatestSession(db);
   if (latest) {
     if (latest.project == null && project != null) {
-      ensureSession(db, {
+      await ensureSession(db, {
         id: latest.id,
         source_tool: latest.source_tool,
         project,
@@ -129,7 +129,7 @@ function resolveOwnSession(
     }
     return latest.id;
   }
-  return createSession(db, { source_tool: "cli", project }).id;
+  return (await createSession(db, { source_tool: "cli", project })).id;
 }
 
 // ---------------------------------------------------------------------------

@@ -13,7 +13,7 @@ import { homedir } from "node:os";
 import path from "node:path";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { openDatabase, closeDatabase } from "./db/connection.js";
+import { openDatabase, closeDatabase, type Db } from "./db/connection.js";
 import { applySchema } from "./db/schema.js";
 import { ensureSelfEntity } from "./db/entities.js";
 import { createEmbeddingProvider } from "./embedding/provider.js";
@@ -56,7 +56,7 @@ mkdirSync(dataDir, { recursive: true });
 // Storage check before SQLite. A postgres (or unknown) request must not
 // create or open memory.db. Print the message and exit rather than dumping
 // a stack into the MCP stdio stream.
-let loadedConfig;
+let loadedConfig: ReturnType<typeof loadShippedStoreConfig>;
 try {
   loadedConfig = loadShippedStoreConfig(dataDir);
 } catch (err) {
@@ -64,116 +64,15 @@ try {
   process.exit(1);
 }
 
-// ---------------------------------------------------------------------------
-// Database
-// ---------------------------------------------------------------------------
-
-const dbPath = path.join(dataDir, "memory.db");
-const db = openDatabase(dbPath);
-applySchema(db);
-// Also here, not only in `openmemory init` — init is optional, and a store the
-// server created on first boot needs the anchor just as much as one that was
-// set up ahead of time. Idempotent.
-ensureSelfEntity(db);
-
-// ---------------------------------------------------------------------------
-// MCP Server
-// ---------------------------------------------------------------------------
-
 const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf-8"));
-
-// `subscribe` must be declared here: registering a resource auto-registers
-// `resources: { listChanged: true }`, but not subscribe, and capabilities are
-// frozen once a transport is attached. Without it, clients can't ask to be told
-// when the briefing changes.
-const server = new McpServer(
-  {
-    name: "openmemory",
-    version: pkg.version,
-  },
-  {
-    capabilities: { resources: { subscribe: true, listChanged: true } },
-    // Tools-only clients never fetch memory://briefing. This is the session-start
-    // result that tells them to call get_session_context instead — same briefing.
-    instructions: SESSION_BOOTSTRAP_INSTRUCTIONS,
-  },
-);
-
-const clientSessionId = process.env.OPENMEMORY_CLIENT_SESSION ?? null;
-
-const sessionManager = createSessionManager(db, clientSessionId);
-sessionManager.registerTools(server);
-registerSessionReadTools(server, sessionManager, db);
-
-// A store that has just switched to bi-temporal mode gets `bitemporal_since`
-// stamped here — historical supersessions cannot be backfilled.
-const config = ensureBitemporalSince(dataDir, loadedConfig);
-const triggers = new Set(config.consolidation.triggers);
-
-// Provider selector — heuristic is always the terminal fallback. Defaults to
-// the CLI provider: subprocess `claude -p` for real LLM consolidation
-// via the user's own subscription. The OPENMEMORY_PROVIDER env var overrides
-// the config.json choice (kill-switch, e.g. OPENMEMORY_PROVIDER=heuristic).
-const heuristic = createHeuristicProvider();
-const intelligence = createIntelligenceProvider(config.intelligence, {
-  vocabulary: config.domains ?? [],
-  server: server.server,
-  heuristic,
-});
-
-// Semantic search, if this store has opted in. Null is the shipped default and
-// means keyword-only retrieval — nothing is downloaded and nothing is called.
-// Built once at boot: resolution reads config and the environment, neither of
-// which changes mid-process.
-const embeddingProvider = createEmbeddingProvider(config.embedding, {
-  onUnavailable: (reason) => console.error(`[openmemory] ${reason}`),
-});
-
-// Resources are automatically-loaded context (memory://briefing, memory://profile).
-// Registered before connect(), because registering one registers the resources
-// capability and capabilities are frozen once the transport attaches.
-const resources = registerResources(server, db);
-
-const factManager = createFactManager(db, sessionManager, {
-  intelligence,
-  embedding: embeddingProvider,
-  serverConfig: { extraction: config.extraction, temporal: config.temporal },
-  // Both of these shipped in the default config and never reached the code that
-  // reads them, so the hardcoded defaults always won whatever a store set.
-  captureConfig: config.capture,
-  autoLinkEvents: config.consolidation.auto_link_events,
-  sources: config.sources,
-  // Consolidation is the only thing that changes graduated knowledge, so it's
-  // the only thing that can change what these resources render.
-  onConsolidated: () => resources.notifyUpdated(),
-});
-factManager.registerTools(server);
-if (config.inferences.enabled) {
-  registerInferenceTools(server, db, {
-    onConfirmed: () => resources.notifyUpdated(),
-  });
-}
-registerReadTools(
-  server,
-  db,
-  embeddingProvider,
-  {
-    minSimilarityRatio: config.embedding?.min_similarity_ratio,
-    minSimilarity: config.embedding?.min_similarity ?? undefined,
-  },
-  config.temporal,
-);
-
-const scheduler: Scheduler = startScheduler({
-  db,
-  runConsolidate: (phase) => factManager.runConsolidate(phase),
-  threshold: config.consolidation.threshold,
-});
 
 // ---------------------------------------------------------------------------
 // Lifecycle
 // ---------------------------------------------------------------------------
 
+let db: Db | undefined;
+let scheduler: Scheduler | undefined;
+let triggers = new Set<string>();
 let ipcListener: SchedulerListener | null = null;
 
 // Idempotent shutdown path — may be invoked by MCP transport close, SIGINT,
@@ -183,13 +82,120 @@ async function shutdown(): Promise<void> {
   if (shuttingDown) return;
   shuttingDown = true;
   ipcListener?.close();
-  if (triggers.has("shutdown")) {
+  if (scheduler && triggers.has("shutdown")) {
     await scheduler.flush().catch(() => undefined);
   }
-  closeDatabase(db);
+  if (db) await closeDatabase(db);
 }
 
 async function main() {
+  // ---------------------------------------------------------------------------
+  // Database
+  // ---------------------------------------------------------------------------
+
+  const dbPath = path.join(dataDir, "memory.db");
+  const database = openDatabase(dbPath);
+  db = database;
+  await applySchema(database);
+  // Also here, not only in `openmemory init` — init is optional, and a store the
+  // server created on first boot needs the anchor just as much as one that was
+  // set up ahead of time. Idempotent.
+  await ensureSelfEntity(database);
+
+  // ---------------------------------------------------------------------------
+  // MCP Server
+  // ---------------------------------------------------------------------------
+
+  // `subscribe` must be declared here: registering a resource auto-registers
+  // `resources: { listChanged: true }`, but not subscribe, and capabilities are
+  // frozen once a transport is attached. Without it, clients can't ask to be told
+  // when the briefing changes.
+  const server = new McpServer(
+    {
+      name: "openmemory",
+      version: pkg.version,
+    },
+    {
+      capabilities: { resources: { subscribe: true, listChanged: true } },
+      // Tools-only clients never fetch memory://briefing. This is the session-start
+      // result that tells them to call get_session_context instead — same briefing.
+      instructions: SESSION_BOOTSTRAP_INSTRUCTIONS,
+    },
+  );
+
+  const clientSessionId = process.env.OPENMEMORY_CLIENT_SESSION ?? null;
+
+  const sessionManager = createSessionManager(database, clientSessionId);
+  sessionManager.registerTools(server);
+  registerSessionReadTools(server, sessionManager, database);
+
+  // A store that has just switched to bi-temporal mode gets `bitemporal_since`
+  // stamped here — historical supersessions cannot be backfilled.
+  const config = ensureBitemporalSince(dataDir, loadedConfig);
+  const triggerSet = new Set(config.consolidation.triggers);
+  triggers = triggerSet;
+
+  // Provider selector — heuristic is always the terminal fallback. Defaults to
+  // the CLI provider: subprocess `claude -p` for real LLM consolidation
+  // via the user's own subscription. The OPENMEMORY_PROVIDER env var overrides
+  // the config.json choice (kill-switch, e.g. OPENMEMORY_PROVIDER=heuristic).
+  const heuristic = createHeuristicProvider();
+  const intelligence = createIntelligenceProvider(config.intelligence, {
+    vocabulary: config.domains ?? [],
+    server: server.server,
+    heuristic,
+  });
+
+  // Semantic search, if this store has opted in. Null is the shipped default and
+  // means keyword-only retrieval — nothing is downloaded and nothing is called.
+  // Built once at boot: resolution reads config and the environment, neither of
+  // which changes mid-process.
+  const embeddingProvider = createEmbeddingProvider(config.embedding, {
+    onUnavailable: (reason) => console.error(`[openmemory] ${reason}`),
+  });
+
+  // Resources are automatically-loaded context (memory://briefing, memory://profile).
+  // Registered before connect(), because registering one registers the resources
+  // capability and capabilities are frozen once the transport attaches.
+  const resources = registerResources(server, database);
+
+  const factManager = createFactManager(database, sessionManager, {
+    intelligence,
+    embedding: embeddingProvider,
+    serverConfig: { extraction: config.extraction, temporal: config.temporal },
+    // Both of these shipped in the default config and never reached the code that
+    // reads them, so the hardcoded defaults always won whatever a store set.
+    captureConfig: config.capture,
+    autoLinkEvents: config.consolidation.auto_link_events,
+    sources: config.sources,
+    // Consolidation is the only thing that changes graduated knowledge, so it's
+    // the only thing that can change what these resources render.
+    onConsolidated: () => resources.notifyUpdated(),
+  });
+  factManager.registerTools(server);
+  if (config.inferences.enabled) {
+    registerInferenceTools(server, database, {
+      onConfirmed: () => resources.notifyUpdated(),
+    });
+  }
+  registerReadTools(
+    server,
+    database,
+    embeddingProvider,
+    {
+      minSimilarityRatio: config.embedding?.min_similarity_ratio,
+      minSimilarity: config.embedding?.min_similarity ?? undefined,
+    },
+    config.temporal,
+  );
+
+  const sched = startScheduler({
+    db: database,
+    runConsolidate: (phase) => factManager.runConsolidate(phase),
+    threshold: config.consolidation.threshold,
+  });
+  scheduler = sched;
+
   const transport = new StdioServerTransport();
 
   // Start session when the MCP handshake completes.
@@ -201,11 +207,11 @@ async function main() {
     );
 
     // IPC listener for threshold + compaction signals.
-    if (triggers.has("threshold") || triggers.has("compaction")) {
+    if (triggerSet.has("threshold") || triggerSet.has("compaction")) {
       try {
         ipcListener = await startSchedulerListener(dataDir, (kind) => {
-          if (kind === "flush") void scheduler.flush();
-          else void scheduler.tick();
+          if (kind === "flush") void sched.flush();
+          else void sched.tick();
         });
         if (!ipcListener.bound) {
           console.error(
@@ -226,7 +232,7 @@ async function main() {
     // down log_event.
     let eventsInserted = 0;
     try {
-      const pulled = pullSources(db, config.sources);
+      const pulled = await pullSources(database, config.sources);
       eventsInserted = pulled.events_inserted;
       if (pulled.events_inserted > 0) {
         console.error(
@@ -240,9 +246,9 @@ async function main() {
     // session_start: leftovers when nothing new was pulled, or a handful of
     // new lines. Full pipeline (extract then graduate). A large first-backfill
     // must not spawn that here. PreCompact flush is graduate-only.
-    if (triggers.has("session_start")) {
+    if (triggerSet.has("session_start")) {
       if (shouldFlushAfterSessionStartPull(eventsInserted)) {
-        void scheduler.full();
+        void sched.full();
       } else {
         console.error(
           `[openmemory] Pulled ${eventsInserted} event(s) — skipping session_start ` +
@@ -272,8 +278,8 @@ process.on("SIGTERM", () => {
   void shutdown().then(() => process.exit(0));
 });
 
-main().catch((error) => {
+main().catch(async (error) => {
   console.error("Fatal error:", error);
-  closeDatabase(db);
+  if (db) await closeDatabase(db).catch(() => undefined);
   process.exit(1);
 });

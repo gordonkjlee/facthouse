@@ -16,13 +16,13 @@ const searchMod = await import("../../src/search/index.js");
 
 let db: Db;
 
-beforeEach(() => {
+beforeEach(async () => {
   db = dbMod.openDatabase(":memory:");
-  dbMod.applySchema(db);
+  await dbMod.applySchema(db);
 });
 
-afterEach(() => {
-  dbMod.closeDatabase(db);
+afterEach(async () => {
+  await dbMod.closeDatabase(db);
 });
 
 
@@ -48,12 +48,12 @@ function withEntity(name: string, relationship = "mentioned_in") {
 }
 
 describe("DIKW pipeline end-to-end", () => {
-  function setup(intelligenceOverride?: unknown) {
+  async function setup(intelligenceOverride?: unknown) {
     const intelligence =
       (intelligenceOverride as never) ??
       heuristicMod.createHeuristicProvider(PERSONAL_VOCABULARY);
     const sessionManager = sessionMod.createSessionManager(db);
-    sessionManager.startSession("test-client", "test-project");
+    await sessionManager.startSession("test-client", "test-project");
     const factManager = factMod.createFactManager(db, sessionManager, {
       autoLinkEvents: 5,
       intelligence,
@@ -66,20 +66,20 @@ describe("DIKW pipeline end-to-end", () => {
   }
 
   it("captures facts, consolidates, and retrieves structured knowledge", async () => {
-    const { factManager } = setup();
+    const { factManager } = await setup();
 
     // D → Staging: capture facts
-    factManager.captureFact({ content: "My name is Alex", domain_hint: "profile", importance: 0.9 });
-    factManager.captureFact({ content: "I prefer dark roast coffee", domain_hint: "preferences" });
-    factManager.captureFact({ content: "I'm allergic to aspirin", domain_hint: "medical" });
-    factManager.captureFact({ content: "I prefer dark roast coffee" }); // duplicate — should be rejected
+    await factManager.captureFact({ content: "My name is Alex", domain_hint: "profile", importance: 0.9 });
+    await factManager.captureFact({ content: "I prefer dark roast coffee", domain_hint: "preferences" });
+    await factManager.captureFact({ content: "I'm allergic to aspirin", domain_hint: "medical" });
+    await factManager.captureFact({ content: "I prefer dark roast coffee" }); // duplicate — should be rejected
 
     // Verify: 3 unique session_facts (1 duplicate rejected)
-    const context = factManager.getSessionContext();
+    const context = await factManager.getSessionContext();
     expect(context).toHaveLength(3);
 
     // Verify: 0 graduated facts yet
-    const preFacts = searchMod.structuredSearch(db, {});
+    const preFacts = await searchMod.structuredSearch(db, {});
     expect(preFacts).toHaveLength(0);
 
     // Staging → Knowledge: consolidate
@@ -91,24 +91,24 @@ describe("DIKW pipeline end-to-end", () => {
     expect(result.summary).toBeTruthy();
 
     // Verify: graduated facts exist with correct domains
-    const profileFacts = searchMod.structuredSearch(db, { domain: "profile" });
+    const profileFacts = await searchMod.structuredSearch(db, { domain: "profile" });
     expect(profileFacts).toHaveLength(1);
     expect(profileFacts[0].content).toContain("Alex");
 
-    const prefFacts = searchMod.structuredSearch(db, { domain: "preferences" });
+    const prefFacts = await searchMod.structuredSearch(db, { domain: "preferences" });
     expect(prefFacts).toHaveLength(1);
 
-    const medFacts = searchMod.structuredSearch(db, { domain: "medical" });
+    const medFacts = await searchMod.structuredSearch(db, { domain: "medical" });
     expect(medFacts).toHaveLength(1);
   });
 
   it("hybrid search finds graduated facts", async () => {
-    const { factManager } = setup();
+    const { factManager } = await setup();
 
-    factManager.captureFact({ content: "I prefer dark roast coffee", domain_hint: "preferences" });
+    await factManager.captureFact({ content: "I prefer dark roast coffee", domain_hint: "preferences" });
     await factManager.runConsolidate();
 
-    const searchResult = searchMod.hybridSearch(db, "coffee");
+    const searchResult = await searchMod.hybridSearch(db, "coffee");
     expect(searchResult.results).toHaveLength(1);
     expect(searchResult.results[0].fact.content).toContain("coffee");
     expect(searchResult.coverage_estimate).toBeGreaterThan(0);
@@ -116,15 +116,15 @@ describe("DIKW pipeline end-to-end", () => {
   });
 
   it("supersedes contradictory facts across consolidations", async () => {
-    const { sessionManager, intelligence } = setup();
+    const { sessionManager, intelligence } = await setup();
     const { getFact } = await import("../../src/db/facts.js");
 
     // First session: capture coffee
     const fm1 = factMod.createFactManager(db, sessionManager, { autoLinkEvents: 0, intelligence });
-    fm1.captureFact({ content: "I prefer dark roast coffee", domain_hint: "preferences" });
+    await fm1.captureFact({ content: "I prefer dark roast coffee", domain_hint: "preferences" });
     await fm1.runConsolidate();
 
-    const beforeFacts = searchMod.structuredSearch(db, { domain: "preferences" });
+    const beforeFacts = await searchMod.structuredSearch(db, { domain: "preferences" });
     expect(beforeFacts).toHaveLength(1);
     const coffeeId = beforeFacts[0].id;
     expect(beforeFacts[0].content).toContain("coffee");
@@ -132,16 +132,16 @@ describe("DIKW pipeline end-to-end", () => {
     expect(beforeFacts[0].status).toBe("active");
 
     // Second session: capture contradictory fact with negation marker
-    sessionManager.startSession("test-client-2", null);
+    await sessionManager.startSession("test-client-2", null);
     const fm2 = factMod.createFactManager(db, sessionManager, { autoLinkEvents: 0, intelligence });
-    fm2.captureFact({
+    await fm2.captureFact({
       content: "I now prefer green tea instead of coffee",
       domain_hint: "preferences",
     });
     await fm2.runConsolidate();
 
     // Only tea should be in the latest/active set — exactly one fact
-    const afterFacts = searchMod.structuredSearch(db, { domain: "preferences" });
+    const afterFacts = await searchMod.structuredSearch(db, { domain: "preferences" });
     expect(afterFacts).toHaveLength(1);
     expect(afterFacts[0].content).toContain("tea");
     const teaId = afterFacts[0].id;
@@ -149,7 +149,7 @@ describe("DIKW pipeline end-to-end", () => {
 
     // Old coffee fact must be superseded: is_latest=0, status='superseded',
     // valid_until set, superseded_by pointing at tea
-    const oldCoffee = getFact(db, coffeeId);
+    const oldCoffee = await getFact(db, coffeeId);
     expect(oldCoffee).not.toBeNull();
     expect(oldCoffee!.is_latest).toBe(false);
     expect(oldCoffee!.status).toBe("superseded");
@@ -161,20 +161,20 @@ describe("DIKW pipeline end-to-end", () => {
   });
 
   it("detail-addition facts coexist with their more-general parents (no silent dedup)", async () => {
-    const { sessionManager, intelligence } = setup();
+    const { sessionManager, intelligence } = await setup();
 
     // First session: capture the general preference
     const fm1 = factMod.createFactManager(db, sessionManager, { autoLinkEvents: 0, intelligence });
-    fm1.captureFact({
+    await fm1.captureFact({
       content: "I prefer dark roast coffee",
       domain_hint: "preferences",
     });
     await fm1.runConsolidate();
 
     // Second session: add a more specific detail, not a contradiction
-    sessionManager.startSession("test-client-2", null);
+    await sessionManager.startSession("test-client-2", null);
     const fm2 = factMod.createFactManager(db, sessionManager, { autoLinkEvents: 0, intelligence });
-    fm2.captureFact({
+    await fm2.captureFact({
       content: "I prefer dark roast coffee from Colombia",
       domain_hint: "preferences",
     });
@@ -182,7 +182,7 @@ describe("DIKW pipeline end-to-end", () => {
 
     // Both facts should survive — neither is a supersession of the other,
     // and cross-session exact-dedup must not silently collapse them.
-    const prefs = searchMod.structuredSearch(db, { domain: "preferences" });
+    const prefs = await searchMod.structuredSearch(db, { domain: "preferences" });
     expect(prefs).toHaveLength(2);
     const contents = prefs.map((f: any) => f.content).sort();
     expect(contents).toEqual([
@@ -197,44 +197,44 @@ describe("DIKW pipeline end-to-end", () => {
   });
 
   it("entity path contributes to search after consolidation", async () => {
-    const { factManager } = setup(withEntity("Robin"));
+    const { factManager } = await setup(withEntity("Robin"));
 
-    factManager.captureFact({ content: "my partner Robin loves sushi" });
-    factManager.captureFact({ content: "my friend Robin works at Acme" });
+    await factManager.captureFact({ content: "my partner Robin loves sushi" });
+    await factManager.captureFact({ content: "my friend Robin works at Acme" });
     await factManager.runConsolidate();
 
     // Entity "Robin" should exist
     const { findEntity } = await import("../../src/db/entities.js");
-    const robin = findEntity(db, "Robin", "person");
+    const robin = await findEntity(db, "Robin", "person");
     expect(robin).not.toBeNull();
 
     // Search for Robin — entity path should contribute facts via hybridSearch
-    const result = searchMod.hybridSearch(db, "Robin");
+    const result = await searchMod.hybridSearch(db, "Robin");
     expect(result.results.length).toBeGreaterThanOrEqual(1);
     expect(result.results.some((r: any) => r.fact.content.includes("Robin"))).toBe(true);
   });
 
-  it("get_session_context returns in-session working memory before consolidation", () => {
-    const { factManager } = setup();
+  it("get_session_context returns in-session working memory before consolidation", async () => {
+    const { factManager } = await setup();
 
-    factManager.captureFact({ content: "fact A" });
-    factManager.captureFact({ content: "fact B" });
-    factManager.captureFact({ content: "fact C" });
+    await factManager.captureFact({ content: "fact A" });
+    await factManager.captureFact({ content: "fact B" });
+    await factManager.captureFact({ content: "fact C" });
 
     // In-session recall works immediately (working memory, pre-consolidation)
-    const context = factManager.getSessionContext();
+    const context = await factManager.getSessionContext();
     expect(context).toHaveLength(3);
     expect(context.map((f: any) => f.content)).toEqual(["fact A", "fact B", "fact C"]);
 
     // But search doesn't find them yet (not consolidated)
-    const searchResult = searchMod.hybridSearch(db, "fact A");
+    const searchResult = await searchMod.hybridSearch(db, "fact A");
     expect(searchResult.results).toHaveLength(0);
   });
 
   it("consolidation is idempotent", async () => {
-    const { factManager } = setup();
+    const { factManager } = await setup();
 
-    factManager.captureFact({ content: "Some important fact", domain_hint: "general" });
+    await factManager.captureFact({ content: "Some important fact", domain_hint: "general" });
 
     const first = await factManager.runConsolidate();
     expect(first.factsIn).toBe(1);
@@ -246,48 +246,48 @@ describe("DIKW pipeline end-to-end", () => {
   });
 
   it("consolidation creates entities and links them to facts", async () => {
-    const { factManager } = setup(withEntity("Robin", "partner_of"));
+    const { factManager } = await setup(withEntity("Robin", "partner_of"));
 
-    factManager.captureFact({
+    await factManager.captureFact({
       content: "Had dinner with my partner Robin",
       domain_hint: "people",
     });
     await factManager.runConsolidate();
 
     // Check entity was created
-    const robin = dbMod.findEntity(db, "Robin");
+    const robin = await dbMod.findEntity(db, "Robin");
     expect(robin).not.toBeNull();
     expect(robin!.type).toBe("person");
     expect(robin!.canonical_name).toBe("robin");
   });
 
   it("importance defaults are respected through the pipeline", async () => {
-    const { factManager } = setup();
+    const { factManager } = await setup();
 
     // The configured vocabulary declares medical at 0.9
-    factManager.captureFact({
+    await factManager.captureFact({
       content: "I'm allergic to aspirin",
       domain_hint: "medical",
     });
     await factManager.runConsolidate();
 
-    const medFacts = searchMod.structuredSearch(db, { domain: "medical" });
+    const medFacts = await searchMod.structuredSearch(db, { domain: "medical" });
     expect(medFacts).toHaveLength(1);
     expect(medFacts[0].importance).toBe(0.9); // as declared by the configured vocabulary
   });
 
   it("consolidation record is created with stats", async () => {
-    const { factManager } = setup();
+    const { factManager } = await setup();
 
-    factManager.captureFact({ content: "fact one", domain_hint: "general" });
-    factManager.captureFact({ content: "fact two", domain_hint: "general" });
+    await factManager.captureFact({ content: "fact one", domain_hint: "general" });
+    await factManager.captureFact({ content: "fact two", domain_hint: "general" });
 
     const result = await factManager.runConsolidate();
 
     // Verify consolidation record
-    const record = db
+    const record = (await db
       .prepare("SELECT * FROM consolidations WHERE id = ?")
-      .get(result.consolidationId) as any;
+      .get(result.consolidationId)) as any;
 
     expect(record).toBeTruthy();
     expect(record.facts_in).toBe(2);
@@ -296,24 +296,24 @@ describe("DIKW pipeline end-to-end", () => {
   });
 
   it("domains are created during consolidation", async () => {
-    const { factManager } = setup();
+    const { factManager } = await setup();
 
-    factManager.captureFact({ content: "I'm allergic to aspirin", domain_hint: "medical" });
+    await factManager.captureFact({ content: "I'm allergic to aspirin", domain_hint: "medical" });
     await factManager.runConsolidate();
 
-    const domains = dbMod.getDomains(db);
+    const domains = await dbMod.getDomains(db);
     const domainNames = domains.map((d: any) => d.name);
     expect(domainNames).toContain("medical");
   });
 
   it("search returns retrieval quality signals", async () => {
-    const { factManager } = setup();
+    const { factManager } = await setup();
 
-    factManager.captureFact({ content: "I prefer dark roast coffee", domain_hint: "preferences" });
-    factManager.captureFact({ content: "I enjoy hiking on weekends", domain_hint: "preferences" });
+    await factManager.captureFact({ content: "I prefer dark roast coffee", domain_hint: "preferences" });
+    await factManager.captureFact({ content: "I enjoy hiking on weekends", domain_hint: "preferences" });
     await factManager.runConsolidate();
 
-    const result = searchMod.hybridSearch(db, "coffee");
+    const result = await searchMod.hybridSearch(db, "coffee");
     expect(result).toHaveProperty("coverage_estimate");
     expect(result).toHaveProperty("result_confidence");
     expect(result).toHaveProperty("suggested_refinement");

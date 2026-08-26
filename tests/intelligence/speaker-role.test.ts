@@ -61,18 +61,18 @@ describe("speakerRoleOf / primaryEventForFact", () => {
 describe("extract stamps speaker_role from the primary event", () => {
   let db: Db;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     db = openDatabase(":memory:");
-    applySchema(db);
+    await applySchema(db);
   });
 
-  afterEach(() => {
-    closeDatabase(db);
+  afterEach(async () => {
+    await closeDatabase(db);
   });
 
   async function run(role: "user" | "assistant") {
-    const session = createSession(db, { source_tool: "test", project: null });
-    insertEvent(db, {
+    const session = await createSession(db, { source_tool: "test", project: null });
+    await insertEvent(db, {
       mcp_session_id: session.id,
       event_type: "message",
       role,
@@ -81,9 +81,9 @@ describe("extract stamps speaker_role from the primary event", () => {
     await consolidate(db, recording([{ content: GRAIN }]) as never, {
       extraction: { ...DEFAULT_CONFIG.extraction, enabled: true } as never,
     });
-    return db
+    return (await db
       .prepare(`SELECT speaker_role FROM facts WHERE content = ?`)
-      .get(GRAIN) as { speaker_role: string | null };
+      .get(GRAIN)) as { speaker_role: string | null };
   }
 
   it("is user when the user stated the sentence", async () => {
@@ -95,8 +95,8 @@ describe("extract stamps speaker_role from the primary event", () => {
   });
 
   it("is null when I has no primary event", async () => {
-    const session = createSession(db, { source_tool: "test", project: null });
-    insertSessionFact(db, {
+    const session = await createSession(db, { source_tool: "test", project: null });
+    await insertSessionFact(db, {
       session_id: session.id,
       content: GRAIN,
       source_origin: "inferred",
@@ -104,16 +104,16 @@ describe("extract stamps speaker_role from the primary event", () => {
     await consolidate(db, createHeuristicProvider(), {
       extraction: { enabled: false } as never,
     });
-    const graduated = db
+    const graduated = (await db
       .prepare(`SELECT speaker_role, speaker FROM facts WHERE content = ?`)
-      .get(GRAIN) as { speaker_role: string | null; speaker: string | null };
+      .get(GRAIN)) as { speaker_role: string | null; speaker: string | null };
     expect(graduated.speaker_role).toBeNull();
     expect(graduated.speaker).toBeNull();
   });
 
   it("copies a named speaker from the primary event onto I and K", async () => {
-    const session = createSession(db, { source_tool: "test", project: null });
-    insertEvent(db, {
+    const session = await createSession(db, { source_tool: "test", project: null });
+    await insertEvent(db, {
       mcp_session_id: session.id,
       event_type: "message",
       role: "user",
@@ -123,21 +123,21 @@ describe("extract stamps speaker_role from the primary event", () => {
     await consolidate(db, recording([{ content: GRAIN }]) as never, {
       extraction: { ...DEFAULT_CONFIG.extraction, enabled: true } as never,
     });
-    const staged = db
+    const staged = (await db
       .prepare(`SELECT speaker, speaker_role FROM session_facts WHERE content = ?`)
-      .get(GRAIN) as { speaker: string | null; speaker_role: string | null };
+      .get(GRAIN)) as { speaker: string | null; speaker_role: string | null };
     expect(staged.speaker).toBe("Alex");
     expect(staged.speaker_role).toBe("user");
-    const graduated = db
+    const graduated = (await db
       .prepare(`SELECT speaker, speaker_role FROM facts WHERE content = ?`)
-      .get(GRAIN) as { speaker: string | null; speaker_role: string | null };
+      .get(GRAIN)) as { speaker: string | null; speaker_role: string | null };
     expect(graduated.speaker).toBe("Alex");
     expect(graduated.speaker_role).toBe("user");
   });
 
   it("does not mint an entity from a display name", async () => {
-    const session = createSession(db, { source_tool: "test", project: null });
-    insertEvent(db, {
+    const session = await createSession(db, { source_tool: "test", project: null });
+    await insertEvent(db, {
       mcp_session_id: session.id,
       event_type: "message",
       role: "user",
@@ -147,13 +147,13 @@ describe("extract stamps speaker_role from the primary event", () => {
     await consolidate(db, recording([{ content: GRAIN }]) as never, {
       extraction: { ...DEFAULT_CONFIG.extraction, enabled: true } as never,
     });
-    expect(findEntity(db, "Alex")).toBeNull();
+    expect(await findEntity(db, "Alex")).toBeNull();
   });
 
   it("links uttered_by when the named speaker already exists", async () => {
-    const session = createSession(db, { source_tool: "test", project: null });
-    const person = createEntity(db, { type: "person", name: "Alex" });
-    insertEvent(db, {
+    const session = await createSession(db, { source_tool: "test", project: null });
+    const person = await createEntity(db, { type: "person", name: "Alex" });
+    await insertEvent(db, {
       mcp_session_id: session.id,
       event_type: "message",
       role: "user",
@@ -163,14 +163,14 @@ describe("extract stamps speaker_role from the primary event", () => {
     await consolidate(db, recording([{ content: GRAIN }]) as never, {
       extraction: { ...DEFAULT_CONFIG.extraction, enabled: true } as never,
     });
-    const link = db
+    const link = (await db
       .prepare(
         `SELECT fe.relationship
            FROM fact_entities fe
            JOIN facts f ON f.id = fe.fact_id
           WHERE fe.entity_id = ? AND f.content = ?`,
       )
-      .get(person.id, GRAIN) as { relationship: string };
+      .get(person.id, GRAIN)) as { relationship: string };
     expect(link.relationship).toBe(UTTERED_BY);
   });
 });

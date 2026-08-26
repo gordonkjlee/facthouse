@@ -106,9 +106,6 @@ export function registerReadTools(
     searchDescription,
     searchSchema,
     async (args) => {
-      // Async only because embedding the query is a network or subprocess
-      // call. With no provider configured this resolves without one, and the
-      // search itself stays a synchronous index read.
       const rawAsOf =
         bitemporal &&
         "as_of_system_time" in args &&
@@ -186,12 +183,12 @@ export function registerReadTools(
             "any type, which is almost always what you want.",
         ),
     },
-    (args) => {
+    async (args) => {
       // Type omitted matches any entity type. The engine ships no entity
       // vocabulary either — a corporate store's subjects are systems and
       // suppliers, not people — so defaulting to a fixed type would make most
       // subjects invisible to the one tool meant to find them.
-      const lookup = lookupNamedSubject(db, args.name, args.type);
+      const lookup = await lookupNamedSubject(db, args.name, args.type);
 
       return {
         content: [
@@ -230,23 +227,23 @@ export function registerReadTools(
         .string()
         .describe("Topic, person, project, or domain to explore"),
     },
-    (args) => {
+    async (args) => {
       // Hybrid search for the topic
-      const searchResponse = hybridSearch(db, args.topic);
+      const searchResponse = await hybridSearch(db, args.topic);
 
       // Check if the topic matches an entity
-      const entity = findEntity(db, args.topic);
+      const entity = await findEntity(db, args.topic);
       const connectedFacts: Array<{
         entity_name: string;
         relationship: string;
-        facts: ReturnType<typeof getFactsByEntity>;
+        facts: Awaited<ReturnType<typeof getFactsByEntity>>;
       }> = [];
 
       if (entity) {
         // Sort edges by strength DESC — strongest relationships first.
         // This is a weighted 1-hop neighbour lookup, not spreading activation
         // (which would recursively propagate across multiple hops with decay).
-        const edges = getEntityEdges(db, entity.id)
+        const edges = (await getEntityEdges(db, entity.id))
           .sort((a, b) => b.strength - a.strength)
           .slice(0, 10);
 
@@ -257,9 +254,9 @@ export function registerReadTools(
         const nameMap = new Map<string, string>();
         if (connectedIds.length > 0) {
           const placeholders = connectedIds.map(() => "?").join(",");
-          const rows = db
+          const rows = (await db
             .prepare(`SELECT id, name FROM entities WHERE id IN (${placeholders})`)
-            .all(...connectedIds) as Array<{ id: string; name: string }>;
+            .all(...connectedIds)) as Array<{ id: string; name: string }>;
           for (const row of rows) nameMap.set(row.id, row.name);
         }
 
@@ -269,7 +266,7 @@ export function registerReadTools(
             edge.from_entity === entity.id
               ? edge.to_entity
               : edge.from_entity;
-          const facts = getFactsByEntity(db, connectedEntityId).slice(0, 5);
+          const facts = (await getFactsByEntity(db, connectedEntityId)).slice(0, 5);
 
           if (facts.length > 0) {
             connectedFacts.push({
@@ -309,8 +306,8 @@ export function registerReadTools(
       `knowledge is organised. Rarely needed mid-conversation — search_knowledge ` +
       `and get_context work without it.`,
     {},
-    () => {
-      const domains = getDomains(db);
+    async () => {
+      const domains = await getDomains(db);
 
       return {
         content: [
@@ -343,11 +340,11 @@ export function registerReadTools(
       `wording but not by meaning — worth mentioning if the user asks why ` +
       `something was not recalled.`,
     {},
-    () => {
+    async () => {
       // Shared with `openmemory stats` so the tool and the CLI can't disagree.
       return {
         content: [
-          { type: "text" as const, text: JSON.stringify(getStats(db)) },
+          { type: "text" as const, text: JSON.stringify(await getStats(db)) },
         ],
       };
     },

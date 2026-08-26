@@ -1,6 +1,5 @@
 /**
  * Data access for session facts and their provenance sources.
- * All functions are synchronous.
  */
 
 import { randomUUID, createHash } from "node:crypto";
@@ -110,10 +109,10 @@ export function computeContentHash(content: string): string {
  * Returns the inserted SessionFact, or null if a duplicate already exists
  * (matched on session_id + content_hash).
  */
-export function insertSessionFact(
+export async function insertSessionFact(
   db: Db,
   fact: NewSessionFact,
-): SessionFact | null {
+): Promise<SessionFact | null> {
   const id = randomUUID();
   const now = new Date().toISOString();
   const contentHash = computeContentHash(fact.content);
@@ -135,8 +134,8 @@ export function insertSessionFact(
   const speakerRole = fact.speaker_role ?? null;
   const speaker = speakerNameOf(fact.speaker);
 
-  return withTransaction(db, () => {
-    const result = db.prepare(
+  return await withTransaction(db, async () => {
+    const result = await db.prepare(
       `INSERT OR IGNORE INTO session_facts
          (id, session_id, content, content_hash, source_origin, source_event_id,
           domain_hint, subdomain_hint, confidence, importance,
@@ -202,40 +201,40 @@ export function insertSessionFact(
 }
 
 /** Retrieve all facts for a session, ordered by creation time ascending. */
-export function getSessionFacts(
+export async function getSessionFacts(
   db: Db,
   sessionId: string,
-): SessionFact[] {
-  return db
+): Promise<SessionFact[]> {
+  return (await db
     .prepare(
       `SELECT * FROM session_facts WHERE session_id = ? ORDER BY created_at ASC`,
     )
-    .all(sessionId) as unknown as SessionFact[];
+    .all(sessionId)) as unknown as SessionFact[];
 }
 
 /** Retrieve all session facts that have not yet been claimed by a consolidation run. */
-export function getUnconsolidatedFacts(
+export async function getUnconsolidatedFacts(
   db: Db,
-): SessionFact[] {
-  return db
+): Promise<SessionFact[]> {
+  return (await db
     .prepare(
       `SELECT * FROM session_facts WHERE consolidation_id IS NULL ORDER BY created_at ASC`,
     )
-    .all() as unknown as SessionFact[];
+    .all()) as unknown as SessionFact[];
 }
 
 /** Retrieve unconsolidated session facts for a specific session. */
-export function getUnconsolidatedSessionFacts(
+export async function getUnconsolidatedSessionFacts(
   db: Db,
   sessionId: string,
-): SessionFact[] {
-  return db
+): Promise<SessionFact[]> {
+  return (await db
     .prepare(
       `SELECT * FROM session_facts
        WHERE session_id = ? AND consolidation_id IS NULL
        ORDER BY created_at ASC`,
     )
-    .all(sessionId) as unknown as SessionFact[];
+    .all(sessionId)) as unknown as SessionFact[];
 }
 
 /**
@@ -243,26 +242,26 @@ export function getUnconsolidatedSessionFacts(
  * Caller must hold the consolidation lock — see consolidation-lock.ts.
  * Returns the number of facts claimed.
  */
-export function claimForConsolidation(
+export async function claimForConsolidation(
   db: Db,
   consolidationId: string,
-): number {
-  const result = db.prepare(
+): Promise<number> {
+  const result = await db.prepare(
     `UPDATE session_facts SET consolidation_id = ? WHERE consolidation_id IS NULL`,
   ).run(consolidationId);
   return Number(result.changes);
 }
 
 /** Retrieve all session facts claimed by a specific consolidation run. */
-export function getClaimedFacts(
+export async function getClaimedFacts(
   db: Db,
   consolidationId: string,
-): SessionFact[] {
-  return db
+): Promise<SessionFact[]> {
+  return (await db
     .prepare(
       `SELECT * FROM session_facts WHERE consolidation_id = ? ORDER BY created_at ASC`,
     )
-    .all(consolidationId) as unknown as SessionFact[];
+    .all(consolidationId)) as unknown as SessionFact[];
 }
 
 // ---------------------------------------------------------------------------
@@ -273,14 +272,14 @@ export function getClaimedFacts(
  * Link a session event as a provenance source for a session fact.
  * Uses INSERT OR IGNORE so duplicate links are silently ignored.
  */
-export function linkFactSource(
+export async function linkFactSource(
   db: Db,
   source: NewFactSource,
-): void {
+): Promise<void> {
   const relevance = source.relevance ?? 1.0;
   const extractionType = source.extraction_type ?? "contextual";
 
-  db.prepare(
+  await db.prepare(
     `INSERT OR IGNORE INTO session_fact_sources
        (session_fact_id, event_id, relevance, extraction_type)
      VALUES (?, ?, ?, ?)`,
@@ -288,15 +287,15 @@ export function linkFactSource(
 }
 
 /** Retrieve all provenance sources for a session fact. */
-export function getFactSources(
+export async function getFactSources(
   db: Db,
   sessionFactId: string,
-): SessionFactSource[] {
-  return db
+): Promise<SessionFactSource[]> {
+  return (await db
     .prepare(
       `SELECT * FROM session_fact_sources WHERE session_fact_id = ?`,
     )
-    .all(sessionFactId) as unknown as SessionFactSource[];
+    .all(sessionFactId)) as unknown as SessionFactSource[];
 }
 
 // ---------------------------------------------------------------------------
@@ -320,14 +319,14 @@ export function getFactSources(
  * Keyword only: FTS5 is the sole signal that means anything before entities are
  * resolved and domains are routed.
  */
-export function keywordSearchPending(
+export async function keywordSearchPending(
   db: Db,
   query: string,
   limit?: number,
-): SessionFact[] {
+): Promise<SessionFact[]> {
   const effectiveLimit = limit ?? 20;
 
-  const rows = db
+  const rows = (await db
     .prepare(
       `SELECT sf.*
        FROM session_facts_fts fts
@@ -337,7 +336,7 @@ export function keywordSearchPending(
        ORDER BY fts.rank
        LIMIT ?`,
     )
-    .all(query, effectiveLimit) as unknown as SessionFact[];
+    .all(query, effectiveLimit)) as unknown as SessionFact[];
 
   return rows;
 }

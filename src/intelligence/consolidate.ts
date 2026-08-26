@@ -147,7 +147,7 @@ export async function consolidate(
   const defaultsByDomain = importanceDefaults(config?.domains ?? []);
 
   // Phase A: Acquire lock
-  const locked = acquireLock(db, consolidationId);
+  const locked = await acquireLock(db, consolidationId);
   if (!locked) {
     return {
       consolidationId,
@@ -168,17 +168,17 @@ export async function consolidate(
   // observed. Stored on the consolidations row at commit time so the scheduler's
   // threshold check and extractFactsFromEvents both read a durable watermark,
   // regardless of whether any facts emerged from this run.
-  const watermarkRow = db
+  const watermarkRow = (await db
     .prepare(`SELECT COALESCE(MAX(sequence), 0) AS seq FROM session_events`)
-    .get() as { seq: number };
+    .get()) as { seq: number };
   const runWatermark = watermarkRow.seq;
 
   // Previous watermark, used to decide whether an empty run is worth recording.
   // An empty run that doesn't advance the watermark is pure noise — subsequent
   // reads already see the same max(last_event_sequence) without our row.
-  const prevWatermarkRow = db
+  const prevWatermarkRow = (await db
     .prepare(`SELECT COALESCE(MAX(last_event_sequence), 0) AS seq FROM consolidations`)
-    .get() as { seq: number };
+    .get()) as { seq: number };
   const prevWatermark = prevWatermarkRow.seq;
 
   // Set when the configured extractor could not run. The events it was meant to
@@ -210,10 +210,10 @@ export async function consolidate(
     const effectiveWatermark = examinedEvents ? runWatermark : prevWatermark;
 
     if (doGraduate) {
-      claimForConsolidation(db, consolidationId);
+      await claimForConsolidation(db, consolidationId);
     }
     const sessionFacts = doGraduate
-      ? getClaimedFacts(db, consolidationId)
+      ? await getClaimedFacts(db, consolidationId)
       : [];
 
     if (sessionFacts.length === 0) {
@@ -223,7 +223,7 @@ export async function consolidate(
       if (doExtract && !extractionDegraded && runWatermark > prevWatermark) {
         const onlyId =
           extractPending.length === 1 ? extractPending[0].group.ref.id : null;
-        db.prepare(
+        await db.prepare(
           `INSERT INTO consolidations
            (id, session_id, facts_in, facts_graduated, facts_rejected,
             entities_created, entities_linked, supersessions,
@@ -235,7 +235,7 @@ export async function consolidate(
           effectiveWatermark,
           new Date().toISOString(),
         );
-        persistSituations(
+        await persistSituations(
           db,
           consolidationId,
           onlyId,
@@ -253,7 +253,7 @@ export async function consolidate(
         await embedGraduatedFacts(db, embeddingProvider, config);
       }
 
-      releaseLock(db, consolidationId);
+      await releaseLock(db, consolidationId);
       const extractedCount = extractPending.reduce(
         (n, p) => n + p.facts.length,
         0,
@@ -339,10 +339,10 @@ export async function consolidate(
     // Domain scan gives both passes a consistent candidate pool and avoids re-fetching.
     // FTS5 would miss paraphrased duplicates (AND-semantics requires all terms to match).
     const domainCache = new Map<string, Fact[]>();
-    const getDomainFacts = (domain: string): Fact[] => {
+    const getDomainFacts = async (domain: string): Promise<Fact[]> => {
       let cached = domainCache.get(domain);
       if (!cached) {
-        cached = getFactsByDomain(db, domain);
+        cached = await getFactsByDomain(db, domain);
         domainCache.set(domain, cached);
       }
       return cached;
@@ -380,7 +380,7 @@ export async function consolidate(
         continue;
       }
 
-      const domainFacts = getDomainFacts(cf.domain);
+      const domainFacts = await getDomainFacts(cf.domain);
       const decision = await intelligence.reconcile(sessionFact, domainFacts);
 
       if (decision.kind === "noop") {
@@ -463,7 +463,7 @@ export async function consolidate(
       // Supersession is domain-scoped. FTS5 is the wrong tool here: it fails
       // when the new fact contains negation tokens ("no longer", "stopped")
       // that don't appear in the old fact. Use cached domain scan instead.
-      const candidates = getDomainFacts(item.domain);
+      const candidates = await getDomainFacts(item.domain);
       const candidate = { id: item.sessionFactId, content: item.content, domain: item.domain, subdomain: item.subdomain };
       const result = await intelligence.detectSupersession(candidate, candidates);
       // Intentional: confidence is NOT compared here. A low-confidence new fact
@@ -492,14 +492,14 @@ export async function consolidate(
     const graduatedFacts: Fact[] = [];
 
     // Phase D: Write results in a transaction
-    const writeResults = withTransaction(db, () => {
+    const writeResults = await withTransaction(db, async () => {
       let entitiesCreated = 0;
       let entitiesLinked = 0;
 
       // Ensure all unique domains exist once, before the per-fact loop
       const uniqueDomains = new Set(toGraduate.map((item) => item.domain));
       for (const domain of uniqueDomains) {
-        ensureDomain(db, domain);
+        await ensureDomain(db, domain);
       }
 
       for (const item of toGraduate) {
@@ -507,7 +507,7 @@ export async function consolidate(
 
         // Write provenance source linking graduated fact back to its session_fact
         // (and through session_fact_sources, to the originating events).
-        const source = createSource(db, {
+        const source = await createSource(db, {
           type: "session-fact",
           tool_id: sessionFact.source_tool,
           raw_content: sessionFact.content,
@@ -530,7 +530,7 @@ export async function consolidate(
         const validFrom = sessionFact.valid_from_hint;
 
         const graduatedFact = supersededId
-          ? supersedeFact(db, supersededId, {
+          ? await supersedeFact(db, supersededId, {
               content: item.content,
               domain: item.domain,
               subdomain: item.subdomain,
@@ -551,7 +551,7 @@ export async function consolidate(
               // the system retracted belief in the old fact.
               retireSystemTime: config?.temporal?.mode === "bitemporal",
             })
-          : insertFact(db, {
+          : await insertFact(db, {
               content: item.content,
               domain: item.domain,
               subdomain: item.subdomain,
@@ -581,12 +581,12 @@ export async function consolidate(
             // LLM-resolved existing entity — validate the id, fall through if
             // hallucinated.
             if (entity.existing_id) {
-              const existing = getEntityById(db, entity.existing_id);
+              const existing = await getEntityById(db, entity.existing_id);
               if (existing) resolvedId = existing.id;
             }
 
             if (!resolvedId) {
-              const { entity: resolved, created } = findOrCreateEntity(db, {
+              const { entity: resolved, created } = await findOrCreateEntity(db, {
                 type: entity.type,
                 name: entity.name,
               });
@@ -595,7 +595,7 @@ export async function consolidate(
             }
 
             resolvedIds.push(resolvedId);
-            linkFactEntity(db, factId, resolvedId, entity.relationship);
+            await linkFactEntity(db, factId, resolvedId, entity.relationship);
             entitiesLinked++;
           }
 
@@ -607,7 +607,7 @@ export async function consolidate(
               const [a, b] = resolvedIds[i] < resolvedIds[j]
                 ? [resolvedIds[i], resolvedIds[j]]
                 : [resolvedIds[j], resolvedIds[i]];
-              upsertEntityEdge(db, a, b, "co_mentioned");
+              await upsertEntityEdge(db, a, b, "co_mentioned");
             }
           }
         }
@@ -623,16 +623,16 @@ export async function consolidate(
         // subjects come from the provider's entity list (subject_of). A wrong
         // automatic guess is worse than a mention-only link.
         if (isAboutTheUser(graduatedFact.content)) {
-          linkFactEntity(db, graduatedFact.id, ensureSelfEntity(db).id, SUBJECT_OF);
+          await linkFactEntity(db, graduatedFact.id, (await ensureSelfEntity(db)).id, SUBJECT_OF);
           entitiesLinked++;
         }
 
         // Named speaker is source, not subject. Link only when the person
         // already exists — do not mint an entity from a Teams display name.
         if (sessionFact.speaker) {
-          const named = findEntity(db, sessionFact.speaker);
+          const named = await findEntity(db, sessionFact.speaker);
           if (named) {
-            linkFactEntity(db, graduatedFact.id, named.id, UTTERED_BY);
+            await linkFactEntity(db, graduatedFact.id, named.id, UTTERED_BY);
             entitiesLinked++;
           }
         }
@@ -644,11 +644,11 @@ export async function consolidate(
         `UPDATE facts SET confidence = MIN(1.0, confidence + ?) WHERE id = ?`,
       );
       for (const e of enrichments) {
-        enrichStmt.run(e.confidenceDelta, e.existingFactId);
+        await enrichStmt.run(e.confidenceDelta, e.existingFactId);
       }
 
       // Insert consolidation record
-      db.prepare(
+      await db.prepare(
         `INSERT INTO consolidations
          (id, session_id, facts_in, facts_graduated, facts_rejected,
           entities_created, entities_linked, supersessions,
@@ -689,7 +689,7 @@ export async function consolidate(
     // should not hold the advisory lock. If the process crashes between release
     // and the summary UPDATE, the consolidation record has summary=NULL, which
     // is acceptable (all facts are already graduated).
-    releaseLock(db, consolidationId);
+    await releaseLock(db, consolidationId);
 
     // Build open threads from summary + any dropped supersessions
     const conflictMessages = droppedSupersessions.map(
@@ -704,13 +704,13 @@ export async function consolidate(
     let summaryText: string | null = null;
     let threads: string[] = [...conflictMessages];
     if (recordSessionId) {
-      const priorSessionSummary = latestSessionSummary(
+      const priorSessionSummary = await latestSessionSummary(
         db,
         recordSessionId,
         consolidationId,
       );
       try {
-        persistSituations(
+        await persistSituations(
           db,
           consolidationId,
           recordSessionId,
@@ -726,23 +726,23 @@ export async function consolidate(
         );
         summaryText = summaryResult.summary;
         threads = [...conflictMessages, ...summaryResult.openThreads];
-        db.prepare(
+        await db.prepare(
           `UPDATE consolidations SET summary = ?, open_threads = ? WHERE id = ?`,
         ).run(summaryText, JSON.stringify(threads), consolidationId);
       } catch {
         if (conflictMessages.length > 0) {
-          db.prepare(
+          await db.prepare(
             `UPDATE consolidations SET open_threads = ? WHERE id = ?`,
           ).run(JSON.stringify(conflictMessages), consolidationId);
         }
       }
     } else {
       if (conflictMessages.length > 0) {
-        db.prepare(
+        await db.prepare(
           `UPDATE consolidations SET open_threads = ? WHERE id = ?`,
         ).run(JSON.stringify(conflictMessages), consolidationId);
       }
-      const situationRows = persistSituations(
+      const situationRows = await persistSituations(
         db,
         consolidationId,
         null,
@@ -754,7 +754,7 @@ export async function consolidate(
         const graduatedFor = graduatedFacts.filter(
           (f) => f.session_id === sessionId,
         );
-        const prior = latestSessionSummary(db, sessionId, consolidationId);
+        const prior = await latestSessionSummary(db, sessionId, consolidationId);
         const closed = closedGistsFor(extractPending, sessionId);
         try {
           const summaryResult = await intelligence.summarise(
@@ -765,7 +765,7 @@ export async function consolidate(
           );
           const existingId = situationRows.get(sessionId);
           if (existingId) {
-            db.prepare(
+            await db.prepare(
               `UPDATE consolidations SET summary = ?, open_threads = ? WHERE id = ?`,
             ).run(
               summaryResult.summary,
@@ -773,7 +773,7 @@ export async function consolidate(
               existingId,
             );
           } else {
-            db.prepare(
+            await db.prepare(
               `INSERT INTO consolidations
                (id, session_id, facts_in, facts_graduated, facts_rejected,
                 entities_created, entities_linked, supersessions,
@@ -812,12 +812,12 @@ export async function consolidate(
     // Only unclaim if Phase D hasn't committed — otherwise the facts are
     // already graduated and unclaiming would cause re-processing on the next run.
     if (!phaseDCommitted) {
-      db.prepare(
+      await db.prepare(
         `UPDATE session_facts SET consolidation_id = NULL WHERE consolidation_id = ?`,
       ).run(consolidationId);
     }
     // Release lock on error if not already released
-    releaseLock(db, consolidationId);
+    await releaseLock(db, consolidationId);
     throw err;
   }
 }
@@ -838,28 +838,28 @@ function parseEventRow(row: SessionEventRow): SessionEvent {
   };
 }
 
-function latestSessionSummary(
+async function latestSessionSummary(
   db: Db,
   sessionId: string,
   excludeId?: string,
-): string | null {
+): Promise<string | null> {
   const row = excludeId
-    ? (db
+    ? ((await db
         .prepare(
           `SELECT summary FROM consolidations
            WHERE session_id = ? AND id != ? AND summary IS NOT NULL
            ORDER BY ${NEWEST_CONSOLIDATION}
            LIMIT 1`,
         )
-        .get(sessionId, excludeId) as { summary: string } | undefined)
-    : (db
+        .get(sessionId, excludeId)) as { summary: string } | undefined)
+    : ((await db
         .prepare(
           `SELECT summary FROM consolidations
            WHERE session_id = ? AND summary IS NOT NULL
            ORDER BY ${NEWEST_CONSOLIDATION}
            LIMIT 1`,
         )
-        .get(sessionId) as { summary: string } | undefined);
+        .get(sessionId)) as { summary: string } | undefined);
   return row?.summary ?? null;
 }
 
@@ -880,13 +880,13 @@ function groupByConversation(events: SessionEvent[]): EventGroup[] {
   );
 }
 
-function loadSessionWindow(
+async function loadSessionWindow(
   db: Db,
   watermark: number,
   ref: ConversationRef,
   limit: number,
   fromSequence?: number,
-): SessionEvent[] {
+): Promise<SessionEvent[]> {
   if (limit <= 0) return [];
   // Kind-branched on purpose: binding the same string to both columns is how
   // two conversations share a window. Client-keyed groups match the client
@@ -907,16 +907,16 @@ function loadSessionWindow(
     fromSequence != null
       ? [watermark, ref.id, fromSequence, limit]
       : [watermark, ref.id, limit];
-  const rows = db.prepare(sql).all(...params) as SessionEventRow[];
+  const rows = (await db.prepare(sql).all(...params)) as SessionEventRow[];
   return rows.map(parseEventRow).reverse();
 }
 
-function linkExtractedFactToEvents(
+async function linkExtractedFactToEvents(
   db: Db,
   sessionFactId: string,
   factContent: string,
   groupEvents: SessionEvent[],
-): void {
+): Promise<void> {
   // Only the FIRST match is primary. `groupEvents` is ordered by sequence, so
   // that is the earliest occurrence — the point the information actually
   // arrived. Later matches are the same text appearing again, which is what
@@ -931,7 +931,7 @@ function linkExtractedFactToEvents(
   let linkedPrimary = false;
   for (const event of groupEvents) {
     if (event.content && event.content.includes(factContent)) {
-      linkFactSource(db, {
+      await linkFactSource(db, {
         session_fact_id: sessionFactId,
         event_id: event.id,
         relevance: linkedPrimary ? 0.5 : 0.8,
@@ -942,7 +942,7 @@ function linkExtractedFactToEvents(
   }
   if (!linkedPrimary) {
     for (const event of groupEvents) {
-      linkFactSource(db, {
+      await linkFactSource(db, {
         session_fact_id: sessionFactId,
         event_id: event.id,
         relevance: 0.3,
@@ -1028,13 +1028,13 @@ function closedGistsFor(pending: ExtractPending[], sessionId: string): string[] 
     .map((p) => p.closedGist as string);
 }
 
-function persistSituations(
+async function persistSituations(
   db: Db,
   runId: string,
   recordSessionId: string | null,
   pending: ExtractPending[],
   watermark: number,
-): Map<string, string> {
+): Promise<Map<string, string>> {
   const rows = new Map<string, string>();
   const withState = pending.filter(
     (p): p is ExtractPending & { situation: ConversationSituation } =>
@@ -1045,7 +1045,7 @@ function persistSituations(
   if (recordSessionId) {
     const match = withState.find((p) => p.group.ref.id === recordSessionId);
     if (match) {
-      applySituation(db, runId, match.situation);
+      await applySituation(db, runId, match.situation);
       rows.set(recordSessionId, runId);
     }
     return rows;
@@ -1053,7 +1053,7 @@ function persistSituations(
 
   for (const item of withState) {
     const id = randomUUID();
-    db.prepare(
+    await db.prepare(
       `INSERT INTO consolidations
        (id, session_id, facts_in, facts_graduated, facts_rejected,
         entities_created, entities_linked, supersessions,
@@ -1089,20 +1089,20 @@ async function extractFactsFromEvents(
   const evidenceLimit = Math.min(EXTRACT_EVIDENCE_SLICE, workingMemorySize);
   const rereadLimit = Math.min(EXTRACT_REREAD_WINDOW, workingMemorySize);
 
-  const watermarkRow = db
+  const watermarkRow = (await db
     .prepare(
       `SELECT MAX(last_event_sequence) AS max_seq FROM consolidations`,
     )
-    .get() as { max_seq: number | null } | undefined;
+    .get()) as { max_seq: number | null } | undefined;
   const watermark = watermarkRow?.max_seq ?? 0;
 
-  const candidateRows = db
+  const candidateRows = (await db
     .prepare(
       `SELECT * FROM session_events
        WHERE sequence > ?
        ORDER BY sequence ASC`,
     )
-    .all(watermark) as SessionEventRow[];
+    .all(watermark)) as SessionEventRow[];
 
   if (candidateRows.length === 0) return empty;
 
@@ -1123,14 +1123,14 @@ async function extractFactsFromEvents(
   // examined: no I, no now update, other groups still land, watermark moves.
   const pending: ExtractPending[] = [];
   for (const group of groups) {
-    const evidence = loadSessionWindow(
+    const evidence = await loadSessionWindow(
       db,
       watermark,
       group.ref,
       evidenceLimit,
     );
-    const prior = latestConversationSituation(db, group.ref.id);
-    const priorSummary = latestSessionSummary(db, group.ref.id);
+    const prior = await latestConversationSituation(db, group.ref.id);
+    const priorSummary = await latestSessionSummary(db, group.ref.id);
     const truncated = group.events.map((e) => ({
       ...e,
       content:
@@ -1138,7 +1138,7 @@ async function extractFactsFromEvents(
           ? e.content.slice(0, maxContentLength)
           : e.content,
     }));
-    const relatedFacts = relatedFactsForExtract(db, truncated);
+    const relatedFacts = await relatedFactsForExtract(db, truncated);
     const extras = {
       now: prior?.now ?? null,
       referents: prior?.referents ?? [],
@@ -1156,7 +1156,7 @@ async function extractFactsFromEvents(
     if (outcome.degraded) return { degraded: true, pending: [] };
 
     if (needsReread(outcome)) {
-      const reminder = loadSessionWindow(
+      const reminder = await loadSessionWindow(
         db,
         watermark,
         group.ref,
@@ -1198,7 +1198,7 @@ async function extractFactsFromEvents(
   for (const { group, facts } of pending) {
     for (const item of facts) {
       const primary = primaryEventForFact(group.events, item.content);
-      const fact = insertSessionFact(db, {
+      const fact = await insertSessionFact(db, {
         session_id: group.ref.id,
         content: item.content,
         source_origin: "inferred",
@@ -1218,7 +1218,7 @@ async function extractFactsFromEvents(
       });
 
       if (fact) {
-        linkExtractedFactToEvents(db, fact.id, item.content, group.events);
+        await linkExtractedFactToEvents(db, fact.id, item.content, group.events);
       }
     }
   }
@@ -1268,7 +1268,7 @@ async function embedGraduatedFacts(
     // steady-state run embeds the handful of facts that just graduated.
     const attempted = new Set<string>();
     for (;;) {
-      const pending = getFactsMissingEmbeddings(db, model, dimensions, batchSize);
+      const pending = await getFactsMissingEmbeddings(db, model, dimensions, batchSize);
       if (pending.length === 0) return;
 
       // If a batch comes back entirely made of facts already written this run,
@@ -1296,7 +1296,7 @@ async function embedGraduatedFacts(
 
       // Committed per batch, so a failure part-way through a long backlog keeps
       // everything embedded so far instead of costing the whole run.
-      insertEmbeddings(
+      await insertEmbeddings(
         db,
         pending.map((f, i) => ({ fact_id: f.id, vector: result.vectors[i] })),
         result.model,

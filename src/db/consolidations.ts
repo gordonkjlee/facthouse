@@ -1,6 +1,5 @@
 /**
  * Data access for consolidation runs.
- * All functions are synchronous.
  */
 
 import type { Db } from "./connection.js";
@@ -140,12 +139,14 @@ export interface ConversationSituation {
 }
 
 /** The most recent consolidation run, or null if none have happened. */
-export function getLatestConsolidation(db: Db): Consolidation | null {
-  const row = db
+export async function getLatestConsolidation(
+  db: Db,
+): Promise<Consolidation | null> {
+  const row = (await db
     .prepare(
       `SELECT * FROM consolidations ORDER BY ${NEWEST_CONSOLIDATION} LIMIT 1`,
     )
-    .get() as unknown as ConsolidationRow | undefined;
+    .get()) as unknown as ConsolidationRow | undefined;
   return row ? hydrate(row) : null;
 }
 
@@ -157,15 +158,17 @@ export function getLatestConsolidation(db: Db): Consolidation | null {
  * row with no summary at all. So the newest row is often not the newest
  * *narrative* — callers wanting prose want this one.
  */
-export function getLatestSummarised(db: Db): Consolidation | null {
-  const row = db
+export async function getLatestSummarised(
+  db: Db,
+): Promise<Consolidation | null> {
+  const row = (await db
     .prepare(
       `SELECT * FROM consolidations
        WHERE summary IS NOT NULL
        ORDER BY ${NEWEST_CONSOLIDATION}
        LIMIT 1`,
     )
-    .get() as unknown as ConsolidationRow | undefined;
+    .get()) as unknown as ConsolidationRow | undefined;
   return row ? hydrate(row) : null;
 }
 
@@ -174,13 +177,13 @@ export function getLatestSummarised(db: Db): Consolidation | null {
  *
  * Same "newest row for this session_id" pattern as the rolling summary.
  */
-export function latestConversationSituation(
+export async function latestConversationSituation(
   db: Db,
   sessionId: string,
   excludeId?: string,
-): ConversationSituation | null {
+): Promise<ConversationSituation | null> {
   const row = excludeId
-    ? (db
+    ? ((await db
         .prepare(
           `SELECT now, now_start_sequence, now_referents, segments
            FROM consolidations
@@ -189,13 +192,13 @@ export function latestConversationSituation(
            ORDER BY ${NEWEST_CONSOLIDATION}
            LIMIT 1`,
         )
-        .get(sessionId, excludeId) as
+        .get(sessionId, excludeId)) as
         | Pick<
             ConsolidationRow,
             "now" | "now_start_sequence" | "now_referents" | "segments"
           >
         | undefined)
-    : (db
+    : ((await db
         .prepare(
           `SELECT now, now_start_sequence, now_referents, segments
            FROM consolidations
@@ -204,7 +207,7 @@ export function latestConversationSituation(
            ORDER BY ${NEWEST_CONSOLIDATION}
            LIMIT 1`,
         )
-        .get(sessionId) as
+        .get(sessionId)) as
         | Pick<
             ConsolidationRow,
             "now" | "now_start_sequence" | "now_referents" | "segments"
@@ -219,20 +222,22 @@ export function latestConversationSituation(
   };
 }
 
-export function applySituation(
+export async function applySituation(
   db: Db,
   consolidationId: string,
   situation: ConversationSituation,
-): void {
-  db.prepare(
-    `UPDATE consolidations
+): Promise<void> {
+  await db
+    .prepare(
+      `UPDATE consolidations
      SET now = ?, now_start_sequence = ?, now_referents = ?, segments = ?
      WHERE id = ?`,
-  ).run(
-    situation.now,
-    situation.now_start_sequence,
-    JSON.stringify(situation.referents),
-    JSON.stringify(situation.segments),
-    consolidationId,
-  );
+    )
+    .run(
+      situation.now,
+      situation.now_start_sequence,
+      JSON.stringify(situation.referents),
+      JSON.stringify(situation.segments),
+      consolidationId,
+    );
 }

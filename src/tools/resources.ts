@@ -71,20 +71,20 @@ function bullet(f: Fact): string {
   return `- ${f.content}`;
 }
 
-function pendingEventCount(db: Db): number {
-  const row = db
+async function pendingEventCount(db: Db): Promise<number> {
+  const row = (await db
     .prepare(`SELECT COALESCE(MAX(sequence), 0) AS seq FROM session_events`)
-    .get() as { seq: number };
-  const last = db
+    .get()) as { seq: number };
+  const last = (await db
     .prepare(
       `SELECT COALESCE(MAX(last_event_sequence), 0) AS seq FROM consolidations`,
     )
-    .get() as { seq: number };
+    .get()) as { seq: number };
   return row.seq - last.seq;
 }
 
-function consolidationRunCount(db: Db): number {
-  return (db.prepare(`SELECT COUNT(*) AS n FROM consolidations`).get() as { n: number }).n;
+async function consolidationRunCount(db: Db): Promise<number> {
+  return ((await db.prepare(`SELECT COUNT(*) AS n FROM consolidations`).get()) as { n: number }).n;
 }
 
 /**
@@ -93,8 +93,8 @@ function consolidationRunCount(db: Db): number {
  * the CLI. Pending count is since the last watermark, so a 5_000-event
  * backfill is not promised a session-start flush.
  */
-function emptyStoreNextStep(db: Db): string {
-  const pending = pendingEventCount(db);
+async function emptyStoreNextStep(db: Db): Promise<string> {
+  const pending = await pendingEventCount(db);
   if (pending > 0) {
     const flushNote =
       pending <= 50
@@ -106,7 +106,7 @@ function emptyStoreNextStep(db: Db): string {
       flushNote
     );
   }
-  if (consolidationRunCount(db) > 0) {
+  if ((await consolidationRunCount(db)) > 0) {
     return (
       "Nothing captured yet. Events were processed but produced no facts — " +
       "heuristic extraction does not read transcripts. Use the claude CLI, then " +
@@ -120,10 +120,10 @@ function emptyStoreNextStep(db: Db): string {
 }
 
 /** `memory://profile` — the store's most important facts as markdown. */
-export function buildProfile(db: Db): string {
-  const facts = keyFacts(db, 200);
+export async function buildProfile(db: Db): Promise<string> {
+  const facts = await keyFacts(db, 200);
   if (facts.length === 0) {
-    return `# Key facts\n\n${emptyStoreNextStep(db)}\n`;
+    return `# Key facts\n\n${await emptyStoreNextStep(db)}\n`;
   }
   return `# Key facts\n\n${facts.map(bullet).join("\n")}\n`;
 }
@@ -133,20 +133,20 @@ export function buildProfile(db: Db): string {
  * narrative, open threads, and recent changes. The one view an assistant should
  * read at the start of a session.
  */
-export function buildBriefing(db: Db): string {
+export async function buildBriefing(db: Db): Promise<string> {
   const parts: string[] = ["# OpenMemory Briefing"];
 
-  const key = keyFacts(db, KEY_FACTS_LIMIT);
+  const key = await keyFacts(db, KEY_FACTS_LIMIT);
   parts.push(
     "\n## Key facts\n",
     key.length
       ? key.map(bullet).join("\n")
-      : emptyStoreNextStep(db),
+      : await emptyStoreNextStep(db),
   );
 
   // The narrative comes from the last run that actually produced one: a run
   // records its row before the summary exists, and no-op runs never get one.
-  const last = getLatestSummarised(db);
+  const last = await getLatestSummarised(db);
   if (last?.summary) {
     parts.push(`\n## Last consolidation\n`, last.summary);
   }
@@ -160,7 +160,7 @@ export function buildBriefing(db: Db): string {
   }
 
   // No domain filter -> most recently graduated facts across every domain.
-  const recent = structuredSearch(db, { limit: RECENT_LIMIT });
+  const recent = await structuredSearch(db, { limit: RECENT_LIMIT });
   if (recent.length) {
     parts.push(
       "\n## Recent knowledge\n",
@@ -218,9 +218,9 @@ export function registerResources(server: McpServer, db: Db): ResourceNotifier {
         "The most important facts this store holds, ranked by importance — the fastest cue-less way to see what matters here. Loaded automatically; no tool call needed.",
       mimeType: "text/markdown",
     },
-    (uri) => ({
+    async (uri) => ({
       contents: [
-        { uri: uri.href, mimeType: "text/markdown", text: buildProfile(db) },
+        { uri: uri.href, mimeType: "text/markdown", text: await buildProfile(db) },
       ],
     }),
   );
@@ -234,9 +234,9 @@ export function registerResources(server: McpServer, db: Db): ResourceNotifier {
         "The most important things this store knows right now: its key facts, what was learned in the last consolidation, open threads, and recent knowledge. Read this first — it is the fastest way to load context at the start of a session.",
       mimeType: "text/markdown",
     },
-    (uri) => ({
+    async (uri) => ({
       contents: [
-        { uri: uri.href, mimeType: "text/markdown", text: buildBriefing(db) },
+        { uri: uri.href, mimeType: "text/markdown", text: await buildBriefing(db) },
       ],
     }),
   );

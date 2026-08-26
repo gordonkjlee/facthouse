@@ -7,32 +7,32 @@ const { createSessionManager, withEventLogging } = await import("../../src/tools
 
 let db: Db;
 
-beforeEach(() => {
+beforeEach(async () => {
   db = dbMod.openDatabase(":memory:");
-  dbMod.applySchema(db);
+  await dbMod.applySchema(db);
 });
 
-afterEach(() => {
-  dbMod.closeDatabase(db);
+afterEach(async () => {
+  await dbMod.closeDatabase(db);
 });
 
 describe("session manager", () => {
-  it("starts a session and returns it via getActiveSession", () => {
+  it("starts a session and returns it via getActiveSession", async () => {
     const manager = createSessionManager(db);
     expect(manager.getActiveSession()).toBeNull();
 
-    const session = manager.startSession("claude-code", "openmemory");
+    const session = await manager.startSession("claude-code", "openmemory");
     expect(session.id).toBeTruthy();
     expect(session.source_tool).toBe("claude-code");
     expect(session.project).toBe("openmemory");
     expect(manager.getActiveSession()).toEqual(session);
   });
 
-  it("logEvent creates an event with correct fields", () => {
+  it("logEvent creates an event with correct fields", async () => {
     const manager = createSessionManager(db);
-    manager.startSession("cursor", null);
+    await manager.startSession("cursor", null);
 
-    const event = manager.logEvent({
+    const event = await manager.logEvent({
       event_type: "message",
       role: "user",
       content: "hello world",
@@ -50,24 +50,24 @@ describe("session manager", () => {
     ).toBeLessThan(1000);
   });
 
-  it("logEvent auto-increments sequence numbers", () => {
+  it("logEvent auto-increments sequence numbers", async () => {
     const manager = createSessionManager(db);
-    manager.startSession(null, null);
+    await manager.startSession(null, null);
 
-    const e1 = manager.logEvent({ event_type: "message", role: "user", content: "a" });
-    const e2 = manager.logEvent({ event_type: "message", role: "assistant", content: "b" });
-    const e3 = manager.logEvent({ event_type: "tool_call", role: "assistant", content: "c" });
+    const e1 = await manager.logEvent({ event_type: "message", role: "user", content: "a" });
+    const e2 = await manager.logEvent({ event_type: "message", role: "assistant", content: "b" });
+    const e3 = await manager.logEvent({ event_type: "tool_call", role: "assistant", content: "c" });
 
     expect(e1.sequence).toBe(1);
     expect(e2.sequence).toBe(2);
     expect(e3.sequence).toBe(3);
   });
 
-  it("logEvent stores a named speaker without changing role", () => {
+  it("logEvent stores a named speaker without changing role", async () => {
     const manager = createSessionManager(db);
-    manager.startSession(null, null);
+    await manager.startSession(null, null);
 
-    const event = manager.logEvent({
+    const event = await manager.logEvent({
       event_type: "message",
       role: "user",
       content: "the grain is bookings",
@@ -78,42 +78,42 @@ describe("session manager", () => {
     expect(event.speaker).toBe("Alex");
   });
 
-  it("logEvent updates session last_activity_at", () => {
+  it("logEvent updates session last_activity_at", async () => {
     const manager = createSessionManager(db);
-    const session = manager.startSession(null, null);
+    const session = await manager.startSession(null, null);
     const before = session.last_activity_at;
 
-    manager.logEvent({ event_type: "message", role: "user", content: "hello" });
+    await manager.logEvent({ event_type: "message", role: "user", content: "hello" });
 
     const updated = manager.getActiveSession()!;
     expect(updated.last_activity_at >= before).toBe(true);
   });
 
-  it("logEvent throws if no session started", () => {
+  it("logEvent throws if no session started", async () => {
     const manager = createSessionManager(db);
 
-    expect(() =>
+    await expect(
       manager.logEvent({ event_type: "message", role: "user", content: "hello" }),
-    ).toThrow("No active session");
+    ).rejects.toThrow("No active session");
   });
 });
 
 describe("withEventLogging", () => {
-  it("wraps a sync handler and logs tool_call + tool_result", () => {
+  it("wraps a sync handler and logs tool_call + tool_result", async () => {
     const manager = createSessionManager(db);
-    manager.startSession(null, null);
+    await manager.startSession(null, null);
 
     const handler = (args: any) => ({
       content: [{ type: "text" as const, text: `result for ${args.query}` }],
     });
 
     const wrapped = withEventLogging(manager, "search_knowledge", handler);
-    const result = wrapped({ query: "allergies" });
+    const result = await wrapped({ query: "allergies" });
 
     expect(result.content[0].text).toBe("result for allergies");
 
     // Should have logged 2 events: tool_call + tool_result
-    const events = dbMod.getEvents(db, manager.getActiveSession()!.id);
+    const events = await dbMod.getEvents(db, manager.getActiveSession()!.id);
     expect(events).toHaveLength(2);
     expect(events[0].event_type).toBe("tool_call");
     expect(events[0].role).toBe("assistant");
@@ -124,7 +124,7 @@ describe("withEventLogging", () => {
 
   it("wraps an async handler", async () => {
     const manager = createSessionManager(db);
-    manager.startSession(null, null);
+    await manager.startSession(null, null);
 
     const handler = async (args: any) => ({
       content: [{ type: "text" as const, text: "async result" }],
@@ -135,37 +135,37 @@ describe("withEventLogging", () => {
 
     expect(result.content[0].text).toBe("async result");
 
-    const events = dbMod.getEvents(db, manager.getActiveSession()!.id);
+    const events = await dbMod.getEvents(db, manager.getActiveSession()!.id);
     expect(events).toHaveLength(2);
   });
 });
 
 describe("get_events read tool", () => {
-  it("returns events from the current session", () => {
+  it("returns events from the current session", async () => {
     const manager = createSessionManager(db);
-    manager.startSession(null, null);
+    await manager.startSession(null, null);
 
-    manager.logEvent({ event_type: "message", role: "user", content: "hello" });
-    manager.logEvent({ event_type: "message", role: "assistant", content: "hi there" });
+    await manager.logEvent({ event_type: "message", role: "user", content: "hello" });
+    await manager.logEvent({ event_type: "message", role: "assistant", content: "hi there" });
 
     const sessionId = manager.getActiveSession()!.id;
-    const events = dbMod.getEvents(db, sessionId);
+    const events = await dbMod.getEvents(db, sessionId);
 
     expect(events).toHaveLength(2);
     expect(events[0].content).toBe("hello");
     expect(events[1].content).toBe("hi there");
   });
 
-  it("respects after_sequence for pagination", () => {
+  it("respects after_sequence for pagination", async () => {
     const manager = createSessionManager(db);
-    manager.startSession(null, null);
+    await manager.startSession(null, null);
 
     for (let i = 0; i < 5; i++) {
-      manager.logEvent({ event_type: "message", role: "user", content: `msg ${i}` });
+      await manager.logEvent({ event_type: "message", role: "user", content: `msg ${i}` });
     }
 
     const sessionId = manager.getActiveSession()!.id;
-    const page = dbMod.getEvents(db, sessionId, { after_sequence: 3, limit: 10 });
+    const page = await dbMod.getEvents(db, sessionId, { after_sequence: 3, limit: 10 });
 
     expect(page).toHaveLength(2);
     expect(page[0].sequence).toBe(4);

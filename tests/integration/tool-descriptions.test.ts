@@ -154,11 +154,11 @@ describe.skipIf(!runnable)("tool descriptions are an instruction layer", () => {
     });
     const body = JSON.parse(r.content?.[0]?.text ?? "{}");
     const store = openDatabase(path.join(root, "memory.db"));
-    applySchema(store);
+    await applySchema(store);
     try {
-      expect(body.briefing).toBe(buildBriefing(store));
+      expect(body.briefing).toBe(await buildBriefing(store));
     } finally {
-      closeDatabase(store);
+      await closeDatabase(store);
     }
   });
 

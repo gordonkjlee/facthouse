@@ -1,6 +1,5 @@
 /**
  * Data access for graduated facts (DIKW: Knowledge layer).
- * All functions are synchronous.
  */
 
 import { randomUUID } from "node:crypto";
@@ -118,7 +117,7 @@ function currencyClause(
 
 /** Insert a graduated fact. Returns the created Fact.
  *  valid_from defaults to now if not provided. Pass null explicitly for unknown validity start (e.g., historical imports). */
-export function insertFact(db: Db, fact: NewFact): Fact {
+export async function insertFact(db: Db, fact: NewFact): Promise<Fact> {
   const id = randomUUID();
   const now = new Date().toISOString();
   const confidence = fact.confidence ?? 0.7;
@@ -133,7 +132,7 @@ export function insertFact(db: Db, fact: NewFact): Fact {
   const speakerRole = fact.speaker_role ?? null;
   const speaker = speakerNameOf(fact.speaker);
 
-  const result = db.prepare(
+  const result = await db.prepare(
     `INSERT INTO facts
        (id, content, domain, subdomain, confidence, importance,
         source_type, source_tool, source_id, status, superseded_by,
@@ -192,8 +191,8 @@ export function insertFact(db: Db, fact: NewFact): Fact {
 }
 
 /** Retrieve a fact by ID. */
-export function getFact(db: Db, id: string): Fact | null {
-  const row = db.prepare(`SELECT * FROM facts WHERE id = ?`).get(id) as
+export async function getFact(db: Db, id: string): Promise<Fact | null> {
+  const row = (await db.prepare(`SELECT * FROM facts WHERE id = ?`).get(id)) as
     | FactRow
     | undefined;
   if (!row) return null;
@@ -212,31 +211,31 @@ export function getFact(db: Db, id: string): Fact | null {
  * longer in the requested set — callers hold their own ranking and re-project
  * through it.
  */
-export function getFactsByIds(
+export async function getFactsByIds(
   db: Db,
   ids: string[],
   opts?: FactReadOpts,
-): Fact[] {
+): Promise<Fact[]> {
   if (ids.length === 0) return [];
   const placeholders = ids.map(() => "?").join(",");
   const currency = currencyClause("", opts?.asOfSystemTime);
-  const rows = db
+  const rows = (await db
     .prepare(
       `SELECT * FROM facts
         WHERE id IN (${placeholders})
           AND ${currency.sql}`,
     )
-    .all(...(ids as SqlParam[]), ...currency.params) as FactRow[];
+    .all(...(ids as SqlParam[]), ...currency.params)) as FactRow[];
   return rows.map(mapFact);
 }
 
 /** Get all currently-true facts for a domain — or those believed at T. */
-export function getFactsByDomain(
+export async function getFactsByDomain(
   db: Db,
   domain: string,
   subdomain?: string,
   opts?: FactReadOpts,
-): Fact[] {
+): Promise<Fact[]> {
   const currency = currencyClause("", opts?.asOfSystemTime);
   let sql = `SELECT * FROM facts
              WHERE domain = ? AND ${currency.sql}`;
@@ -250,18 +249,18 @@ export function getFactsByDomain(
   // Deterministic ordering: newest first. Required for stable supersession candidate selection.
   sql += ` ORDER BY created_at DESC`;
 
-  const rows = db.prepare(sql).all(...params) as FactRow[];
+  const rows = (await db.prepare(sql).all(...params)) as FactRow[];
   return rows.map(mapFact);
 }
 
 /** Get facts linked to an entity. */
-export function getFactsByEntity(
+export async function getFactsByEntity(
   db: Db,
   entityId: string,
   opts?: FactReadOpts,
-): EntityFact[] {
+): Promise<EntityFact[]> {
   const currency = currencyClause("f", opts?.asOfSystemTime);
-  const rows = db
+  const rows = (await db
     .prepare(
       // Facts *about* this entity come first, then facts that merely name it,
       // and importance orders within each group.
@@ -283,7 +282,7 @@ export function getFactsByEntity(
         GROUP BY f.id
         ORDER BY is_subject DESC, f.importance DESC, f.created_at DESC`,
     )
-    .all(SUBJECT_OF, entityId, ...currency.params) as Array<
+    .all(SUBJECT_OF, entityId, ...currency.params)) as Array<
     FactRow & { is_subject: number }
   >;
 
@@ -301,17 +300,17 @@ export function getFactsByEntity(
  * In simple mode `system_retired_at` is never written, so this is not a
  * meaningful audit — callers that expose it must gate on bi-temporal mode.
  */
-export function getFactsAsOfSystemTime(db: Db, at: string, limit = 100): Fact[] {
+export async function getFactsAsOfSystemTime(db: Db, at: string, limit = 100): Promise<Fact[]> {
   const instant = parseSystemTime(at);
   const currency = currencyClause("", instant);
-  const rows = db
+  const rows = (await db
     .prepare(
       `SELECT * FROM facts
         WHERE ${currency.sql}
         ORDER BY created_at DESC
         LIMIT ?`,
     )
-    .all(...currency.params, limit) as FactRow[];
+    .all(...currency.params, limit)) as FactRow[];
   return rows.map(mapFact);
 }
 
@@ -322,12 +321,12 @@ export function getFactsAsOfSystemTime(db: Db, at: string, limit = 100): Fact[] 
  *  Throws if oldId does not exist.
  *  `system_retired_at` is written only when `opts.retireSystemTime` is true
  *  (bi-temporal mode). Simple mode — the default — never populates it. */
-export function supersedeFact(
+export async function supersedeFact(
   db: Db,
   oldId: string,
   newFact: NewFact,
   opts?: SupersedeOpts,
-): Fact {
+): Promise<Fact> {
   const newId = randomUUID();
   const now = new Date().toISOString();
   const confidence = newFact.confidence ?? 0.7;
@@ -346,15 +345,15 @@ export function supersedeFact(
       ? newFact.valid_from
       : now;
 
-  const result = withTransaction(db, () => {
+  const result = await withTransaction(db, async () => {
     const updated = retireSystemTime
-      ? db.prepare(
+      ? await db.prepare(
           `UPDATE facts
            SET status = 'superseded', superseded_by = ?, is_latest = 0,
                valid_until = ?, system_retired_at = ?
            WHERE id = ?`,
         ).run(newId, now, now, oldId)
-      : db.prepare(
+      : await db.prepare(
           `UPDATE facts
            SET status = 'superseded', superseded_by = ?, is_latest = 0, valid_until = ?
            WHERE id = ?`,
@@ -364,7 +363,7 @@ export function supersedeFact(
       throw new Error(`Cannot supersede fact '${oldId}': not found`);
     }
 
-    db.prepare(
+    await db.prepare(
       `INSERT INTO facts
          (id, content, domain, subdomain, confidence, importance,
           source_type, source_tool, source_id, status, superseded_by,
@@ -436,16 +435,16 @@ export function sanitiseFtsQuery(query: string): string {
 
 /** Keyword search via FTS5. Returns facts with BM25 rank.
  *  @throws {SqliteError} on malformed FTS5 syntax. Use sanitiseFtsQuery for untrusted input. */
-export function keywordSearch(
+export async function keywordSearch(
   db: Db,
   query: string,
   limit?: number,
   opts?: FactReadOpts,
-): Array<{ fact: Fact; rank: number }> {
+): Promise<Array<{ fact: Fact; rank: number }>> {
   const effectiveLimit = limit ?? 20;
   const currency = currencyClause("f", opts?.asOfSystemTime);
 
-  const rows = db
+  const rows = (await db
     .prepare(
       `SELECT f.*, fts.rank
        FROM facts_fts fts
@@ -454,7 +453,7 @@ export function keywordSearch(
        ORDER BY fts.rank
        LIMIT ?`,
     )
-    .all(query, ...currency.params, effectiveLimit) as Array<
+    .all(query, ...currency.params, effectiveLimit)) as Array<
     FactRow & { rank: number }
   >;
 
@@ -465,11 +464,11 @@ export function keywordSearch(
 }
 
 /** Increment access_count for a fact. */
-export function incrementFactAccess(
+export async function incrementFactAccess(
   db: Db,
   factId: string,
-): void {
-  db.prepare(
+): Promise<void> {
+  await db.prepare(
     `UPDATE facts SET access_count = access_count + 1 WHERE id = ?`,
   ).run(factId);
 }

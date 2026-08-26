@@ -9,27 +9,27 @@ const factMod = await import("../../src/tools/fact-manager.js");
 
 let db: Db;
 
-beforeEach(() => {
+beforeEach(async () => {
   db = dbMod.openDatabase(":memory:");
-  dbMod.applySchema(db);
+  await dbMod.applySchema(db);
 });
 
-afterEach(() => {
-  dbMod.closeDatabase(db);
+afterEach(async () => {
+  await dbMod.closeDatabase(db);
 });
 
 describe("fact manager", () => {
-  function setup() {
+  async function setup() {
     const sessionManager = sessionMod.createSessionManager(db);
-    sessionManager.startSession("test-client", "test-project");
+    await sessionManager.startSession("test-client", "test-project");
     const factManager = factMod.createFactManager(db, sessionManager);
     return { sessionManager, factManager };
   }
 
-  it("captures a fact and returns it with all fields", () => {
-    const { factManager } = setup();
+  it("captures a fact and returns it with all fields", async () => {
+    const { factManager } = await setup();
 
-    const fact = factManager.captureFact({
+    const fact = await factManager.captureFact({
       content: "My name is Alex",
       domain_hint: "profile",
       confidence: 0.9,
@@ -52,16 +52,16 @@ describe("fact manager", () => {
     expect(fact!.speaker).toBeNull();
   });
 
-  it("copies speaker_role from the source event", () => {
-    const { sessionManager, factManager } = setup();
+  it("copies speaker_role from the source event", async () => {
+    const { sessionManager, factManager } = await setup();
     const session = sessionManager.getActiveSession()!;
-    const event = dbMod.insertEvent(db, {
+    const event = await dbMod.insertEvent(db, {
       mcp_session_id: session.id,
       event_type: "message",
       role: "user",
       content: "I prefer tea",
     });
-    const fact = factManager.captureFact({
+    const fact = await factManager.captureFact({
       content: "The user prefers tea",
       source_event_id: event.id,
     });
@@ -69,17 +69,17 @@ describe("fact manager", () => {
     expect(fact!.speaker).toBeNull();
   });
 
-  it("copies a named speaker from the source event", () => {
-    const { sessionManager, factManager } = setup();
+  it("copies a named speaker from the source event", async () => {
+    const { sessionManager, factManager } = await setup();
     const session = sessionManager.getActiveSession()!;
-    const event = dbMod.insertEvent(db, {
+    const event = await dbMod.insertEvent(db, {
       mcp_session_id: session.id,
       event_type: "message",
       role: "user",
       content: "The grain is bookings",
       speaker: "Alex",
     });
-    const fact = factManager.captureFact({
+    const fact = await factManager.captureFact({
       content: "Bookings are the grain of the orders mart at Acme.",
       source_event_id: event.id,
     });
@@ -87,40 +87,40 @@ describe("fact manager", () => {
     expect(fact!.speaker_role).toBe("user");
   });
 
-  it("rejects exact duplicate content in the same session", () => {
-    const { factManager } = setup();
+  it("rejects exact duplicate content in the same session", async () => {
+    const { factManager } = await setup();
 
-    const first = factManager.captureFact({ content: "I prefer tea" });
-    const second = factManager.captureFact({ content: "I prefer tea" });
+    const first = await factManager.captureFact({ content: "I prefer tea" });
+    const second = await factManager.captureFact({ content: "I prefer tea" });
 
     expect(first).not.toBeNull();
     expect(second).toBeNull();
   });
 
-  it("tags fact with active session ID", () => {
-    const { sessionManager, factManager } = setup();
+  it("tags fact with active session ID", async () => {
+    const { sessionManager, factManager } = await setup();
 
-    const fact = factManager.captureFact({ content: "fact one" });
+    const fact = await factManager.captureFact({ content: "fact one" });
     expect(fact!.session_id).toBe(sessionManager.getActiveSession()!.id);
   });
 
-  it("throws if no active session", () => {
+  it("throws if no active session", async () => {
     const sessionManager = sessionMod.createSessionManager(db);
     const factManager = factMod.createFactManager(db, sessionManager);
 
-    expect(() => factManager.captureFact({ content: "orphan" })).toThrow(
+    await expect(factManager.captureFact({ content: "orphan" })).rejects.toThrow(
       "No active session",
     );
   });
 
-  it("throws on empty or whitespace-only content", () => {
-    const { factManager } = setup();
+  it("throws on empty or whitespace-only content", async () => {
+    const { factManager } = await setup();
 
-    expect(() => factManager.captureFact({ content: "" })).toThrow("must not be empty");
-    expect(() => factManager.captureFact({ content: "   " })).toThrow("must not be empty");
+    await expect(factManager.captureFact({ content: "" })).rejects.toThrow("must not be empty");
+    await expect(factManager.captureFact({ content: "   " })).rejects.toThrow("must not be empty");
   });
 
-  it("does not guess importance from a domain hint at capture", () => {
+  it("does not guess importance from a domain hint at capture", async () => {
     // This previously asserted capture resolved a domain default from the
     // caller's domain_hint. Two things were wrong with that. Capture cannot know
     // a fact's domain — the classifier has not run, and a hint is a suggestion
@@ -134,10 +134,10 @@ describe("fact manager", () => {
     // vocabulary and is applied at graduation. See
     // tests/intelligence/importance.test.ts.
     const sessionManager = sessionMod.createSessionManager(db);
-    sessionManager.startSession("test", null);
+    await sessionManager.startSession("test", null);
     const factManager = factMod.createFactManager(db, sessionManager, {});
 
-    const fact = factManager.captureFact({
+    const fact = await factManager.captureFact({
       content: "Allergic to aspirin",
       domain_hint: "medical",
     });
@@ -145,13 +145,13 @@ describe("fact manager", () => {
     expect(fact!.importance).toBeNull();
   });
 
-  it("explicit importance overrides domain default", () => {
+  it("explicit importance overrides domain default", async () => {
     const sessionManager = sessionMod.createSessionManager(db);
-    sessionManager.startSession("test", null);
+    await sessionManager.startSession("test", null);
     const factManager = factMod.createFactManager(db, sessionManager, {
     });
 
-    const fact = factManager.captureFact({
+    const fact = await factManager.captureFact({
       content: "Takes vitamin D",
       domain_hint: "medical",
       importance: 0.3,
@@ -160,7 +160,7 @@ describe("fact manager", () => {
     expect(fact!.importance).toBe(0.3);
   });
 
-  it("leaves importance unscored at capture when nothing knows it yet", () => {
+  it("leaves importance unscored at capture when nothing knows it yet", async () => {
     // This previously asserted 0.5 here, pinning *where* the default was
     // applied rather than *that* it was. Stamping it at capture made the column
     // non-null forever, and graduation resolves
@@ -173,72 +173,72 @@ describe("fact manager", () => {
     // classified yet. null means "not scored", which is true. The baseline is
     // still applied — at graduation, where the domain is known. See
     // tests/intelligence/importance.test.ts.
-    const { factManager } = setup();
+    const { factManager } = await setup();
 
-    const fact = factManager.captureFact({ content: "Some random fact" });
+    const fact = await factManager.captureFact({ content: "Some random fact" });
     expect(fact!.importance).toBeNull();
   });
 
-  it("uses configured default confidence", () => {
+  it("uses configured default confidence", async () => {
     const sessionManager = sessionMod.createSessionManager(db);
-    sessionManager.startSession("test", null);
+    await sessionManager.startSession("test", null);
     const factManager = factMod.createFactManager(db, sessionManager, {
       captureConfig: { default_confidence: 0.8 },
     });
 
-    const fact = factManager.captureFact({ content: "High confidence" });
+    const fact = await factManager.captureFact({ content: "High confidence" });
     expect(fact!.confidence).toBe(0.8);
   });
 
-  it("auto-links to recent events as contextual sources", () => {
-    const { sessionManager, factManager } = setup();
+  it("auto-links to recent events as contextual sources", async () => {
+    const { sessionManager, factManager } = await setup();
 
     // Log some events first
-    sessionManager.logEvent({
+    await sessionManager.logEvent({
       event_type: "message",
       role: "user",
       content: "Hello",
     });
-    sessionManager.logEvent({
+    await sessionManager.logEvent({
       event_type: "message",
       role: "assistant",
       content: "Hi there",
     });
 
-    const fact = factManager.captureFact({ content: "User greeted" });
-    const sources = dbMod.getFactSources(db, fact!.id);
+    const fact = await factManager.captureFact({ content: "User greeted" });
+    const sources = await dbMod.getFactSources(db, fact!.id);
 
     expect(sources.length).toBe(2);
     expect(sources.every((s: any) => s.extraction_type === "contextual")).toBe(true);
   });
 
-  it("links explicit source_event_id as primary source", () => {
-    const { sessionManager, factManager } = setup();
+  it("links explicit source_event_id as primary source", async () => {
+    const { sessionManager, factManager } = await setup();
 
-    const event = sessionManager.logEvent({
+    const event = await sessionManager.logEvent({
       event_type: "message",
       role: "user",
       content: "My name is Alex",
     });
 
-    const fact = factManager.captureFact({
+    const fact = await factManager.captureFact({
       content: "User's name is Alex",
       source_event_id: event.id,
     });
 
-    const sources = dbMod.getFactSources(db, fact!.id);
+    const sources = await dbMod.getFactSources(db, fact!.id);
     const primary = sources.find((s: any) => s.extraction_type === "primary");
     expect(primary).toBeDefined();
     expect(primary!.event_id).toBe(event.id);
     expect(primary!.relevance).toBe(1.0);
   });
 
-  it("capture_fact completes in under 50ms", () => {
-    const { factManager } = setup();
+  it("capture_fact completes in under 50ms", async () => {
+    const { factManager } = await setup();
 
     const start = performance.now();
     for (let i = 0; i < 10; i++) {
-      factManager.captureFact({ content: `fact number ${i}` });
+      await factManager.captureFact({ content: `fact number ${i}` });
     }
     const elapsed = performance.now() - start;
     const perFact = elapsed / 10;
@@ -248,41 +248,41 @@ describe("fact manager", () => {
 });
 
 describe("get_session_context", () => {
-  it("returns facts from the current session", () => {
+  it("returns facts from the current session", async () => {
     const sessionManager = sessionMod.createSessionManager(db);
-    sessionManager.startSession("test", null);
+    await sessionManager.startSession("test", null);
     const factManager = factMod.createFactManager(db, sessionManager);
 
-    factManager.captureFact({ content: "fact A" });
-    factManager.captureFact({ content: "fact B" });
+    await factManager.captureFact({ content: "fact A" });
+    await factManager.captureFact({ content: "fact B" });
 
-    const context = factManager.getSessionContext();
+    const context = await factManager.getSessionContext();
     expect(context).toHaveLength(2);
     expect(context[0].content).toBe("fact A");
     expect(context[1].content).toBe("fact B");
   });
 
-  it("returns empty array when no active session", () => {
+  it("returns empty array when no active session", async () => {
     const sessionManager = sessionMod.createSessionManager(db);
     const factManager = factMod.createFactManager(db, sessionManager);
 
-    const context = factManager.getSessionContext();
+    const context = await factManager.getSessionContext();
     expect(context).toHaveLength(0);
   });
 
-  it("returns facts for a specific session ID", () => {
+  it("returns facts for a specific session ID", async () => {
     const sessionManager = sessionMod.createSessionManager(db);
-    const s1 = sessionManager.startSession("test", null);
+    const s1 = await sessionManager.startSession("test", null);
     const factManager = factMod.createFactManager(db, sessionManager);
 
-    factManager.captureFact({ content: "session 1 fact" });
+    await factManager.captureFact({ content: "session 1 fact" });
 
     // Start a new session
-    const s2 = sessionManager.startSession("test", null);
-    factManager.captureFact({ content: "session 2 fact" });
+    const s2 = await sessionManager.startSession("test", null);
+    await factManager.captureFact({ content: "session 2 fact" });
 
     // Query the first session by ID
-    const context = factManager.getSessionContext(s1.id);
+    const context = await factManager.getSessionContext(s1.id);
     expect(context).toHaveLength(1);
     expect(context[0].content).toBe("session 1 fact");
   });
@@ -290,19 +290,19 @@ describe("get_session_context", () => {
   it("returns zero facts after consolidation (D1)", async () => {
     const heuristicMod = await import("../../src/intelligence/heuristic.js");
     const sessionManager = sessionMod.createSessionManager(db);
-    sessionManager.startSession("test", null);
+    await sessionManager.startSession("test", null);
     const factManager = factMod.createFactManager(db, sessionManager, {
       intelligence: heuristicMod.createHeuristicProvider(PERSONAL_VOCABULARY),
     });
 
-    factManager.captureFact({ content: "fact A", domain_hint: "profile" });
-    factManager.captureFact({ content: "fact B", domain_hint: "profile" });
+    await factManager.captureFact({ content: "fact A", domain_hint: "profile" });
+    await factManager.captureFact({ content: "fact B", domain_hint: "profile" });
 
     // Before consolidation: both facts visible
-    expect(factManager.getSessionContext()).toHaveLength(2);
+    expect(await factManager.getSessionContext()).toHaveLength(2);
 
     // After consolidation: no unconsolidated facts remain
     await factManager.runConsolidate();
-    expect(factManager.getSessionContext()).toHaveLength(0);
+    expect(await factManager.getSessionContext()).toHaveLength(0);
   });
 });

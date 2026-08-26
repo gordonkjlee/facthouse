@@ -171,7 +171,7 @@ async function runInit() {
 
   let result;
   try {
-    result = initDataDir({ dataDir, force: values.force as boolean });
+    result = await initDataDir({ dataDir, force: values.force as boolean });
   } catch (err: unknown) {
     console.error(`Failed to initialise ${dataDir}: ${errorMessage(err)}`);
     process.exit(1);
@@ -217,15 +217,13 @@ async function runInit() {
 }
 
 /**
- * Async twin of `withDb`, for commands that await inside the connection.
- *
- * Separate rather than making `withDb` async: `stats` and the other read
- * commands are pure index reads and should not become promise-returning just
- * because search embeds its query.
+ * Open the database for a command, run `fn`, close.
+ * Exits with a clear message when the data dir was never initialised, rather
+ * than surfacing a raw SQLite error.
  */
-async function withDbAsync<T>(
+async function withDb<T>(
   dataDir: string,
-  fn: (db: ReturnType<typeof openDatabase>) => Promise<T>,
+  fn: (db: ReturnType<typeof openDatabase>) => T | Promise<T>,
 ): Promise<T> {
   loadShippedStoreConfig(dataDir);
   if (!existsSync(path.join(dataDir, "memory.db"))) {
@@ -237,34 +235,21 @@ async function withDbAsync<T>(
   }
   const db = openDatabase(path.join(dataDir, "memory.db"));
   try {
-    applySchema(db);
+    await applySchema(db);
     return await fn(db);
   } finally {
-    closeDatabase(db);
+    await closeDatabase(db);
   }
 }
 
 /**
- * Open the database read-only-ish for an inspection command, run `fn`, close.
- * Exits with a clear message when the data dir was never initialised, rather
- * than surfacing a raw SQLite error.
+ * Async twin of `withDb`, for commands whose callback is already a Promise.
  */
-function withDb<T>(dataDir: string, fn: (db: ReturnType<typeof openDatabase>) => T): T {
-  loadShippedStoreConfig(dataDir);
-  if (!existsSync(path.join(dataDir, "memory.db"))) {
-    console.error(
-      `No database at ${dataDir}. Run 'openmemory init ${dataDir}' first, ` +
-        `or point at another directory with --data.`,
-    );
-    process.exit(1);
-  }
-  const db = openDatabase(path.join(dataDir, "memory.db"));
-  try {
-    applySchema(db);
-    return fn(db);
-  } finally {
-    closeDatabase(db);
-  }
+async function withDbAsync<T>(
+  dataDir: string,
+  fn: (db: ReturnType<typeof openDatabase>) => Promise<T>,
+): Promise<T> {
+  return withDb(dataDir, fn);
 }
 
 async function runSearchCmd() {
@@ -359,7 +344,7 @@ async function runStatsCmd() {
   });
 
   const dataDir = path.resolve(resolveTilde(values.data as string));
-  const stats = withDb(dataDir, (db) => getStats(db));
+  const stats = await withDb(dataDir, (db) => getStats(db));
 
   console.log(values.json ? JSON.stringify(stats, null, 2) : formatStats(stats));
 }
@@ -391,11 +376,11 @@ async function runPruneCmd() {
     config.retention?.prune_keep_per_session ?? config.extraction?.working_memory_size ?? 50;
   const apply = values.apply as boolean;
 
-  const result = withDb(dataDir, (db) => {
-    const stats = apply ? pruneEvents(db, keep) : prunableEvents(db, keep);
+  const result = await withDb(dataDir, async (db) => {
+    const stats = apply ? await pruneEvents(db, keep) : await prunableEvents(db, keep);
     // Only after a successful delete — vacuuming a database nothing was removed
     // from is a long rewrite for no reason.
-    if (apply && (values.vacuum as boolean) && stats.events > 0) vacuum(db);
+    if (apply && (values.vacuum as boolean) && stats.events > 0) await vacuum(db);
     return stats;
   });
 
@@ -425,7 +410,7 @@ async function runPull() {
   const config = loadConfig(dataDir);
 
   try {
-    const result = withDb(dataDir, (db) => pullSources(db, config.sources));
+    const result = await withDb(dataDir, async (db) => await pullSources(db, config.sources));
     const provider = resolveProviderType(config.intelligence.provider);
     if (result.events_inserted > 0 && provider === "heuristic") {
       console.error(
@@ -564,7 +549,7 @@ export async function consolidateInProcess(
   const db = openDatabase(dbPath);
 
   try {
-    applySchema(db);
+    await applySchema(db);
     const result = await consolidate(db, provider, config, embedding, phase);
     if (result.extractionDegraded) {
       console.error(
@@ -576,7 +561,7 @@ export async function consolidateInProcess(
     console.error(errorMessage(err));
     process.exit(1);
   } finally {
-    closeDatabase(db);
+    await closeDatabase(db);
   }
 }
 

@@ -23,19 +23,19 @@ export interface NamedSubjectLookup {
   relationships: EntityEdge[];
 }
 
-export function lookupNamedSubject(
+export async function lookupNamedSubject(
   db: Db,
   name: string,
   type?: string,
-): NamedSubjectLookup {
-  const entity = findEntity(db, name, type);
+): Promise<NamedSubjectLookup> {
+  const entity = await findEntity(db, name, type);
   if (entity) {
     return {
       found: true,
       name,
       entity,
-      facts: getFactsByEntity(db, entity.id),
-      relationships: getEntityEdges(db, entity.id),
+      facts: await getFactsByEntity(db, entity.id),
+      relationships: await getEntityEdges(db, entity.id),
     };
   }
 
@@ -51,7 +51,7 @@ export function lookupNamedSubject(
     };
   }
 
-  const search = hybridSearch(db, name, { limit: 20 });
+  const search = await hybridSearch(db, name, { limit: 20 });
   const facts: EntityFact[] = search.results.map((r) => ({
     ...r.fact,
     is_subject: false,

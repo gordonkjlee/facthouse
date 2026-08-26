@@ -1,6 +1,5 @@
 /**
  * Data access for entities and the knowledge graph.
- * All functions are synchronous.
  */
 
 import { randomUUID } from "node:crypto";
@@ -40,13 +39,13 @@ export const SUBJECT_OF = "subject_of";
 /** Find an entity by name, optionally filtered by type. Uses canonical_name for matching.
  *  Without type, returns first match — non-deterministic if multiple entities share a canonical name. */
 /** Look up an entity by its id. Returns null if not found. */
-export function getEntityById(
+export async function getEntityById(
   db: Db,
   id: string,
-): Entity | null {
-  const row = db
+): Promise<Entity | null> {
+  const row = (await db
     .prepare(`SELECT * FROM entities WHERE id = ?`)
-    .get(id) as
+    .get(id)) as
     | (Omit<Entity, "metadata"> & { metadata: string | null })
     | undefined;
   if (!row) return null;
@@ -58,11 +57,11 @@ export function getEntityById(
   };
 }
 
-export function findEntity(
+export async function findEntity(
   db: Db,
   name: string,
   type?: string,
-): Entity | null {
+): Promise<Entity | null> {
   const canonical = name.toLowerCase().trim();
   let sql = `SELECT * FROM entities WHERE canonical_name = ?`;
   const params: SqlParam[] = [canonical];
@@ -72,7 +71,7 @@ export function findEntity(
     params.push(type);
   }
 
-  const row = db.prepare(sql).get(...params) as
+  const row = (await db.prepare(sql).get(...params)) as
     | (Omit<Entity, "metadata"> & { metadata: string | null })
     | undefined;
   if (!row) return null;
@@ -86,13 +85,13 @@ export function findEntity(
 
 /** Find an entity by exact canonical name. No normalisation applied — caller must lowercase/trim.
  *  Without a type filter, non-deterministic if multiple entities share a canonical name. */
-export function findEntityByCanonical(
+export async function findEntityByCanonical(
   db: Db,
   canonicalName: string,
-): Entity | null {
-  const row = db
+): Promise<Entity | null> {
+  const row = (await db
     .prepare(`SELECT * FROM entities WHERE canonical_name = ?`)
-    .get(canonicalName) as
+    .get(canonicalName)) as
     | (Omit<Entity, "metadata"> & { metadata: string | null })
     | undefined;
   if (!row) return null;
@@ -106,10 +105,10 @@ export function findEntityByCanonical(
 
 /** Create an entity. Sets canonical_name = lower(trim(name)).
  *  Throws on duplicate (canonical_name, type) — use findOrCreateEntity for upsert. */
-export function createEntity(
+export async function createEntity(
   db: Db,
   entity: NewEntity,
-): Entity {
+): Promise<Entity> {
   const id = randomUUID();
   const now = new Date().toISOString();
   const canonical = entity.name.toLowerCase().trim();
@@ -117,7 +116,7 @@ export function createEntity(
 
   const isSelf: 0 | 1 = entity.is_self ? 1 : 0;
 
-  db.prepare(
+  await db.prepare(
     `INSERT INTO entities
        (id, type, name, canonical_name, metadata, created_at, access_count, last_accessed_at, is_self)
      VALUES (?, ?, ?, ?, ?, ?, 0, NULL, ?)`,
@@ -137,15 +136,15 @@ export function createEntity(
 }
 
 /** Find or create an entity. Uses UNIQUE(canonical_name, type) constraint for safety. */
-export function findOrCreateEntity(
+export async function findOrCreateEntity(
   db: Db,
   entity: NewEntity,
-): { entity: Entity; created: boolean } {
-  return withTransaction(db, () => {
-    const existing = findEntity(db, entity.name, entity.type);
+): Promise<{ entity: Entity; created: boolean }> {
+  return withTransaction(db, async () => {
+    const existing = await findEntity(db, entity.name, entity.type);
     if (existing) return { entity: existing, created: false };
 
-    const created = createEntity(db, entity);
+    const created = await createEntity(db, entity);
     return { entity: created, created: true };
   });
 }
@@ -155,13 +154,13 @@ export function findOrCreateEntity(
 // ---------------------------------------------------------------------------
 
 /** Link a fact to an entity. INSERT OR IGNORE (composite PK handles dedup). */
-export function linkFactEntity(
+export async function linkFactEntity(
   db: Db,
   factId: string,
   entityId: string,
   relationship: string,
-): void {
-  db.prepare(
+): Promise<void> {
+  await db.prepare(
     `INSERT OR IGNORE INTO fact_entities (fact_id, entity_id, relationship)
      VALUES (?, ?, ?)`,
   ).run(factId, entityId, relationship);
@@ -173,10 +172,10 @@ export function linkFactEntity(
  * Nameless is the normal state, not a defect: the singleton is created before
  * anything is known, and the user's name arrives later as an ordinary fact.
  */
-export function getSelfEntity(db: Db): Entity | null {
-  const row = db
+export async function getSelfEntity(db: Db): Promise<Entity | null> {
+  const row = (await db
     .prepare(`SELECT * FROM entities WHERE is_self = 1`)
-    .get() as (Omit<Entity, "metadata"> & { metadata: string | null }) | undefined;
+    .get()) as (Omit<Entity, "metadata"> & { metadata: string | null }) | undefined;
   if (!row) return null;
   return {
     ...row,
@@ -195,12 +194,12 @@ export function getSelfEntity(db: Db): Entity | null {
  * it attaches as a fact about this entity; the row does not need renaming for
  * the anchor to work, because the anchor is the id.
  */
-export function ensureSelfEntity(db: Db): Entity {
-  return getSelfEntity(db) ?? createEntity(db, {
+export async function ensureSelfEntity(db: Db): Promise<Entity> {
+  return (await getSelfEntity(db)) ?? (await createEntity(db, {
     type: "person",
     name: "the user",
     is_self: true,
-  });
+  }));
 }
 
 /**
@@ -212,8 +211,8 @@ export function ensureSelfEntity(db: Db): Entity {
  * a different question: a fact naming Robin as an approver is not a fact about
  * Robin.
  */
-export function getFactsBySubject(db: Db, entityId: string): Fact[] {
-  const rows = db
+export async function getFactsBySubject(db: Db, entityId: string): Promise<Fact[]> {
+  const rows = (await db
     .prepare(
       // Same currency filters as getFactsByEntity — active, latest, and still
       // within its validity window. Ordered by importance because that is what
@@ -226,7 +225,7 @@ export function getFactsBySubject(db: Db, entityId: string): Fact[] {
           AND (f.valid_until IS NULL OR f.valid_until > datetime('now'))
         ORDER BY f.importance DESC, f.created_at DESC`,
     )
-    .all(entityId, SUBJECT_OF) as Array<Omit<Fact, "is_latest"> & { is_latest: number }>;
+    .all(entityId, SUBJECT_OF)) as Array<Omit<Fact, "is_latest"> & { is_latest: number }>;
   return rows.map((row) => ({ ...row, is_latest: row.is_latest === 1 }));
 }
 
@@ -239,15 +238,15 @@ export function getFactsBySubject(db: Db, entityId: string): Fact[] {
  * Facts with no linked entities are simply absent from the map — callers should
  * treat a miss as an empty list rather than expecting a key for every id.
  */
-export function getEntitiesForFacts(
+export async function getEntitiesForFacts(
   db: Db,
   factIds: string[],
-): Map<string, Entity[]> {
+): Promise<Map<string, Entity[]>> {
   const byFact = new Map<string, Entity[]>();
   if (factIds.length === 0) return byFact;
 
   const placeholders = factIds.map(() => "?").join(",");
-  const rows = db
+  const rows = (await db
     .prepare(
       `SELECT fe.fact_id AS fact_id, e.*
          FROM fact_entities fe
@@ -255,7 +254,7 @@ export function getEntitiesForFacts(
         WHERE fe.fact_id IN (${placeholders})
         ORDER BY e.name`,
     )
-    .all(...(factIds as SqlParam[])) as Array<
+    .all(...(factIds as SqlParam[]))) as Array<
     Omit<Entity, "metadata"> & { fact_id: string; metadata: string | null }
   >;
 
@@ -294,15 +293,15 @@ export const EDGE_POTENTIATION_ALPHA = 0.3;
 
 /** Create or strengthen an entity-to-entity edge using saturating potentiation.
  *  Caller must ensure both entity IDs exist (no FK enforcement). */
-export function upsertEntityEdge(
+export async function upsertEntityEdge(
   db: Db,
   fromEntity: string,
   toEntity: string,
   relationship: string,
-): void {
+): Promise<void> {
   const now = new Date().toISOString();
 
-  db.prepare(
+  await db.prepare(
     `INSERT INTO entity_edges
        (from_entity, to_entity, relationship, strength, metadata, created_at, last_accessed_at)
      VALUES (?, ?, ?, ?, NULL, ?, ?)
@@ -318,15 +317,15 @@ export function upsertEntityEdge(
 }
 
 /** Get all edges from or to an entity. */
-export function getEntityEdges(
+export async function getEntityEdges(
   db: Db,
   entityId: string,
-): EntityEdge[] {
-  const rows = db
+): Promise<EntityEdge[]> {
+  const rows = (await db
     .prepare(
       `SELECT * FROM entity_edges WHERE from_entity = ? OR to_entity = ?`,
     )
-    .all(entityId, entityId) as Array<
+    .all(entityId, entityId)) as Array<
     Omit<EntityEdge, "metadata"> & { metadata: string | null }
   >;
 
@@ -343,12 +342,12 @@ export function getEntityEdges(
 // ---------------------------------------------------------------------------
 
 /** Update access tracking on an entity. */
-export function updateEntityAccess(
+export async function updateEntityAccess(
   db: Db,
   entityId: string,
-): void {
+): Promise<void> {
   const now = new Date().toISOString();
-  db.prepare(
+  await db.prepare(
     `UPDATE entities SET access_count = access_count + 1, last_accessed_at = ? WHERE id = ?`,
   ).run(now, entityId);
 }

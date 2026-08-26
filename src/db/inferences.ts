@@ -28,13 +28,13 @@ function uniqueIds(ids: string[]): string[] {
   return [...new Set(ids.map((id) => id.trim()).filter(Boolean))].sort();
 }
 
-function loadEvidence(db: Db, inferenceId: string): string[] {
-  const rows = db
+async function loadEvidence(db: Db, inferenceId: string): Promise<string[]> {
+  const rows = (await db
     .prepare(
       `SELECT fact_id FROM inference_evidence
         WHERE inference_id = ? ORDER BY fact_id`,
     )
-    .all(inferenceId) as Array<{ fact_id: string }>;
+    .all(inferenceId)) as Array<{ fact_id: string }>;
   return rows.map((r) => r.fact_id);
 }
 
@@ -62,10 +62,10 @@ function mapInference(
   };
 }
 
-function requireFacts(db: Db, ids: string[]): void {
+async function requireFacts(db: Db, ids: string[]): Promise<void> {
   const missing: string[] = [];
   for (const id of ids) {
-    if (!getFact(db, id)) missing.push(id);
+    if (!(await getFact(db, id))) missing.push(id);
   }
   if (missing.length > 0) {
     throw new Error(
@@ -75,7 +75,10 @@ function requireFacts(db: Db, ids: string[]): void {
 }
 
 /** Store a pending hypothesis. Does not write facts. */
-export function insertInference(db: Db, input: NewInference): Inference {
+export async function insertInference(
+  db: Db,
+  input: NewInference,
+): Promise<Inference> {
   const hypothesis = input.hypothesis.trim();
   if (!hypothesis) {
     throw new Error("Hypothesis must not be empty.");
@@ -86,21 +89,23 @@ export function insertInference(db: Db, input: NewInference): Inference {
       "An inference needs at least one supporting fact id — a hypothesis with no evidence is not a gated invention, it is a guess.",
     );
   }
-  requireFacts(db, evidence);
+  await requireFacts(db, evidence);
 
   const id = randomUUID();
   const now = new Date().toISOString();
 
-  return withTransaction(db, () => {
-    db.prepare(
-      `INSERT INTO inferences (id, hypothesis, status, reason, fact_id, created_at, validated_at)
+  return withTransaction(db, async () => {
+    await db
+      .prepare(
+        `INSERT INTO inferences (id, hypothesis, status, reason, fact_id, created_at, validated_at)
        VALUES (?, ?, 'pending', NULL, NULL, ?, NULL)`,
-    ).run(id, hypothesis, now);
+      )
+      .run(id, hypothesis, now);
     const link = db.prepare(
       `INSERT INTO inference_evidence (inference_id, fact_id) VALUES (?, ?)`,
     );
     for (const factId of evidence) {
-      link.run(id, factId);
+      await link.run(id, factId);
     }
     return mapInference(
       {
@@ -117,13 +122,16 @@ export function insertInference(db: Db, input: NewInference): Inference {
   });
 }
 
-export function getInference(db: Db, id: string): Inference | null {
-  const row = db
+export async function getInference(
+  db: Db,
+  id: string,
+): Promise<Inference | null> {
+  const row = (await db
     .prepare(
       `SELECT id, hypothesis, status, reason, fact_id, created_at, validated_at
          FROM inferences WHERE id = ?`,
     )
-    .get(id) as
+    .get(id)) as
     | {
         id: string;
         hypothesis: string;
@@ -135,19 +143,19 @@ export function getInference(db: Db, id: string): Inference | null {
       }
     | undefined;
   if (!row) return null;
-  return mapInference(row, loadEvidence(db, id));
+  return mapInference(row, await loadEvidence(db, id));
 }
 
-export function listInferences(
+export async function listInferences(
   db: Db,
   status: InferenceStatus = "pending",
-): Inference[] {
-  const rows = db
+): Promise<Inference[]> {
+  const rows = (await db
     .prepare(
       `SELECT id, hypothesis, status, reason, fact_id, created_at, validated_at
          FROM inferences WHERE status = ? ORDER BY created_at ASC`,
     )
-    .all(status) as Array<{
+    .all(status)) as Array<{
     id: string;
     hypothesis: string;
     status: InferenceStatus;
@@ -156,19 +164,23 @@ export function listInferences(
     created_at: string;
     validated_at: string | null;
   }>;
-  return rows.map((row) => mapInference(row, loadEvidence(db, row.id)));
+  const out: Inference[] = [];
+  for (const row of rows) {
+    out.push(mapInference(row, await loadEvidence(db, row.id)));
+  }
+  return out;
 }
 
 /**
  * Confirm (graduate to K) or reject. Confirming inserts a fact labelled
  * inference; it does not pretend the sentence was said.
  */
-export function validateInference(
+export async function validateInference(
   db: Db,
   input: ValidateInference,
-): { inference: Inference; fact: Fact | null } {
-  return withTransaction(db, () => {
-    const existing = getInference(db, input.id);
+): Promise<{ inference: Inference; fact: Fact | null }> {
+  return withTransaction(db, async () => {
+    const existing = await getInference(db, input.id);
     if (!existing) {
       throw new Error("Unknown inference id " + JSON.stringify(input.id) + ".");
     }
@@ -186,7 +198,7 @@ export function validateInference(
     const reason = input.reason?.trim() || null;
 
     if (!input.confirmed) {
-      const result = db
+      const result = await db
         .prepare(
           `UPDATE inferences
               SET status = 'rejected', reason = ?, validated_at = ?
@@ -207,9 +219,9 @@ export function validateInference(
       };
     }
 
-    requireFacts(db, existing.evidence_fact_ids);
+    await requireFacts(db, existing.evidence_fact_ids);
 
-    const source = createSource(db, {
+    const source = await createSource(db, {
       type: "inference",
       raw_content: existing.hypothesis,
       metadata: {
@@ -218,7 +230,7 @@ export function validateInference(
       },
     });
 
-    const fact = insertFact(db, {
+    const fact = await insertFact(db, {
       content: existing.hypothesis,
       // Unclassified bucket — not a shipped vocabulary. Confirm is the gate,
       // not a classifier pass.
@@ -230,7 +242,7 @@ export function validateInference(
       valid_from: null,
     });
 
-    const result = db
+    const result = await db
       .prepare(
         `UPDATE inferences
             SET status = 'confirmed', reason = ?, fact_id = ?, validated_at = ?
