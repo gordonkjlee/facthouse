@@ -49,6 +49,7 @@ function run(args: string[], extraEnv: Record<string, string> = {}) {
   return spawnSync(process.execPath, [CLI, ...args], {
     encoding: "utf-8",
     env: env as NodeJS.ProcessEnv,
+    timeout: 30_000,
   });
 }
 
@@ -131,6 +132,7 @@ describe.skipIf(!runnable)("cli entry — init argument precedence", () => {
     );
     const r = run(["init", dir]);
     expect(r.status).toBe(1);
+    expect(r.stderr).toMatch(`Failed to initialise ${path.resolve(dir)}:`);
     expect(r.stderr).toMatch(/postgres/);
     expect(r.stderr).toMatch(/SQLite was not opened/);
     expect(existsSync(path.join(dir, "memory.db"))).toBe(false);
@@ -218,7 +220,7 @@ describe.skipIf(!runnable)("cli entry — init output", () => {
     expect(r.stdout).toMatch(/openmemory pull/);
   });
 
-  it("prints an MCP snippet that parses as JSON, with the data dir escaped", () => {
+  it("prints an MCP snippet that parses as JSON, with the data dir escaped", async () => {
     const dir = path.join(root, "snippet");
     const r = run(["init", dir]);
     expect(r.status).toBe(0);
@@ -228,9 +230,13 @@ describe.skipIf(!runnable)("cli entry — init output", () => {
     const match = r.stdout.match(/\{\s*"mcpServers"[\s\S]*?\n  \}/);
     expect(match).not.toBeNull();
     const parsed = JSON.parse(match![0]); // throws if the path wasn't escaped
-    const entry = parsed.mcpServers.openmemory;
+    const { mcpServerName } = await import("../../src/cli/init.js");
+    const key = mcpServerName(path.resolve(dir));
+    const entry = parsed.mcpServers[key];
+    expect(entry).toBeDefined();
     expect(entry.command).toBe("npx");
     expect(entry.env.OPENMEMORY_DATA).toBe(path.resolve(dir));
+    expect(parsed.mcpServers.openmemory).toBeUndefined();
   });
 
   it("reports the config as preserved on re-run and reset with --force", () => {

@@ -136,7 +136,7 @@ On Windows the `--data` path is the same absolute directory you put in `OPENMEMO
 
 One data directory is one brain. Life and work are two directories — not a filter on which client wrote the row, not a tenant column inside one SQLite file. Each store has its own `config.json`, its own pull sources, its own hooks (`--data` must match), and its own scheduler socket. They cannot see each other's facts.
 
-`openmemory init` against each directory prints an MCP snippet. Give the two entries different names:
+A non-default data directory prints a distinct MCP server name so two stores can share one `mcp.json`. `openmemory init` against each directory prints that snippet:
 
 <!-- x-release-please-start-version -->
 ```json

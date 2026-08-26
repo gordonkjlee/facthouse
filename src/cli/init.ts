@@ -30,6 +30,13 @@ import { probeCliProvider, type CliProbeResult } from "../intelligence/cli.js";
 import { createEmbeddingProvider } from "../embedding/provider.js";
 import { resolveSources } from "../sources/resolve.js";
 import type { IntelligenceProviderType, EmbeddingConfig } from "../types/config.js";
+import { defaultDataDir } from "../paths.js";
+import { SESSION_START_FLUSH_MAX_INSERTED } from "../sources/pull.js";
+import {
+  INIT_SYNTHETIC,
+  applyInitOverlay,
+  type InitOverlay,
+} from "./init-knobs.js";
 
 /**
  * Render a copy-pasteable MCP client config block.
@@ -58,6 +65,44 @@ export function mcpConfigSnippet(
     .split("\n")
     .map((l) => `${pad}${l}`)
     .join("\n");
+}
+
+export const DEFAULT_MCP_SERVER_NAME = "openmemory";
+
+/**
+ * MCP server key for a data directory. The default store is `openmemory`.
+ * Any other directory gets a derived name so two snippets can share one
+ * mcp.json. A non-default folder whose basename is `openmemory` is
+ * `openmemory-store` so it cannot paste over the default key.
+ */
+export function mcpServerName(
+  dataDir: string,
+  defaultDir: string = defaultDataDir(),
+): string {
+  const resolved = path.resolve(dataDir);
+  if (resolved === path.resolve(defaultDir)) return DEFAULT_MCP_SERVER_NAME;
+
+  const base = path.basename(resolved).replace(/^\.+/, "");
+  const sanitized =
+    base.replace(/[^A-Za-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "").toLowerCase()
+    || "store";
+
+  if (sanitized === DEFAULT_MCP_SERVER_NAME) {
+    return `${DEFAULT_MCP_SERVER_NAME}-store`;
+  }
+  if (sanitized.startsWith(`${DEFAULT_MCP_SERVER_NAME}-`)) return sanitized;
+  return `${DEFAULT_MCP_SERVER_NAME}-${sanitized}`;
+}
+
+/**
+ * Env is omitted only for the default directory, never because the name
+ * equals "openmemory".
+ */
+export function mcpSnippetDataDir(
+  dataDir: string,
+  defaultDir: string = defaultDataDir(),
+): string | undefined {
+  return path.resolve(dataDir) === path.resolve(defaultDir) ? undefined : dataDir;
 }
 
 /**
@@ -171,14 +216,14 @@ export function sourcesStatusLines(sources: unknown): string[] {
   if (n === 0) {
     return [
       `Capture: pull is off (sources is empty). Add a claude-code or cursor source to`,
-      `config.json — kind, home (e.g. ~/.claude or ~/.cursor), cwd (e.g. C:\\dev\\app).`,
-      `Set cwd. Then run openmemory pull. A first pull of more than 50 events`,
+      `config.json — kind, home (e.g. ${INIT_SYNTHETIC.claudeHome} or ${INIT_SYNTHETIC.cursorHome}), cwd (e.g. ${INIT_SYNTHETIC.cwd}).`,
+      `Set cwd. Then run openmemory pull. A first pull of more than ${SESSION_START_FLUSH_MAX_INSERTED} events`,
       `needs openmemory consolidate; a later session start will flush a smaller leftover.`,
     ];
   }
   return [
     `Capture: ${n} source${n === 1 ? "" : "s"}. Run openmemory pull.`,
-    `A first pull of more than 50 events needs openmemory consolidate.`,
+    `A first pull of more than ${SESSION_START_FLUSH_MAX_INSERTED} events needs openmemory consolidate.`,
   ];
 }
 
@@ -187,6 +232,8 @@ export interface InitArgs {
   dataDir: string;
   /** Overwrite an existing config.json with defaults. Default false. */
   force?: boolean;
+  /** Narrow overlay applied when writing config.json. Preserve ignores it. */
+  overlay?: InitOverlay;
 }
 
 export interface InitResult {
@@ -207,7 +254,7 @@ export interface InitResult {
  * Create (or update) a data directory: database + schema + default config.
  */
 export async function initDataDir(args: InitArgs): Promise<InitResult> {
-  const { dataDir, force = false } = args;
+  const { dataDir, force = false, overlay } = args;
 
   // Refuse a non-sqlite engine *before* mkdir/open — otherwise a postgres
   // config still creates memory.db and we have failed open.
@@ -251,9 +298,10 @@ export async function initDataDir(args: InitArgs): Promise<InitResult> {
   const configExisted = existsSync(configPath);
   const wroteConfig = !configExisted || force;
   if (wroteConfig) {
+    const toWrite = applyInitOverlay(defaultServerConfig(), overlay ?? {});
     writeFileSync(
       configPath,
-      JSON.stringify(defaultServerConfig(), null, 2) + "\n",
+      JSON.stringify(toWrite, null, 2) + "\n",
       "utf-8",
     );
   }
