@@ -641,9 +641,9 @@ function applyV13(db: Db): void {
 // `created_at` is when OpenMemory wrote the row. Claude Code JSONL lines
 // already carry a top-level ISO `timestamp` for when the turn was recorded;
 // pull used to drop it, so a backfill looked like it all happened at ingest.
-// `occurred_at` is that transcript clock, nullable: hook `log-event` has no
-// JSONL line, and a line without a usable timestamp stays null rather than
-// copying ingest time (that would collapse the two axes).
+// `occurred_at` is when the turn was said: JSONL `timestamp` on pull, or the
+// hook/MCP call instant on live capture. A pulled line without a usable
+// timestamp stays null rather than copying ingest time.
 //
 // Not a fact-layer clock. Sequence remains conversation order; this column
 // does not reorder extract.

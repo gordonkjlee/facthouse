@@ -146,6 +146,34 @@ describe("logEvent attributes every event to a session", () => {
     expect([...sessions][0]).not.toBeNull();
   });
 
+  it("stamps occurred_at as hook time, not null", async () => {
+    const before = new Date().toISOString();
+    await logEvent({
+      role: "user",
+      eventType: "message",
+      content: "from a hook",
+      sessionId: "client-abc-123",
+      dataDir,
+    });
+    const conn = dbMod.openDatabase(path.join(dataDir, "memory.db"));
+    try {
+      const row = conn
+        .prepare(
+          `SELECT occurred_at, created_at FROM session_events WHERE client_session_id = ?`,
+        )
+        .get("client-abc-123") as { occurred_at: string | null; created_at: string };
+      expect(row.occurred_at).not.toBeNull();
+      expect(row.occurred_at! >= before).toBe(true);
+      // Live capture: said and ingested are the same instant, give or take
+      // the millisecond between the two Date.now calls.
+      expect(Math.abs(Date.parse(row.occurred_at!) - Date.parse(row.created_at))).toBeLessThan(
+        1000,
+      );
+    } finally {
+      dbMod.closeDatabase(conn);
+    }
+  });
+
   it("keeps a hook-supplied session id as the client's own", async () => {
     await logEvent({
       role: "user",

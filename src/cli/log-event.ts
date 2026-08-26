@@ -86,6 +86,11 @@ export async function logEvent(args: LogEventArgs): Promise<SessionEvent> {
       role: args.role,
       content: args.content,
       content_type: args.contentType ?? "text",
+      // The hook fires at the turn. Claude Code's payload has no timestamp
+      // field; this instant is when it was said. Pull must not do the same —
+      // ingest there can be hours later, and a missing JSONL timestamp stays
+      // null rather than copying created_at.
+      occurred_at: new Date().toISOString(),
     });
   } finally {
     closeDatabase(db);

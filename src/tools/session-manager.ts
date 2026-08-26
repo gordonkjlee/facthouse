@@ -80,6 +80,8 @@ export function createSessionManager(
         content_type: opts.content_type,
         content_ref: opts.content_ref,
         metadata: opts.metadata,
+        // Live capture: the call is the turn. Same as hook log-event.
+        occurred_at: new Date().toISOString(),
       });
 
       // Keep local copy in sync.

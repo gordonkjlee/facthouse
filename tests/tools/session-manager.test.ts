@@ -43,6 +43,10 @@ describe("session manager", () => {
     expect(event.content).toBe("hello world");
     expect(event.sequence).toBe(1);
     expect(event.content_type).toBe("text");
+    expect(event.occurred_at).not.toBeNull();
+    expect(
+      Math.abs(Date.parse(event.occurred_at!) - Date.parse(event.created_at)),
+    ).toBeLessThan(1000);
   });
 
   it("logEvent auto-increments sequence numbers", () => {

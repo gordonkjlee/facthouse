@@ -88,9 +88,10 @@ export interface SessionEvent {
   /** When OpenMemory wrote this row. */
   created_at: string;
   /**
-   * When the turn was said, if the source recorded it (Claude Code JSONL
-   * `timestamp`). Null when unknown — hook `log-event` has no transcript clock,
-   * and a line without a usable timestamp is not filled in from ingest time.
+   * When the turn was said. Pull copies Claude Code JSONL `timestamp` when
+   * present, otherwise null (a backfill must not pretend ingest was speech).
+   * Hook `log-event` and MCP `log_event` stamp the call — those fire at the
+   * turn, and the hook payload has no clock of its own.
    */
   occurred_at: string | null;
 }
