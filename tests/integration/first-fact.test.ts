@@ -211,6 +211,7 @@ describe.skipIf(!required || unavailable !== null)(
       const env: Record<string, string | undefined> = { ...process.env };
       delete env.OPENMEMORY_DATA;
       delete env.OPENMEMORY_SUBPROCESS;
+      delete env.OPENMEMORY_STORAGE;
       // The README path uses the configured provider (cli). A developer who
       // has OPENMEMORY_PROVIDER=heuristic in the shell must not silently
       // convert this eval into the control that is supposed to miss.

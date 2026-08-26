@@ -264,6 +264,8 @@ Clean up with `rm -rf /tmp/openmemory-demo`, then point a real client at the con
 
 Put the Quick Start config in a second AI tool and give it no rules at all. It reads `memory://profile` on connect and can `search_knowledge` for the rest — so a preference you mentioned once, in a different application, is simply known. There is nothing to sync and nothing to export: both clients are talking to one SQLite file that you own.
 
+That file is the whole store. `session_events` is what was said, `session_facts` is what was just extracted, and `facts` is graduated knowledge — three tables in one file, not three databases. FTS5 (words) and optional embeddings (meaning) are indexes of `facts`. They are not a second brain. `storage.provider` is `"sqlite"`; asking for `"postgres"` (or setting `OPENMEMORY_STORAGE`) is refused rather than silently opening SQLite — keyword search is FTS5 and the server is synchronous, so a second engine is a port, not a URL.
+
 The server side of this is covered by tests that spawn the real binary twice against a single store: a fact captured through one connection is searchable from the other, concurrent writes survive, and two simultaneous consolidations neither duplicate work nor strand it. What those tests cannot cover is any particular pair of desktop applications and their own config quirks — so if a specific combination misbehaves, please open an issue.
 
 ## How It Works
@@ -290,7 +292,7 @@ The result is a structured, evolving knowledge graph that any AI tool can query 
 - **Immutable history** — Facts are never deleted, only superseded. The default records when a fact was learned and when it was true. Set `temporal.mode` to `bitemporal` to also record when the system retracted a belief, so search can answer what the store believed at an instant.
 - **Source traceability** — Every fact links back to the conversation events that produced it.
 - **Manual consolidation** — Call `consolidate` at natural breakpoints (topic change, task completion, pre-compaction). No reliance on session boundaries.
-- **One directory, one brain** — Work and personal are two `OPENMEMORY_DATA` directories and two MCP server names. Isolation is the directory, not a column.
+- **One directory, one brain** — Work and personal are two `OPENMEMORY_DATA` directories and two MCP server names. Isolation is the directory, not a column. One SQLite file in that directory holds D, I, and K as tables; FTS5 and embeddings are indexes of K.
 
 ## MCP Resources
 

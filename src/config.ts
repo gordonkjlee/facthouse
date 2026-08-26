@@ -63,6 +63,67 @@ export function defaultServerConfig(): ServerConfig {
   };
 }
 
+/**
+ * The only transactional engine this package ships. A request for any other
+ * value is refused — it must not silently open SQLite.
+ */
+export const SHIPPED_STORAGE_PROVIDER = "sqlite";
+
+/**
+ * Which engine the store asked for. `OPENMEMORY_STORAGE` wins over
+ * `storage.provider`. Missing or empty is sqlite.
+ */
+export function configuredStorageProvider(
+  config: ServerConfig,
+  env: NodeJS.ProcessEnv = process.env,
+): string {
+  const fromEnv = env.OPENMEMORY_STORAGE?.trim();
+  if (fromEnv) return fromEnv.toLowerCase();
+  const storage = (config as { storage?: unknown }).storage;
+  if (typeof storage === "string" && storage.trim() !== "") {
+    return storage.trim().toLowerCase();
+  }
+  if (storage !== null && typeof storage === "object" && !Array.isArray(storage)) {
+    const provider = (storage as { provider?: unknown }).provider;
+    if (typeof provider === "string" && provider.trim() !== "") {
+      return provider.trim().toLowerCase();
+    }
+  }
+  return SHIPPED_STORAGE_PROVIDER;
+}
+
+/** One message per refused provider. Callers must not open SQLite after this. */
+export function unshippedStorageMessage(provider: string): string {
+  if (provider === "postgres") {
+    return (
+      `Storage provider "postgres" is not shipped. OpenMemory's MCP handlers ` +
+      `are synchronous, keyword search is FTS5, and schema versioning is a ` +
+      `SQLite pragma — a Postgres port is an engine swap, not a connection ` +
+      `string. SQLite was not opened. Keep storage.provider as "sqlite" ` +
+      `(the default).`
+    );
+  }
+  return (
+    `Unknown storage provider "${provider}". The shipped engine is sqlite. ` +
+    `SQLite was not opened.`
+  );
+}
+
+export function assertShippedStorage(provider: string): void {
+  if (provider === SHIPPED_STORAGE_PROVIDER) return;
+  throw new Error(unshippedStorageMessage(provider));
+}
+
+/**
+ * Load config and refuse anything other than sqlite *before* a database file
+ * is created or opened. This is the check every production opener uses.
+ */
+export function loadShippedStoreConfig(dataDir: string): ServerConfig {
+  const config = loadConfig(dataDir);
+  assertShippedStorage(configuredStorageProvider(config));
+  return config;
+}
+
 /** Load server config. Always returns a valid ServerConfig. */
 export function loadConfig(dataDir: string): ServerConfig {
   const base = defaultServerConfig();

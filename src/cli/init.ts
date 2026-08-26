@@ -21,7 +21,11 @@ import { openDatabase, closeDatabase, pragmaRead } from "../db/connection.js";
 import { applySchema } from "../db/schema.js";
 import { ensureDomain } from "../db/domains.js";
 import { ensureSelfEntity } from "../db/entities.js";
-import { CONFIG_FILENAME, defaultServerConfig, loadConfig } from "../config.js";
+import {
+  CONFIG_FILENAME,
+  defaultServerConfig,
+  loadShippedStoreConfig,
+} from "../config.js";
 import { probeCliProvider, type CliProbeResult } from "../intelligence/cli.js";
 import { createEmbeddingProvider } from "../embedding/provider.js";
 import { resolveSources } from "../sources/resolve.js";
@@ -206,6 +210,10 @@ export interface InitResult {
 export function initDataDir(args: InitArgs): InitResult {
   const { dataDir, force = false } = args;
 
+  // Refuse a non-sqlite engine *before* mkdir/open — otherwise a postgres
+  // config still creates memory.db and we have failed open.
+  const effective = loadShippedStoreConfig(dataDir);
+
   const createdDataDir = !existsSync(dataDir);
   mkdirSync(dataDir, { recursive: true });
 
@@ -213,7 +221,7 @@ export function initDataDir(args: InitArgs): InitResult {
   // config.json (a user may have added their own domains) or the shipped
   // defaults. Read before the config is written so a first run seeds exactly
   // what it is about to write.
-  const seedDomains = loadConfig(dataDir).domains ?? [];
+  const seedDomains = effective.domains ?? [];
 
   // Create/migrate the database. applySchema is idempotent and versioned.
   const dbPath = path.join(dataDir, "memory.db");

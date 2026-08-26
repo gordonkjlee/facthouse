@@ -422,6 +422,7 @@ describe.skipIf(!required || unavailable !== null)(
       const env: Record<string, string | undefined> = { ...process.env };
       delete env.OPENMEMORY_DATA;
       delete env.OPENMEMORY_SUBPROCESS;
+      delete env.OPENMEMORY_STORAGE;
       env.OPENMEMORY_PROVIDER = "cli";
       return spawnSync(process.execPath, [CLI, ...args], {
         encoding: "utf-8",

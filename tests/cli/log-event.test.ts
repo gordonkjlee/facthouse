@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { Db } from "../../src/db/connection.js";
@@ -116,6 +116,23 @@ describe("logEvent attributes every event to a session", () => {
       dbMod.closeDatabase(conn);
     }
   }
+
+  it("refuses postgres before creating memory.db", async () => {
+    mkdirSync(dataDir, { recursive: true });
+    writeFileSync(
+      path.join(dataDir, "config.json"),
+      JSON.stringify({ storage: { provider: "postgres" } }),
+    );
+    await expect(
+      logEvent({
+        role: "user",
+        eventType: "message",
+        content: "the grain is bookings",
+        dataDir,
+      }),
+    ).rejects.toThrow(/postgres/);
+    expect(existsSync(path.join(dataDir, "memory.db"))).toBe(false);
+  });
 
   it("attaches an event to a session on a store that has none", async () => {
     await logEvent({
