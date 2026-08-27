@@ -146,42 +146,84 @@ describe("init knobs — one definition", () => {
     expect(readme).toMatch(
       /non-default data directory prints a distinct MCP server name/i,
     );
+    expect(readme).toContain(INIT_PROMPTS.mixPullLogEvent);
   });
 
-  it("scripted README init uses --yes, including inline npx", () => {
+  it("scripted README init uses --yes, except a lone walk-through fence", () => {
     const readme = readFileSync(path.join(ROOT, "README.md"), "utf-8");
-    const [beforeRef, afterRef = ""] = readme.split("### CLI Reference");
-    const initCall = /\b(?:om|openmemory) init\b/g;
-    for (const m of beforeRef.matchAll(/\b(?:om|openmemory) init\b([^`\n]*)/g)) {
+    const initCall = /\b(?:om|openmemory) init\b([^`\n]*)/g;
+    const fenceRe = /```(?:bash|powershell)\n([\s\S]*?)```/g;
+    const fences: Array<{ start: number; end: number; body: string }> = [];
+    for (const fence of readme.matchAll(fenceRe)) {
+      const body = fence[1] ?? "";
+      const start = fence.index ?? 0;
+      fences.push({ start, end: start + fence[0].length, body });
+    }
+
+    const liveLines = (body: string) =>
+      body
+        .split("\n")
+        .map((l) => l.trim())
+        .filter((l) => l.length > 0 && !l.startsWith("#"));
+
+    const loneInitFence = (body: string) => {
+      const commands = liveLines(body);
+      return (
+        commands.length === 1 && /^(?:om|openmemory) init\s*$/.test(commands[0] ?? "")
+      );
+    };
+
+    let recipeB = 0;
+    for (const fence of fences) {
+      if (loneInitFence(fence.body)) recipeB += 1;
+    }
+    expect(recipeB).toBeGreaterThanOrEqual(1);
+
+    const firstBash = readme.match(/```bash\n([\s\S]*?)```/);
+    expect(firstBash).not.toBeNull();
+    expect(liveLines(firstBash?.[1] ?? "")).toEqual(["openmemory init"]);
+
+    for (const m of readme.matchAll(initCall)) {
+      const at = m.index ?? 0;
+      const lineStart = readme.lastIndexOf("\n", at) + 1;
+      const line = readme.slice(lineStart, readme.indexOf("\n", at));
+      if (/^#{1,6}\s/.test(line.trim())) continue;
+      const fence = fences.find((f) => at >= f.start && at < f.end);
+      if (fence && loneInitFence(fence.body)) continue;
       const rest = m[1] ?? "";
       expect(rest).toMatch(/(?:--yes|-y)\b/);
       expect(rest).not.toMatch(/^-y\b/);
     }
-    const npxInit = /npx[^\n]*openmemory init([^\n`]*)/g;
-    for (const m of beforeRef.matchAll(npxInit)) {
+
+    for (const m of readme.matchAll(/npx[^\n]*openmemory init([^\n`]*)/g)) {
       expect(m[1]).toMatch(/--yes\b/);
     }
-    const fenceRe = /```(?:bash|powershell)\n([\s\S]*?)```/g;
-    for (const fence of afterRef.matchAll(fenceRe)) {
-      const body = fence[1] ?? "";
-      const live = [...body.matchAll(initCall)].filter((hit) => {
-        const lineStart = body.lastIndexOf("\n", hit.index ?? 0);
-        const line = body.slice(lineStart + 1).split("\n")[0] ?? "";
-        return !line.trimStart().startsWith("#");
-      });
-      const withoutYes = live.filter((hit) => {
-        const lineStart = body.lastIndexOf("\n", hit.index ?? 0);
-        const line = body.slice(lineStart + 1).split("\n")[0] ?? "";
-        return !/\b(?:--yes|-y)\b/.test(line);
-      });
-      expect(withoutYes.length).toBeLessThanOrEqual(1);
-      if (withoutYes.length === 1) {
-        const commands = body
-          .split("\n")
-          .map((l) => l.trim())
-          .filter((l) => l.length > 0 && !l.startsWith("#"));
-        expect(commands).toHaveLength(1);
-      }
+  });
+
+  it("Quick Start does not shout pull, hooks, embeddings, or a second store", () => {
+    const readme = readFileSync(path.join(ROOT, "README.md"), "utf-8");
+    const start = readme.indexOf("## Quick Start");
+    const next = readme.indexOf("\n## ", start + 1);
+    expect(start).toBeGreaterThanOrEqual(0);
+    const quick = readme.slice(start, next === -1 ? undefined : next);
+    expect(quick).not.toMatch(/log-event/);
+    expect(quick).not.toMatch(/"hooks"/);
+    expect(quick).not.toMatch(/embedding\.provider/);
+    expect(quick).not.toMatch(/openmemory-personal/);
+    for (const fence of quick.matchAll(/```bash\n([\s\S]*?)```/g)) {
+      expect(fence[1]).not.toMatch(/\bpull\b/);
     }
+  });
+
+  it("How it works is two speeds without paper names", () => {
+    const readme = readFileSync(path.join(ROOT, "README.md"), "utf-8");
+    const start = readme.indexOf("## How it works");
+    const next = readme.indexOf("\n## ", start + 1);
+    const body = readme.slice(start, next === -1 ? undefined : next);
+    expect(body).toMatch(/two speeds/i);
+    expect(body).not.toMatch(/hippocampus/i);
+    expect(body).not.toMatch(/McClelland/);
+    expect(body).not.toMatch(/decisions\.md/);
+    expect(body).not.toMatch(/ADR-/);
   });
 });
