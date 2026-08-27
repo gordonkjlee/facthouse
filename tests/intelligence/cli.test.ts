@@ -18,12 +18,15 @@ interface MockChild extends EventEmitter {
 }
 
 let nextMockChildBehaviour: (child: MockChild, args: string[]) => void = () => {};
+let behaviourQueue: Array<(child: MockChild, args: string[]) => void> = [];
 let lastSpawnArgs: { cmd: string; args: string[]; opts: any } | null = null;
 let lastStdin = "";
+let spawnCount = 0;
 
 vi.mock("node:child_process", async () => {
   return {
     spawn: (cmd: string, args: string[], opts: any) => {
+      spawnCount += 1;
       lastSpawnArgs = { cmd, args, opts };
       const child = new EventEmitter() as MockChild;
       child.stdout = new EventEmitter();
@@ -40,21 +43,25 @@ vi.mock("node:child_process", async () => {
       child.kill = () => {};
       // Defer behaviour to microtask so the caller gets a chance to wire
       // listeners before we emit.
-      queueMicrotask(() => nextMockChildBehaviour(child, args));
+      const behaviour = behaviourQueue.shift() ?? nextMockChildBehaviour;
+      queueMicrotask(() => behaviour(child, args));
       return child;
     },
   };
 });
 
-const { createCliProvider } = await import("../../src/intelligence/cli.js");
+const { createCliProvider, CLI_TIMEOUT_JOIN_MS } = await import("../../src/intelligence/cli.js");
 
 beforeEach(() => {
   lastSpawnArgs = null;
   lastStdin = "";
+  spawnCount = 0;
+  behaviourQueue = [];
   nextMockChildBehaviour = () => {};
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.restoreAllMocks();
 });
 
@@ -319,12 +326,194 @@ describe("createCliProvider — extractFactsFromEvents", () => {
       [{ id: "e1", role: "user", content: "I prefer dark roast", sequence: 1 } as any],
       [],
     );
-    await vi.advanceTimersByTimeAsync(150);
+    // Timeout then join, twice (extract retries once).
+    await vi.advanceTimersByTimeAsync(2 * (100 + CLI_TIMEOUT_JOIN_MS));
     vi.useRealTimers();
     const result = await eventPromise;
-    // Fell back.
     expect(result.facts[0].content).toBe(FALLBACK_MARKER);
     expect(result.degraded).toBe(true);
+    expect(spawnCount).toBe(2);
+  });
+
+  it("always logs non-zero-exit with exit code when debug is off", async () => {
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    nextMockChildBehaviour = (child) => child.emit("close", 1);
+    const provider = createCliProvider({ debug: false }, stubFallback);
+    await provider.extractFactsFromEvents(
+      [{ id: "e1", role: "user", content: "I prefer dark roast", sequence: 1 } as any],
+      [],
+    );
+    const lines = err.mock.calls.map((c) => c.map(String).join(" "));
+    err.mockRestore();
+    const failureLines = lines.filter((l) => l.includes("stage-1-extract") && l.includes("non-zero-exit"));
+    expect(failureLines.length).toBeGreaterThanOrEqual(1);
+    expect(failureLines[0]).toContain("stage-1-extract failed (non-zero-exit)");
+    expect(failureLines[0]).toContain("exit=1");
+    expect(failureLines[0]).toContain('stderr=""');
+    expect(failureLines[0]).toContain("— retrying once");
+  });
+
+  it("logs exit=null when close reports null", async () => {
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    nextMockChildBehaviour = (child) => child.emit("close", null);
+    const provider = createCliProvider({ debug: false }, stubFallback);
+    await provider.extractFactsFromEvents(
+      [{ id: "e1", role: "user", content: "I prefer dark roast", sequence: 1 } as any],
+      [],
+    );
+    const lines = err.mock.calls.map((c) => c.map(String).join(" "));
+    err.mockRestore();
+    const failureLines = lines.filter((l) => l.includes("non-zero-exit"));
+    expect(failureLines[0]).toContain("exit=null");
+  });
+
+  it("always logs timeout failures when debug is off", async () => {
+    vi.useFakeTimers();
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    nextMockChildBehaviour = () => {
+      /* never emit */
+    };
+    const provider = createCliProvider({ timeoutMs: 100, debug: false }, stubFallback);
+    const eventPromise = provider.extractFactsFromEvents(
+      [{ id: "e1", role: "user", content: "I prefer dark roast", sequence: 1 } as any],
+      [],
+    );
+    await vi.advanceTimersByTimeAsync(2 * (100 + CLI_TIMEOUT_JOIN_MS));
+    vi.useRealTimers();
+    await eventPromise;
+    const lines = err.mock.calls.map((c) => c.map(String).join(" "));
+    err.mockRestore();
+    const failureLines = lines.filter((l) => l.includes("failed (timeout)"));
+    expect(failureLines[0]).toContain("stage-1-extract failed (timeout)");
+    expect(failureLines[0]).toContain("after=100ms");
+    expect(failureLines[0]).toContain("— retrying once");
+  });
+
+  it("logs extract success only when debug is on", async () => {
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    nextMockChildBehaviour = respondWith({
+      is_error: false,
+      result: "",
+      structured_output: { facts: [] },
+    });
+    const provider = createCliProvider({ debug: true });
+    await provider.extractFactsFromEvents(
+      [{ id: "e1", role: "user", content: "test", sequence: 1 } as any],
+      [],
+    );
+    const lines = err.mock.calls.map((c) => c.map(String).join(" "));
+    err.mockRestore();
+    expect(lines.some((l) => l.includes("stage-1-extract ok in"))).toBe(true);
+  });
+
+  it("does not double-log a failure when debug is on", async () => {
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    nextMockChildBehaviour = (child) => child.emit("close", 1);
+    const provider = createCliProvider({ debug: true }, stubFallback);
+    await provider.extractFactsFromEvents(
+      [{ id: "e1", role: "user", content: "I prefer dark roast", sequence: 1 } as any],
+      [],
+    );
+    const lines = err.mock.calls.map((c) => c.map(String).join(" "));
+    err.mockRestore();
+    const firstAttempt = lines.filter((l) => l.includes("stage-1-extract failed (non-zero-exit)"));
+    expect(firstAttempt).toHaveLength(1);
+    expect(lines.filter((l) => l.includes("ok in"))).toHaveLength(0);
+  });
+
+  it("retries extract once on non-zero-exit and keeps CLI facts", async () => {
+    behaviourQueue = [
+      (child) => child.emit("close", 1),
+      respondWith({
+        is_error: false,
+        result: "ok",
+        structured_output: {
+          facts: [
+            {
+              content: "Allergic to aspirin",
+              domain: "medical",
+              entities: [],
+            },
+          ],
+        },
+      }),
+    ];
+    const provider = createCliProvider({}, stubFallback);
+    const result = await provider.extractFactsFromEvents(
+      [{ id: "e1", role: "user", content: "I'm allergic to aspirin", sequence: 1 } as any],
+      [],
+    );
+    expect(result.degraded).toBe(false);
+    expect(spawnCount).toBe(2);
+    expect(result.facts[0].content).toBe("Allergic to aspirin");
+    expect(result.facts[0].source_quality).toBe("cli");
+  });
+
+  it("retries extract timeout once then degrades after two hangs", async () => {
+    vi.useFakeTimers();
+    nextMockChildBehaviour = () => {
+      /* never emit */
+    };
+    const provider = createCliProvider({ timeoutMs: 100 }, stubFallback);
+    const eventPromise = provider.extractFactsFromEvents(
+      [{ id: "e1", role: "user", content: "I prefer dark roast", sequence: 1 } as any],
+      [],
+    );
+    await vi.advanceTimersByTimeAsync(2 * (100 + CLI_TIMEOUT_JOIN_MS));
+    vi.useRealTimers();
+    const result = await eventPromise;
+    expect(result.degraded).toBe(true);
+    expect(spawnCount).toBe(2);
+  });
+
+  it("does not retry spawn-error", async () => {
+    nextMockChildBehaviour = (child) => {
+      child.emit("error", new Error("ENOENT"));
+    };
+    const provider = createCliProvider({}, stubFallback);
+    const result = await provider.extractFactsFromEvents(
+      [{ id: "e1", role: "user", content: "I'm allergic to aspirin", sequence: 1 } as any],
+      [],
+    );
+    expect(result.degraded).toBe(true);
+    expect(spawnCount).toBe(1);
+  });
+
+  it("does not retry is-error envelopes", async () => {
+    nextMockChildBehaviour = respondWith({
+      is_error: true,
+      result: "rate limit exceeded",
+    });
+    const provider = createCliProvider({}, stubFallback);
+    await provider.extractFactsFromEvents(
+      [{ id: "e1", role: "user", content: "I prefer dark roast", sequence: 1 } as any],
+      [],
+    );
+    expect(spawnCount).toBe(1);
+  });
+
+  it("does not retry parse-error or missing structured_output", async () => {
+    nextMockChildBehaviour = (child) => {
+      child.stdout.emit("data", Buffer.from("not-json"));
+      child.emit("close", 0);
+    };
+    const provider = createCliProvider({}, stubFallback);
+    await provider.extractFactsFromEvents(
+      [{ id: "e1", role: "user", content: "I prefer dark roast", sequence: 1 } as any],
+      [],
+    );
+    expect(spawnCount).toBe(1);
+
+    spawnCount = 0;
+    nextMockChildBehaviour = respondWith({
+      is_error: false,
+      result: "sorry I don't speak JSON",
+    });
+    await provider.extractFactsFromEvents(
+      [{ id: "e1", role: "user", content: "I prefer dark roast", sequence: 1 } as any],
+      [],
+    );
+    expect(spawnCount).toBe(1);
   });
 });
 
@@ -382,6 +571,25 @@ describe("createCliProvider — reconcile", () => {
       [{ id: "f1", content: "y" } as any],
     );
     expect(decision.kind).toBe("add");
+  });
+
+  it("logs reconcile non-zero-exit always-on and does not retry", async () => {
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    nextMockChildBehaviour = (child) => child.emit("close", 1);
+    const provider = createCliProvider({ debug: false });
+    const decision = await provider.reconcile(
+      { id: "s1", content: "x" } as any,
+      [{ id: "f1", content: "y" } as any],
+    );
+    const lines = err.mock.calls.map((c) => c.map(String).join(" "));
+    err.mockRestore();
+    expect(decision.kind).toBe("add");
+    expect(spawnCount).toBe(1);
+    const failureLines = lines.filter((l) => l.includes("stage-2-reconcile"));
+    expect(failureLines).toHaveLength(1);
+    expect(failureLines[0]).toContain("stage-2-reconcile failed (non-zero-exit)");
+    expect(failureLines[0]).toContain("exit=1");
+    expect(failureLines[0]).not.toContain("— retrying once");
   });
 });
 
