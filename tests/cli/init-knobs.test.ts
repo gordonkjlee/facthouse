@@ -16,6 +16,11 @@ import {
 
 const ROOT = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 
+/** Checkout on Windows may be CRLF; fence scans are written against LF. */
+function readmeText(): string {
+  return readFileSync(path.join(ROOT, "README.md"), "utf-8").replace(/\r\n/g, "\n");
+}
+
 describe("init knobs — one definition", () => {
   it("silent sources copy DEFAULT_CONFIG and do not share the array", () => {
     const copy = silentSources();
@@ -141,7 +146,7 @@ describe("init knobs — one definition", () => {
   });
 
   it("README two-memories JSON uses INIT_SYNTHETIC paths", () => {
-    const readme = readFileSync(path.join(ROOT, "README.md"), "utf-8");
+    const readme = readmeText();
     const jsonEscape = (p: string) => p.replaceAll("\\", "\\\\");
     expect(readme).toContain(jsonEscape(INIT_SYNTHETIC.personalDir));
     expect(readme).toContain(jsonEscape(INIT_SYNTHETIC.workDir));
@@ -152,7 +157,7 @@ describe("init knobs — one definition", () => {
   });
 
   it("scripted README init uses --yes, except a lone walk-through fence", () => {
-    const readme = readFileSync(path.join(ROOT, "README.md"), "utf-8");
+    const readme = readmeText();
     const initCall = /\b(?:om|openmemory) init\b([^`\n]*)/g;
     const fenceRe = /```(?:bash|powershell)\n([\s\S]*?)```/g;
     const fences: Array<{ start: number; end: number; body: string }> = [];
@@ -203,7 +208,7 @@ describe("init knobs — one definition", () => {
   });
 
   it("Quick Start does not shout pull, hooks, embeddings, or a second store", () => {
-    const readme = readFileSync(path.join(ROOT, "README.md"), "utf-8");
+    const readme = readmeText();
     const start = readme.indexOf("## Quick Start");
     const next = readme.indexOf("\n## ", start + 1);
     expect(start).toBeGreaterThanOrEqual(0);
@@ -218,7 +223,7 @@ describe("init knobs — one definition", () => {
   });
 
   it("How it works is two speeds without paper names", () => {
-    const readme = readFileSync(path.join(ROOT, "README.md"), "utf-8");
+    const readme = readmeText();
     const start = readme.indexOf("## How it works");
     const next = readme.indexOf("\n## ", start + 1);
     const body = readme.slice(start, next === -1 ? undefined : next);
