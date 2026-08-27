@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.20.0](https://github.com/gordonkjlee/openmemory/compare/v0.19.0...v0.20.0) (2026-08-27)
+
+
+### Features
+
+* **cli:** derive MCP names from the data directory ([#182](https://github.com/gordonkjlee/openmemory/issues/182)) ([f53e4c8](https://github.com/gordonkjlee/openmemory/commit/f53e4c832647e3e5920d952b5d459495d844eb88))
+
+
+### Bug Fixes
+
+* **cli:** always log stage failures and retry extract once ([#183](https://github.com/gordonkjlee/openmemory/issues/183)) ([fb9a348](https://github.com/gordonkjlee/openmemory/commit/fb9a3481cda45a3e9a93a69e74c2e83b3c31028d))
+* **extract:** bound prompts, honour batch size, keep an honest prefix ([#185](https://github.com/gordonkjlee/openmemory/issues/185)) ([156a086](https://github.com/gordonkjlee/openmemory/commit/156a0860903bec0421de6a6e70ffc78e434adf39))
+
 ## [0.19.0](https://github.com/gordonkjlee/openmemory/compare/v0.18.0...v0.19.0) (2026-08-26)
 
 
