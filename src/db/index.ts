@@ -13,6 +13,7 @@ export type { Db, Dialect } from "./connection.js";
 export { applySchema, getSchemaVersion, SCHEMA_VERSION } from "./schema.js";
 export { attachPostgres, rewriteToPostgres } from "./postgres.js";
 export type { PostgresBackend } from "./postgres.js";
+export { openStore, sqliteMemoryPath, SQLITE_MEMORY_FILENAME } from "./store.js";
 export {
   createSession,
   ensureSession,

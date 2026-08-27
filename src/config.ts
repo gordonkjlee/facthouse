@@ -64,10 +64,17 @@ export function defaultServerConfig(): ServerConfig {
 }
 
 /**
- * The only transactional engine this package ships. A request for any other
- * value is refused — it must not silently open SQLite.
+ * Default transactional engine. sqlite is zero-config; postgres is opt-in.
+ * A request for anything else is refused — it must not silently open SQLite.
  */
 export const SHIPPED_STORAGE_PROVIDER = "sqlite";
+
+/** Engines this package will actually open. Unknown values still die. */
+export const SUPPORTED_STORAGE_PROVIDERS = ["sqlite", "postgres"] as const;
+export type StorageProvider = (typeof SUPPORTED_STORAGE_PROVIDERS)[number];
+
+/** Environment variable holding the Postgres URL. One definition. */
+export const POSTGRES_URL_ENV = "OPENMEMORY_POSTGRES_URL";
 
 /**
  * Which engine the store asked for. `OPENMEMORY_STORAGE` wins over
@@ -92,35 +99,79 @@ export function configuredStorageProvider(
   return SHIPPED_STORAGE_PROVIDER;
 }
 
-/** One message per refused provider. Callers must not open SQLite after this. */
-export function unshippedStorageMessage(provider: string): string {
-  if (provider === "postgres") {
-    return (
-      `Storage provider "postgres" is not shipped. OpenMemory's MCP handlers ` +
-      `are synchronous, keyword search is FTS5, and schema versioning is a ` +
-      `SQLite pragma — a Postgres port is an engine swap, not a connection ` +
-      `string. SQLite was not opened. Keep storage.provider as "sqlite" ` +
-      `(the default).`
-    );
-  }
+export function isSupportedStorage(provider: string): provider is StorageProvider {
+  return (SUPPORTED_STORAGE_PROVIDERS as readonly string[]).includes(provider);
+}
+
+/** Unknown engine. Callers must not open SQLite after this. */
+export function unsupportedStorageMessage(provider: string): string {
   return (
-    `Unknown storage provider "${provider}". The shipped engine is sqlite. ` +
+    `Unknown storage provider "${provider}". The default engine is sqlite; ` +
+    `postgres is optional. SQLite was not opened.`
+  );
+}
+
+export function assertSupportedStorage(
+  provider: string,
+): asserts provider is StorageProvider {
+  if (isSupportedStorage(provider)) return;
+  throw new Error(unsupportedStorageMessage(provider));
+}
+
+export function postgresUrl(env: NodeJS.ProcessEnv = process.env): string | undefined {
+  const raw = env[POSTGRES_URL_ENV]?.trim();
+  return raw ? raw : undefined;
+}
+
+export function postgresMissingUrlMessage(): string {
+  return (
+    `Storage provider is postgres but ${POSTGRES_URL_ENV} is not set. ` +
+    `SQLite was not opened. Set the URL on the MCP entry (the same place as ` +
+    `OPENMEMORY_DATA) or in the environment.`
+  );
+}
+
+export function postgresInvalidUrlMessage(): string {
+  return (
+    `${POSTGRES_URL_ENV} must be a postgres:// or postgresql:// URL. ` +
     `SQLite was not opened.`
   );
 }
 
-export function assertShippedStorage(provider: string): void {
-  if (provider === SHIPPED_STORAGE_PROVIDER) return;
-  throw new Error(unshippedStorageMessage(provider));
+export function postgresConnectFailedMessage(err: unknown): string {
+  const detail = err instanceof Error ? err.message : String(err);
+  return `Could not connect to Postgres (${detail}). SQLite was not opened.`;
+}
+
+function isPostgresConnectionString(url: string): boolean {
+  return /^(?:postgres|postgresql):\/\//i.test(url);
 }
 
 /**
- * Load config and refuse anything other than sqlite *before* a database file
- * is created or opened. This is the check every production opener uses.
+ * Required URL when the engine is postgres. Empty and the wrong scheme both
+ * die here — callers must not open SQLite afterwards.
  */
-export function loadShippedStoreConfig(dataDir: string): ServerConfig {
+export function postgresUrlOrThrow(env: NodeJS.ProcessEnv = process.env): string {
+  const url = postgresUrl(env);
+  if (!url) throw new Error(postgresMissingUrlMessage());
+  if (!isPostgresConnectionString(url)) throw new Error(postgresInvalidUrlMessage());
+  return url;
+}
+
+/**
+ * Load config and refuse an unknown engine *before* a database file is
+ * created. Postgres is allowed; a missing URL is refused here so init does
+ * not prompt and then fail, and so MCP boot prints a clean message rather
+ * than a stack.
+ */
+export function loadShippedStoreConfig(
+  dataDir: string,
+  env: NodeJS.ProcessEnv = process.env,
+): ServerConfig {
   const config = loadConfig(dataDir);
-  assertShippedStorage(configuredStorageProvider(config));
+  const provider = configuredStorageProvider(config, env);
+  assertSupportedStorage(provider);
+  if (provider === "postgres") postgresUrlOrThrow(env);
   return config;
 }
 

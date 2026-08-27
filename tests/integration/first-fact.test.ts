@@ -41,6 +41,7 @@ import { consolidate } from "../../src/intelligence/consolidate.js";
 import { createHeuristicProvider } from "../../src/intelligence/heuristic.js";
 import { probeCliProvider } from "../../src/intelligence/cli.js";
 import { pullSources } from "../../src/sources/pull.js";
+import { withoutStoreEnv } from "../helpers/cli-env.js";
 import { encodeProjectDir } from "../../src/sources/resolve.js";
 import { searchWithProvider } from "../../src/search/index.js";
 import type { SessionEvent } from "../../src/types/data.js";
@@ -208,10 +209,7 @@ describe.skipIf(!required || unavailable !== null)(
       args: string[],
       extra: { timeout?: number } = {},
     ) {
-      const env: Record<string, string | undefined> = { ...process.env };
-      delete env.OPENMEMORY_DATA;
-      delete env.OPENMEMORY_SUBPROCESS;
-      delete env.OPENMEMORY_STORAGE;
+      const env: Record<string, string | undefined> = withoutStoreEnv();
       // The README path uses the configured provider (cli). A developer who
       // has OPENMEMORY_PROVIDER=heuristic in the shell must not silently
       // convert this eval into the control that is supposed to miss.

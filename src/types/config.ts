@@ -290,12 +290,14 @@ export interface CaptureSource {
 /** Top-level server configuration (loaded from config.json in data dir). */
 export interface ServerConfig {
   /**
-   * Transactional engine. sqlite is the only shipped value. A request for
-   * postgres (config or OPENMEMORY_STORAGE) is refused — it is an engine swap,
-   * not a connection string, and must not silently open SQLite.
+   * Transactional engine. sqlite is the default and needs no extra software.
+   * postgres is optional: set this (or OPENMEMORY_STORAGE) and put the
+   * connection string in OPENMEMORY_POSTGRES_URL — not here, because a
+   * config file that holds a password is a config file that gets committed.
+   * A missing URL or a failed handshake does not open SQLite.
    */
   storage: {
-    provider: "sqlite";
+    provider: "sqlite" | "postgres";
     sqlite?: { path: string };
   };
   temporal: TemporalConfig;

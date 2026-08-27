@@ -38,6 +38,7 @@ import { consolidate } from "../../src/intelligence/consolidate.js";
 import { createHeuristicProvider } from "../../src/intelligence/heuristic.js";
 import { probeCliProvider } from "../../src/intelligence/cli.js";
 import { pullSources } from "../../src/sources/pull.js";
+import { withoutStoreEnv } from "../helpers/cli-env.js";
 import {
   encodeCursorProjectDir,
   encodeProjectDir,
@@ -419,10 +420,7 @@ describe.skipIf(!required || unavailable !== null)(
       : "coding-store via the claude CLI",
   () => {
     function run(args: string[], extra: { timeout?: number } = {}) {
-      const env: Record<string, string | undefined> = { ...process.env };
-      delete env.OPENMEMORY_DATA;
-      delete env.OPENMEMORY_SUBPROCESS;
-      delete env.OPENMEMORY_STORAGE;
+      const env: Record<string, string | undefined> = withoutStoreEnv();
       env.OPENMEMORY_PROVIDER = "cli";
       return spawnSync(process.execPath, [CLI, ...args], {
         encoding: "utf-8",

@@ -118,6 +118,7 @@ describe("logEvent attributes every event to a session", () => {
   }
 
   it("refuses postgres before creating memory.db", async () => {
+    const { postgresMissingUrlMessage } = await import("../../src/config.js");
     mkdirSync(dataDir, { recursive: true });
     writeFileSync(
       path.join(dataDir, "config.json"),
@@ -129,8 +130,9 @@ describe("logEvent attributes every event to a session", () => {
         eventType: "message",
         content: "the grain is bookings",
         dataDir,
+        env: {},
       }),
-    ).rejects.toThrow(/postgres/);
+    ).rejects.toThrow(postgresMissingUrlMessage());
     expect(existsSync(path.join(dataDir, "memory.db"))).toBe(false);
   });
 

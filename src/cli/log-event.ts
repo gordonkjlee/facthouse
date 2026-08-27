@@ -4,9 +4,9 @@
  */
 
 import { mkdirSync } from "node:fs";
-import path from "node:path";
-import { openDatabase, closeDatabase } from "../db/connection.js";
+import { closeDatabase, type Db } from "../db/connection.js";
 import { applySchema } from "../db/schema.js";
+import { openStore } from "../db/store.js";
 import { loadShippedStoreConfig } from "../config.js";
 import {
   insertEvent,
@@ -25,6 +25,8 @@ export interface LogEventArgs {
   sessionId?: string;
   dataDir: string;
   speaker?: string | null;
+  /** Tests pass a clean object so a developer's store env cannot leak. */
+  env?: NodeJS.ProcessEnv;
 }
 
 /**
@@ -57,10 +59,10 @@ export interface LogEventArgs {
  * nobody sees it.
  */
 export async function logEvent(args: LogEventArgs): Promise<SessionEvent> {
-  loadShippedStoreConfig(args.dataDir);
+  const env = args.env ?? process.env;
+  const config = loadShippedStoreConfig(args.dataDir, env);
   mkdirSync(args.dataDir, { recursive: true });
-  const dbPath = path.join(args.dataDir, "memory.db");
-  const db = openDatabase(dbPath);
+  const db = await openStore(args.dataDir, config, env);
 
   let event: SessionEvent;
   try {
@@ -115,7 +117,7 @@ export async function logEvent(args: LogEventArgs): Promise<SessionEvent> {
  * uses — provenance, not a tenant.
  */
 async function resolveOwnSession(
-  db: ReturnType<typeof openDatabase>,
+  db: Db,
   project: string | null,
 ): Promise<string> {
   const latest = await getLatestSession(db);

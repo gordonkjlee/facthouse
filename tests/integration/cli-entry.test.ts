@@ -18,6 +18,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { INIT_PROMPTS } from "../../src/cli/init-knobs.js";
+import { withoutStoreEnv } from "../helpers/cli-env.js";
 
 const CLI = path.resolve(
   fileURLToPath(new URL("../../dist/cli/index.js", import.meta.url)),
@@ -36,10 +37,7 @@ const runnable = existsSync(CLI);
  * every test states the environment it means to test.
  */
 function run(args: string[], extraEnv: Record<string, string> = {}) {
-  const env: Record<string, string | undefined> = { ...process.env };
-  delete env.OPENMEMORY_DATA;
-  delete env.OPENMEMORY_SUBPROCESS;
-  delete env.OPENMEMORY_STORAGE;
+  const env: Record<string, string | undefined> = withoutStoreEnv();
   // Default to the provider that costs nothing to report on. `init` probes for
   // the claude CLI when `cli` is selected, and that probe spawns subprocesses —
   // seconds per run, on a machine that may or may not have the CLI installed.
@@ -159,10 +157,7 @@ describe.skipIf(!runnable)("cli entry — init argument precedence", () => {
       path.join(dir, "config.json"),
       JSON.stringify({ storage: { provider: "postgres" } }),
     );
-    const env: Record<string, string | undefined> = { ...process.env };
-    delete env.OPENMEMORY_DATA;
-    delete env.OPENMEMORY_SUBPROCESS;
-    delete env.OPENMEMORY_STORAGE;
+    const env: Record<string, string | undefined> = withoutStoreEnv();
     env.OPENMEMORY_PROVIDER = "heuristic";
     const r = spawnSync(process.execPath, [SERVER, "--data", dir], {
       encoding: "utf-8",
@@ -171,6 +166,27 @@ describe.skipIf(!runnable)("cli entry — init argument precedence", () => {
     });
     expect(r.status).toBe(1);
     expect(r.stderr).toMatch(/postgres/);
+    expect(r.stderr).toMatch(/SQLite was not opened/);
+    expect(existsSync(path.join(dir, "memory.db"))).toBe(false);
+  });
+
+  it("MCP server does not create memory.db when the postgres URL is unreachable", () => {
+    const dir = path.join(root, "pg-down");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(
+      path.join(dir, "config.json"),
+      JSON.stringify({ storage: { provider: "postgres" } }),
+    );
+    const env: Record<string, string | undefined> = withoutStoreEnv();
+    env.OPENMEMORY_PROVIDER = "heuristic";
+    env.OPENMEMORY_POSTGRES_URL = "postgres://127.0.0.1:1/openmemory";
+    const r = spawnSync(process.execPath, [SERVER, "--data", dir], {
+      encoding: "utf-8",
+      env: env as NodeJS.ProcessEnv,
+      timeout: 15_000,
+    });
+    expect(r.status).toBe(1);
+    expect(r.stderr).toMatch(/Could not connect to Postgres/);
     expect(r.stderr).toMatch(/SQLite was not opened/);
     expect(existsSync(path.join(dir, "memory.db"))).toBe(false);
   });

@@ -1,10 +1,10 @@
 /**
  * Postgres adapter for `Db`.
  *
- * SQLite remains the shipped engine. This adapter exists so tests (and a later
- * connection-string path) can run the same data-access functions against a
- * real Postgres — PGlite in tests, `pg` once wired. It is not a fail-open to
- * SQLite: if this handle is in use, statements go to Postgres.
+ * SQLite remains the default engine. This adapter runs the same data-access
+ * functions against a real Postgres — PGlite in tests, `pg` in production
+ * when a store asks for it. It is not a fail-open to SQLite: if this handle
+ * is in use, statements go to Postgres.
  *
  * SQL written for SQLite is rewritten at prepare/exec time: `?` becomes `$n`,
  * `INSERT OR IGNORE` becomes `ON CONFLICT DO NOTHING`, `json(?)` becomes
@@ -15,7 +15,7 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { Db, Dialect, RunResult, SqlParam, Statement } from "./connection.js";
 
-/** Minimal backend: PGlite in tests, `pg` later. */
+/** Minimal backend: PGlite in tests, `pg` in production. */
 export interface PostgresBackend {
   query(
     sql: string,

@@ -37,6 +37,7 @@ describe("initDataDir", () => {
     expect(result.configPreserved).toBe(false);
     expect(existsSync(result.dbPath)).toBe(true);
     expect(existsSync(result.configPath)).toBe(true);
+    expect(result.dialect).toBe("sqlite");
     // Schema actually applied, not just an empty file.
     expect(result.schemaVersion).toBeGreaterThan(0);
   });
@@ -74,15 +75,17 @@ describe("initDataDir", () => {
     expect(written.storage.provider).toBe("sqlite");
   });
 
-  it("refuses postgres before creating memory.db", async () => {
+  it("refuses postgres before creating memory.db when the URL is missing", async () => {
+    const { postgresMissingUrlMessage } = await import("../../src/config.js");
     const dataDir = path.join(root, "pg");
     mkdirSync(dataDir, { recursive: true });
     writeFileSync(
       path.join(dataDir, CONFIG_FILENAME),
       JSON.stringify({ storage: { provider: "postgres" } }),
     );
-    await expect(initDataDir({ dataDir })).rejects.toThrow(/postgres/);
-    await expect(initDataDir({ dataDir })).rejects.toThrow(/SQLite was not opened/);
+    await expect(initDataDir({ dataDir, env: {} })).rejects.toThrow(
+      postgresMissingUrlMessage(),
+    );
     expect(existsSync(path.join(dataDir, "memory.db"))).toBe(false);
   });
 

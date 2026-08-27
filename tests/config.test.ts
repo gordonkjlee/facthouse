@@ -6,8 +6,10 @@ import {
   loadConfig,
   loadShippedStoreConfig,
   configuredStorageProvider,
-  assertShippedStorage,
-  unshippedStorageMessage,
+  assertSupportedStorage,
+  unsupportedStorageMessage,
+  postgresMissingUrlMessage,
+  postgresInvalidUrlMessage,
   SHIPPED_STORAGE_PROVIDER,
   defaultServerConfig,
   ensureBitemporalSince,
@@ -51,7 +53,7 @@ describe("storage provider", () => {
       JSON.stringify({ storage: "postgres" }),
     );
     expect(configuredStorageProvider(loadConfig(dir), {})).toBe("postgres");
-    expect(() => loadShippedStoreConfig(dir)).toThrow(/postgres/);
+    expect(() => loadShippedStoreConfig(dir, {})).toThrow(postgresMissingUrlMessage());
   });
 
   it("lets OPENMEMORY_STORAGE override config.json", () => {
@@ -64,26 +66,49 @@ describe("storage provider", () => {
     ).toBe("postgres");
   });
 
-  it("accepts sqlite and refuses anything else", () => {
-    expect(() => assertShippedStorage("sqlite")).not.toThrow();
-    expect(() => assertShippedStorage("postgres")).toThrow(
-      unshippedStorageMessage("postgres"),
+  it("accepts sqlite and postgres; refuses unknown engines", () => {
+    expect(() => assertSupportedStorage("sqlite")).not.toThrow();
+    expect(() => assertSupportedStorage("postgres")).not.toThrow();
+    expect(() => assertSupportedStorage("turso")).toThrow(
+      unsupportedStorageMessage("turso"),
     );
-    expect(() => assertShippedStorage("turso")).toThrow(
-      unshippedStorageMessage("turso"),
-    );
-    expect(unshippedStorageMessage("postgres")).toMatch(/SQLite was not opened/);
-    expect(unshippedStorageMessage("postgres")).toMatch(/engine swap/);
+    expect(unsupportedStorageMessage("turso")).toMatch(/SQLite was not opened/);
+    expect(unsupportedStorageMessage("turso")).not.toMatch(/synchronous/);
+    expect(unsupportedStorageMessage("turso")).not.toMatch(/not shipped/);
+    expect(postgresMissingUrlMessage()).toMatch(/SQLite was not opened/);
+    expect(postgresMissingUrlMessage()).not.toMatch(/synchronous/);
+    expect(postgresMissingUrlMessage()).not.toMatch(/not shipped/);
   });
 
-  it("does not create memory.db when postgres is requested", () => {
+  it("does not create memory.db when postgres is requested without a URL", () => {
     writeFileSync(
       path.join(dir, "config.json"),
       JSON.stringify({ storage: { provider: "postgres" } }),
     );
-    expect(() => loadShippedStoreConfig(dir)).toThrow(
-      unshippedStorageMessage("postgres"),
+    expect(() => loadShippedStoreConfig(dir, {})).toThrow(postgresMissingUrlMessage());
+    expect(existsSync(path.join(dir, "memory.db"))).toBe(false);
+  });
+
+  it("loads postgres when a postgres URL is present without connecting", () => {
+    writeFileSync(
+      path.join(dir, "config.json"),
+      JSON.stringify({ storage: { provider: "postgres" } }),
     );
+    const cfg = loadShippedStoreConfig(dir, {
+      OPENMEMORY_POSTGRES_URL: "postgres://USER:PASSWORD@127.0.0.1:5432/openmemory",
+    });
+    expect(cfg.storage.provider).toBe("postgres");
+    expect(existsSync(path.join(dir, "memory.db"))).toBe(false);
+  });
+
+  it("rejects a URL that is not postgres://", () => {
+    writeFileSync(
+      path.join(dir, "config.json"),
+      JSON.stringify({ storage: { provider: "postgres" } }),
+    );
+    expect(() =>
+      loadShippedStoreConfig(dir, { OPENMEMORY_POSTGRES_URL: "https://example.invalid/db" }),
+    ).toThrow(postgresInvalidUrlMessage());
     expect(existsSync(path.join(dir, "memory.db"))).toBe(false);
   });
 });
