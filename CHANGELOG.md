@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.21.0](https://github.com/gordonkjlee/openmemory/compare/v0.20.0...v0.21.0) (2026-08-27)
+
+
+### Features
+
+* **cli:** interactive init on a TTY ([#187](https://github.com/gordonkjlee/openmemory/issues/187)) ([44898fe](https://github.com/gordonkjlee/openmemory/commit/44898fe4066e3d7678170e6178860085fecc24af))
+
 ## [0.20.0](https://github.com/gordonkjlee/openmemory/compare/v0.19.0...v0.20.0) (2026-08-27)
 
 
