@@ -7,13 +7,14 @@
  * typo cannot silently become "nothing happened".
  */
 
-import { homedir } from "node:os";
-import path from "node:path";
 import {
   CAPTURE_SOURCE_KINDS,
   isCaptureSourceKind,
   type CaptureSourceKind,
 } from "../types/config.js";
+import { expandTilde, resolveUserPath } from "../paths.js";
+
+export { expandTilde, resolveUserPath } from "../paths.js";
 
 export interface ResolvedCaptureSource {
   kind: CaptureSourceKind;
@@ -21,18 +22,6 @@ export interface ResolvedCaptureSource {
   home: string;
   /** Project cwd as the client would have seen it, when the source is filtered. */
   cwd?: string;
-}
-
-/** Expand a leading `~` without resolving against the local cwd. */
-export function expandTilde(p: string): string {
-  if (p === "~") return homedir();
-  if (p.startsWith("~/")) return path.join(homedir(), p.slice(2));
-  return p;
-}
-
-/** Expand `~` and resolve to an absolute path. Used for `home`, which we open. */
-export function resolveUserPath(p: string): string {
-  return path.resolve(expandTilde(p));
 }
 
 /**

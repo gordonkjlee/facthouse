@@ -9,8 +9,8 @@
 
 import { parseArgs } from "node:util";
 import { mkdirSync, readFileSync } from "node:fs";
-import { homedir } from "node:os";
 import path from "node:path";
+import { defaultDataDir, resolveUserPath } from "./paths.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { openDatabase, closeDatabase, type Db } from "./db/connection.js";
@@ -33,24 +33,17 @@ import { pullSources, shouldFlushAfterSessionStartPull } from "./sources/pull.js
 // Parse arguments
 // ---------------------------------------------------------------------------
 
-const DEFAULT_DATA_DIR = path.join(homedir(), ".openmemory");
-
 const { values } = parseArgs({
   options: {
     data: {
       type: "string",
-      default: process.env.OPENMEMORY_DATA ?? DEFAULT_DATA_DIR,
+      default: process.env.OPENMEMORY_DATA ?? defaultDataDir(),
     },
   },
   strict: false, // Allow unknown flags (MCP clients may pass extras).
 });
 
-const rawDataDir = values.data as string;
-const dataDir = rawDataDir.startsWith("~/")
-  ? path.join(homedir(), rawDataDir.slice(2))
-  : rawDataDir === "~"
-    ? homedir()
-    : rawDataDir;
+const dataDir = resolveUserPath(values.data as string);
 mkdirSync(dataDir, { recursive: true });
 
 // Storage check before SQLite. A postgres (or unknown) request must not

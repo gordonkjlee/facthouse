@@ -7,16 +7,18 @@
 
 import { parseArgs } from "node:util";
 import { readFileSync, existsSync } from "node:fs";
-import { homedir } from "node:os";
 import path from "node:path";
 import { logEvent, extractContentFromHookPayload } from "./log-event.js";
 import {
   initDataDir,
   mcpConfigSnippet,
+  mcpServerName,
+  mcpSnippetDataDir,
   providerStatusLines,
   embeddingStatusLines,
   sourcesStatusLines,
 } from "./init.js";
+import { defaultDataDir, resolveUserPath } from "../paths.js";
 import { runSearch, formatSearch, formatStats, formatPrune, getStats } from "./query.js";
 import { prunableEvents, pruneEvents, vacuum } from "../db/prune.js";
 import { openDatabase, closeDatabase } from "../db/connection.js";
@@ -60,14 +62,6 @@ function isSessionEventType(value: string): value is SessionEvent["event_type"] 
 
 function isSessionContentType(value: string): value is SessionEvent["content_type"] {
   return (SESSION_CONTENT_TYPES as readonly string[]).includes(value);
-}
-
-const DEFAULT_DATA_DIR = path.join(homedir(), ".openmemory");
-
-function resolveTilde(p: string): string {
-  if (p.startsWith("~/")) return path.join(homedir(), p.slice(2));
-  if (p === "~") return homedir();
-  return p;
 }
 
 function readStdin(): Promise<string> {
@@ -164,10 +158,10 @@ async function runInit() {
     positionals[0] ??
     (values.data as string | undefined) ??
     process.env.OPENMEMORY_DATA ??
-    DEFAULT_DATA_DIR;
+    defaultDataDir();
   // Normalise to an absolute, platform-native path so every path we print (and
   // embed in the MCP snippet) is consistent regardless of how it was typed.
-  const dataDir = path.resolve(resolveTilde(target));
+  const dataDir = resolveUserPath(target);
 
   let result;
   try {
@@ -180,9 +174,12 @@ async function runInit() {
   const version = packageVersion();
   const spec = version ? `@openmem/mcp@${version}` : "@openmem/mcp";
 
-  // Only non-default locations need an OPENMEMORY_DATA override.
-  const isDefaultDir = dataDir === path.resolve(DEFAULT_DATA_DIR);
-  const snippet = mcpConfigSnippet(spec, isDefaultDir ? undefined : result.dataDir);
+  const snippet = mcpConfigSnippet(
+    spec,
+    mcpSnippetDataDir(result.dataDir),
+    2,
+    mcpServerName(result.dataDir),
+  );
 
   const lines = [
     ``,
@@ -256,7 +253,7 @@ async function runSearchCmd() {
   const { values, positionals } = parseArgs({
     args: process.argv.slice(3),
     options: {
-      data: { type: "string", default: process.env.OPENMEMORY_DATA ?? DEFAULT_DATA_DIR },
+      data: { type: "string", default: process.env.OPENMEMORY_DATA ?? defaultDataDir() },
       domain: { type: "string" },
       limit: { type: "string" },
       "as-of-system": { type: "string" },
@@ -280,7 +277,7 @@ async function runSearchCmd() {
     process.exit(1);
   }
 
-  const dataDir = path.resolve(resolveTilde(values.data as string));
+  const dataDir = resolveUserPath(values.data as string);
   const config = ensureBitemporalSince(dataDir, loadConfig(dataDir));
   const rawAsOf = values["as-of-system"] as string | undefined;
   if (rawAsOf && config.temporal.mode !== "bitemporal") {
@@ -337,13 +334,13 @@ async function runStatsCmd() {
   const { values } = parseArgs({
     args: process.argv.slice(3),
     options: {
-      data: { type: "string", default: process.env.OPENMEMORY_DATA ?? DEFAULT_DATA_DIR },
+      data: { type: "string", default: process.env.OPENMEMORY_DATA ?? defaultDataDir() },
       json: { type: "boolean", default: false },
     },
     strict: true,
   });
 
-  const dataDir = path.resolve(resolveTilde(values.data as string));
+  const dataDir = resolveUserPath(values.data as string);
   const stats = await withDb(dataDir, (db) => getStats(db));
 
   console.log(values.json ? JSON.stringify(stats, null, 2) : formatStats(stats));
@@ -360,7 +357,7 @@ async function runPruneCmd() {
   const { values } = parseArgs({
     args: process.argv.slice(3),
     options: {
-      data: { type: "string", default: process.env.OPENMEMORY_DATA ?? DEFAULT_DATA_DIR },
+      data: { type: "string", default: process.env.OPENMEMORY_DATA ?? defaultDataDir() },
       apply: { type: "boolean", default: false },
       vacuum: { type: "boolean", default: false },
       json: { type: "boolean", default: false },
@@ -368,7 +365,7 @@ async function runPruneCmd() {
     strict: true,
   });
 
-  const dataDir = path.resolve(resolveTilde(values.data as string));
+  const dataDir = resolveUserPath(values.data as string);
   const config = loadConfig(dataDir);
   // Defers to the setting it protects rather than repeating its default, unless
   // a store has deliberately overridden it.
@@ -401,12 +398,12 @@ async function runPull() {
   const { values } = parseArgs({
     args: process.argv.slice(3),
     options: {
-      data: { type: "string", default: process.env.OPENMEMORY_DATA ?? DEFAULT_DATA_DIR },
+      data: { type: "string", default: process.env.OPENMEMORY_DATA ?? defaultDataDir() },
     },
     strict: true,
   });
 
-  const dataDir = path.resolve(resolveTilde(values.data as string));
+  const dataDir = resolveUserPath(values.data as string);
   const config = loadConfig(dataDir);
 
   try {
@@ -446,7 +443,7 @@ async function runSignal() {
   const { values } = parseArgs({
     args: process.argv.slice(4),
     options: {
-      data: { type: "string", default: process.env.OPENMEMORY_DATA ?? DEFAULT_DATA_DIR },
+      data: { type: "string", default: process.env.OPENMEMORY_DATA ?? defaultDataDir() },
     },
     strict: true,
   });
@@ -456,7 +453,7 @@ async function runSignal() {
     process.exit(1);
   }
   const kind = kindArg as SignalKind;
-  const dataDir = resolveTilde(values.data as string);
+  const dataDir = resolveUserPath(values.data as string);
 
   const delivered = await sendSchedulerSignal(dataDir, kind);
   if (delivered) {
@@ -497,11 +494,11 @@ async function runConsolidate() {
   const { values } = parseArgs({
     args: process.argv.slice(3),
     options: {
-      data: { type: "string", default: process.env.OPENMEMORY_DATA ?? DEFAULT_DATA_DIR },
+      data: { type: "string", default: process.env.OPENMEMORY_DATA ?? defaultDataDir() },
     },
     strict: true,
   });
-  const dataDir = resolveTilde(values.data as string);
+  const dataDir = resolveUserPath(values.data as string);
 
   // Manual `openmemory consolidate` honours the configured provider (default
   // cli — real LLM quality). There's no MCP server here, so a `sampling`
@@ -581,7 +578,7 @@ async function runLogEvent() {
       content: { type: "string" },
       "session-id": { type: "string" },
       speaker: { type: "string" },
-      data: { type: "string", default: process.env.OPENMEMORY_DATA ?? DEFAULT_DATA_DIR },
+      data: { type: "string", default: process.env.OPENMEMORY_DATA ?? defaultDataDir() },
     },
     strict: true,
   });
@@ -635,7 +632,7 @@ async function runLogEvent() {
       contentType,
       sessionId,
       speaker: (values.speaker as string | undefined) ?? null,
-      dataDir: resolveTilde(values.data as string),
+      dataDir: resolveUserPath(values.data as string),
     });
 
     console.log(JSON.stringify({ event_id: event.id, sequence: event.sequence }));

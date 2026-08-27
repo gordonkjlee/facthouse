@@ -4,8 +4,16 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 
 
-const { initDataDir, mcpConfigSnippet, providerStatusLines, sourcesStatusLines } = await import("../../src/cli/init.js");
+const {
+  initDataDir,
+  mcpConfigSnippet,
+  mcpServerName,
+  mcpSnippetDataDir,
+  providerStatusLines,
+  sourcesStatusLines,
+} = await import("../../src/cli/init.js");
 const { CONFIG_FILENAME, loadConfig, defaultServerConfig } = await import("../../src/config.js");
+const { defaultDataDir } = await import("../../src/paths.js");
 
 let root: string;
 
@@ -95,6 +103,35 @@ describe("initDataDir", () => {
     expect(after.consolidation.threshold).toBe(99);
   });
 
+  it("writes an overlay when creating config.json", async () => {
+    const dataDir = path.join(root, "overlay");
+    await initDataDir({
+      dataDir,
+      overlay: { embeddingProvider: "ollama" },
+    });
+    const written = JSON.parse(
+      readFileSync(path.join(dataDir, CONFIG_FILENAME), "utf-8"),
+    );
+    expect(written.embedding.provider).toBe("ollama");
+    expect(written.embedding.api_key_env).toBe(
+      defaultServerConfig().embedding.api_key_env,
+    );
+    expect(written.storage.provider).toBe("sqlite");
+  });
+
+  it("ignores overlay when preserving an existing config", async () => {
+    const dataDir = path.join(root, "preserve-overlay");
+    await initDataDir({ dataDir });
+    await initDataDir({
+      dataDir,
+      overlay: { embeddingProvider: "voyage" },
+    });
+    const written = JSON.parse(
+      readFileSync(path.join(dataDir, CONFIG_FILENAME), "utf-8"),
+    );
+    expect(written.embedding.provider).toBeNull();
+  });
+
   it("--force resets an existing config back to defaults", async () => {
     const dataDir = path.join(root, "forced");
     await initDataDir({ dataDir });
@@ -182,6 +219,38 @@ describe("mcpConfigSnippet", () => {
     expect(work.mcpServers["openmemory-work"].env.OPENMEMORY_DATA).toBe(
       "/tmp/openmemory-work",
     );
+  });
+});
+
+describe("mcpServerName / mcpSnippetDataDir", () => {
+  it("omits env and uses openmemory for the default directory", () => {
+    expect(mcpServerName(defaultDataDir())).toBe("openmemory");
+    expect(mcpSnippetDataDir(defaultDataDir())).toBeUndefined();
+  });
+
+  it("derives names for two-brain folders and sets env", () => {
+    const personal = path.join(root, ".openmemory-personal");
+    const work = path.join(root, ".openmemory-work");
+    expect(mcpServerName(personal)).toBe("openmemory-personal");
+    expect(mcpSnippetDataDir(personal)).toBe(personal);
+    expect(mcpServerName(work)).toBe("openmemory-work");
+    expect(mcpSnippetDataDir(work)).toBe(work);
+  });
+
+  it("prefixes a custom basename", () => {
+    const dir = path.join(root, "my-memory");
+    expect(mcpServerName(dir)).toBe("openmemory-my-memory");
+    expect(mcpSnippetDataDir(dir)).toBe(dir);
+  });
+
+  it("does not key a non-default openmemory folder as the default store", () => {
+    const dir = path.join(tmpdir(), "openmemory");
+    expect(mcpServerName(dir)).toBe("openmemory-store");
+    expect(mcpSnippetDataDir(dir)).toBe(dir);
+  });
+
+  it("strips a leading dot so ~/.openmemory-work is openmemory-work", () => {
+    expect(mcpServerName("/tmp/.openmemory-work")).toBe("openmemory-work");
   });
 });
 

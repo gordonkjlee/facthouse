@@ -19,7 +19,7 @@ export const CONFIG_FILENAME = "config.json";
  * because our config arrays (triggers, event_types, roles) are user-authoritative
  * selections — a user-supplied array means "these exact entries, nothing else".
  */
-function deepMerge<T>(base: T, override: unknown): T {
+export function mergeConfig<T>(base: T, override: unknown): T {
   if (override === null || typeof override !== "object" || Array.isArray(override)) {
     return override === undefined ? base : (override as T);
   }
@@ -28,7 +28,7 @@ function deepMerge<T>(base: T, override: unknown): T {
   }
   const out: Record<string, unknown> = { ...(base as Record<string, unknown>) };
   for (const [key, value] of Object.entries(override as Record<string, unknown>)) {
-    out[key] = deepMerge((base as Record<string, unknown>)[key], value);
+    out[key] = mergeConfig((base as Record<string, unknown>)[key], value);
   }
   return out as T;
 }
@@ -147,7 +147,7 @@ export function loadConfig(dataDir: string): ServerConfig {
     return base;
   }
 
-  return deepMerge(base, parsed);
+  return mergeConfig(base, parsed);
 }
 
 /**
