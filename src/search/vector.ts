@@ -1,23 +1,26 @@
 /**
- * Semantic recall — exact cosine similarity over stored vectors.
+ * Semantic recall — cosine similarity over stored vectors.
  *
- * No ANN index. The store's working set fits in SQLite's page cache at the
- * scale this runs at, and a full scan is then both exact and cheap: the cost is
- * bytes read, not arithmetic. 4,000 facts at 512 dimensions is under 8 MB. The
- * scan stops being the right answer when the vectors stop fitting in cache,
- * which is what `embedding.dimensions` exists to control — halving the
- * dimension doubles the facts that fit in the same budget.
- *
- * This path **ranks; it does not gate**. Its output is one more list in the RRF
- * merge, alongside keyword, domain, and entity. A fact with no embedding is not
- * excluded from search — it simply earns no credit from this list, exactly as a
- * fact outside the queried domain earns none from that one.
+ * Default is an exact JavaScript scan of BLOBs. On Postgres, when the current
+ * model+dimension working set is large and the `vector` extension is present,
+ * an HNSW sidecar of that set is used instead. SQLite never uses the sidecar.
+ * The scan **ranks; it does not gate**.
  */
 
 import type { Db } from "../db/connection.js";
 import type { Fact } from "../types/data.js";
-import { getEmbeddings } from "../db/embeddings.js";
+import { countEmbeddings, getEmbeddings } from "../db/embeddings.js";
 import { getFactsByIds } from "../db/facts.js";
+import { ANN_DEFAULT_MAX_BYTES } from "../types/config.js";
+import {
+  embeddingWorkingSetBytes,
+  emitAnnWarningOnce,
+  postgresHnswFallbackWarning,
+  postgresMissingVectorWarning,
+  shouldUseAnn,
+  sqliteScaleWarning,
+  wouldWantAnn,
+} from "./ann.js";
 
 /**
  * Default for how close to the best hit a result must be to count as one.
@@ -63,6 +66,13 @@ export interface VectorSearchOpts {
    * read the top score. Anything at or below it is noise.
    */
   minSimilarity?: number;
+  /**
+   * HNSW gate. null/omit = auto above `annMaxBytes` on Postgres;
+   * false = never; true = force when the extension allows.
+   */
+  ann?: boolean | null;
+  /** Auto threshold in bytes. Omit for ANN_DEFAULT_MAX_BYTES. */
+  annMaxBytes?: number;
 }
 
 /**
@@ -121,13 +131,44 @@ export async function vectorSearch(
     );
   }
 
-  const stored = await getEmbeddings(db, model, dimensions);
-  if (stored.length === 0) return [];
+  const n = await countEmbeddings(db, model, dimensions);
+  if (n <= 0) return [];
+  const bytes = embeddingWorkingSetBytes(n, dimensions);
+  const maxBytes = opts.annMaxBytes ?? ANN_DEFAULT_MAX_BYTES;
+  const ann = opts.ann ?? null;
 
-  const scored: Array<{ id: string; score: number }> = [];
-  for (const row of stored) {
-    scored.push({ id: row.fact_id, score: cosineSimilarity(queryVector, row.vector) });
+  if (db.dialect === "sqlite" && ann !== false && bytes > maxBytes) {
+    emitAnnWarningOnce("sqlite-scale", sqliteScaleWarning());
   }
+
+  let scored: Array<{ id: string; score: number }>;
+  if (db.dialect === "postgres") {
+    const { hasVectorExtension, ensureHnswSidecar, hnswSearchHits } = await import(
+      "../db/embeddings-hnsw.js"
+    );
+    const extensionPresent = await hasVectorExtension(db);
+    if (wouldWantAnn({ dialect: db.dialect, ann, bytes, maxBytes }) && !extensionPresent) {
+      emitAnnWarningOnce("pg-vector-missing", postgresMissingVectorWarning());
+    }
+    if (
+      shouldUseAnn({ dialect: db.dialect, ann, bytes, maxBytes, extensionPresent })
+    ) {
+      try {
+        await ensureHnswSidecar(db, model, dimensions);
+        const fetch = Math.min(n, Math.max(limit * 20, 64));
+        scored = await hnswSearchHits(db, queryVector, fetch);
+      } catch (err) {
+        const detail = err instanceof Error ? err.message : String(err);
+        emitAnnWarningOnce("hnsw-fallback", postgresHnswFallbackWarning(detail));
+        scored = await exactCosineScores(db, queryVector, model, dimensions);
+      }
+    } else {
+      scored = await exactCosineScores(db, queryVector, model, dimensions);
+    }
+  } else {
+    scored = await exactCosineScores(db, queryVector, model, dimensions);
+  }
+
   scored.sort((a, b) => b.score - a.score);
 
   // Keep only hits close to the best one.
@@ -182,4 +223,18 @@ export async function vectorSearch(
     if (fact) out.push(fact);
   }
   return out;
+}
+
+async function exactCosineScores(
+  db: Db,
+  queryVector: Float32Array,
+  model: string,
+  dimensions: number,
+): Promise<Array<{ id: string; score: number }>> {
+  const stored = await getEmbeddings(db, model, dimensions);
+  const scored: Array<{ id: string; score: number }> = [];
+  for (const row of stored) {
+    scored.push({ id: row.fact_id, score: cosineSimilarity(queryVector, row.vector) });
+  }
+  return scored;
 }

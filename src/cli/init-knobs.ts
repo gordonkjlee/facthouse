@@ -49,7 +49,7 @@ void _everyMoreKeyListed;
 
 /**
  * Overlay init is allowed to write. Not Partial<ServerConfig> — that type is
- * shallow and would accept storage.provider / a full provider swap.
+ * shallow and would accept storage.provider / embedding.ann / a full provider swap.
  */
 export interface InitOverlay extends MoreOverlay {
   sources?: CaptureSource[];

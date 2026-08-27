@@ -430,7 +430,8 @@ export async function hybridSearch(
     searchLists.push({ name: "entity", facts: entityFacts.slice(0, candidatePool) });
   }
 
-  // 3b. Semantic path — an exact cosine scan over stored vectors.
+  // 3b. Semantic path — cosine over stored vectors (exact scan, or HNSW on
+  // Postgres when the working set is large).
   //
   // Ranks, never gates: a fact with no embedding is not excluded from search,
   // it simply earns no credit from this list. That matters most while a store

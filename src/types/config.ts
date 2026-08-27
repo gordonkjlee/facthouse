@@ -172,6 +172,12 @@ export interface InferencesConfig {
 export type EmbeddingProviderType = "voyage" | "ollama";
 
 /**
+ * Auto HNSW threshold: 32 MiB of float32 for the current model+dimension.
+ * 8,192 facts at 1024-d; 16,384 at 512-d. 4,000 at 512-d (8 MiB) stays exact.
+ */
+export const ANN_DEFAULT_MAX_BYTES = 32 * 1024 * 1024;
+
+/**
  * Semantic search configuration.
  *
  * Replaces a `search.embedding_provider` field that shipped for months with
@@ -240,6 +246,17 @@ export interface EmbeddingConfig {
    * score: anything at or below it is noise.
    */
   min_similarity: number | null;
+  /**
+   * HNSW on Postgres for meaning-search. null = auto above
+   * `ann_max_bytes`; false = never; true = force when dialect and the
+   * `vector` extension allow. SQLite ignores this and stays an exact scan.
+   */
+  ann: boolean | null;
+  /**
+   * Auto threshold: bytes of the current model+dimension working set
+   * (`count * dimensions * 4`). Default ANN_DEFAULT_MAX_BYTES.
+   */
+  ann_max_bytes: number;
   /** Ollama only. */
   host?: string;
 }
@@ -340,6 +357,8 @@ export const DEFAULT_CONFIG: Omit<ServerConfig, "storage" | "temporal"> = {
     batch_size: 128,
     min_similarity_ratio: 0.85,
     min_similarity: null,
+    ann: null,
+    ann_max_bytes: ANN_DEFAULT_MAX_BYTES,
   },
   capture: {
     default_confidence: DEFAULT_CONFIDENCE,

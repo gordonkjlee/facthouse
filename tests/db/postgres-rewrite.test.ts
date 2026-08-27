@@ -24,6 +24,16 @@ describe("rewriteToPostgres", () => {
     expect(sql).toContain("$5");
   });
 
+  it("rewrites pgvector placeholders without eating ::vector", () => {
+    const sql = rewriteToPostgres(
+      `SELECT fact_id, (embedding <=> ?::vector) AS dist FROM fact_embeddings_hnsw ORDER BY embedding <=> ?::vector LIMIT ?`,
+    );
+    expect(sql).toContain("$1::vector");
+    expect(sql).toContain("$2::vector");
+    expect(sql).toContain("$3");
+    expect(sql).not.toContain("?");
+  });
+
   it("rewrites datetime('now') and BEGIN IMMEDIATE", () => {
     expect(rewriteToPostgres(`valid_until > datetime('now')`)).toBe(
       `valid_until > now()`,
