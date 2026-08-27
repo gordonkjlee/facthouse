@@ -396,7 +396,7 @@ describe("extraction groups by conversation, not by pull batch", () => {
     ).toBe(true);
   });
 
-  it("does not persist a successful group when another group in the batch is degraded", async () => {
+  it("keeps a disjoint successful conversation when a later one degrades", async () => {
     await insertEvent(db, {
       client_session_id: "sess-aaa",
       event_type: "message",
@@ -442,21 +442,176 @@ describe("extraction groups by conversation, not by pull batch", () => {
       extraction: { enabled: true } as never,
     });
     expect(first.extractionDegraded).toBe(true);
+    expect(first.prefixCommitted).toBe(true);
+    expect(first.examinedThrough).toBe(1);
+    const rows = await factRows();
+    expect(rows.map((r) => r.session_id)).toEqual(["sess-aaa"]);
+    const watermark = (await db
+      .prepare(`SELECT COALESCE(MAX(last_event_sequence), 0) AS seq FROM consolidations`)
+      .get()) as { seq: number };
+    expect(watermark.seq).toBe(1);
+
+    const { provider, calls: secondCalls } = recording();
+    const second = await consolidate(db, provider as never, {
+      extraction: { enabled: true } as never,
+    });
+    expect(second.extractionDegraded).toBe(false);
+    expect(secondCalls[0]?.events).toEqual(["Alex is allergic to shellfish."]);
+    expect((await factRows()).map((f) => f.session_id).sort()).toEqual([
+      "sess-aaa",
+      "sess-bbb",
+    ]);
+  });
+
+  it("keeps that disjoint prefix on extract-only (tick)", async () => {
+    await insertEvent(db, {
+      client_session_id: "sess-aaa",
+      event_type: "message",
+      role: "user",
+      content: "Alex prefers oat milk at Acme.",
+    });
+    await insertEvent(db, {
+      client_session_id: "sess-bbb",
+      event_type: "message",
+      role: "user",
+      content: "Alex is allergic to shellfish.",
+    });
+
+    let calls = 0;
+    const flaky = {
+      ...createHeuristicProvider(PERSONAL_VOCABULARY),
+      async extractFactsFromEvents(events: SessionEvent[]) {
+        calls += 1;
+        if (calls === 2) return { facts: [], degraded: true };
+        return {
+          facts: events
+            .filter((e) => e.content)
+            .map((e) => ({
+              content: e.content as string,
+              domain_hint: "preferences",
+            })),
+          degraded: false,
+        };
+      },
+    };
+
+    const first = await consolidate(
+      db,
+      flaky as never,
+      { extraction: { enabled: true } as never },
+      null,
+      "extract",
+    );
+    expect(first.extractionDegraded).toBe(true);
+    const staged = (await db
+      .prepare(
+        `SELECT session_id, consolidation_id FROM session_facts ORDER BY created_at ASC`,
+      )
+      .all()) as Array<{ session_id: string; consolidation_id: string | null }>;
+    expect(staged.map((r) => r.session_id)).toEqual(["sess-aaa"]);
+    expect(staged[0]!.consolidation_id).toBeNull();
+    const watermark = (await db
+      .prepare(`SELECT COALESCE(MAX(last_event_sequence), 0) AS seq FROM consolidations`)
+      .get()) as { seq: number };
+    expect(watermark.seq).toBe(1);
+  });
+
+  it("advances the extract-only watermark for an empty honest prefix", async () => {
+    await insertEvent(db, {
+      client_session_id: "sess-aaa",
+      event_type: "message",
+      role: "user",
+      content: "Alex prefers oat milk at Acme.",
+    });
+    await insertEvent(db, {
+      client_session_id: "sess-bbb",
+      event_type: "message",
+      role: "user",
+      content: "Alex is allergic to shellfish.",
+    });
+
+    let calls = 0;
+    const flaky = {
+      ...createHeuristicProvider(PERSONAL_VOCABULARY),
+      async extractFactsFromEvents() {
+        calls += 1;
+        if (calls === 2) return { facts: [], degraded: true };
+        return { facts: [], degraded: false };
+      },
+    };
+
+    const first = await consolidate(
+      db,
+      flaky as never,
+      { extraction: { enabled: true } as never },
+      null,
+      "extract",
+    );
+    expect(first.extractionDegraded).toBe(true);
+    expect(await factRows()).toEqual([]);
+    const watermark = (await db
+      .prepare(`SELECT COALESCE(MAX(last_event_sequence), 0) AS seq FROM consolidations`)
+      .get()) as { seq: number };
+    expect(watermark.seq).toBe(1);
+  });
+
+  it("holds all facts when conversation sequences interleave", async () => {
+    // aaa at 1 and 3, bbb at 2 and 4. Groups sort by first sequence, so aaa
+    // is extracted first including seq 3; then bbb fails. maxExamined=3 >
+    // minRemaining=2, so a prefix would skip bbb's seq 2 forever.
+    await insertEvent(db, {
+      client_session_id: "sess-aaa",
+      event_type: "message",
+      role: "user",
+      content: "Alex prefers oat milk at Acme.",
+    });
+    await insertEvent(db, {
+      client_session_id: "sess-bbb",
+      event_type: "message",
+      role: "user",
+      content: "Alex is allergic to shellfish.",
+    });
+    await insertEvent(db, {
+      client_session_id: "sess-aaa",
+      event_type: "message",
+      role: "user",
+      content: "Alex also prefers dark roast.",
+    });
+    await insertEvent(db, {
+      client_session_id: "sess-bbb",
+      event_type: "message",
+      role: "user",
+      content: "Alex avoids the seafood platter.",
+    });
+
+    let calls = 0;
+    const flaky = {
+      ...createHeuristicProvider(PERSONAL_VOCABULARY),
+      async extractFactsFromEvents(events: SessionEvent[]) {
+        calls += 1;
+        if (calls === 2) return { facts: [], degraded: true };
+        return {
+          facts: events
+            .filter((e) => e.content)
+            .map((e) => ({
+              content: e.content as string,
+              domain_hint: "preferences",
+            })),
+          degraded: false,
+        };
+      },
+    };
+
+    const first = await consolidate(db, flaky as never, {
+      extraction: { enabled: true } as never,
+    });
+    expect(first.extractionDegraded).toBe(true);
+    expect(first.prefixCommitted).toBeFalsy();
     expect(await factRows()).toEqual([]);
     const watermark = (await db
       .prepare(`SELECT COALESCE(MAX(last_event_sequence), 0) AS seq FROM consolidations`)
       .get()) as { seq: number };
     expect(watermark.seq).toBe(0);
-
-    const { provider } = recording();
-    const second = await consolidate(db, provider as never, {
-      extraction: { enabled: true } as never,
-    });
-    expect(second.extractionDegraded).toBe(false);
-    expect((await factRows()).map((f) => f.session_id).sort()).toEqual([
-      "sess-aaa",
-      "sess-bbb",
-    ]);
   });
 });
 

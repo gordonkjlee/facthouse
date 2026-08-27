@@ -10,6 +10,7 @@
 
 import type { Referent } from "../types/data.js";
 import { SUBJECT_OF } from "../db/entities.js";
+import { DEFAULT_CONFIG } from "../types/config.js";
 
 /**
  * What a durable fact is. One definition, interpolated by CLI extract, sampling
@@ -43,6 +44,17 @@ export const EXTRACT_EVIDENCE_SLICE = 8;
 
 /** Forgetfulness reread: short window of this conversation's session_events. */
 export const EXTRACT_REREAD_WINDOW = 20;
+
+/**
+ * Upper bound on stage-1 stdin after truncation. One definition, used by the test.
+ * Slack covers the durable-job text, domain routing, situation JSON, and related K.
+ */
+export const STAGE1_STDIN_CEILING =
+  (DEFAULT_CONFIG.extraction.batch_size +
+    EXTRACT_EVIDENCE_SLICE +
+    EXTRACT_REREAD_WINDOW) *
+    DEFAULT_CONFIG.extraction.max_content_length +
+  64_000;
 
 /**
  * Prompt-reported extract confidence below this triggers one reread.

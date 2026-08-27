@@ -75,11 +75,14 @@ export interface ExtractionConfig {
   event_types: string[];
   /** Which roles to process. */
   roles: string[];
-  /** Max events per LLM extraction call. */
+  /** Max events per LLM extraction call. Read by extractFactsFromEvents. */
   batch_size: number;
   /** Skip events shorter than this (chars). */
   min_content_length: number;
-  /** Truncate events longer than this for extraction (full content preserved). */
+  /**
+   * Truncate events longer than this for extraction (full content preserved).
+   * Applied to every event in a stage-1 prompt, not only candidates.
+   */
   max_content_length: number;
   /**
    * Reachable recent D kept per conversation: prune spares this many newest

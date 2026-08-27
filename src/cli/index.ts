@@ -552,9 +552,15 @@ export async function consolidateInProcess(
     await applySchema(db);
     const result = await consolidate(db, provider, config, embedding, phase);
     if (result.extractionDegraded) {
-      console.error(
-        "[openmemory] Extraction could not run — events were not examined and the watermark was held. A zero factsGraduated here is not a successful empty extract. Re-run openmemory consolidate when the CLI provider can run.",
-      );
+      if (result.prefixCommitted) {
+        console.error(
+          `[openmemory] Extraction stopped after a failed call. Facts from earlier examined events were kept and the watermark advanced to ${result.examinedThrough}. Remaining events are still eligible. Re-run openmemory consolidate to continue.`,
+        );
+      } else {
+        console.error(
+          "[openmemory] Extraction could not run — events were not examined and the watermark was held. A zero factsGraduated here is not a successful empty extract. Re-run openmemory consolidate when the CLI provider can run.",
+        );
+      }
     }
     console.log(JSON.stringify(result));
   } catch (err: unknown) {
