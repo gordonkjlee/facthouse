@@ -53,7 +53,7 @@ export interface CliProviderOpts {
   command?: string[];
   /** Model alias (passed via --model). Default: `haiku`. */
   model?: string;
-  /** Per-stage timeout in ms. Default: 20_000 (20s). */
+  /** Per-stage timeout in ms. Default: 45_000 (same as CliProviderConfig.timeout_ms). */
   timeoutMs?: number;
   /** Cwd for subprocess. Default: OS tempdir (out of project scope). */
   cwd?: string;
@@ -110,6 +110,38 @@ interface SubprocessFailure {
   stderr?: string;
 }
 
+/** Transient extract failures that are retried once. Not spawn/parse/is-error. */
+export const CLI_EXTRACT_RETRY_KINDS = ["timeout", "non-zero-exit"] as const;
+export const CLI_EXTRACT_RETRIES = 1; // exactly one retry; two attempts total
+export const CLI_FAILURE_SLICE = 300; // same cap as invokeClaude's stderr slice
+/** Max wait after SIGKILL before the timeout result is returned. Join, not backoff. */
+export const CLI_TIMEOUT_JOIN_MS = 2_000;
+
+function formatStageFailure(
+  stageName: string,
+  result: SubprocessFailure,
+  phase: "first" | "retry",
+  extra?: { retrying?: boolean; timeoutMs?: number },
+): string {
+  const bits: string[] = [
+    "[openmemory cli-provider]",
+    phase === "retry"
+      ? `${stageName} retry failed (${result.error})`
+      : `${stageName} failed (${result.error})`,
+  ];
+  if (result.error === "non-zero-exit") {
+    bits.push(`exit=${result.exitCode == null ? "null" : String(result.exitCode)}`);
+    bits.push(`stderr=${JSON.stringify((result.stderr ?? "").slice(0, CLI_FAILURE_SLICE))}`);
+  } else if (result.error === "timeout") {
+    if (extra?.timeoutMs != null) bits.push(`after=${extra.timeoutMs}ms`);
+    if (result.stderr) bits.push(`stderr=${JSON.stringify(result.stderr.slice(0, CLI_FAILURE_SLICE))}`);
+  } else if (result.detail) {
+    bits.push(`detail=${JSON.stringify(result.detail.slice(0, CLI_FAILURE_SLICE))}`);
+  }
+  if (extra?.retrying) bits.push("— retrying once");
+  return bits.join(" ");
+}
+
 async function invokeClaude(
   prompt: string,
   schema: unknown,
@@ -161,20 +193,24 @@ async function invokeClaude(
 
     let stdout = "";
     let stderr = "";
+    let timedOut = false;
+    let joinTimer: ReturnType<typeof setTimeout> | undefined;
     const timer = setTimeout(() => {
+      // Kill immediately and wait for close (or the join cap) before
+      // resolving. SIGTERM-and-return used to let the retry spawn overlap
+      // a live child.
+      timedOut = true;
       try {
-        child.kill("SIGTERM");
+        child.kill("SIGKILL");
       } catch {
         /* already exited */
       }
-      setTimeout(() => {
-        try {
-          child.kill("SIGKILL");
-        } catch {
-          /* already exited */
-        }
-      }, 2000);
-      finish({ error: "timeout" });
+      joinTimer = setTimeout(() => {
+        finish({
+          error: "timeout",
+          stderr: stderr.slice(0, CLI_FAILURE_SLICE),
+        });
+      }, CLI_TIMEOUT_JOIN_MS);
     }, opts.timeoutMs);
 
     child.stdout?.on("data", (d) => (stdout += d.toString()));
@@ -185,15 +221,29 @@ async function invokeClaude(
     });
     child.on("error", (err) => {
       clearTimeout(timer);
+      if (joinTimer) clearTimeout(joinTimer);
+      if (timedOut) {
+        return finish({
+          error: "timeout",
+          stderr: stderr.slice(0, CLI_FAILURE_SLICE),
+        });
+      }
       finish({ error: "spawn-error", detail: err.message });
     });
     child.on("close", (code) => {
       clearTimeout(timer);
+      if (joinTimer) clearTimeout(joinTimer);
+      if (timedOut) {
+        return finish({
+          error: "timeout",
+          stderr: stderr.slice(0, CLI_FAILURE_SLICE),
+        });
+      }
       if (code !== 0) {
         return finish({
           error: "non-zero-exit",
           exitCode: code,
-          stderr: stderr.slice(0, 300),
+          stderr: stderr.slice(0, CLI_FAILURE_SLICE),
         });
       }
       let envelope: Record<string, unknown>;
@@ -212,7 +262,7 @@ async function invokeClaude(
       if (structured === undefined || structured === null) {
         return finish({
           error: "no-structured-output",
-          detail: String(envelope.result ?? "").slice(0, 300),
+          detail: String(envelope.result ?? "").slice(0, CLI_FAILURE_SLICE),
         });
       }
       finish({
@@ -596,6 +646,7 @@ export function createCliProvider(
     systemPrompt: string,
     userPayload: unknown,
     schema: unknown,
+    retryTransient = false,
   ): Promise<T | null> {
     // Claude's --json-schema flag expects a user prompt; we pass the system
     // prompt prepended to the user content, separated by a marker. We don't
@@ -603,9 +654,28 @@ export function createCliProvider(
     // --exclude-dynamic-system-prompt-sections and other flags; this keeps
     // behaviour predictable.
     const prompt = `${systemPrompt}\n\nINPUT:\n${JSON.stringify(userPayload)}`;
-    const result = await invokeClaude(prompt, schema, getCommand(), opts);
+    const attempt = () => invokeClaude(prompt, schema, getCommand(), opts);
+
+    let result = await attempt();
     if ("error" in result) {
-      log(`${stageName} failed (${result.error}):`, result.detail ?? "");
+      const retryable =
+        retryTransient &&
+        (CLI_EXTRACT_RETRY_KINDS as readonly string[]).includes(result.error);
+      console.error(formatStageFailure(stageName, result, "first", {
+        retrying: retryable,
+        timeoutMs: result.error === "timeout" ? opts.timeoutMs : undefined,
+      }));
+      if (retryable) {
+        result = await attempt();
+        if ("error" in result) {
+          console.error(formatStageFailure(stageName, result, "retry", {
+            timeoutMs: result.error === "timeout" ? opts.timeoutMs : undefined,
+          }));
+          return null;
+        }
+        log(`${stageName} retry ok in ${result.elapsedMs}ms`);
+        return result.structured as T;
+      }
       return null;
     }
     log(`${stageName} ok in ${result.elapsedMs}ms`);
@@ -667,6 +737,7 @@ export function createCliProvider(
           candidate_events: events.map(extractEventPayload),
         },
         STAGE_1_SCHEMA,
+        true,
       );
 
       if (!result || !Array.isArray(result.facts)) {
