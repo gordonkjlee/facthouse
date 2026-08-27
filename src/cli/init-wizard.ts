@@ -145,7 +145,7 @@ async function askCapture(
     break;
   }
 
-  let kind: CaptureSourceKind = "claude-code";
+  let kind: CaptureSourceKind;
   for (;;) {
     const raw = (await io.question(INIT_PROMPTS.kind)).trim().toLowerCase();
     const chosen = raw === "" ? "claude-code" : raw;

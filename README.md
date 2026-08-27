@@ -33,6 +33,8 @@ Add to your AI tool's MCP configuration:
 
 Works with Claude Code, Claude Desktop, and any MCP-compatible tool. Cursor consumes tools but not resources until a later adapter exists — `search_knowledge` and `get_entity` still work there. Data is stored at `~/.openmemory` by default. That one directory is the whole install. To use a different path, add `"env": { "OPENMEMORY_DATA": "/absolute/path" }` to the config above. Two MCP entries both called `openmemory` overwrite each other — a second store needs a second name (see Optional: another store).
 
+Paste the snippet and the server creates that directory on first boot. On a terminal, run init **without** `--yes` to write `config.json` and be asked about capture, semantic search, and extra knobs — that walk-through is a single command in CLI Reference, with nothing after it in the fence, so a paste cannot answer it. Every scripted init in this README passes `--yes`.
+
 ### Claude Code — first session (throwaway store)
 
 One path. Pick the pull mechanism. Do this from the CLI against a **throwaway** data directory. Do **not** install capture hooks yet: a Stop hook that runs pull on a large home will hang the session, and `npx -y @openmem/mcp` with no `-p` / `openmemory` starts the MCP **server** and hangs a hook. The first backfill is a CLI command.
@@ -354,7 +356,7 @@ PreCompact `openmemory signal flush` graduates pending facts; it does not re-rea
 
 #### `openmemory init [dir]`
 
-Optional — the server creates its data directory and database on first run anyway. Use `init` to set things up ahead of time and, more usefully, to write a `config.json` you can tune (without it, the defaults are invisible).
+The walk-through is how a human first-run writes `config.json`. The server still creates the data directory on first MCP boot if you skip it; without `init` the defaults are invisible and you are not asked about capture or search.
 
 On a terminal, `openmemory init` asks data directory, optional transcript capture, semantic search, and More settings (extraction model and timeout today; extra knobs later). `--yes` never prompts. On a terminal, `--force` still asks those questions, then replaces the whole file; `--yes --force` is the silent reset.
 

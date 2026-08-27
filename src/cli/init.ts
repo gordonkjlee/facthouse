@@ -233,13 +233,13 @@ export function appendCaptureRecipe(
     return [INIT_PROMPTS.captureDeclined];
   }
   const status = sourcesStatusLines(sources);
-  let n = 0;
   try {
-    n = resolveSources(sources).length;
+    if (resolveSources(sources).length > 0) {
+      return [...status, INIT_PROMPTS.mixPullLogEvent];
+    }
   } catch {
     return status;
   }
-  if (n > 0) return [...status, INIT_PROMPTS.mixPullLogEvent];
   return status;
 }
 
