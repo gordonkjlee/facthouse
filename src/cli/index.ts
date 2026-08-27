@@ -195,9 +195,9 @@ async function runInit() {
     ``,
     snippet,
     ``,
-    `One data directory is one memory. A second brain is a second directory`,
-    `with a different MCP server name and a different OPENMEMORY_DATA — not a`,
-    `tenant column inside this store.`,
+    `One data directory is one memory. Another store is another directory`,
+    `with its own MCP server name and OPENMEMORY_DATA — not a tenant column`,
+    `inside this file.`,
     ``,
     // Report the provider this store will really get, rather than describing
     // the default and leaving the user to discover which branch they landed on.

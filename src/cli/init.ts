@@ -49,7 +49,7 @@ import {
  * @param dataDir  when set, adds an OPENMEMORY_DATA env override (omit for the
  *                 default location, which needs no env entry)
  * @param indent   spaces to prefix each line with, for console output
- * @param name     MCP server key. A second brain needs a second name —
+ * @param name     MCP server key. A second store needs a second name —
  *                 two entries both called `openmemory` overwrite each other.
  */
 export function mcpConfigSnippet(
