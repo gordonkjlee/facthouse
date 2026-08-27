@@ -17,6 +17,9 @@ jobs:
       # Disposable CI database only. Production reads OPENMEMORY_POSTGRES_URL;
       # this variable is the live-test opt-in so sqlite tests cannot pick it up.
       OPENMEMORY_TEST_POSTGRES_URL: postgres://openmemory:openmemory@localhost:5432/openmemory
+      # GitHub sets CI=true on every runner, including Windows (no Postgres
+      # service). The live handshake must key off this flag, not CI.
+      OPENMEMORY_REQUIRE_POSTGRES: "1"
     services:
       postgres:
         image: postgres:16
@@ -41,7 +44,7 @@ jobs:
           node-version: ${{ matrix.node-version }}
 
       - name: Install dependencies
-        run: npm install
+        run: npm ci
 
       - name: Build
         run: npm run build
@@ -49,6 +52,25 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      - name: Test
+        run: npm test
+
+  test-windows:
+    name: test (windows, node 24)
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Use Node.js 24
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+      - name: Install dependencies
+        run: npm ci
+      - name: Build
+        run: npm run build
+      - name: Lint
+        run: npm run lint
       - name: Test
         run: npm test
 
@@ -79,7 +101,7 @@ jobs:
         with:
           node-version: 24
       - name: Install dependencies
-        run: npm install
+        run: npm ci
       - name: Build
         run: npm run build
       - name: HNSW handshake

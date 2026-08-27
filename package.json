@@ -24,9 +24,9 @@
     "build": "tsc",
     "watch": "tsc --watch",
     "test": "vitest run",
-    "test:semantic": "node scripts/require-semantic-eval.mjs",
-    "test:first-fact": "node scripts/require-first-fact-eval.mjs",
-    "test:coding-store": "node scripts/require-coding-store-eval.mjs",
+    "test:semantic": "node scripts/require-eval.mjs semantic",
+    "test:first-fact": "node scripts/require-eval.mjs first-fact",
+    "test:coding-store": "node scripts/require-eval.mjs coding-store",
     "test:watch": "vitest",
     "lint": "eslint src/",
     "prepare": "npm run build"
