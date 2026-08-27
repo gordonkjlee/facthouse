@@ -72,7 +72,7 @@ function supportedKindsList(): string {
 export const INIT_PROMPTS = {
   intro:
     "OpenMemory setup. Press Enter to accept the default in [brackets].\n" +
-    "One directory is one memory. A second brain is a second directory.",
+    "One directory is one memory. Another store is another directory.",
   dataDir: (shown: string) => `Data directory [${shown}]:`,
   capture:
     "Capture from a transcript source?  [N]\n" +

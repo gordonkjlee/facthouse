@@ -208,7 +208,7 @@ describe.skipIf(!runnable)("cli entry — init output", () => {
     const r = run(["init", dir]);
     expect(r.status).toBe(0);
     expect(r.stdout).toMatch(/one data directory is one memory/i);
-    expect(r.stdout).toMatch(/second brain is a second directory/i);
+    expect(r.stdout).toMatch(/another store is another directory/i);
   });
 
   it("tells a tester that pull is off until they name a source", () => {

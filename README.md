@@ -31,7 +31,7 @@ Add to your AI tool's MCP configuration:
 ```
 <!-- x-release-please-end -->
 
-Works with Claude Code, Claude Desktop, and any MCP-compatible tool. Cursor consumes tools but not resources until a later adapter exists — `search_knowledge` and `get_entity` still work there. Data is stored at `~/.openmemory` by default. To change this, add `"env": { "OPENMEMORY_DATA": "/absolute/path" }` to the config above. One directory is one memory: a work brain and a personal brain are two directories, two `OPENMEMORY_DATA` values, and two MCP server names (two entries both called `openmemory` overwrite each other).
+Works with Claude Code, Claude Desktop, and any MCP-compatible tool. Cursor consumes tools but not resources until a later adapter exists — `search_knowledge` and `get_entity` still work there. Data is stored at `~/.openmemory` by default. That one directory is the whole install. To use a different path, add `"env": { "OPENMEMORY_DATA": "/absolute/path" }` to the config above. Two MCP entries both called `openmemory` overwrite each other — a second store needs a second name (see Optional: another store).
 
 ### Claude Code — first session (throwaway store)
 
@@ -132,11 +132,13 @@ On Windows the `--data` path is the same absolute directory you put in `OPENMEMO
 
 **Alternative, no pull:** leave `sources` empty and pipe UserPromptSubmit / Stop / PostToolUse into `openmemory log-event`. See Session Event Logging. Do not run both mechanisms on the same store.
 
-### Two memories (work and personal)
+### Optional: another store
 
-One data directory is one brain. Life and work are two directories — not a filter on which client wrote the row, not a tenant column inside one SQLite file. Each store has its own `config.json`, its own pull sources, its own hooks (`--data` must match), and its own scheduler socket. They cannot see each other's facts.
+You do not need two installs. The default is one directory and one MCP server named `openmemory`.
 
-A non-default data directory prints a distinct MCP server name so two stores can share one `mcp.json`. `openmemory init` against each directory prints that snippet:
+A second store is a second directory — not a filter on which client wrote the row, and not a tenant column inside one SQLite file. Each store has its own `config.json`, its own pull sources, its own hooks (`--data` must match), and its own scheduler socket. They cannot see each other's facts. Work and personal is one reason to split, not a required setup.
+
+A non-default data directory prints a distinct MCP server name so two stores can share one `mcp.json`. `openmemory init` against each extra directory prints that snippet. Example:
 
 <!-- x-release-please-start-version -->
 ```json
@@ -157,7 +159,7 @@ A non-default data directory prints a distinct MCP server name so two stores can
 ```
 <!-- x-release-please-end -->
 
-Point each store's `sources.cwd` (or hook `--data`) at that store only. A bare `home` on the personal brain that walks every Claude Code project group will ingest work transcripts into the personal file — two directories do not help if both pull the same home.
+Point each store's `sources.cwd` (or hook `--data`) at that store only. A bare `home` that walks every Claude Code project group will ingest every transcript into that file — two directories do not isolate anything if both pull the same home.
 
 ### What you need for the intelligence
 
@@ -264,7 +266,7 @@ Clean up with `rm -rf /tmp/openmemory-demo`, then point a real client at the con
 
 Put the Quick Start config in a second AI tool and give it no rules at all. It reads `memory://profile` on connect and can `search_knowledge` for the rest — so a preference you mentioned once, in a different application, is simply known. There is nothing to sync and nothing to export: both clients are talking to one SQLite file that you own.
 
-That file is the whole store. `session_events` is what was said, `session_facts` is what was just extracted, and `facts` is graduated knowledge — three tables in one file, not three databases. FTS5 (words) and optional embeddings (meaning) are indexes of `facts`. They are not a second brain. `storage.provider` is `"sqlite"`; asking for `"postgres"` (or setting `OPENMEMORY_STORAGE`) is refused rather than silently opening SQLite — keyword search is FTS5 and the server is synchronous, so a second engine is a port, not a URL.
+That file is the whole store. `session_events` is what was said, `session_facts` is what was just extracted, and `facts` is graduated knowledge — three tables in one file, not three databases. FTS5 (words) and optional embeddings (meaning) are indexes of `facts`. They are not a second store. `storage.provider` is `"sqlite"`; asking for `"postgres"` (or setting `OPENMEMORY_STORAGE`) is refused rather than silently opening SQLite — keyword search is FTS5 and the server is synchronous, so a second engine is a port, not a URL.
 
 The server side of this is covered by tests that spawn the real binary twice against a single store: a fact captured through one connection is searchable from the other, concurrent writes survive, and two simultaneous consolidations neither duplicate work nor strand it. What those tests cannot cover is any particular pair of desktop applications and their own config quirks — so if a specific combination misbehaves, please open an issue.
 
@@ -292,7 +294,7 @@ The result is a structured, evolving knowledge graph that any AI tool can query 
 - **Immutable history** — Facts are never deleted, only superseded. The default records when a fact was learned and when it was true. Set `temporal.mode` to `bitemporal` to also record when the system retracted a belief, so search can answer what the store believed at an instant.
 - **Source traceability** — Every fact links back to the conversation events that produced it.
 - **Manual consolidation** — Call `consolidate` at natural breakpoints (topic change, task completion, pre-compaction). No reliance on session boundaries.
-- **One directory, one brain** — Work and personal are two `OPENMEMORY_DATA` directories and two MCP server names. Isolation is the directory, not a column. One SQLite file in that directory holds D, I, and K as tables; FTS5 and embeddings are indexes of K.
+- **One directory, one memory** — Isolation is the directory, not a column. The default is one store. A second store (for example work and personal) is a second `OPENMEMORY_DATA` directory and a second MCP server name. One SQLite file in that directory holds D, I, and K as tables; FTS5 and embeddings are indexes of K.
 
 ## MCP Resources
 
