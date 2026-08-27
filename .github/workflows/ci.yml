@@ -13,6 +13,24 @@ jobs:
     strategy:
       matrix:
         node-version: [22, 24]
+    env:
+      # Disposable CI database only. Production reads OPENMEMORY_POSTGRES_URL;
+      # this variable is the live-test opt-in so sqlite tests cannot pick it up.
+      OPENMEMORY_TEST_POSTGRES_URL: postgres://openmemory:openmemory@localhost:5432/openmemory
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: openmemory
+          POSTGRES_PASSWORD: openmemory
+          POSTGRES_DB: openmemory
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U openmemory -d openmemory"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

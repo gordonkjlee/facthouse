@@ -1,7 +1,7 @@
 /**
- * Database handle. SQLite via Node's built-in `node:sqlite` is the shipped
- * engine; the methods are async so a later Postgres adapter can use `pg`
- * without converting callers a second time.
+ * Database handle. SQLite via Node's built-in `node:sqlite` is the default
+ * engine; the methods are async so the Postgres adapter can use `pg` without
+ * converting callers a second time.
  *
  * Uses the built-in module rather than a native addon by necessity, not
  * preference: npm 12 made dependency lifecycle scripts opt-in, so

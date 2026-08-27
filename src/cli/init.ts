@@ -17,8 +17,9 @@
 
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { openDatabase, closeDatabase, pragmaRead } from "../db/connection.js";
-import { applySchema } from "../db/schema.js";
+import { closeDatabase, type Dialect } from "../db/connection.js";
+import { applySchema, getSchemaVersion } from "../db/schema.js";
+import { openStore, sqliteMemoryPath } from "../db/store.js";
 import { ensureDomain } from "../db/domains.js";
 import { ensureSelfEntity } from "../db/entities.js";
 import {
@@ -280,12 +281,16 @@ export interface InitArgs {
   force?: boolean;
   /** Narrow overlay applied when writing config.json. Preserve ignores it. */
   overlay?: InitOverlay;
+  /** Process environment. Tests pass a clean object so a developer's store env cannot leak. */
+  env?: NodeJS.ProcessEnv;
 }
 
 export interface InitResult {
   dataDir: string;
   dbPath: string;
   configPath: string;
+  /** sqlite or postgres. Postgres does not create `memory.db`. */
+  dialect: Dialect;
   /** The data directory did not exist and was created. */
   createdDataDir: boolean;
   /** config.json was written (false when it existed and force wasn't set). */
@@ -300,11 +305,11 @@ export interface InitResult {
  * Create (or update) a data directory: database + schema + default config.
  */
 export async function initDataDir(args: InitArgs): Promise<InitResult> {
-  const { dataDir, force = false, overlay } = args;
+  const { dataDir, force = false, overlay, env = process.env } = args;
 
-  // Refuse a non-sqlite engine *before* mkdir/open — otherwise a postgres
-  // config still creates memory.db and we have failed open.
-  const effective = loadShippedStoreConfig(dataDir);
+  // Refuse an unknown engine or postgres without a URL *before* mkdir/open —
+  // otherwise a postgres config still creates memory.db and we have failed open.
+  const effective = loadShippedStoreConfig(dataDir, env);
 
   const createdDataDir = !existsSync(dataDir);
   mkdirSync(dataDir, { recursive: true });
@@ -316,12 +321,13 @@ export async function initDataDir(args: InitArgs): Promise<InitResult> {
   const seedDomains = effective.domains ?? [];
 
   // Create/migrate the database. applySchema is idempotent and versioned.
-  const dbPath = path.join(dataDir, "memory.db");
-  const db = openDatabase(dbPath);
+  // Postgres: tables live at OPENMEMORY_POSTGRES_URL; memory.db is not created.
+  const dbPath = sqliteMemoryPath(dataDir);
+  const db = await openStore(dataDir, effective, env);
   let schemaVersion: number;
   try {
     await applySchema(db);
-    schemaVersion = await pragmaRead(db, "user_version");
+    schemaVersion = await getSchemaVersion(db);
     // Seed the domain vocabulary the config declares. The table previously
     // started empty and stayed empty until the first fact graduated, so the
     // earliest facts had no existing vocabulary to be routed against — the
@@ -356,6 +362,7 @@ export async function initDataDir(args: InitArgs): Promise<InitResult> {
     dataDir,
     dbPath,
     configPath,
+    dialect: db.dialect,
     createdDataDir,
     wroteConfig,
     configPreserved: configExisted && !force,

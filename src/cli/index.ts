@@ -31,8 +31,9 @@ import { INIT_PROMPTS } from "./init-knobs.js";
 import { defaultDataDir, resolveUserPath } from "../paths.js";
 import { runSearch, formatSearch, formatStats, formatPrune, getStats } from "./query.js";
 import { prunableEvents, pruneEvents, vacuum } from "../db/prune.js";
-import { openDatabase, closeDatabase } from "../db/connection.js";
+import { closeDatabase, type Db } from "../db/connection.js";
 import { applySchema } from "../db/schema.js";
+import { openStore, sqliteMemoryPath } from "../db/store.js";
 import {
   consolidate,
   type ConsolidatePhase,
@@ -48,6 +49,7 @@ import {
   CONFIG_FILENAME,
   loadConfig,
   loadShippedStoreConfig,
+  configuredStorageProvider,
   ensureBitemporalSince,
   systemTimeWarning,
 } from "../config.js";
@@ -248,7 +250,11 @@ async function runInit() {
     `OpenMemory initialised.`,
     ``,
     `  Data directory  ${result.dataDir}${result.createdDataDir ? " (created)" : ""}`,
-    `  Database        ${result.dbPath} (schema v${result.schemaVersion})`,
+    `  Database        ${
+      result.dialect === "postgres"
+        ? `Postgres (schema v${result.schemaVersion})`
+        : `${result.dbPath} (schema v${result.schemaVersion})`
+    }`,
     `  Config          ${result.configPath}${
       result.wroteConfig
         ? " (written)"
@@ -278,21 +284,25 @@ async function runInit() {
 /**
  * Open the database for a command, run `fn`, close.
  * Exits with a clear message when the data dir was never initialised, rather
- * than surfacing a raw SQLite error.
+ * than surfacing a raw SQLite error. Postgres stores have no memory.db;
+ * the URL is the database, checked by loadShippedStoreConfig / openStore.
  */
 async function withDb<T>(
   dataDir: string,
-  fn: (db: ReturnType<typeof openDatabase>) => T | Promise<T>,
+  fn: (db: Db) => T | Promise<T>,
 ): Promise<T> {
-  loadShippedStoreConfig(dataDir);
-  if (!existsSync(path.join(dataDir, "memory.db"))) {
+  const config = loadShippedStoreConfig(dataDir);
+  if (
+    configuredStorageProvider(config) === "sqlite" &&
+    !existsSync(sqliteMemoryPath(dataDir))
+  ) {
     console.error(
       `No database at ${dataDir}. Run 'openmemory init ${dataDir}' first, ` +
         `or point at another directory with --data.`,
     );
     process.exit(1);
   }
-  const db = openDatabase(path.join(dataDir, "memory.db"));
+  const db = await openStore(dataDir, config);
   try {
     await applySchema(db);
     return await fn(db);
@@ -306,7 +316,7 @@ async function withDb<T>(
  */
 async function withDbAsync<T>(
   dataDir: string,
-  fn: (db: ReturnType<typeof openDatabase>) => Promise<T>,
+  fn: (db: Db) => Promise<T>,
 ): Promise<T> {
   return withDb(dataDir, fn);
 }
@@ -603,9 +613,8 @@ export async function consolidateInProcess(
   embedding: EmbeddingProvider | null = null,
   phase: ConsolidatePhase = "full",
 ): Promise<void> {
-  loadShippedStoreConfig(dataDir);
-  const dbPath = path.join(dataDir, "memory.db");
-  const db = openDatabase(dbPath);
+  const storeConfig = loadShippedStoreConfig(dataDir);
+  const db = await openStore(dataDir, storeConfig);
 
   try {
     await applySchema(db);

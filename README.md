@@ -47,7 +47,7 @@ Two speeds. Pull and Stop **extract** self-contained facts from new transcript l
 
 `capture_fact` is a correction on a pull store, and the write path when `sources` is empty. The model does not have to call it for a Claude Code or Cursor conversation to be remembered — you name a source and pull.
 
-Put the same MCP snippet in a second AI tool and give it no rules. There is nothing to sync: both talk to one file. `storage.provider` is `"sqlite"`; asking for `"postgres"` is refused rather than silently opening SQLite.
+Put the same MCP snippet in a second AI tool and give it no rules. There is nothing to sync: both talk to one file. SQLite is the default. Optional Postgres is documented under Advanced.
 
 Storage needs Node. Intelligence — extraction, routing, contradiction — needs a language model. By default that is the [Claude Code CLI](https://github.com/anthropics/claude-code) on your existing subscription. Without it, consolidation falls back to a built-in heuristic that **does not extract facts from transcripts**. `capture_fact` still stores facts, with no entities and no domain routing.
 
@@ -125,6 +125,32 @@ A non-default data directory prints a distinct MCP server name so two stores can
 <!-- x-release-please-end -->
 
 Point each store's `sources.cwd` (or hook `--data`) at that store only. Two directories do not isolate anything if both pull the same home.
+
+### Postgres (optional)
+
+SQLite is the default and needs no extra software. To use Postgres instead, set `storage.provider` to `"postgres"` in that store's `config.json`, or `OPENMEMORY_STORAGE=postgres` on the MCP entry, and set `OPENMEMORY_POSTGRES_URL` to a `postgres://` (or `postgresql://`) URL. The password belongs in the environment, not in `config.json`. If the URL is missing or the server cannot be reached, OpenMemory stops; it does not create a SQLite file.
+
+The data directory is still the memory: `config.json` and the scheduler socket live there. Tables live at the URL. Two memories need two directories and two databases.
+
+Init does not ask which engine to use. `openmemory init --yes` still writes sqlite.
+
+Example — placeholders only; do not put a real password in a committed file:
+
+```json
+{
+  "mcpServers": {
+    "openmemory": {
+      "command": "npx",
+      "args": ["-y", "@openmem/mcp"],
+      "env": {
+        "OPENMEMORY_DATA": "C:\\Users\\alex\\.openmemory-work",
+        "OPENMEMORY_STORAGE": "postgres",
+        "OPENMEMORY_POSTGRES_URL": "postgres://USER:PASSWORD@127.0.0.1:5432/openmemory"
+      }
+    }
+  }
+}
+```
 
 ### Pull versus log-event
 

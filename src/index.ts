@@ -9,11 +9,11 @@
 
 import { parseArgs } from "node:util";
 import { mkdirSync, readFileSync } from "node:fs";
-import path from "node:path";
 import { defaultDataDir, resolveUserPath } from "./paths.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { openDatabase, closeDatabase, type Db } from "./db/connection.js";
+import { closeDatabase, type Db } from "./db/connection.js";
+import { openStore } from "./db/store.js";
 import { applySchema } from "./db/schema.js";
 import { ensureSelfEntity } from "./db/entities.js";
 import { createEmbeddingProvider } from "./embedding/provider.js";
@@ -46,9 +46,9 @@ const { values } = parseArgs({
 const dataDir = resolveUserPath(values.data as string);
 mkdirSync(dataDir, { recursive: true });
 
-// Storage check before SQLite. A postgres (or unknown) request must not
-// create or open memory.db. Print the message and exit rather than dumping
-// a stack into the MCP stdio stream.
+// Storage check before opening an engine. Unknown providers and postgres
+// without a URL must not create memory.db. Print the message and exit rather
+// than dumping a stack into the MCP stdio stream.
 let loadedConfig: ReturnType<typeof loadShippedStoreConfig>;
 try {
   loadedConfig = loadShippedStoreConfig(dataDir);
@@ -86,8 +86,14 @@ async function main() {
   // Database
   // ---------------------------------------------------------------------------
 
-  const dbPath = path.join(dataDir, "memory.db");
-  const database = openDatabase(dbPath);
+  let database: Db;
+  try {
+    database = await openStore(dataDir, loadedConfig);
+  } catch (err) {
+    console.error(err instanceof Error ? err.message : String(err));
+    process.exit(1);
+    return;
+  }
   db = database;
   await applySchema(database);
   // Also here, not only in `openmemory init` — init is optional, and a store the
