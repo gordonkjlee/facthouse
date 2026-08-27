@@ -395,6 +395,7 @@ export function createFactManager(
                       skipped: result.skipped,
                       skip_reason: result.skipReason ?? null,
                       extraction_degraded: result.extractionDegraded === true,
+                      examined_through: result.examinedThrough,
                     }),
                   },
                 ],

@@ -51,6 +51,12 @@ vi.mock("node:child_process", async () => {
 });
 
 const { createCliProvider, CLI_TIMEOUT_JOIN_MS } = await import("../../src/intelligence/cli.js");
+const {
+  STAGE1_STDIN_CEILING,
+  EXTRACT_EVIDENCE_SLICE,
+  EXTRACT_REREAD_WINDOW,
+} = await import("../../src/intelligence/extract-prompt.js");
+const { DEFAULT_CONFIG } = await import("../../src/types/config.js");
 
 beforeEach(() => {
   lastSpawnArgs = null;
@@ -228,6 +234,46 @@ describe("createCliProvider — extractFactsFromEvents", () => {
     expect(lastStdin).toContain("relocating for work");
     expect(lastStdin).toContain("long_term_memory");
     expect(lastStdin).toContain("User lives in Lisbon");
+  });
+
+  it("keeps a truncated stage-1 payload under the stdin ceiling", async () => {
+    nextMockChildBehaviour = respondWith({
+      is_error: false,
+      result: "",
+      structured_output: { facts: [] },
+    });
+    const max = DEFAULT_CONFIG.extraction.max_content_length;
+    const fill = (n: number, tag: string) =>
+      Array.from({ length: n }, (_, i) => ({
+        id: `${tag}-${i}`,
+        role: "user",
+        content: "x".repeat(max),
+        sequence: i + 1,
+      })) as any[];
+    const provider = createCliProvider();
+    await provider.extractFactsFromEvents(
+      fill(DEFAULT_CONFIG.extraction.batch_size, "c"),
+      fill(EXTRACT_EVIDENCE_SLICE, "e"),
+      null,
+      [],
+      { reminderEvents: fill(EXTRACT_REREAD_WINDOW, "r") },
+    );
+    expect(lastStdin.length).toBeLessThan(STAGE1_STDIN_CEILING);
+    const marker = "\nINPUT:\n";
+    const idx = lastStdin.indexOf(marker);
+    expect(idx).toBeGreaterThanOrEqual(0);
+    const payload = JSON.parse(lastStdin.slice(idx + marker.length)) as {
+      candidate_events: Array<{ content: string }>;
+      recent_events: Array<{ content: string }>;
+      reminder_events: Array<{ content: string }>;
+    };
+    for (const ev of [
+      ...payload.candidate_events,
+      ...payload.recent_events,
+      ...payload.reminder_events,
+    ]) {
+      expect(ev.content.length).toBeLessThanOrEqual(max);
+    }
   });
 
   it("keeps argv under the Windows command-line limit when the prompt is huge", async () => {
