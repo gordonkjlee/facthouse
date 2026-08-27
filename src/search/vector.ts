@@ -15,6 +15,7 @@ import { ANN_DEFAULT_MAX_BYTES } from "../types/config.js";
 import {
   embeddingWorkingSetBytes,
   emitAnnWarningOnce,
+  postgresHnswFallbackWarning,
   postgresMissingVectorWarning,
   shouldUseAnn,
   sqliteScaleWarning,
@@ -156,7 +157,9 @@ export async function vectorSearch(
         await ensureHnswSidecar(db, model, dimensions);
         const fetch = Math.min(n, Math.max(limit * 20, 64));
         scored = await hnswSearchHits(db, queryVector, fetch);
-      } catch {
+      } catch (err) {
+        const detail = err instanceof Error ? err.message : String(err);
+        emitAnnWarningOnce("hnsw-fallback", postgresHnswFallbackWarning(detail));
         scored = await exactCosineScores(db, queryVector, model, dimensions);
       }
     } else {

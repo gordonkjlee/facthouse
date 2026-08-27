@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { shouldUseAnn, wouldWantAnn, embeddingWorkingSetBytes } from "../../src/search/ann.js";
+import {
+  shouldUseAnn,
+  wouldWantAnn,
+  embeddingWorkingSetBytes,
+  postgresHnswFallbackWarning,
+} from "../../src/search/ann.js";
 import { ANN_DEFAULT_MAX_BYTES } from "../../src/types/config.js";
 
 describe("shouldUseAnn", () => {
@@ -100,6 +105,13 @@ describe("wouldWantAnn", () => {
         maxBytes: ANN_DEFAULT_MAX_BYTES,
       }),
     ).toBe(false);
+  });
+});
+
+describe("postgresHnswFallbackWarning", () => {
+  it("names the driver error and the exact scan", () => {
+    expect(postgresHnswFallbackWarning("index is invalid")).toMatch(/index is invalid/);
+    expect(postgresHnswFallbackWarning("index is invalid")).toMatch(/exact scan/);
   });
 });
 

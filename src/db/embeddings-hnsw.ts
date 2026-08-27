@@ -6,7 +6,7 @@
  * Created on demand; SQLite never sees it.
  */
 
-import type { Db } from "./connection.js";
+import { withTransaction, type Db } from "./connection.js";
 import { getEmbeddings, type NewEmbedding } from "./embeddings.js";
 
 export const HNSW_TABLE = "fact_embeddings_hnsw";
@@ -53,7 +53,8 @@ async function sidecarMeta(
   // aborts the whole transaction, and catching in JavaScript does not undo that.
   const present = (await db
     .prepare(
-      `SELECT 1 AS ok FROM information_schema.tables WHERE table_name = ?`,
+      `SELECT 1 AS ok FROM information_schema.tables` +
+        ` WHERE table_schema = current_schema() AND table_name = ?`,
     )
     .get(HNSW_META)) as { ok: number } | undefined;
   if (!present) return null;
@@ -83,34 +84,36 @@ export async function rebuildHnswSidecar(
 ): Promise<void> {
   const n = assertDimension(dimensions);
   const stored = await getEmbeddings(db, model, n);
-  await db.exec(`DROP TABLE IF EXISTS ${HNSW_TABLE}`);
-  await db.exec(`DROP TABLE IF EXISTS ${HNSW_META}`);
-  await db.exec(
-    `CREATE TABLE ${HNSW_TABLE} (` +
-      `fact_id TEXT PRIMARY KEY,` +
-      `embedding vector(${n}) NOT NULL` +
-      `)`,
-  );
-  await db.exec(
-    `CREATE INDEX ${HNSW_TABLE}_idx ON ${HNSW_TABLE} ` +
-      `USING hnsw (embedding vector_cosine_ops)`,
-  );
-  await db.exec(
-    `CREATE TABLE ${HNSW_META} (` +
-      `model TEXT NOT NULL,` +
-      `dimensions INTEGER NOT NULL` +
-      `)`,
-  );
-  await db.prepare(`INSERT INTO ${HNSW_META} (model, dimensions) VALUES (?, ?)`).run(
-    model,
-    n,
-  );
-  const ins = db.prepare(
-    `INSERT INTO ${HNSW_TABLE} (fact_id, embedding) VALUES (?, ?::vector)`,
-  );
-  for (const row of stored) {
-    await ins.run(row.fact_id, toVectorLiteral(row.vector));
-  }
+  await withTransaction(db, async () => {
+    await db.exec(`DROP TABLE IF EXISTS ${HNSW_TABLE}`);
+    await db.exec(`DROP TABLE IF EXISTS ${HNSW_META}`);
+    await db.exec(
+      `CREATE TABLE ${HNSW_TABLE} (` +
+        `fact_id TEXT PRIMARY KEY,` +
+        `embedding vector(${n}) NOT NULL` +
+        `)`,
+    );
+    const ins = db.prepare(
+      `INSERT INTO ${HNSW_TABLE} (fact_id, embedding) VALUES (?, ?::vector)`,
+    );
+    for (const row of stored) {
+      await ins.run(row.fact_id, toVectorLiteral(row.vector));
+    }
+    // Index after the bulk load — cheaper than maintaining HNSW on every insert.
+    await db.exec(
+      `CREATE INDEX ${HNSW_TABLE}_idx ON ${HNSW_TABLE} ` +
+        `USING hnsw (embedding vector_cosine_ops)`,
+    );
+    await db.exec(
+      `CREATE TABLE ${HNSW_META} (` +
+        `model TEXT NOT NULL,` +
+        `dimensions INTEGER NOT NULL` +
+        `)`,
+    );
+    await db
+      .prepare(`INSERT INTO ${HNSW_META} (model, dimensions) VALUES (?, ?)`)
+      .run(model, n);
+  });
 }
 
 export async function ensureHnswSidecar(

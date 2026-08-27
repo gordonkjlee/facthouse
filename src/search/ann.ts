@@ -57,6 +57,10 @@ export function postgresMissingVectorWarning(): string {
   );
 }
 
+export function postgresHnswFallbackWarning(detail: string): string {
+  return `HNSW meaning-search failed (${detail}); using the exact scan.`;
+}
+
 const warned = new Set<string>();
 
 export function emitAnnWarningOnce(key: string, message: string): void {
