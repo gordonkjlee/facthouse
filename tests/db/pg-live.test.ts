@@ -4,15 +4,19 @@
  * protocol.
  *
  * Local `npm test` skips when the URL is unset (no Docker required).
- * CI sets OPENMEMORY_TEST_POSTGRES_URL and CI=true, so a missing URL is a
- * failure rather than a skip. Never point this at a real memory store —
- * production reads OPENMEMORY_POSTGRES_URL, not this variable.
+ * The Linux CI job sets OPENMEMORY_TEST_POSTGRES_URL and
+ * OPENMEMORY_REQUIRE_POSTGRES=1, so a missing URL is a failure rather than
+ * a skip. Do not key that assertion off CI=true: GitHub sets CI on every
+ * runner, including Windows, which has no Postgres service. Never point this
+ * at a real memory store — production reads OPENMEMORY_POSTGRES_URL, not
+ * this variable.
  */
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, rmSync, writeFileSync, existsSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync, existsSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { loadConfig } from "../../src/config.js";
 import { closeDatabase, type Db } from "../../src/db/connection.js";
 import { applySchema, getSchemaVersion, SCHEMA_VERSION } from "../../src/db/schema.js";
@@ -21,7 +25,7 @@ import { insertFact, getFact, keywordSearch } from "../../src/db/facts.js";
 import { initDataDir } from "../../src/cli/init.js";
 
 const liveUrl = process.env.OPENMEMORY_TEST_POSTGRES_URL?.trim();
-const requireLive = process.env.CI === "true";
+const requireLive = process.env.OPENMEMORY_REQUIRE_POSTGRES === "1";
 
 let dir: string;
 let db: Db | undefined;
@@ -47,6 +51,12 @@ function postgresEnv(): NodeJS.ProcessEnv {
 }
 
 describe("postgres live (pg)", () => {
+  it("does not treat GitHub CI=true as the live-postgres require flag", () => {
+    const src = readFileSync(fileURLToPath(import.meta.url), "utf8");
+    expect(src).not.toMatch(/process\.env\.CI\s*===\s*"true"/);
+    expect(src).toContain("OPENMEMORY_REQUIRE_POSTGRES");
+  });
+
   it.skipIf(!requireLive)("OPENMEMORY_TEST_POSTGRES_URL is set in CI", () => {
     expect(liveUrl).toBeTruthy();
   });
