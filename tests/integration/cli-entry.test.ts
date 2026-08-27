@@ -17,6 +17,7 @@ import { mkdtempSync, mkdirSync, rmSync, existsSync, readFileSync, writeFileSync
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { INIT_PROMPTS } from "../../src/cli/init-knobs.js";
 
 const CLI = path.resolve(
   fileURLToPath(new URL("../../dist/cli/index.js", import.meta.url)),
@@ -203,12 +204,29 @@ describe.skipIf(!runnable)("cli entry — init reports the intelligence it will 
 });
 
 describe.skipIf(!runnable)("cli entry — init output", () => {
+  it("honours --yes without printing prompt copy", () => {
+    const dir = path.join(root, "yes-flag");
+    const r = run(["init", dir, "--yes"]);
+    expect(r.status).toBe(0);
+    expect(r.stdout).not.toContain(INIT_PROMPTS.intro);
+    expect(r.stdout).not.toContain(INIT_PROMPTS.capture);
+    expect(r.stdout).not.toContain(INIT_PROMPTS.embedding);
+    expect(r.stdout).not.toContain(INIT_PROMPTS.more);
+  });
+
+  it("rejects --pull rather than hanging init on a first ingest", () => {
+    const r = run(["init", path.join(root, "no-pull"), "--pull"]);
+    expect(r.status).not.toBe(0);
+  });
+
   it("says one data directory is one memory", () => {
     const dir = path.join(root, "one-brain");
     const r = run(["init", dir]);
     expect(r.status).toBe(0);
     expect(r.stdout).toMatch(/one data directory is one memory/i);
     expect(r.stdout).toMatch(/another store is another directory/i);
+    expect(r.stdout).not.toContain(INIT_PROMPTS.intro);
+    expect(r.stdout).not.toContain(INIT_PROMPTS.capture);
   });
 
   it("tells a tester that pull is off until they name a source", () => {
@@ -256,6 +274,14 @@ describe.skipIf(!runnable)("cli entry — init output", () => {
 
     const forced = run(["init", dir, "--force"]);
     expect(forced.status).toBe(0);
+    expect(JSON.parse(readFileSync(configPath, "utf-8")).consolidation.threshold).toBe(10);
+
+    const editedAgain = JSON.parse(readFileSync(configPath, "utf-8"));
+    editedAgain.consolidation.threshold = 99;
+    writeFileSync(configPath, JSON.stringify(editedAgain, null, 2), "utf-8");
+    const yesForce = run(["init", dir, "--yes", "--force"]);
+    expect(yesForce.status).toBe(0);
+    expect(yesForce.stdout).not.toContain(INIT_PROMPTS.intro);
     expect(JSON.parse(readFileSync(configPath, "utf-8")).consolidation.threshold).toBe(10);
   });
 });

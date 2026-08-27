@@ -43,7 +43,7 @@ Git Bash / macOS / Linux:
 ```bash
 export OPENMEMORY_DATA=/tmp/openmemory-try
 om() { npx -y -p @openmem/mcp@0.20.0 openmemory "$@"; }
-om init
+om init --yes
 ```
 
 PowerShell:
@@ -51,7 +51,7 @@ PowerShell:
 ```powershell
 $env:OPENMEMORY_DATA = Join-Path $env:TEMP "openmemory-try"
 function om { npx -y -p "@openmem/mcp@0.20.0" openmemory @args }
-om init
+om init --yes
 ```
 <!-- x-release-please-end -->
 
@@ -138,7 +138,7 @@ You do not need two installs. The default is one directory and one MCP server na
 
 A second store is a second directory — not a filter on which client wrote the row, and not a tenant column inside one SQLite file. Each store has its own `config.json`, its own pull sources, its own hooks (`--data` must match), and its own scheduler socket. They cannot see each other's facts. Work and personal is one reason to split, not a required setup.
 
-A non-default data directory prints a distinct MCP server name so two stores can share one `mcp.json`. `openmemory init` against each extra directory prints that snippet. Example:
+A non-default data directory prints a distinct MCP server name so two stores can share one `mcp.json`. Init against each extra directory prints that snippet. Example:
 
 <!-- x-release-please-start-version -->
 ```json
@@ -167,7 +167,7 @@ Storage works with nothing but Node. The *intelligence* — entity extraction, d
 
 Without it, consolidation falls back to a built-in heuristic. Be clear about what that means: the fallback **does not extract facts from transcripts**. `capture_fact` still stores facts, but with no entities and no domain routing, so you get a flat list rather than a knowledge graph. That is a deliberate design choice — the engine ships no vocabulary of its own, and a keyword classifier with no keywords cannot honestly route anything. PreCompact `signal flush` skips extract even when the server is up (extract already ran on pull/Stop). With no MCP server it uses the heuristic fallback on purpose (it must not spawn `claude -p` during compaction) and will not invent facts from unread events.
 
-Run `npx -y -p @openmem/mcp openmemory init` and it tells you which of the two you have:
+Run `npx -y -p @openmem/mcp openmemory init --yes` and it tells you which of the two you have:
 
 ```
 Consolidation intelligence: the claude CLI (no API key needed) — found and
@@ -186,7 +186,7 @@ Git Bash / macOS / Linux:
 export OPENMEMORY_DATA=/tmp/openmemory-demo
 om() { npx -y -p @openmem/mcp openmemory "$@"; }   # a function, so it works pasted into a script too
 
-om init
+om init --yes
 
 # Three things someone might say in passing, in three different conversations.
 om log-event --role user --content "I prefer dark mode in every editor, and I never want telemetry enabled."
@@ -201,7 +201,7 @@ PowerShell:
 ```powershell
 $env:OPENMEMORY_DATA = Join-Path $env:TEMP "openmemory-demo"
 function om { npx -y -p "@openmem/mcp" openmemory @args }
-om init
+om init --yes
 om log-event --role user --content "I prefer dark mode in every editor, and I never want telemetry enabled."
 om log-event --role user --content "I am allergic to shellfish, so avoid seafood restaurants when booking anything."
 om log-event --role user --content "My colleague Robin at Acme is leading the Atlas migration project this quarter."
@@ -354,21 +354,31 @@ PreCompact `openmemory signal flush` graduates pending facts; it does not re-rea
 
 #### `openmemory init [dir]`
 
-Optional — the server creates its data directory and database on first run anyway. Use `init` to set things up ahead of time and, more usefully, to write a `config.json` you can tune (without it, the defaults are invisible):
+Optional — the server creates its data directory and database on first run anyway. Use `init` to set things up ahead of time and, more usefully, to write a `config.json` you can tune (without it, the defaults are invisible).
+
+On a terminal, `openmemory init` asks data directory, optional transcript capture, semantic search, and More settings (extraction model and timeout today; extra knobs later). `--yes` never prompts. On a terminal, `--force` still asks those questions, then replaces the whole file; `--yes --force` is the silent reset.
+
+Interactive (do not paste further commands into this fence):
 
 ```bash
-# Initialise the default location (~/.openmemory):
 openmemory init
-
-# Or a specific directory:
-openmemory init ~/my-memory
-
-# Options:
-#   --data     Data directory (alternative to the positional argument)
-#   --force    Overwrite an existing config.json with defaults
 ```
 
-It creates the data directory, applies the database schema, writes `config.json` with the shipped defaults, and prints a ready-to-paste MCP config block. Re-running is safe: an existing `config.json` is left untouched unless you pass `--force`, and your data is preserved.
+Scripted / throwaway:
+
+```bash
+openmemory init --yes
+```
+
+```bash
+openmemory init --yes ~/my-memory
+```
+
+```bash
+openmemory init --yes --force
+```
+
+It creates the data directory, applies the database schema, writes `config.json` with the shipped defaults (plus any answers), and prints a ready-to-paste MCP config block. Re-running is safe: an existing `config.json` is left untouched unless you pass `--force`, and your data is preserved. `--force` does not merge with the previous file.
 
 The generated `config.json` is where you change consolidation behaviour — most notably `intelligence.provider`, which selects how facts are extracted (`cli` by default, which runs the `claude` CLI; set it to `heuristic` for a zero-dependency regex fallback, or override at runtime with `OPENMEMORY_PROVIDER=heuristic`).
 

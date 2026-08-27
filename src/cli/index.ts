@@ -6,6 +6,7 @@
  */
 
 import { parseArgs } from "node:util";
+import { createInterface } from "node:readline/promises";
 import { readFileSync, existsSync } from "node:fs";
 import path from "node:path";
 import { logEvent, extractContentFromHookPayload } from "./log-event.js";
@@ -16,8 +17,17 @@ import {
   mcpSnippetDataDir,
   providerStatusLines,
   embeddingStatusLines,
-  sourcesStatusLines,
+  appendCaptureRecipe,
 } from "./init.js";
+import {
+  collectInitAnswers,
+  isInteractiveInit,
+  bindInitIo,
+  silentInitIo,
+  type InitWizardSeed,
+  type InitWizardResult,
+} from "./init-wizard.js";
+import { INIT_PROMPTS } from "./init-knobs.js";
 import { defaultDataDir, resolveUserPath } from "../paths.js";
 import { runSearch, formatSearch, formatStats, formatPrune, getStats } from "./query.js";
 import { prunableEvents, pruneEvents, vacuum } from "../db/prune.js";
@@ -35,6 +45,7 @@ import type { EmbeddingProvider } from "../embedding/types.js";
 import { DEFAULT_CONFIG, type ServerConfig } from "../types/config.js";
 import type { SessionEvent } from "../types/data.js";
 import {
+  CONFIG_FILENAME,
   loadConfig,
   loadShippedStoreConfig,
   ensureBitemporalSince,
@@ -116,7 +127,7 @@ async function main() {
     console.error(
       `Usage: openmemory <command>\n\n` +
         `Commands:\n` +
-        `  init [dir]    Create the data directory, database, and default config\n` +
+        `  init [dir]    Create the data directory, database, and default config (--yes never prompts)\n` +
         `  search <q>    Search the knowledge base\n` +
         `  stats         Show knowledge base statistics\n` +
         `  prune         Reclaim raw events nothing can reach (dry run by default)\n` +
@@ -147,6 +158,7 @@ async function runInit() {
     options: {
       data: { type: "string" },
       force: { type: "boolean", default: false },
+      yes: { type: "boolean", default: false, short: "y" },
     },
     allowPositionals: true,
     strict: true,
@@ -162,12 +174,56 @@ async function runInit() {
   // Normalise to an absolute, platform-native path so every path we print (and
   // embed in the MCP snippet) is consistent regardless of how it was typed.
   const dataDir = resolveUserPath(target);
+  const dataDirLocked =
+    Boolean(positionals[0] ?? values.data) || Boolean(values.force);
+  const seed: InitWizardSeed = {
+    dataDir,
+    dataDirLocked,
+    force: values.force as boolean,
+  };
+  const seedHasConfig = existsSync(path.join(seed.dataDir, CONFIG_FILENAME));
+  const ask = isInteractiveInit({
+    stdinIsTTY: Boolean(process.stdin.isTTY),
+    yes: Boolean(values.yes),
+    seed,
+    configExists: seedHasConfig,
+  });
 
+  let reportDir = seed.dataDir;
   let result;
+  let wizard: InitWizardResult;
   try {
-    result = await initDataDir({ dataDir, force: values.force as boolean });
+    // Always — env postgres refuses before prompts, even with no config.json.
+    loadShippedStoreConfig(seed.dataDir);
+
+    if (!ask) {
+      wizard = await collectInitAnswers(silentInitIo(), seed);
+    } else {
+      const rl = createInterface({
+        input: process.stdin,
+        output: process.stdout,
+        terminal: true,
+      });
+      const onSigint = () => {
+        rl.close();
+        process.exit(130);
+      };
+      rl.on("SIGINT", onSigint);
+      try {
+        wizard = await collectInitAnswers(bindInitIo(rl), seed);
+      } finally {
+        rl.removeListener("SIGINT", onSigint);
+        rl.close();
+      }
+    }
+    reportDir = wizard.dataDir;
+    result = await initDataDir({
+      dataDir: wizard.dataDir,
+      force: values.force as boolean,
+      overlay: wizard.overlay,
+    });
   } catch (err: unknown) {
-    console.error(`Failed to initialise ${dataDir}: ${errorMessage(err)}`);
+    console.error(`Failed to initialise ${reportDir}: ${errorMessage(err)}`);
     process.exit(1);
   }
 
@@ -181,6 +237,12 @@ async function runInit() {
     mcpServerName(result.dataDir),
   );
 
+  const written = loadConfig(result.dataDir);
+  const embedLines = await embeddingStatusLines(written.embedding);
+  const captureLines = appendCaptureRecipe(written.sources, {
+    captureAskedAndEmpty: wizard.captureAskedAndEmpty,
+  });
+
   const lines = [
     ``,
     `OpenMemory initialised.`,
@@ -188,7 +250,9 @@ async function runInit() {
     `  Data directory  ${result.dataDir}${result.createdDataDir ? " (created)" : ""}`,
     `  Database        ${result.dbPath} (schema v${result.schemaVersion})`,
     `  Config          ${result.configPath}${
-      result.wroteConfig ? " (written)" : " (already exists — left unchanged; use --force to reset)"
+      result.wroteConfig
+        ? " (written)"
+        : ` (${INIT_PROMPTS.existingConfig})`
     }`,
     ``,
     `Add to your AI tool's MCP configuration:`,
@@ -199,15 +263,13 @@ async function runInit() {
     `with its own MCP server name and OPENMEMORY_DATA — not a tenant column`,
     `inside this file.`,
     ``,
-    // Report the provider this store will really get, rather than describing
-    // the default and leaving the user to discover which branch they landed on.
     ...providerStatusLines(
-      resolveProviderType(loadConfig(result.dataDir).intelligence.provider),
+      resolveProviderType(written.intelligence.provider),
     ),
     ``,
-    ...embeddingStatusLines(loadConfig(result.dataDir).embedding),
+    ...embedLines,
     ``,
-    ...sourcesStatusLines(loadConfig(result.dataDir).sources),
+    ...captureLines,
     ``,
   ];
   console.log(lines.join("\n"));
