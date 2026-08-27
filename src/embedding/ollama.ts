@@ -14,8 +14,38 @@
 
 import type { EmbeddingProvider, EmbeddingResult, InputType } from "./types.js";
 
-const DEFAULT_HOST = "http://localhost:11434";
-const DEFAULT_MODEL = "nomic-embed-text";
+export const DEFAULT_HOST = "http://localhost:11434";
+export const DEFAULT_MODEL = "nomic-embed-text";
+
+export function ollamaHost(host?: string): string {
+  return (host ?? DEFAULT_HOST).replace(/\/+$/, "");
+}
+
+export async function probeOllama(
+  host?: string,
+  timeoutMs = 2_000,
+  fetchImpl: typeof fetch = fetch,
+): Promise<{ ok: boolean; host: string; models: string[] }> {
+  const normalised = ollamaHost(host);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetchImpl(`${normalised}/api/tags`, {
+      method: "GET",
+      signal: controller.signal,
+    });
+    if (!res.ok) return { ok: false, host: normalised, models: [] };
+    const json = (await res.json()) as { models?: Array<{ name?: string }> };
+    const models = Array.isArray(json.models)
+      ? json.models.map((m) => m.name ?? "").filter(Boolean)
+      : [];
+    return { ok: true, host: normalised, models };
+  } catch {
+    return { ok: false, host: normalised, models: [] };
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 export interface OllamaOpts {
   host?: string;
@@ -41,7 +71,7 @@ function applyPrefix(model: string, text: string, inputType: InputType): string 
 }
 
 export function createOllamaProvider(opts: OllamaOpts = {}): EmbeddingProvider {
-  const host = (opts.host ?? DEFAULT_HOST).replace(/\/+$/, "");
+  const host = ollamaHost(opts.host);
   const model = opts.model ?? DEFAULT_MODEL;
   const timeoutMs = opts.timeoutMs ?? 60_000;
   // Native dimension is unknown until the first response, so `dimensions` is

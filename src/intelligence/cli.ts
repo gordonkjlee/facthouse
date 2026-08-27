@@ -34,7 +34,11 @@ import path from "node:path";
 import type { IntelligenceProvider, ExtractedFact, ExtractedEntity, Referent } from "./types.js";
 import { createHeuristicProvider } from "./heuristic.js";
 import { domainRoutingInstruction, normaliseDomainName } from "../schemas/domains.js";
-import type { DomainDef } from "../types/config.js";
+import {
+  CLI_DEFAULT_MODEL,
+  CLI_DEFAULT_TIMEOUT_MS,
+  type DomainDef,
+} from "../types/config.js";
 import {
   EXTRACT_CONTEXT_CONTRACT,
   EXTRACT_DURABLE_JOB,
@@ -51,9 +55,9 @@ import {
 export interface CliProviderOpts {
   /** Command + args to invoke the CLI. Default: `['claude']` (resolved via PATH). */
   command?: string[];
-  /** Model alias (passed via --model). Default: `haiku`. */
+  /** Model alias (passed via --model). Default: CLI_DEFAULT_MODEL. */
   model?: string;
-  /** Per-stage timeout in ms. Default: 45_000 (same as CliProviderConfig.timeout_ms). */
+  /** Per-stage timeout in ms. Default: CLI_DEFAULT_TIMEOUT_MS. */
   timeoutMs?: number;
   /** Cwd for subprocess. Default: OS tempdir (out of project scope). */
   cwd?: string;
@@ -612,12 +616,12 @@ export function createCliProvider(
   const opts: Required<CliProviderOpts> = {
     // Resolved lazily below — kept here only to satisfy the Required shape.
     command: [],
-    model: userOpts.model ?? "haiku",
+    model: userOpts.model ?? CLI_DEFAULT_MODEL,
     // 45s covers the heavier stage 1 (nested schema + entity resolution).
     // Measured: simple prompts 8–15s; stage 1 with full schema 20–35s
     // observed. Budget is per stage, not total — 4 stages × 45s = up to 3
     // minutes worst case, which is still a background job.
-    timeoutMs: userOpts.timeoutMs ?? 45_000,
+    timeoutMs: userOpts.timeoutMs ?? CLI_DEFAULT_TIMEOUT_MS,
     cwd: userOpts.cwd ?? tmpdir(),
     maxCandidates: userOpts.maxCandidates ?? 50,
     debug: userOpts.debug ?? false,

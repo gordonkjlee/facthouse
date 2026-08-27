@@ -11,6 +11,8 @@ const {
   mcpSnippetDataDir,
   providerStatusLines,
   sourcesStatusLines,
+  appendCaptureRecipe,
+  embeddingStatusLines,
 } = await import("../../src/cli/init.js");
 const { CONFIG_FILENAME, loadConfig, defaultServerConfig } = await import("../../src/config.js");
 const { defaultDataDir } = await import("../../src/paths.js");
@@ -117,6 +119,20 @@ describe("initDataDir", () => {
       defaultServerConfig().embedding.api_key_env,
     );
     expect(written.storage.provider).toBe("sqlite");
+  });
+
+  it("writes cli model overlay without swapping provider", async () => {
+    const dataDir = path.join(root, "overlay-cli");
+    await initDataDir({
+      dataDir,
+      overlay: { cliModel: "sonnet", cliTimeoutMs: 180000 },
+    });
+    const written = JSON.parse(
+      readFileSync(path.join(dataDir, CONFIG_FILENAME), "utf-8"),
+    );
+    expect(written.intelligence.provider).toBe("cli");
+    expect(written.intelligence.cli.model).toBe("sonnet");
+    expect(written.intelligence.cli.timeout_ms).toBe(180000);
   });
 
   it("ignores overlay when preserving an existing config", async () => {
@@ -327,5 +343,107 @@ describe("sourcesStatusLines", () => {
     const text = sourcesStatusLines([{ kind: "grok", home: "~/.grok" }]).join("\n");
     expect(text).toMatch(/invalid/i);
     expect(text).toMatch(/grok/);
+  });
+});
+
+describe("appendCaptureRecipe", () => {
+  it("uses declined copy instead of the empty-sources tutorial", () => {
+    const lines = appendCaptureRecipe([], { captureAskedAndEmpty: true });
+    expect(lines.join("\n")).toMatch(/you said no/i);
+    expect(lines.join("\n")).not.toMatch(/Add a claude-code/);
+  });
+
+  it("does not throw or mix-warn on invalid sources", () => {
+    const lines = appendCaptureRecipe([{ kind: "grok", home: "~/.grok" }]);
+    expect(lines.join("\n")).toMatch(/invalid/i);
+    expect(lines.join("\n")).not.toMatch(/log-event hooks/i);
+  });
+
+  it("adds the mix warning when a source is present", () => {
+    const lines = appendCaptureRecipe([
+      { kind: "claude-code", home: "~/.claude", cwd: "C:\\dev\\app" },
+    ]);
+    expect(lines.join("\n")).toMatch(/log-event hooks/i);
+  });
+});
+
+describe("embeddingStatusLines", () => {
+  it("does not probe when search is off", async () => {
+    let called = false;
+    const lines = await embeddingStatusLines(
+      { provider: null } as never,
+      {},
+      async () => {
+        called = true;
+        return { ok: false, host: "http://localhost:11434", models: [] };
+      },
+    );
+    expect(called).toBe(false);
+    expect(lines.join("\n")).toMatch(/Semantic search: off/);
+  });
+
+  it("warns when ollama is down and does not claim search is on", async () => {
+    const lines = await embeddingStatusLines(
+      { provider: "ollama", model: null, dimensions: null, api_key_env: "VOYAGE_API_KEY", batch_size: 128, min_similarity_ratio: 0.85, min_similarity: null, host: "http://127.0.0.1:11435" },
+      {},
+      async (host) => ({ ok: false, host: host ?? "http://127.0.0.1:11435", models: [] }),
+    );
+    expect(lines.join("\n")).toMatch(/WARNING/);
+    expect(lines.join("\n")).toContain("http://127.0.0.1:11435");
+    expect(lines.join("\n")).not.toMatch(/Semantic search: on/);
+  });
+
+  it("strips a trailing slash before probing ollama", async () => {
+    let probed: string | undefined;
+    await embeddingStatusLines(
+      { provider: "ollama", model: null, dimensions: null, api_key_env: "VOYAGE_API_KEY", batch_size: 128, min_similarity_ratio: 0.85, min_similarity: null, host: "http://127.0.0.1:11435/" },
+      {},
+      async (host) => {
+        probed = host;
+        return { ok: false, host: host ?? "", models: [] };
+      },
+    );
+    expect(probed).toBe("http://127.0.0.1:11435");
+  });
+
+  it("warns when ollama is up but the model is missing", async () => {
+    const lines = await embeddingStatusLines(
+      { provider: "ollama", model: null, dimensions: null, api_key_env: "VOYAGE_API_KEY", batch_size: 128, min_similarity_ratio: 0.85, min_similarity: null, host: "http://127.0.0.1:11435" },
+      {},
+      async (host) => ({ ok: true, host: host ?? "http://127.0.0.1:11435", models: [] }),
+    );
+    expect(lines.join("\n")).toMatch(/WARNING/);
+    expect(lines.join("\n")).toMatch(/nomic-embed-text/);
+    expect(lines.join("\n")).not.toMatch(/Semantic search: on/);
+  });
+
+  it("reports on when ollama answers with the model", async () => {
+    let probed: string | undefined;
+    const lines = await embeddingStatusLines(
+      { provider: "ollama", model: null, dimensions: null, api_key_env: "VOYAGE_API_KEY", batch_size: 128, min_similarity_ratio: 0.85, min_similarity: null },
+      {},
+      async (host) => {
+        probed = host;
+        return { ok: true, host: host ?? "", models: ["nomic-embed-text:latest"] };
+      },
+    );
+    expect(probed).toBe("http://localhost:11434");
+    expect(lines.join("\n")).toMatch(/Semantic search: on/);
+    expect(lines.join("\n")).toMatch(/ollama/);
+  });
+
+  it("warns when voyage has no API key and does not probe", async () => {
+    let called = false;
+    const lines = await embeddingStatusLines(
+      { provider: "voyage", model: null, dimensions: null, api_key_env: "VOYAGE_API_KEY", batch_size: 128, min_similarity_ratio: 0.85, min_similarity: null },
+      {},
+      async () => {
+        called = true;
+        return { ok: false, host: "", models: [] };
+      },
+    );
+    expect(called).toBe(false);
+    expect(lines.join("\n")).toMatch(/WARNING/);
+    expect(lines.join("\n")).toMatch(/VOYAGE_API_KEY/);
   });
 });

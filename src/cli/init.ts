@@ -28,11 +28,17 @@ import {
 } from "../config.js";
 import { probeCliProvider, type CliProbeResult } from "../intelligence/cli.js";
 import { createEmbeddingProvider } from "../embedding/provider.js";
+import {
+  DEFAULT_MODEL as OLLAMA_DEFAULT_MODEL,
+  ollamaHost,
+  probeOllama,
+} from "../embedding/ollama.js";
 import { resolveSources } from "../sources/resolve.js";
 import type { IntelligenceProviderType, EmbeddingConfig } from "../types/config.js";
 import { defaultDataDir } from "../paths.js";
 import { SESSION_START_FLUSH_MAX_INSERTED } from "../sources/pull.js";
 import {
+  INIT_PROMPTS,
   INIT_SYNTHETIC,
   applyInitOverlay,
   type InitOverlay,
@@ -163,10 +169,11 @@ export function providerStatusLines(
  * default and a legitimate choice — the failure worth shouting about is the
  * configured-but-unusable one.
  */
-export function embeddingStatusLines(
+export async function embeddingStatusLines(
   config: EmbeddingConfig | undefined,
   env: NodeJS.ProcessEnv = process.env,
-): string[] {
+  probe: typeof probeOllama = probeOllama,
+): Promise<string[]> {
   const reasons: string[] = [];
   const provider = createEmbeddingProvider(config, {
     env,
@@ -191,10 +198,49 @@ export function embeddingStatusLines(
     ];
   }
 
+  if (config?.provider === "ollama") {
+    const probed = await probe(ollamaHost(config.host));
+    const model = config.model ?? OLLAMA_DEFAULT_MODEL;
+    const modelPresent = probed.models.some(
+      (n) => n === model || n.startsWith(`${model}:`),
+    );
+    if (!probed.ok) {
+      return [
+        `WARNING: Ollama at ${probed.host} did not answer GET /api/tags (liveness only — this is not an embed).`,
+        `Semantic search is off until it is running. embedding.provider is still "ollama" in config.json.`,
+      ];
+    }
+    if (!modelPresent) {
+      return [
+        `WARNING: Ollama at ${probed.host} is running, but ${model} is not in GET /api/tags.`,
+        `Semantic search is off until you run: ollama pull ${model}`,
+        `embedding.provider is still "ollama" in config.json.`,
+      ];
+    }
+  }
+
   return [
     `Semantic search: on, via ${config?.provider} (${provider.model}). Facts are`,
     `embedded at consolidation, so an existing store fills in on the next run.`,
   ];
+}
+
+export function appendCaptureRecipe(
+  sources: unknown,
+  opts: { captureAskedAndEmpty?: boolean } = {},
+): string[] {
+  if (opts.captureAskedAndEmpty) {
+    return [INIT_PROMPTS.captureDeclined];
+  }
+  const status = sourcesStatusLines(sources);
+  try {
+    if (resolveSources(sources).length > 0) {
+      return [...status, INIT_PROMPTS.mixPullLogEvent];
+    }
+  } catch {
+    return status;
+  }
+  return status;
 }
 
 /**

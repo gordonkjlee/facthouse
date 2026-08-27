@@ -94,14 +94,19 @@ export interface ExtractionConfig {
   working_memory_size: number;
 }
 
+/** Default `--model` for the CLI intelligence provider. One definition. */
+export const CLI_DEFAULT_MODEL = "haiku";
+/** Default per-stage subprocess timeout (ms). One definition. */
+export const CLI_DEFAULT_TIMEOUT_MS = 45_000;
+
 /** Options for the 'cli' provider (subprocess `claude -p`). All optional —
  *  sensible defaults are applied by createCliProvider. */
 export interface CliProviderConfig {
   /** Command + args to invoke the CLI. Default: resolves `claude` via PATH. */
   command?: string[];
-  /** Model alias passed via --model. Default: "haiku". */
+  /** Model alias passed via --model. Default: CLI_DEFAULT_MODEL. */
   model?: string;
-  /** Per-stage subprocess timeout in ms. Default: 45000. */
+  /** Per-stage subprocess timeout in ms. Default: CLI_DEFAULT_TIMEOUT_MS. */
   timeout_ms?: number;
   /** Emit provider debug logging to stderr. Default: false. */
   debug?: boolean;

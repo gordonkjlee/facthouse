@@ -13,7 +13,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 const { createVoyageProvider } = await import("../../src/embedding/voyage.js");
-const { createOllamaProvider } = await import("../../src/embedding/ollama.js");
+const { createOllamaProvider, ollamaHost, probeOllama, DEFAULT_HOST } = await import("../../src/embedding/ollama.js");
 const { createEmbeddingProvider, resolveEmbeddingProviderType } = await import(
   "../../src/embedding/provider.js"
 );
@@ -124,6 +124,35 @@ describe("voyage provider", () => {
 });
 
 describe("ollama provider", () => {
+  it("strips a trailing slash from the host", () => {
+    expect(ollamaHost("http://127.0.0.1:11435/")).toBe("http://127.0.0.1:11435");
+    expect(ollamaHost(undefined)).toBe(DEFAULT_HOST);
+  });
+
+  it("probeOllama reads model names from GET /api/tags", async () => {
+    const fetchImpl = (async (url: unknown) => {
+      expect(String(url)).toBe(`${DEFAULT_HOST}/api/tags`);
+      return {
+        ok: true,
+        json: async () => ({ models: [{ name: "nomic-embed-text:latest" }] }),
+      };
+    }) as unknown as typeof fetch;
+    const r = await probeOllama(undefined, 2_000, fetchImpl);
+    expect(r.ok).toBe(true);
+    expect(r.host).toBe(DEFAULT_HOST);
+    expect(r.models).toEqual(["nomic-embed-text:latest"]);
+  });
+
+  it("probeOllama reports down when tags fetch fails", async () => {
+    const fetchImpl = (async () => {
+      throw new Error("ECONNREFUSED");
+    }) as unknown as typeof fetch;
+    const r = await probeOllama("http://127.0.0.1:11435/", 2_000, fetchImpl);
+    expect(r.ok).toBe(false);
+    expect(r.host).toBe("http://127.0.0.1:11435");
+    expect(r.models).toEqual([]);
+  });
+
   let originalFetch: typeof fetch;
   beforeEach(() => {
     originalFetch = globalThis.fetch;
