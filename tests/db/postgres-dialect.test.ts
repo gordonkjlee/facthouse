@@ -124,4 +124,34 @@ describe("postgres dialect (PGlite)", () => {
     });
     expect(nested).toMatch(/^[0-9a-f-]{36}$/);
   });
+
+  it("meaning-search stays exact without pgvector and does not create a sidecar", async () => {
+    const { insertEmbeddings } = await import("../../src/db/embeddings.js");
+    const { sidecarIsCurrent } = await import("../../src/db/embeddings-hnsw.js");
+    const { vectorSearch } = await import("../../src/search/vector.js");
+    const { resetAnnWarningState, postgresMissingVectorWarning } = await import(
+      "../../src/search/ann.js"
+    );
+    resetAnnWarningState();
+    const errors: string[] = [];
+    const orig = console.error;
+    console.error = (msg: unknown) => {
+      errors.push(String(msg));
+    };
+    try {
+      const fact = await insertFact(db, {
+        content: GRAIN,
+        domain: "pipeline",
+        source_type: "conversation",
+      });
+      const vector = Float32Array.from([1, 0]);
+      await insertEmbeddings(db, [{ fact_id: fact.id, vector }], "m", 2);
+      const hits = await vectorSearch(db, vector, "m", 2, 5, { ann: true });
+      expect(hits.map((h) => h.id)).toContain(fact.id);
+      expect(await sidecarIsCurrent(db, "m", 2)).toBe(false);
+      expect(errors.join("")).toContain(postgresMissingVectorWarning());
+    } finally {
+      console.error = orig;
+    }
+  });
 });

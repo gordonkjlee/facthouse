@@ -23,11 +23,15 @@ const {
   countEmbeddings,
 } = await import("../../src/db/embeddings.js");
 const { cosineSimilarity, vectorSearch } = await import("../../src/search/vector.js");
+const { resetAnnWarningState, sqliteScaleWarning } = await import(
+  "../../src/search/ann.js"
+);
 const { hybridSearch } = await import("../../src/search/index.js");
 
 let db: Db;
 
 beforeEach(async () => {
+  resetAnnWarningState();
   db = dbMod.openDatabase(":memory:");
   await applySchema(db);
 });
@@ -486,5 +490,41 @@ describe("the absolute floor", () => {
     const real = await addFact("the real match");
     await insertEmbeddings(db, [{ fact_id: real.id, vector: vec(1, 0) }], "m", 2);
     expect((await vectorSearch(db, vec(1, 0), "m", 2, 10)).map((f) => f.id)).toEqual([real.id]);
+  });
+});
+
+describe("sqlite scale warning", () => {
+  it("stays exact and warns once when over the byte threshold", async () => {
+    const errors: string[] = [];
+    const orig = console.error;
+    console.error = (msg: unknown) => {
+      errors.push(String(msg));
+    };
+    try {
+      const f = await addFact("the user is allergic to shellfish");
+      await insertEmbeddings(db, [{ fact_id: f.id, vector: vec(1, 0) }], "m", 2);
+      const hits = await vectorSearch(db, vec(1, 0), "m", 2, 10, { annMaxBytes: 0 });
+      expect(hits.map((h) => h.id)).toEqual([f.id]);
+      await vectorSearch(db, vec(1, 0), "m", 2, 10, { annMaxBytes: 0 });
+      expect(errors.filter((e) => e.includes(sqliteScaleWarning()))).toHaveLength(1);
+    } finally {
+      console.error = orig;
+    }
+  });
+
+  it("does not warn when ann is forced off", async () => {
+    const errors: string[] = [];
+    const orig = console.error;
+    console.error = (msg: unknown) => {
+      errors.push(String(msg));
+    };
+    try {
+      const f = await addFact("the user is allergic to shellfish");
+      await insertEmbeddings(db, [{ fact_id: f.id, vector: vec(1, 0) }], "m", 2);
+      await vectorSearch(db, vec(1, 0), "m", 2, 10, { ann: false, annMaxBytes: 0 });
+      expect(errors.join("")).not.toContain("Postgres is the scale path");
+    } finally {
+      console.error = orig;
+    }
   });
 });

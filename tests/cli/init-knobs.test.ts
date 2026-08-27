@@ -129,10 +129,12 @@ describe("init knobs — one definition", () => {
       embeddingProvider: "voyage" as const,
       storage: { provider: "postgres" },
       intelligence: { provider: "heuristic" },
+      ann: true,
     };
     const next = applyInitOverlay(defaultServerConfig(), sneaky);
     expect(next.embedding.provider).toBe("voyage");
     expect(next.storage.provider).toBe("sqlite");
+    expect(next.embedding.ann).toBeNull();
     expect(next.intelligence.provider).toBe(
       defaultServerConfig().intelligence.provider,
     );

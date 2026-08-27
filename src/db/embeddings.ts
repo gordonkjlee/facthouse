@@ -39,8 +39,8 @@ export function packVector(vector: Float32Array): Buffer {
 }
 
 /** Unpack little-endian float32 bytes back into a vector. */
-export function unpackVector(buf: Buffer | Uint8Array): Float32Array {
-  const b = Buffer.isBuffer(buf) ? buf : Buffer.from(buf);
+export function unpackVector(buf: Buffer | Uint8Array | unknown): Float32Array {
+  const b = coerceBytes(buf);
   if (b.length % 4 !== 0) {
     throw new Error(`embedding blob length ${b.length} is not a multiple of 4`);
   }
@@ -49,6 +49,17 @@ export function unpackVector(buf: Buffer | Uint8Array): Float32Array {
     out[i] = b.readFloatLE(i * 4);
   }
   return out;
+}
+
+function coerceBytes(value: unknown): Buffer {
+  if (Buffer.isBuffer(value)) return value;
+  if (value instanceof Uint8Array) return Buffer.from(value.buffer, value.byteOffset, value.byteLength);
+  if (value instanceof ArrayBuffer) return Buffer.from(value);
+  if (typeof value === "string") {
+    const hex = value.startsWith("\\x") ? value.slice(2) : value;
+    return Buffer.from(hex, hex.length % 2 === 0 && /^[0-9a-fA-F]+$/.test(hex) ? "hex" : "binary");
+  }
+  throw new Error(`embedding blob is not bytes (${typeof value})`);
 }
 
 // ---------------------------------------------------------------------------
@@ -91,7 +102,17 @@ export async function insertEmbeddings(
           `embedding for ${e.fact_id} has ${e.vector.length} dimensions, expected ${dimensions}`,
         );
       }
-      await stmt.run(e.fact_id, model, dimensions, packVector(e.vector), now);
+      await stmt.run(
+        e.fact_id,
+        model,
+        dimensions,
+        new Uint8Array(packVector(e.vector)),
+        now,
+      );
+    }
+    if (db.dialect === "postgres") {
+      const { syncHnswSidecar } = await import("./embeddings-hnsw.js");
+      await syncHnswSidecar(db, embeddings, model, dimensions);
     }
   });
 }
@@ -172,5 +193,5 @@ export async function countEmbeddings(
       `SELECT COUNT(*) AS n FROM fact_embeddings WHERE model = ? AND dimensions = ?`,
     )
     .get(model, dimensions)) as { n: number };
-  return row.n;
+  return Number(row.n);
 }

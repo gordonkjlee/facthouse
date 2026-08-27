@@ -51,3 +51,36 @@ jobs:
 
       - name: Test
         run: npm test
+
+  test-pgvector:
+    name: test pgvector HNSW (node 24)
+    runs-on: ubuntu-latest
+    env:
+      OPENMEMORY_TEST_POSTGRES_URL: postgres://openmemory:openmemory@localhost:5432/openmemory
+      OPENMEMORY_REQUIRE_PGVECTOR: "1"
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: openmemory
+          POSTGRES_PASSWORD: openmemory
+          POSTGRES_DB: openmemory
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U openmemory -d openmemory"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Use Node.js 24
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+      - name: Install dependencies
+        run: npm install
+      - name: Build
+        run: npm run build
+      - name: HNSW handshake
+        run: npx vitest run tests/search/pg-hnsw.test.ts

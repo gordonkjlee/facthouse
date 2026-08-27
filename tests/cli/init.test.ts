@@ -73,6 +73,10 @@ describe("initDataDir", () => {
     // written so the knob is discoverable rather than invisible.
     expect(written.sources).toEqual([]);
     expect(written.storage.provider).toBe("sqlite");
+    expect(written.embedding.ann).toBeNull();
+    expect(written.embedding.ann_max_bytes).toBe(
+      defaultServerConfig().embedding.ann_max_bytes,
+    );
   });
 
   it("refuses postgres before creating memory.db when the URL is missing", async () => {

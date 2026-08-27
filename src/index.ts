@@ -184,6 +184,8 @@ async function main() {
     {
       minSimilarityRatio: config.embedding?.min_similarity_ratio,
       minSimilarity: config.embedding?.min_similarity ?? undefined,
+      ann: config.embedding?.ann,
+      annMaxBytes: config.embedding?.ann_max_bytes,
     },
     config.temporal,
   );
