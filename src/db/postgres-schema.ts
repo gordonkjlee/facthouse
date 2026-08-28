@@ -24,9 +24,43 @@ export async function applyPostgresSchema(db: Db): Promise<void> {
   const version = await postgresSchemaVersionSafe(db);
   if (version >= SCHEMA_VERSION) return;
   await db.exec(POSTGRES_DDL);
+  // CREATE IF NOT EXISTS does not replace a CHECK. Existing stores that
+  // opened at v17 still have the three-value constraint.
+  if (version > 0 && version < 18) {
+    await applyPostgresV18(db);
+  }
   await db
     .prepare(`INSERT OR IGNORE INTO schema_migrations (version) VALUES (?)`)
     .run(SCHEMA_VERSION);
+}
+
+async function applyPostgresV18(db: Db): Promise<void> {
+  await db.exec(`
+    DO $v18$
+    DECLARE
+      r RECORD;
+    BEGIN
+      FOR r IN
+        SELECT c.conname
+        FROM pg_constraint c
+        JOIN pg_class t ON t.oid = c.conrelid
+        JOIN pg_namespace n ON n.oid = t.relnamespace
+        WHERE t.relname = 'session_fact_sources'
+          AND n.nspname = current_schema()
+          AND c.contype = 'c'
+          AND pg_get_constraintdef(c.oid) LIKE '%extraction_type%'
+      LOOP
+        EXECUTE format('ALTER TABLE session_fact_sources DROP CONSTRAINT %I', r.conname);
+      END LOOP;
+    END
+    $v18$;
+    ALTER TABLE session_fact_sources
+      ADD CONSTRAINT session_fact_sources_extraction_type_check
+      CHECK (extraction_type IN (
+        'primary', 'corroborating', 'contextual',
+        'assent', 'observation', 'restatement'
+      ));
+  `);
 }
 
 async function postgresSchemaVersionSafe(db: Db): Promise<number> {
@@ -38,7 +72,7 @@ async function postgresSchemaVersionSafe(db: Db): Promise<number> {
 }
 
 /**
- * Current shape (schema v17). `rowid` is an identity column so SQLite queries
+ * Current shape (schema v18). `rowid` is an identity column so SQLite queries
  * that join FTS on rowid or order by insert order still have a column to use.
  * Word search is `tsvector` + GIN, not FTS5.
  */
@@ -115,9 +149,13 @@ CREATE TABLE IF NOT EXISTS session_fact_sources (
   session_fact_id TEXT NOT NULL,
   event_id TEXT NOT NULL,
   relevance DOUBLE PRECISION NOT NULL DEFAULT 1.0,
-  extraction_type TEXT NOT NULL DEFAULT 'contextual'
-    CHECK (extraction_type IN ('primary', 'corroborating', 'contextual')),
-  PRIMARY KEY (session_fact_id, event_id)
+  extraction_type TEXT NOT NULL DEFAULT 'contextual',
+  PRIMARY KEY (session_fact_id, event_id),
+  CONSTRAINT session_fact_sources_extraction_type_check
+    CHECK (extraction_type IN (
+      'primary', 'corroborating', 'contextual',
+      'assent', 'observation', 'restatement'
+    ))
 );
 
 CREATE TABLE IF NOT EXISTS domains (

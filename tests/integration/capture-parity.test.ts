@@ -211,14 +211,21 @@ describe("capture paths produce comparable knowledge", () => {
   });
 
   it("gives the two paths the same answer", async () => {
-    // The assertion the codebase was missing. Either path may change; they may
-    // not diverge without someone deciding they should.
+    // Domain, subject and extracted names must still match. Unnamed user-channel
+    // speech also links uttered_by the store's owner (placeholder name
+    // "the user"); explicit capture has no source event, so it does not.
     const explicit = await viaExplicitCapture();
     await closeDatabase(db);
     db = openDatabase(":memory:");
     await applySchema(db);
     const inferred = await viaEventExtraction();
 
-    expect(explicit).toEqual(inferred);
+    const withoutOwner = (c: Captured) => ({
+      ...c,
+      entities: c.entities.filter((n) => n !== "the user"),
+    });
+    expect(withoutOwner(explicit)).toEqual(withoutOwner(inferred));
+    expect(inferred.entities).toContain("the user");
+    expect(explicit.entities).not.toContain("the user");
   });
 });

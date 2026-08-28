@@ -188,6 +188,7 @@ async function main() {
       annMaxBytes: config.embedding?.ann_max_bytes,
     },
     config.temporal,
+    config.interlocutor,
   );
 
   const sched = startScheduler({

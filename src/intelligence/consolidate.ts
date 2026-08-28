@@ -48,6 +48,7 @@ import {
   type ConversationSituation,
 } from "../db/consolidations.js";
 import { normaliseForDedup } from "./heuristic.js";
+import { attachBackingSources } from "./backing.js";
 import {
   claimForConsolidation,
   getClaimedFacts,
@@ -662,6 +663,16 @@ export async function consolidate(
             await linkFactEntity(db, graduatedFact.id, named.id, UTTERED_BY);
             entitiesLinked++;
           }
+        } else if (sessionFact.speaker_role === "user") {
+          // Unnamed user-channel speech is said by the store's owner.
+          // Do not write speaker "self" or "the user" — the link is the id.
+          await linkFactEntity(
+            db,
+            graduatedFact.id,
+            (await ensureSelfEntity(db)).id,
+            UTTERED_BY,
+          );
+          entitiesLinked++;
         }
       }
 
@@ -940,6 +951,21 @@ async function loadSessionWindow(
   return rows.map(parseEventRow).reverse();
 }
 
+/** All events in a conversation, including lines too short to extract. */
+async function loadConversationEvents(
+  db: Db,
+  ref: ConversationRef,
+): Promise<SessionEvent[]> {
+  const sql =
+    ref.kind === "client"
+      ? `SELECT * FROM session_events WHERE client_session_id = ? ORDER BY sequence ASC`
+      : `SELECT * FROM session_events
+         WHERE client_session_id IS NULL AND mcp_session_id = ?
+         ORDER BY sequence ASC`;
+  const rows = (await db.prepare(sql).all(ref.id)) as SessionEventRow[];
+  return rows.map(parseEventRow);
+}
+
 async function linkExtractedFactToEvents(
   db: Db,
   sessionFactId: string,
@@ -958,15 +984,19 @@ async function linkExtractedFactToEvents(
   // walk every candidate in the watermark window, so a fact from A could
   // claim B's rows as contextual origin.
   let linkedPrimary = false;
+  let primary: SessionEvent | null = null;
   for (const event of groupEvents) {
     if (event.content && event.content.includes(factContent)) {
-      await linkFactSource(db, {
-        session_fact_id: sessionFactId,
-        event_id: event.id,
-        relevance: linkedPrimary ? 0.5 : 0.8,
-        extraction_type: linkedPrimary ? "corroborating" : "primary",
-      });
-      linkedPrimary = true;
+      if (!linkedPrimary) {
+        await linkFactSource(db, {
+          session_fact_id: sessionFactId,
+          event_id: event.id,
+          relevance: 0.8,
+          extraction_type: "primary",
+        });
+        linkedPrimary = true;
+        primary = event;
+      }
     }
   }
   if (!linkedPrimary) {
@@ -978,6 +1008,22 @@ async function linkExtractedFactToEvents(
         extraction_type: "contextual",
       });
     }
+    return;
+  }
+
+  await attachBackingSources(db, sessionFactId, factContent, groupEvents);
+
+  // Same speaker repeating the sentence is fluency, not backing.
+  for (const event of groupEvents) {
+    if (!primary || event.id === primary.id) continue;
+    if (!event.content || !event.content.includes(factContent)) continue;
+    if (event.speaker !== primary.speaker || event.role !== primary.role) continue;
+    await linkFactSource(db, {
+      session_fact_id: sessionFactId,
+      event_id: event.id,
+      relevance: 0.5,
+      extraction_type: "corroborating",
+    });
   }
 }
 
@@ -1192,7 +1238,15 @@ async function persistPending(db: Db, pending: ExtractPending[]): Promise<void> 
       });
 
       if (fact) {
-        await linkExtractedFactToEvents(db, fact.id, item.content, group.events);
+        // Assent lines are shorter than min_content_length, so they are not
+        // extract candidates. Backing still needs the whole conversation.
+        const window = await loadConversationEvents(db, group.ref);
+        await linkExtractedFactToEvents(
+          db,
+          fact.id,
+          item.content,
+          window.length > 0 ? window : group.events,
+        );
       }
     }
   }

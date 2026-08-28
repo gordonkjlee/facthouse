@@ -15,6 +15,7 @@ const {
   getClaimedFacts,
   linkFactSource,
   getFactSources,
+  getBackingKindsByContent,
   speakerNameOf,
 } = await import("../../src/db/session-facts.js");
 
@@ -270,5 +271,19 @@ describe("session fact sources (provenance)", () => {
 
     const sources = await getFactSources(db, factId);
     expect(sources).toHaveLength(2);
+  });
+
+  it("accepts backing extraction types and lists them by content", async () => {
+    await linkFactSource(db, {
+      session_fact_id: factId,
+      event_id: eventId,
+      relevance: 0.7,
+      extraction_type: "assent",
+    });
+    const sources = await getFactSources(db, factId);
+    expect(sources).toHaveLength(1);
+    expect(sources[0].extraction_type).toBe("assent");
+    const kinds = await getBackingKindsByContent(db, ["Fact for provenance"]);
+    expect(kinds.get("Fact for provenance")).toEqual(["assent"]);
   });
 });

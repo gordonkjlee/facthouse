@@ -157,9 +157,29 @@ export interface SessionFactSource {
   event_id: string;
   /** How central this event was to the extracted fact (0.0–1.0). */
   relevance: number;
-  /** 'primary' = stated the fact, 'corroborating' = mentioned again, 'contextual' = nearby context. */
-  extraction_type: "primary" | "corroborating" | "contextual";
+  /**
+   * 'primary' = stated the fact, 'corroborating' = mentioned again (same
+   * speaker), 'contextual' = nearby context, 'assent' = short user yes after
+   * a proposal, 'observation' = a tool event that contains the sentence,
+   * 'restatement' = a different speaker later said the same sentence.
+   */
+  extraction_type: ExtractionType;
 }
+
+export type ExtractionType =
+  | "primary"
+  | "corroborating"
+  | "contextual"
+  | "assent"
+  | "observation"
+  | "restatement";
+
+export const BACKING_TYPES = [
+  "assent",
+  "observation",
+  "restatement",
+] as const satisfies readonly ExtractionType[];
+export type BackingType = (typeof BACKING_TYPES)[number];
 
 /**
  * DIKW: Knowledge — graduated fact in the canonical store. Entity-linked,
@@ -270,6 +290,8 @@ export interface SearchResult {
   score: number;
   entities: Entity[];
   source: Source | null;
+  /** Extra evidence kinds (assent / observation / restatement), not a score. */
+  backing?: BackingType[];
 }
 
 /** Search response with retrieval quality signals for calling AIs. */

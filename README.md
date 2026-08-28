@@ -208,6 +208,8 @@ Meaning-search is an exact scan of stored vectors when the set is small. When th
 
 `intelligence.cli.model` and `intelligence.cli.timeout_ms` are the extra knobs More settings can write. Init does not ask `intelligence.provider`; `OPENMEMORY_PROVIDER=heuristic` is the kill-switch. The heuristic fallback **does not extract facts from transcripts**.
 
+Unnamed user-channel speech is attributed to the store's owner; a display name still does not create a person. Extra backing (assent, a tool observation, a different speaker restating) is recorded, not scored, unless the store sets `interlocutor` ranking weights in `config.json`. The engine ships none. Weight keys match the speaker string as stored, so two people with the same name share a key.
+
 Set `temporal.mode` to `bitemporal` to record when the system retracted a belief, so search can answer what the store believed at an instant.
 
 ### CLI demo (no transcript source)

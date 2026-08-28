@@ -23,8 +23,10 @@ import {
   type FactReadOpts,
 } from "../db/facts.js";
 import { findEntity, getEntitiesForFacts } from "../db/entities.js";
-import { keywordSearchPending } from "../db/session-facts.js";
+import { keywordSearchPending, getBackingKindsByContent } from "../db/session-facts.js";
 import { vectorSearch, type VectorSearchOpts } from "./vector.js";
+import { interlocutorRankMultiplier } from "./interlocutor-rank.js";
+import type { InterlocutorConfig } from "../types/config.js";
 import { EPISODE_REFINEMENT, searchEpisodes } from "./episodes.js";
 import type { EmbeddingProvider } from "../embedding/types.js";
 
@@ -332,6 +334,10 @@ export interface HybridSearchOpts {
      */
     tuning?: VectorSearchOpts;
   };
+  /**
+   * Optional ranking priors by speaker role or name. Omit for no change.
+   */
+  interlocutor?: InterlocutorConfig;
 }
 
 /**
@@ -467,7 +473,8 @@ export async function hybridSearch(
   const scored: Array<{ fact: Fact; score: number }> = [];
   for (const ranked of merged.values()) {
     const tScore = temporalScore(ranked.fact);
-    const finalScore = ranked.rrfScore * (1 + 0.3 * tScore);
+    const prior = interlocutorRankMultiplier(ranked.fact, opts?.interlocutor);
+    const finalScore = ranked.rrfScore * (1 + 0.3 * tScore) * prior;
     scored.push({ fact: ranked.fact, score: finalScore });
   }
 
@@ -509,13 +516,19 @@ export async function hybridSearch(
   // One batched query for the whole page, keyed by fact, rather than a lookup
   // per result.
   const entitiesByFact = await getEntitiesForFacts(db, topResults.map(({ fact }) => fact.id));
+  const backingByContent = await getBackingKindsByContent(
+    db,
+    topResults.map(({ fact }) => fact.content),
+  );
 
   const results: SearchResult[] = topResults.map(({ fact, score }) => {
+    const backing = backingByContent.get(fact.content);
     return {
       fact,
       score: Math.round(score * 10000) / 10000,
       entities: entitiesByFact.get(fact.id) ?? [],
       source: null,
+      ...(backing && backing.length > 0 ? { backing } : {}),
     };
   });
 
