@@ -9,6 +9,7 @@ import type { Db } from "./connection.js";
 import { prunableEvents } from "./prune.js";
 import { getBoundDiskBudget, keepPerSessionOf, storeBytes } from "./disk-budget.js";
 import { extractWatermark, unexaminedEventCount } from "./extract-watermarks.js";
+import { currencyClause } from "./facts.js";
 
 export interface KnowledgeStats {
   facts: {
@@ -69,20 +70,8 @@ export interface KnowledgeStats {
   listener?: boolean;
 }
 
-/**
- * The filter defining a "currently true" fact — one definition, used everywhere.
- *
- * Takes a table alias because one query below joins `facts`, where the bare
- * column names are ambiguous. Writing the qualified form out a second time
- * would be a copy with an independent future: the two would agree today and
- * silently disagree the first time the definition of "current" changed.
- */
-const current = (alias = "") => {
-  const c = alias ? `${alias}.` : "";
-  return `${c}status = 'active' AND ${c}is_latest = 1
-    AND (${c}valid_until IS NULL OR ${c}valid_until > datetime('now'))`;
-};
-
+/** Currently-true facts. One definition: `currencyClause` in facts.ts. */
+const current = (alias = "") => currencyClause(alias).sql;
 const CURRENT = current();
 
 async function count(db: Db, sql: string): Promise<number> {

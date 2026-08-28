@@ -94,8 +94,8 @@ export function parseSystemTime(input: string): string {
  * One definition. Callers that inlined `status = 'active' AND is_latest = 1`
  * would drift the first time either side of this fork changed.
  */
-function currencyClause(
-  alias: string,
+export function currencyClause(
+  alias = "",
   asOfSystemTime?: string,
 ): { sql: string; params: SqlParam[] } {
   const c = alias ? `${alias}.` : "";

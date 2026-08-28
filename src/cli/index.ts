@@ -7,7 +7,7 @@
 
 import { parseArgs } from "node:util";
 import { createInterface } from "node:readline/promises";
-import { readFileSync, existsSync } from "node:fs";
+import { existsSync } from "node:fs";
 import path from "node:path";
 import { logEvent, extractContentFromHookPayload } from "./log-event.js";
 import {
@@ -30,6 +30,8 @@ import {
 import { INIT_PROMPTS } from "./init-knobs.js";
 import { defaultDataDir, resolveUserPath } from "../paths.js";
 import { runSearch, formatSearch, formatStats, formatPrune, getStats } from "./query.js";
+import { packageVersion } from "./package-version.js";
+import { runInspect } from "./inspect.js";
 import { prunableEvents, pruneEvents, vacuum } from "../db/prune.js";
 import { applySqliteDiskBudget, getBoundDiskBudget } from "../db/disk-budget.js";
 import { closeDatabase, type Db } from "../db/connection.js";
@@ -127,6 +129,8 @@ async function main() {
     await runSearchCmd();
   } else if (subcommand === "stats") {
     await runStatsCmd();
+  } else if (subcommand === "inspect") {
+    await runInspectCmd();
   } else if (subcommand === "prune") {
     await runPruneCmd();
   } else if (subcommand === "pull") {
@@ -138,6 +142,7 @@ async function main() {
         `  init [dir]    Create the data directory, database, and default config (--yes never prompts)\n` +
         `  search <q>    Search the knowledge base\n` +
         `  stats         Show knowledge base statistics\n` +
+        `  inspect       Sample D / I / K and write a local HTML graph\n` +
         `  prune         Reclaim raw events nothing can reach (dry run by default)\n` +
         `  pull          Ingest new events from named capture sources\n` +
         `  log-event     Log a session event (used by hooks)\n` +
@@ -145,18 +150,6 @@ async function main() {
         `  consolidate   Run consolidation in-process with the configured provider`,
     );
     process.exit(1);
-  }
-}
-
-/** Package version, for the copy-pasteable MCP snippet. Best-effort. */
-function packageVersion(): string | null {
-  try {
-    const pkg = JSON.parse(
-      readFileSync(new URL("../../package.json", import.meta.url), "utf-8"),
-    );
-    return typeof pkg.version === "string" ? pkg.version : null;
-  } catch {
-    return null;
   }
 }
 
@@ -424,8 +417,52 @@ async function runStatsCmd() {
   const dataDir = resolveUserPath(values.data as string);
   const stats = await withDb(dataDir, (db) => getStats(db));
   stats.listener = await isSchedulerListening(dataDir);
+  const payload = { ...stats, package_version: packageVersion() };
 
-  console.log(values.json ? JSON.stringify(stats, null, 2) : formatStats(stats));
+  console.log(values.json ? JSON.stringify(payload, null, 2) : formatStats(stats));
+}
+
+async function runInspectCmd() {
+  const { values } = parseArgs({
+    args: process.argv.slice(3),
+    options: {
+      data: { type: "string", default: process.env.OPENMEMORY_DATA ?? defaultDataDir() },
+      layer: { type: "string" },
+      limit: { type: "string" },
+      json: { type: "boolean", default: false },
+      graph: { type: "boolean", default: false },
+      entity: { type: "string" },
+      output: { type: "string" },
+      all: { type: "boolean", default: false },
+    },
+    strict: true,
+  });
+  const dataDir = resolveUserPath(values.data as string);
+  const limitRaw = values.limit ? Number(values.limit) : undefined;
+  if (limitRaw !== undefined && (!Number.isFinite(limitRaw) || limitRaw < 1)) {
+    console.error("inspect --limit must be a positive number.");
+    process.exit(1);
+  }
+  try {
+    await withDb(dataDir, async (db) => {
+      const result = await runInspect(db, {
+        dataDir,
+        layer: values.layer as string | undefined,
+        limit: limitRaw,
+        json: Boolean(values.json),
+        graph: Boolean(values.graph),
+        entity: values.entity as string | undefined,
+        output: values.output as string | undefined,
+        all: Boolean(values.all),
+        packageVersion: packageVersion(),
+      });
+      if (result.stdout) console.log(result.stdout);
+      if (result.path) console.log(result.path);
+    });
+  } catch (err: unknown) {
+    console.error(errorMessage(err));
+    process.exit(1);
+  }
 }
 
 /**

@@ -24,10 +24,10 @@
 
 import type { Db } from "../db/connection.js";
 import type { Fact } from "../types/data.js";
+import { currencyClause } from "../db/facts.js";
 
-/** The predicate for a currently-true fact — identical to the one in stats.ts. */
-const CURRENT = `status = 'active' AND is_latest = 1
-  AND (valid_until IS NULL OR valid_until > datetime('now'))`;
+/** Currently-true facts. One definition: `currencyClause` in facts.ts. */
+const CURRENT = currencyClause().sql;
 
 /**
  * The store's highest-importance current facts, most important first.
