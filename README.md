@@ -276,7 +276,7 @@ Both are read-only views over the same database the tools query. Clients that ne
 - `get_session_context` — Working briefing (the same markdown as `memory://briefing`) plus facts captured in this session. Call at the start of every conversation if the client does not load resources.
 
 ### Reading
-- `get_entity` — Everything known about any named subject — person, organisation, project, place, product — and how it connects. If there is no entity by that exact name, facts that mention the wording still come back rather than an empty miss.
+- `get_entity` — Everything known about any named subject — person, organisation, project, place, product — and how it connects. When several rows share the name under different types, facts from all of them come back. If there is no entity by that exact name, facts that mention the wording still come back rather than an empty miss.
 - `get_context` — Everything relevant to a topic (search + entity traversal)
 - `search_knowledge` — Hybrid search across graduated knowledge
 
