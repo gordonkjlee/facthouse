@@ -261,7 +261,7 @@ export async function loadSpendDashboard(
   let runs: IntelligenceRunSummary[] = [];
   try {
     const stored = await listIntelligenceRuns(db);
-    runs = stored
+    const next = stored
       .filter((r) => r.created_at >= cutoff)
       .sort((a, b) => (a.created_at < b.created_at ? 1 : -1))
       .map((r) => ({
@@ -275,7 +275,7 @@ export async function loadSpendDashboard(
         ...(r.usage.input_tokens != null ? { input_tokens: r.usage.input_tokens } : {}),
         ...(r.usage.output_tokens != null ? { output_tokens: r.usage.output_tokens } : {}),
       }));
-    for (const run of runs) {
+    for (const run of next) {
       const day = dayKey(run.created_at);
       if (!day) continue;
       const slot = byDay.get(day);
@@ -284,8 +284,9 @@ export async function loadSpendDashboard(
       slot.input_tokens = addOptional(slot.input_tokens, run.input_tokens);
       slot.output_tokens = addOptional(slot.output_tokens, run.output_tokens);
     }
+    runs = next;
   } catch {
-    runs = [];
+    /* pre-v20 store or a failed list: days still load, spend is empty */
   }
 
   return {
