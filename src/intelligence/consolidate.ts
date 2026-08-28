@@ -59,10 +59,7 @@ import {
   speakerNameOf,
   UTTERED_BY,
 } from "../db/session-facts.js";
-import {
-  conversationRef,
-  type ConversationRef,
-} from "../db/sessions.js";
+import { type ConversationRef } from "../db/sessions.js";
 import {
   insertFact,
   getFactsByDomain,
@@ -83,6 +80,13 @@ import { isAboutTheUser } from "./subject.js";
 import { ensureDomain, loadStoreVocabulary } from "../db/domains.js";
 import { importanceDefaults, normaliseDomainName } from "../schemas/domains.js";
 import { acquireLock, releaseLock } from "../db/consolidation-lock.js";
+import {
+  advanceExtractMarksToCurrentMax,
+  conversationExtractThrough,
+  extractWatermark,
+  listUnexaminedConversations,
+  setConversationExtractThrough,
+} from "../db/extract-watermarks.js";
 import type { EmbeddingProvider } from "../embedding/types.js";
 import {
   getFactsMissingEmbeddings,
@@ -162,11 +166,6 @@ export async function consolidate(
   // Phase A: Acquire lock
   const locked = await acquireLock(db, consolidationId);
   if (!locked) {
-    const held = (await db
-      .prepare(
-        `SELECT COALESCE(MAX(last_event_sequence), 0) AS seq FROM consolidations`,
-      )
-      .get()) as { seq: number };
     return {
       consolidationId,
       factsIn: 0,
@@ -179,26 +178,13 @@ export async function consolidate(
       openThreads: [],
       skipped: true,
       skipReason: "Another consolidation is in progress",
-      examinedThrough: held.seq,
+      examinedThrough: await extractWatermark(db),
     };
   }
 
-  // Capture the event watermark at run start — the highest session_events.sequence
-  // observed. Stored on the consolidations row at commit time so the scheduler's
-  // threshold check and extractFactsFromEvents both read a durable watermark,
-  // regardless of whether any facts emerged from this run.
-  const watermarkRow = (await db
-    .prepare(`SELECT COALESCE(MAX(sequence), 0) AS seq FROM session_events`)
-    .get()) as { seq: number };
-  const runWatermark = watermarkRow.seq;
-
-  // Previous watermark, used to decide whether an empty run is worth recording.
-  // An empty run that doesn't advance the watermark is pure noise — subsequent
-  // reads already see the same max(last_event_sequence) without our row.
-  const prevWatermarkRow = (await db
-    .prepare(`SELECT COALESCE(MAX(last_event_sequence), 0) AS seq FROM consolidations`)
-    .get()) as { seq: number };
-  const prevWatermark = prevWatermarkRow.seq;
+  // Live extract clock, not MAX(consolidations.last_event_sequence).
+  // An empty run that does not advance this number is not worth a row.
+  const prevWatermark = await extractWatermark(db);
 
   // Set when the configured extractor could not run. The events it was meant to
   // read have not been examined, so the watermark must stay where it was and
@@ -206,7 +192,7 @@ export async function consolidate(
   // transient provider failure discard a batch of conversation for good.
   let extractionDegraded = false;
   let extractPending: ExtractPending[] = [];
-  let extractProgress: ExtractProgress | null = null;
+  let prefixCommitted = false;
 
   let phaseDCommitted = false;
   try {
@@ -222,20 +208,16 @@ export async function consolidate(
       );
       extractionDegraded = extracted.degraded;
       extractPending = extracted.pending;
-      extractProgress = extracted.progress;
+      prefixCommitted = extracted.prefixCommitted;
+    } else if (doExtract && !extractionEnabled) {
+      // Policy decline, not provider-down: every conversation is examined
+      // as empty through its current max sequence.
+      await advanceExtractMarksToCurrentMax(db);
     }
 
-    // Graduate-only holds; policy-off or a finished extract advances to
-    // run-start max; an honest prefix stops at `through`; provider-down
-    // with no prefix holds. Do not treat policy-off as degraded.
-    const effectiveWatermark = !doExtract
-      ? prevWatermark
-      : !extractionEnabled || extractProgress?.kind === "complete"
-        ? runWatermark
-      : extractProgress?.kind === "prefix"
-        ? extractProgress.through
-      : prevWatermark;
-    const prefixCommitted = extractProgress?.kind === "prefix";
+    // Graduate-only leaves extract marks untouched. Extract writes per-id
+    // marks as it goes; the run row audits the global MIN through.
+    const effectiveWatermark = await extractWatermark(db);
 
     if (doGraduate) {
       await claimForConsolidation(db, consolidationId);
@@ -907,21 +889,6 @@ async function latestSessionSummary(
 
 type EventGroup = { ref: ConversationRef; events: SessionEvent[] };
 
-function groupByConversation(events: SessionEvent[]): EventGroup[] {
-  const groups = new Map<string, EventGroup>();
-  for (const event of events) {
-    const ref = conversationRef(event);
-    if (!ref) continue;
-    const key = `${ref.kind}:${ref.id}`;
-    const existing = groups.get(key);
-    if (existing) existing.events.push(event);
-    else groups.set(key, { ref, events: [event] });
-  }
-  return [...groups.values()].sort(
-    (a, b) => a.events[0].sequence - b.events[0].sequence,
-  );
-}
-
 async function loadSessionWindow(
   db: Db,
   watermark: number,
@@ -965,6 +932,23 @@ async function loadConversationEvents(
          WHERE client_session_id IS NULL AND mcp_session_id = ?
          ORDER BY sequence ASC`;
   const rows = (await db.prepare(sql).all(ref.id)) as SessionEventRow[];
+  return rows.map(parseEventRow);
+}
+
+async function loadConversationEventsAfter(
+  db: Db,
+  ref: ConversationRef,
+  afterSequence: number,
+): Promise<SessionEvent[]> {
+  const sql =
+    ref.kind === "client"
+      ? `SELECT * FROM session_events
+         WHERE sequence > ? AND client_session_id = ?
+         ORDER BY sequence ASC`
+      : `SELECT * FROM session_events
+         WHERE sequence > ? AND client_session_id IS NULL AND mcp_session_id = ?
+         ORDER BY sequence ASC`;
+  const rows = (await db.prepare(sql).all(afterSequence, ref.id)) as SessionEventRow[];
   return rows.map(parseEventRow);
 }
 
@@ -1148,15 +1132,10 @@ async function persistSituations(
   return rows;
 }
 
-type ExtractProgress =
-  | { kind: "complete" }
-  | { kind: "prefix"; through: number }
-  | { kind: "none" };
-
 type ExtractResult = {
   degraded: boolean;
   pending: ExtractPending[];
-  progress: ExtractProgress;
+  prefixCommitted: boolean;
 };
 
 function truncateForPrompt(
@@ -1250,37 +1229,15 @@ async function persistPending(db: Db, pending: ExtractPending[]): Promise<void> 
   }
 }
 
-function settleDegraded(
-  pending: ExtractPending[],
-  failedChunk: SessionEvent[],
-  laterChunks: SessionEvent[][],
-  laterGroups: EventGroup[],
-): { pending: ExtractPending[]; progress: ExtractProgress } {
-  const examined = pending.flatMap((p) => p.group.events);
-  const remaining = [
-    ...failedChunk,
-    ...laterChunks.flat(),
-    ...laterGroups.flatMap((g) => g.events),
-  ];
-  if (prefixIsHonest(examined, remaining)) {
-    return {
-      pending,
-      progress: { kind: "prefix", through: Math.max(...examined.map((e) => e.sequence)) },
-    };
-  }
-  return { pending: [], progress: { kind: "none" } };
-}
-
-async function finishDegraded(
-  db: Db,
-  pending: ExtractPending[],
-  failedChunk: SessionEvent[],
-  laterChunks: SessionEvent[][],
-  laterGroups: EventGroup[],
-): Promise<ExtractResult> {
-  const settled = settleDegraded(pending, failedChunk, laterChunks, laterGroups);
-  await persistPending(db, settled.pending);
-  return { degraded: true, pending: settled.pending, progress: settled.progress };
+function isEligibleEvent(
+  event: SessionEvent,
+  eventTypes: string[] | null,
+  roles: string[] | null,
+  minContentLength: number,
+): boolean {
+  if (eventTypes && !eventTypes.includes(event.event_type)) return false;
+  if (roles && !roles.includes(event.role)) return false;
+  return (event.content?.length ?? 0) >= minContentLength;
 }
 
 async function extractFactsFromEvents(
@@ -1291,7 +1248,7 @@ async function extractFactsFromEvents(
   const empty: ExtractResult = {
     degraded: false,
     pending: [],
-    progress: { kind: "complete" },
+    prefixCommitted: false,
   };
   const workingMemorySize =
     config?.extraction?.working_memory_size ??
@@ -1309,51 +1266,51 @@ async function extractFactsFromEvents(
   const evidenceLimit = Math.min(EXTRACT_EVIDENCE_SLICE, workingMemorySize);
   const rereadLimit = Math.min(EXTRACT_REREAD_WINDOW, workingMemorySize);
 
-  const watermarkRow = (await db
-    .prepare(
-      `SELECT MAX(last_event_sequence) AS max_seq FROM consolidations`,
-    )
-    .get()) as { max_seq: number | null } | undefined;
-  const watermark = watermarkRow?.max_seq ?? 0;
-
-  const candidateRows = (await db
-    .prepare(
-      `SELECT * FROM session_events
-       WHERE sequence > ?
-       ORDER BY sequence ASC`,
-    )
-    .all(watermark)) as SessionEventRow[];
-
-  if (candidateRows.length === 0) return empty;
-
-  const eligible = candidateRows.filter((e) => {
-    if (eventTypes && !eventTypes.includes(e.event_type)) return false;
-    if (roles && !roles.includes(e.role)) return false;
-    return (e.content?.length ?? 0) >= minContentLength;
-  });
-  if (eligible.length === 0) return empty;
-
-  const newEvents = eligible.map(parseEventRow);
-  const groups = groupByConversation(newEvents);
-  if (groups.length === 0) return empty;
+  const conversations = await listUnexaminedConversations(db);
+  if (conversations.length === 0) return empty;
 
   const vocabulary = await loadStoreVocabulary(db, config?.domains ?? []);
   const entityTypes = await listEntityTypes(db);
 
   const pending: ExtractPending[] = [];
-  const remainingGroups = [...groups];
+  let degraded = false;
+  let advanced = false;
 
-  for (const group of groups) {
-    remainingGroups.shift();
-    const truncated = truncateForPrompt(group.events, maxContentLength);
+  for (const conv of conversations) {
+    if (conv.kind === "unkeyed") {
+      await setConversationExtractThrough(db, conv, conv.minSequence);
+      advanced = true;
+      continue;
+    }
+
+    const ref: ConversationRef = { kind: conv.kind, id: conv.id };
+    const through = await conversationExtractThrough(db, ref);
+    const loaded = await loadConversationEventsAfter(db, ref, through);
+    if (loaded.length === 0) continue;
+
+    const eligible = loaded.filter((e) =>
+      isEligibleEvent(e, eventTypes, roles, minContentLength),
+    );
+    if (eligible.length === 0) {
+      const maxLoaded = lastSeq(loaded);
+      if (maxLoaded != null) {
+        await setConversationExtractThrough(db, ref, maxLoaded);
+        advanced = true;
+      }
+      continue;
+    }
+
+    const thisPending: ExtractPending[] = [];
+    const truncated = truncateForPrompt(eligible, maxContentLength);
     const chunks = chunkEvents(truncated, batchSize);
-    let prior = await latestConversationSituation(db, group.ref.id);
-    const priorSummary = await latestSessionSummary(db, group.ref.id);
+    let prior = await latestConversationSituation(db, ref.id);
+    const priorSummary = await latestSessionSummary(db, ref.id);
     const dbEvidence = truncateForPrompt(
-      await loadSessionWindow(db, watermark, group.ref, evidenceLimit),
+      await loadSessionWindow(db, through, ref, evidenceLimit),
       maxContentLength,
     );
     const earlierThisRun: SessionEvent[] = [];
+    let conversationDegraded = false;
 
     for (let i = 0; i < chunks.length; i++) {
       const chunk = chunks[i]!;
@@ -1382,20 +1339,27 @@ async function extractFactsFromEvents(
         extras,
       );
       if (outcome.degraded) {
-        return finishDegraded(
-          db,
-          pending,
-          chunk,
-          chunks.slice(i + 1),
-          remainingGroups,
-        );
+        const remaining = [...chunk, ...chunks.slice(i + 1).flat()];
+        const examined = thisPending.flatMap((p) => p.group.events);
+        if (prefixIsHonest(examined, remaining)) {
+          await persistPending(db, thisPending);
+          const maxExamined = lastSeq(examined);
+          if (maxExamined != null) {
+            await setConversationExtractThrough(db, ref, maxExamined);
+            advanced = true;
+          }
+          pending.push(...thisPending);
+        }
+        conversationDegraded = true;
+        degraded = true;
+        break;
       }
       if (needsReread(outcome)) {
         const reminder = truncateForPrompt(
           await loadSessionWindow(
             db,
-            watermark,
-            group.ref,
+            through,
+            ref,
             rereadLimit,
             prior?.now_start_sequence ?? undefined,
           ),
@@ -1415,17 +1379,24 @@ async function extractFactsFromEvents(
           },
         );
         if (outcome.degraded) {
-          return finishDegraded(
-            db,
-            pending,
-            chunk,
-            chunks.slice(i + 1),
-            remainingGroups,
-          );
+          const remaining = [...chunk, ...chunks.slice(i + 1).flat()];
+          const examined = thisPending.flatMap((p) => p.group.events);
+          if (prefixIsHonest(examined, remaining)) {
+            await persistPending(db, thisPending);
+            const maxExamined = lastSeq(examined);
+            if (maxExamined != null) {
+              await setConversationExtractThrough(db, ref, maxExamined);
+              advanced = true;
+            }
+            pending.push(...thisPending);
+          }
+          conversationDegraded = true;
+          degraded = true;
+          break;
         }
         if (needsReread(outcome)) {
-          mergeChunk(pending, {
-            group: { ref: group.ref, events: [...chunk] },
+          mergeChunk(thisPending, {
+            group: { ref, events: [...chunk] },
             facts: [],
             situation: null,
             closedGist: null,
@@ -1435,11 +1406,11 @@ async function extractFactsFromEvents(
         }
       }
 
-      const firstSeq = chunk[0]?.sequence ?? watermark + 1;
+      const firstSeq = chunk[0]?.sequence ?? through + 1;
       const built = buildSituation(
         prior,
         outcome,
-        lastSeq(earlierThisRun) ?? watermark,
+        lastSeq(earlierThisRun) ?? through,
         firstSeq,
       );
       const situation =
@@ -1447,18 +1418,27 @@ async function extractFactsFromEvents(
           ? built.situation
           : null;
       if (built.situation) prior = built.situation;
-      mergeChunk(pending, {
-        group: { ref: group.ref, events: [...chunk] },
+      mergeChunk(thisPending, {
+        group: { ref, events: [...chunk] },
         facts: outcome.facts,
         situation,
         closedGist: built.closedGist,
       });
       earlierThisRun.push(...chunk);
     }
+
+    if (!conversationDegraded) {
+      await persistPending(db, thisPending);
+      const maxLoaded = lastSeq(loaded);
+      if (maxLoaded != null) {
+        await setConversationExtractThrough(db, ref, maxLoaded);
+        advanced = true;
+      }
+      pending.push(...thisPending);
+    }
   }
 
-  await persistPending(db, pending);
-  return { degraded: false, pending, progress: { kind: "complete" } };
+  return { degraded, pending, prefixCommitted: degraded && advanced };
 }
 
 

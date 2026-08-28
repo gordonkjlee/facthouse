@@ -16,6 +16,7 @@
 
 import { pragmaRead } from "./db/connection.js";
 import type { Db } from "./db/connection.js";
+import { unexaminedEventCount } from "./db/extract-watermarks.js";
 import type {
   ConsolidationResult,
   ConsolidatePhase,
@@ -50,15 +51,7 @@ async function readDataVersion(db: Db): Promise<number> {
 }
 
 async function eventsSinceLastConsolidation(db: Db): Promise<number> {
-  const row = (await db
-    .prepare(`SELECT COALESCE(MAX(sequence), 0) AS seq FROM session_events`)
-    .get()) as { seq: number };
-  const last = (await db
-    .prepare(
-      `SELECT COALESCE(MAX(last_event_sequence), 0) AS seq FROM consolidations`,
-    )
-    .get()) as { seq: number };
-  return row.seq - last.seq;
+  return unexaminedEventCount(db);
 }
 
 export function startScheduler(opts: SchedulerOpts): Scheduler {

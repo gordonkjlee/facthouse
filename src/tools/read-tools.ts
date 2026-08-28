@@ -301,8 +301,8 @@ export function registerReadTools(
       `well below the current fact count means some facts are findable by ` +
       `wording but not by meaning — worth mentioning if the user asks why ` +
       `something was not recalled.\n\n` +
-      `\`extract.unextracted_events\` is how many transcript lines sit above ` +
-      `the extract watermark. \`pending_facts\` is I not yet graduated. ` +
+      `\`extract.unextracted_events\` is how many transcript lines extract has ` +
+      `not examined. \`pending_facts\` is I not yet graduated. ` +
       `A large unextracted count with a healthy fact count means capture is ` +
       `writing D that extract has not examined.`,
     {},

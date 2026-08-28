@@ -24,6 +24,12 @@ const { applySchema } = await import("../../src/db/schema.js");
 const { insertEvent, createSession } = await import("../../src/db/sessions.js");
 const { consolidate } = await import("../../src/intelligence/consolidate.js");
 const { createHeuristicProvider } = await import("../../src/intelligence/heuristic.js");
+const {
+  extractWatermark,
+  conversationExtractThrough,
+  setConversationExtractThrough,
+} = await import("../../src/db/extract-watermarks.js");
+const { pruneEvents } = await import("../../src/db/prune.js");
 const { pullSources } = await import("../../src/sources/pull.js");
 const { encodeProjectDir } = await import("../../src/sources/resolve.js");
 const { PERSONAL_VOCABULARY } = await import("../fixtures/vocabulary.js");
@@ -616,10 +622,9 @@ describe("extraction groups by conversation, not by pull batch", () => {
     expect(watermark.seq).toBe(1);
   });
 
-  it("holds all facts when conversation sequences interleave", async () => {
-    // aaa at 1 and 3, bbb at 2 and 4. Groups sort by first sequence, so aaa
-    // is extracted first including seq 3; then bbb fails. maxExamined=3 >
-    // minRemaining=2, so a prefix would skip bbb's seq 2 forever.
+  it("keeps a successful conversation when interleaved neighbour degrades", async () => {
+    // aaa at 1 and 3, bbb at 2 and 4. Per-conversation marks keep aaa;
+    // global through is MIN (hole at 2), not aaa's 3 — prune cannot delete bbb.
     await insertEvent(db, {
       client_session_id: "sess-aaa",
       event_type: "message",
@@ -667,12 +672,192 @@ describe("extraction groups by conversation, not by pull batch", () => {
       extraction: { enabled: true } as never,
     });
     expect(first.extractionDegraded).toBe(true);
-    expect(first.prefixCommitted).toBeFalsy();
-    expect(await factRows()).toEqual([]);
-    const watermark = (await db
-      .prepare(`SELECT COALESCE(MAX(last_event_sequence), 0) AS seq FROM consolidations`)
-      .get()) as { seq: number };
-    expect(watermark.seq).toBe(0);
+    expect(first.prefixCommitted).toBe(true);
+    const rows = await factRows();
+    expect(rows.map((r) => r.session_id)).toEqual(["sess-aaa", "sess-aaa"]);
+    expect(rows.map((r) => r.content)).toEqual([
+      "Alex prefers oat milk at Acme.",
+      "Alex also prefers dark roast.",
+    ]);
+    expect(first.examinedThrough).toBe(1);
+    expect(await extractWatermark(db)).toBe(1);
+    expect(await conversationExtractThrough(db, { kind: "client", id: "sess-aaa" })).toBe(3);
+    expect(await conversationExtractThrough(db, { kind: "client", id: "sess-bbb" })).toBe(0);
+    await pruneEvents(db, 0);
+    const left = (
+      (await db
+        .prepare(`SELECT sequence FROM session_events ORDER BY sequence ASC`)
+        .all()) as Array<{ sequence: number }>
+    ).map((r) => r.sequence);
+    expect(left).toContain(2);
+    expect(left).toContain(3);
+    expect(left).toContain(4);
+
+    const { provider, calls: secondCalls } = recording();
+    await consolidate(db, provider as never, {
+      extraction: { enabled: true } as never,
+    });
+    expect(secondCalls.map((c) => c.events).flat()).toEqual([
+      "Alex is allergic to shellfish.",
+      "Alex avoids the seafood platter.",
+    ]);
+  });
+
+  it("continues a later conversation in the same run after a neighbour degrades", async () => {
+    await insertEvent(db, {
+      client_session_id: "sess-aaa",
+      event_type: "message",
+      role: "user",
+      content: "Alex prefers oat milk at Acme.",
+    });
+    await insertEvent(db, {
+      client_session_id: "sess-bbb",
+      event_type: "message",
+      role: "user",
+      content: "Alex is allergic to shellfish.",
+    });
+    await insertEvent(db, {
+      client_session_id: "sess-ccc",
+      event_type: "message",
+      role: "user",
+      content: "Alex works at Acme.",
+    });
+
+    let calls = 0;
+    const flaky = {
+      ...createHeuristicProvider(PERSONAL_VOCABULARY),
+      async extractFactsFromEvents(events: SessionEvent[]) {
+        calls += 1;
+        if (calls === 2) return { facts: [], degraded: true };
+        return {
+          facts: events
+            .filter((e) => e.content)
+            .map((e) => ({
+              content: e.content as string,
+              domain_hint: "preferences",
+            })),
+          degraded: false,
+        };
+      },
+    };
+
+    const first = await consolidate(db, flaky as never, {
+      extraction: { enabled: true } as never,
+    });
+    expect(first.extractionDegraded).toBe(true);
+    expect((await factRows()).map((r) => r.session_id).sort()).toEqual([
+      "sess-aaa",
+      "sess-ccc",
+    ]);
+  });
+
+  it("still extracts a later conversation when the first call degrades", async () => {
+    await insertEvent(db, {
+      client_session_id: "sess-aaa",
+      event_type: "message",
+      role: "user",
+      content: "Alex prefers oat milk at Acme.",
+    });
+    await insertEvent(db, {
+      client_session_id: "sess-bbb",
+      event_type: "message",
+      role: "user",
+      content: "Alex is allergic to shellfish.",
+    });
+    let calls = 0;
+    const flaky = {
+      ...createHeuristicProvider(PERSONAL_VOCABULARY),
+      async extractFactsFromEvents(events: SessionEvent[]) {
+        calls += 1;
+        if (calls === 1) return { facts: [], degraded: true };
+        return {
+          facts: events
+            .filter((e) => e.content)
+            .map((e) => ({
+              content: e.content as string,
+              domain_hint: "preferences",
+            })),
+          degraded: false,
+        };
+      },
+    };
+    const first = await consolidate(db, flaky as never, {
+      extraction: { enabled: true } as never,
+    });
+    expect(first.extractionDegraded).toBe(true);
+    expect((await factRows()).map((r) => r.session_id)).toEqual(["sess-bbb"]);
+    expect(await conversationExtractThrough(db, { kind: "client", id: "sess-aaa" })).toBe(0);
+  });
+
+  it("does not re-read another conversation as evidence across a hole", async () => {
+    await insertEvent(db, {
+      client_session_id: "sess-aaa",
+      event_type: "message",
+      role: "user",
+      content: "Alex prefers oat milk at Acme.",
+    });
+    await insertEvent(db, {
+      client_session_id: "sess-bbb",
+      event_type: "message",
+      role: "user",
+      content: "Alex is allergic to shellfish.",
+    });
+    await insertEvent(db, {
+      client_session_id: "sess-aaa",
+      event_type: "message",
+      role: "user",
+      content: "Alex also prefers dark roast.",
+    });
+    let calls = 0;
+    const flaky = {
+      ...createHeuristicProvider(PERSONAL_VOCABULARY),
+      async extractFactsFromEvents() {
+        calls += 1;
+        if (calls === 2) return { facts: [], degraded: true };
+        return { facts: [], degraded: false };
+      },
+    };
+    await consolidate(db, flaky as never, {
+      extraction: { enabled: true } as never,
+    });
+    await insertEvent(db, {
+      client_session_id: "sess-aaa",
+      event_type: "message",
+      role: "user",
+      content: "Alex likes tea at Acme.",
+    });
+    const { provider, calls: next } = recording();
+    await consolidate(db, provider as never, {
+      extraction: { enabled: true } as never,
+    });
+    const aaa = next.find((c) => c.events.includes("Alex likes tea at Acme."));
+    expect(aaa).toBeDefined();
+    expect(aaa!.events).toEqual(["Alex likes tea at Acme."]);
+    expect(aaa!.workingMemory).toEqual(
+      expect.arrayContaining([
+        "Alex prefers oat milk at Acme.",
+        "Alex also prefers dark roast.",
+      ]),
+    );
+    expect(aaa!.workingMemory.join(" ")).not.toContain("shellfish");
+  });
+
+  it("does not advance extract marks on graduate-only", async () => {
+    await insertEvent(db, {
+      client_session_id: "sess-aaa",
+      event_type: "message",
+      role: "user",
+      content: "Alex prefers oat milk at Acme.",
+    });
+    await consolidate(
+      db,
+      recording().provider as never,
+      { extraction: { enabled: true } as never },
+      null,
+      "graduate",
+    );
+    expect(await conversationExtractThrough(db, { kind: "client", id: "sess-aaa" })).toBe(0);
+    expect(await extractWatermark(db)).toBe(0);
   });
 });
 
@@ -691,16 +876,16 @@ describe("working memory is kind-branched", () => {
       role: "user",
       content: "mcp-only collision with the client id string",
     });
-    const watermarkSeq = (await db
-      .prepare(`SELECT MAX(sequence) AS seq FROM session_events`)
-      .get()) as { seq: number };
-    await db.prepare(
-      `INSERT INTO consolidations
-         (id, session_id, facts_in, facts_graduated, facts_rejected,
-          entities_created, entities_linked, supersessions,
-          summary, open_threads, last_event_sequence, created_at)
-       VALUES ('wm-mark', NULL, 0, 0, 0, 0, 0, 0, NULL, NULL, ?, datetime('now'))`,
-    ).run(watermarkSeq.seq);
+    const prior = (await db
+      .prepare(
+        `SELECT sequence FROM session_events WHERE client_session_id = 'sess-aaa' LIMIT 1`,
+      )
+      .get()) as { sequence: number };
+    await setConversationExtractThrough(
+      db,
+      { kind: "client", id: "sess-aaa" },
+      prior.sequence,
+    );
 
     await insertEvent(db, {
       client_session_id: "sess-aaa",

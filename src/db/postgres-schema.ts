@@ -10,6 +10,7 @@
 
 import type { Db } from "./connection.js";
 import { SCHEMA_VERSION } from "./schema-version.js";
+import { seedExtractWatermarksFromConsolidations } from "./extract-watermarks.js";
 
 export async function postgresSchemaVersion(db: Db): Promise<number> {
   const row = (await db
@@ -28,6 +29,9 @@ export async function applyPostgresSchema(db: Db): Promise<void> {
   // opened at v17 still have the three-value constraint.
   if (version > 0 && version < 18) {
     await applyPostgresV18(db);
+  }
+  if (version > 0 && version < 19) {
+    await seedExtractWatermarksFromConsolidations(db);
   }
   await db
     .prepare(`INSERT OR IGNORE INTO schema_migrations (version) VALUES (?)`)
@@ -72,7 +76,7 @@ async function postgresSchemaVersionSafe(db: Db): Promise<number> {
 }
 
 /**
- * Current shape (schema v18). `rowid` is an identity column so SQLite queries
+ * Current shape (schema v19). `rowid` is an identity column so SQLite queries
  * that join FTS on rowid or order by insert order still have a column to use.
  * Word search is `tsvector` + GIN, not FTS5.
  */
@@ -287,6 +291,14 @@ CREATE TABLE IF NOT EXISTS source_watermarks (
   line_number INTEGER NOT NULL,
   fingerprint TEXT NOT NULL,
   updated_at TIMESTAMPTZ NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS extract_watermarks (
+  kind TEXT NOT NULL CHECK (kind IN ('client', 'mcp', 'unkeyed')),
+  conversation_id TEXT NOT NULL,
+  last_event_sequence INTEGER NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL,
+  PRIMARY KEY (kind, conversation_id)
 );
 
 CREATE TABLE IF NOT EXISTS inferences (
