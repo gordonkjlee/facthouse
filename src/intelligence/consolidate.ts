@@ -16,6 +16,7 @@ import { randomUUID } from "node:crypto";
 import { withTransaction } from "../db/connection.js";
 import type { Db } from "../db/connection.js";
 import type {
+  Entity,
   Fact,
   SessionEvent,
   SessionFact,
@@ -73,6 +74,7 @@ import {
   getEntityById,
   linkFactEntity,
   upsertEntityEdge,
+  recordSameAsForLinkedFoldPair,
   ensureSelfEntity,
   SUBJECT_OF,
   listEntityTypes,
@@ -603,30 +605,33 @@ export async function consolidate(
         if (extractedEntities) {
           const factId = graduatedFact.id;
           const resolvedIds: string[] = [];
+          const resolvedEntities: Entity[] = [];
 
           for (const entity of extractedEntities) {
-            let resolvedId: string | null = null;
+            let resolved: Entity | null = null;
 
             // LLM-resolved existing entity — validate the id, fall through if
             // hallucinated.
             if (entity.existing_id) {
-              const existing = await getEntityById(db, entity.existing_id);
-              if (existing) resolvedId = existing.id;
+              resolved = await getEntityById(db, entity.existing_id);
             }
 
-            if (!resolvedId) {
-              const { entity: resolved, created } = await findOrCreateEntity(db, {
+            if (!resolved) {
+              const created = await findOrCreateEntity(db, {
                 type: entity.type,
                 name: entity.name,
               });
-              if (created) entitiesCreated++;
-              resolvedId = resolved.id;
+              if (created.created) entitiesCreated++;
+              resolved = created.entity;
             }
 
-            resolvedIds.push(resolvedId);
-            await linkFactEntity(db, factId, resolvedId, entity.relationship);
+            resolvedIds.push(resolved.id);
+            resolvedEntities.push(resolved);
+            await linkFactEntity(db, factId, resolved.id, entity.relationship);
             entitiesLinked++;
           }
+
+          await recordSameAsForLinkedFoldPair(db, resolvedEntities);
 
           // Create entity-entity edges for co-occurring entities (using cached IDs).
           // co_mentioned is undirected — canonicalise by putting smaller id first

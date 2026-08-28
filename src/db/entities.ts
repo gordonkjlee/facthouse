@@ -33,6 +33,15 @@ export interface NewEntity {
 export const SUBJECT_OF = "subject_of";
 
 /**
+ * Reserved `entity_edges.relationship`: two ids are one thing at read.
+ * Not co-mention. Walked by `resolveEntityFamily` only. Do not potentiate.
+ */
+export const SAME_AS = "same_as";
+
+/** Refuse to walk a same_as component larger than this (fail closed). */
+export const SAME_AS_FAMILY_CAP = 32;
+
+/**
  * Extra type spellings seen on reuse, stored on `entities.metadata`.
  * Telemetry only — `listEntityTypes` still reads the `type` column.
  */
@@ -138,8 +147,8 @@ export async function findEntitiesByName(
 
 /**
  * Type-split rows of one name, including a unique punctuation-folded
- * canonical when the exact name misses. Empty when the fold would bind
- * two stored canonicals (fail closed) or when nothing matches.
+ * canonical when the exact name misses. Confirmed `same_as` edges expand
+ * the family. Empty when a fold would bind two *unlinked* canonicals.
  *
  * The one family lookup — write, named read, and search RRF all use this.
  */
@@ -148,20 +157,126 @@ export async function resolveEntityFamily(
   name: string,
 ): Promise<Entity[]> {
   const exact = await findEntitiesByName(db, name);
-  if (exact.length > 0) return exact;
+  let seeds = exact;
+  if (seeds.length === 0) {
+    const folded = foldEntityToken(name);
+    if (!folded) return [];
+    const rows = (await db
+      .prepare(`SELECT * FROM entities ORDER BY created_at ASC, id ASC`)
+      .all()) as Array<Omit<Entity, "metadata"> & { metadata: string | null }>;
+    const matches = rows
+      .map(parseEntityRow)
+      .filter((e) => foldEntityToken(e.canonical_name) === folded);
+    if (matches.length === 0) return [];
+    const canonicals = new Set(matches.map((e) => e.canonical_name));
+    if (canonicals.size > 1) {
+      const fromFirst = await expandSameAsIds(db, [matches[0]!.id]);
+      if (!matches.every((e) => fromFirst.has(e.id))) return [];
+    }
+    seeds = matches;
+  }
 
-  const folded = foldEntityToken(name);
-  if (!folded) return [];
+  const ids = await expandSameAsIds(db, seeds.map((e) => e.id));
+  if (ids.size > SAME_AS_FAMILY_CAP) return seeds;
+  if (ids.size === seeds.length && seeds.every((e) => ids.has(e.id))) {
+    return seeds;
+  }
+  return getEntitiesByIds(db, [...ids]);
+}
 
+async function expandSameAsIds(db: Db, seedIds: string[]): Promise<Set<string>> {
+  const seen = new Set(seedIds);
+  const queue = [...seedIds];
+  while (queue.length > 0) {
+    if (seen.size > SAME_AS_FAMILY_CAP) return seen;
+    const id = queue.pop()!;
+    const rows = (await db
+      .prepare(
+        `SELECT from_entity, to_entity FROM entity_edges
+          WHERE relationship = ? AND (from_entity = ? OR to_entity = ?)`,
+      )
+      .all(SAME_AS, id, id)) as Array<{ from_entity: string; to_entity: string }>;
+    for (const row of rows) {
+      const other = row.from_entity === id ? row.to_entity : row.from_entity;
+      if (seen.has(other)) continue;
+      seen.add(other);
+      queue.push(other);
+    }
+  }
+  return seen;
+}
+
+async function getEntitiesByIds(db: Db, ids: string[]): Promise<Entity[]> {
+  if (ids.length === 0) return [];
+  const placeholders = ids.map(() => "?").join(",");
   const rows = (await db
-    .prepare(`SELECT * FROM entities ORDER BY created_at ASC, id ASC`)
-    .all()) as Array<Omit<Entity, "metadata"> & { metadata: string | null }>;
-  const matches = rows
-    .map(parseEntityRow)
-    .filter((e) => foldEntityToken(e.canonical_name) === folded);
-  const canonicals = new Set(matches.map((e) => e.canonical_name));
-  if (canonicals.size !== 1) return [];
-  return matches;
+    .prepare(
+      `SELECT * FROM entities WHERE id IN (${placeholders})
+        ORDER BY created_at ASC, id ASC`,
+    )
+    .all(...(ids as SqlParam[]))) as Array<
+    Omit<Entity, "metadata"> & { metadata: string | null }
+  >;
+  return rows.map(parseEntityRow);
+}
+
+/** Confirm two entity ids are one thing at read. Idempotent. Does not potentiate. */
+export async function recordSameAs(
+  db: Db,
+  leftId: string,
+  rightId: string,
+): Promise<void> {
+  if (leftId === rightId) return;
+  const a = await getEntityById(db, leftId);
+  const b = await getEntityById(db, rightId);
+  if (!a || !b) {
+    throw new Error("Unknown entity id for same_as.");
+  }
+  const [from, to] = leftId < rightId ? [leftId, rightId] : [rightId, leftId];
+  const now = new Date().toISOString();
+  await db
+    .prepare(
+      `INSERT OR IGNORE INTO entity_edges
+         (from_entity, to_entity, relationship, strength, metadata, created_at, last_accessed_at)
+       VALUES (?, ?, ?, 1.0, NULL, ?, ?)`,
+    )
+    .run(from, to, SAME_AS, now, now);
+}
+
+/** Undo `recordSameAs`. Silent if the edge is absent. */
+export async function deleteSameAs(
+  db: Db,
+  leftId: string,
+  rightId: string,
+): Promise<void> {
+  const [from, to] = leftId < rightId ? [leftId, rightId] : [rightId, leftId];
+  await db
+    .prepare(
+      `DELETE FROM entity_edges
+        WHERE from_entity = ? AND to_entity = ? AND relationship = ?`,
+    )
+    .run(from, to, SAME_AS);
+}
+
+/**
+ * If one fact linked two entities whose names fold together but were stored
+ * as two canonicals, they are a fail-closed C pair that speech just unified.
+ */
+export async function recordSameAsForLinkedFoldPair(
+  db: Db,
+  entities: Entity[],
+): Promise<void> {
+  for (let i = 0; i < entities.length; i++) {
+    for (let j = i + 1; j < entities.length; j++) {
+      const left = entities[i]!;
+      const right = entities[j]!;
+      if (left.canonical_name === right.canonical_name) continue;
+      const foldL = foldEntityToken(left.canonical_name);
+      const foldR = foldEntityToken(right.canonical_name);
+      if (!foldL || foldL !== foldR) continue;
+      await recordSameAs(db, left.id, right.id);
+    }
+  }
 }
 
 /** Find an entity by exact canonical name. No normalisation applied — caller must lowercase/trim.

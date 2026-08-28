@@ -11,11 +11,14 @@ import { withTransaction } from "./connection.js";
 import type { Db } from "./connection.js";
 import { getFact, insertFact } from "./facts.js";
 import { createSource } from "./sources.js";
+import { getEntityById, recordSameAs } from "./entities.js";
 import type { Fact, Inference, InferenceStatus } from "../types/data.js";
 
 export interface NewInference {
   hypothesis: string;
   evidence_fact_ids: string[];
+  /** Exactly two existing entity ids, or omit. */
+  entity_ids?: string[];
 }
 
 export interface ValidateInference {
@@ -38,6 +41,19 @@ async function loadEvidence(db: Db, inferenceId: string): Promise<string[]> {
   return rows.map((r) => r.fact_id);
 }
 
+function parseInferenceMetadata(raw: string | null): { entity_ids: string[] } {
+  if (!raw) return { entity_ids: [] };
+  try {
+    const parsed = JSON.parse(raw) as { entity_ids?: unknown };
+    if (!Array.isArray(parsed.entity_ids)) return { entity_ids: [] };
+    return {
+      entity_ids: parsed.entity_ids.filter((id): id is string => typeof id === "string"),
+    };
+  } catch {
+    return { entity_ids: [] };
+  }
+}
+
 function mapInference(
   row: {
     id: string;
@@ -45,6 +61,7 @@ function mapInference(
     status: InferenceStatus;
     reason: string | null;
     fact_id: string | null;
+    metadata: string | null;
     created_at: string;
     validated_at: string | null;
   },
@@ -55,11 +72,25 @@ function mapInference(
     hypothesis: row.hypothesis,
     status: row.status,
     evidence_fact_ids,
+    entity_ids: parseInferenceMetadata(row.metadata).entity_ids,
     reason: row.reason,
     fact_id: row.fact_id,
     created_at: row.created_at,
     validated_at: row.validated_at,
   };
+}
+
+async function requireEntityPair(db: Db, ids: string[]): Promise<string[]> {
+  const pair = uniqueIds(ids);
+  if (pair.length !== 2) {
+    throw new Error("entity_ids must name exactly two distinct existing entities.");
+  }
+  for (const id of pair) {
+    if (!(await getEntityById(db, id))) {
+      throw new Error("Unknown entity id(s) in entity_ids.");
+    }
+  }
+  return pair;
 }
 
 async function requireFacts(db: Db, ids: string[]): Promise<void> {
@@ -90,6 +121,10 @@ export async function insertInference(
     );
   }
   await requireFacts(db, evidence);
+  const entityIds = input.entity_ids
+    ? await requireEntityPair(db, input.entity_ids)
+    : [];
+  const metadata = entityIds.length === 2 ? JSON.stringify({ entity_ids: entityIds }) : null;
 
   const id = randomUUID();
   const now = new Date().toISOString();
@@ -97,10 +132,10 @@ export async function insertInference(
   return withTransaction(db, async () => {
     await db
       .prepare(
-        `INSERT INTO inferences (id, hypothesis, status, reason, fact_id, created_at, validated_at)
-       VALUES (?, ?, 'pending', NULL, NULL, ?, NULL)`,
+        `INSERT INTO inferences (id, hypothesis, status, reason, fact_id, metadata, created_at, validated_at)
+       VALUES (?, ?, 'pending', NULL, NULL, ?, ?, NULL)`,
       )
-      .run(id, hypothesis, now);
+      .run(id, hypothesis, metadata, now);
     const link = db.prepare(
       `INSERT INTO inference_evidence (inference_id, fact_id) VALUES (?, ?)`,
     );
@@ -114,6 +149,7 @@ export async function insertInference(
         status: "pending",
         reason: null,
         fact_id: null,
+        metadata,
         created_at: now,
         validated_at: null,
       },
@@ -128,7 +164,7 @@ export async function getInference(
 ): Promise<Inference | null> {
   const row = (await db
     .prepare(
-      `SELECT id, hypothesis, status, reason, fact_id, created_at, validated_at
+      `SELECT id, hypothesis, status, reason, fact_id, metadata, created_at, validated_at
          FROM inferences WHERE id = ?`,
     )
     .get(id)) as
@@ -138,6 +174,7 @@ export async function getInference(
         status: InferenceStatus;
         reason: string | null;
         fact_id: string | null;
+        metadata: string | null;
         created_at: string;
         validated_at: string | null;
       }
@@ -152,7 +189,7 @@ export async function listInferences(
 ): Promise<Inference[]> {
   const rows = (await db
     .prepare(
-      `SELECT id, hypothesis, status, reason, fact_id, created_at, validated_at
+      `SELECT id, hypothesis, status, reason, fact_id, metadata, created_at, validated_at
          FROM inferences WHERE status = ? ORDER BY created_at ASC`,
     )
     .all(status)) as Array<{
@@ -161,6 +198,7 @@ export async function listInferences(
     status: InferenceStatus;
     reason: string | null;
     fact_id: string | null;
+    metadata: string | null;
     created_at: string;
     validated_at: string | null;
   }>;
@@ -251,6 +289,10 @@ export async function validateInference(
       .run(reason, fact.id, now, existing.id);
     if (result.changes === 0) {
       throw new Error("Failed to confirm inference " + existing.id + ".");
+    }
+
+    if (existing.entity_ids.length === 2) {
+      await recordSameAs(db, existing.entity_ids[0]!, existing.entity_ids[1]!);
     }
 
     return {

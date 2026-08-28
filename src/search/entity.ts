@@ -11,7 +11,7 @@
 import type { Db } from "../db/connection.js";
 import type { Entity, EntityEdge, EntityFact, SearchResponse } from "../types/data.js";
 import type { InterlocutorConfig } from "../types/config.js";
-import { resolveEntityFamily, getEntityEdges } from "../db/entities.js";
+import { resolveEntityFamily, getEntityEdges, SAME_AS } from "../db/entities.js";
 import { getFactsByEntity } from "../db/facts.js";
 import { hybridSearch } from "./index.js";
 
@@ -101,6 +101,7 @@ export async function getTopicContext(
   );
   const edges = edgeLists
     .flat()
+    .filter((edge) => edge.relationship !== SAME_AS)
     .sort((a, b) => b.strength - a.strength)
     .slice(0, CONTEXT_EDGE_CAP);
 

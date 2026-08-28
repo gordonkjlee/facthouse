@@ -12,6 +12,10 @@ const {
   findOrCreateEntity,
   foldEntityToken,
   resolveEntityFamily,
+  recordSameAs,
+  deleteSameAs,
+  recordSameAsForLinkedFoldPair,
+  SAME_AS,
   storedCanonicalName,
   TYPE_SPELLINGS_KEY,
   listEntityTypes,
@@ -233,6 +237,45 @@ describe("entities", () => {
     expect(third.entity.canonical_name).toBe("mr-412");
     expect(await findEntitiesByName(db, "mr !412")).toHaveLength(1);
     expect(await findEntitiesByName(db, "mr 412")).toHaveLength(1);
+  });
+
+  it("same_as unites two fold-split names for lookup", async () => {
+    const bang = await createEntity(db, { type: "ticket", name: "mr !412" });
+    const space = await createEntity(db, { type: "ticket", name: "mr 412" });
+    await recordSameAs(db, bang.id, space.id);
+
+    const family = await resolveEntityFamily(db, "mr 412");
+    expect(family.map((e) => e.id).sort()).toEqual([bang.id, space.id].sort());
+    expect((await resolveEntityFamily(db, "mr-412")).map((e) => e.id).sort()).toEqual(
+      [bang.id, space.id].sort(),
+    );
+
+    await deleteSameAs(db, bang.id, space.id);
+    expect(await resolveEntityFamily(db, "mr 412")).toHaveLength(1);
+    expect(await resolveEntityFamily(db, "mr-412")).toEqual([]);
+  });
+
+  it("does not walk a subset-of edge as identity", async () => {
+    const parent = await createEntity(db, { type: "model", name: "orders" });
+    const child = await createEntity(db, { type: "model", name: "stg_orders" });
+    await upsertEntityEdge(db, parent.id, child.id, "subset of");
+    expect(await resolveEntityFamily(db, "orders")).toHaveLength(1);
+    expect((await getEntityEdges(db, parent.id))[0]!.relationship).toBe("subset of");
+    expect(SAME_AS).toBe("same_as");
+  });
+
+  it("said fold-pair records same_as; dau and mau stay two", async () => {
+    const bang = await createEntity(db, { type: "ticket", name: "mr !412" });
+    const space = await createEntity(db, { type: "ticket", name: "mr 412" });
+    await recordSameAsForLinkedFoldPair(db, [bang, space]);
+    expect((await resolveEntityFamily(db, "mr 412")).map((e) => e.id).sort()).toEqual(
+      [bang.id, space.id].sort(),
+    );
+
+    const dau = await createEntity(db, { type: "metric", name: "dau" });
+    const mau = await createEntity(db, { type: "metric", name: "mau" });
+    await recordSameAsForLinkedFoldPair(db, [dau, mau]);
+    expect(await resolveEntityFamily(db, "dau")).toHaveLength(1);
   });
 
   it("dau does not reuse mau; bookings does not reuse stg_orders", async () => {

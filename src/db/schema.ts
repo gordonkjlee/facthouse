@@ -84,6 +84,9 @@ export async function applySchema(db: Db): Promise<void> {
   if (version < 20) {
     await applyV20(db);
   }
+  if (version < 21) {
+    await applyV21(db);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -823,4 +826,17 @@ async function applyV20(db: Db): Promise<void> {
       ON intelligence_runs(created_at);
   `);
   await pragmaWrite(db, "user_version = 20");
+}
+
+// ---------------------------------------------------------------------------
+// Schema version 21 — optional metadata on inferences (entity pair for same_as)
+// ---------------------------------------------------------------------------
+async function applyV21(db: Db): Promise<void> {
+  const cols = (await db.prepare(`PRAGMA table_info(inferences)`).all()) as Array<{
+    name: string;
+  }>;
+  if (!cols.some((c) => c.name === "metadata")) {
+    await db.exec(`ALTER TABLE inferences ADD COLUMN metadata TEXT;`);
+  }
+  await pragmaWrite(db, "user_version = 21");
 }

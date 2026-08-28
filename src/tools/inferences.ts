@@ -45,17 +45,29 @@ export function registerInferenceTools(
           "Graduated fact ids that support the hypothesis. At least one. " +
             "A guess with no evidence is not this tool.",
         ),
+      entity_ids: z
+        .array(z.string())
+        .length(2)
+        .optional()
+        .describe(
+          "When the hypothesis is that two existing entities are one thing, " +
+            "their ids. Confirming records a same-as link so lookup treats " +
+            "them as one; rejecting does not. Similar facts are evidence, " +
+            "not identity — still wait for validate_inference.",
+        ),
     },
     async (args) => {
       try {
         const inference = await insertInference(db, {
           hypothesis: args.hypothesis,
           evidence_fact_ids: args.evidence,
+          entity_ids: args.entity_ids,
         });
         return jsonResult({
           inference_id: inference.id,
           status: inference.status,
           evidence_fact_ids: inference.evidence_fact_ids,
+          entity_ids: inference.entity_ids,
         });
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : String(err);

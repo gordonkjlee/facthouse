@@ -218,6 +218,23 @@ describe("lookupNamedSubject", () => {
     expect(space.id).toBeTruthy();
   });
 
+  it("unions a confirmed same_as pair on named lookup", async () => {
+    const bang = await dbMod.createEntity(db, { type: "ticket", name: "mr !412" });
+    const space = await dbMod.createEntity(db, { type: "ticket", name: "mr 412" });
+    const aboutBang = await dbMod.insertFact(db, {
+      content: "The bang ticket is blocked on review",
+      domain: "work",
+      source_type: "conversation",
+    });
+    await dbMod.linkFactEntity(db, aboutBang.id, bang.id, SUBJECT_OF);
+    await dbMod.recordSameAs(db, bang.id, space.id);
+
+    const lookup = await lookupNamedSubject(db, "mr 412");
+    expect(lookup.found).toBe(true);
+    expect(lookup.entities.map((e) => e.id).sort()).toEqual([bang.id, space.id].sort());
+    expect(lookup.facts.map((f) => f.id)).toContain(aboutBang.id);
+  });
+
   it("unions two Alexes of different types without dropping either", async () => {
     const person = await dbMod.createEntity(db, { type: "person", name: "Alex" });
     const project = await dbMod.createEntity(db, { type: "project", name: "Alex" });

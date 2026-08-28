@@ -26,4 +26,10 @@ describe("inference tool descriptions", () => {
     expect(CAPTURE_INFERENCE_DESCRIPTION).toMatch(/consolidate/);
     expect(CAPTURE_INFERENCE_DESCRIPTION).toMatch(/not knowledge/i);
   });
+
+  it("identity is evidence-gated, not automatic", () => {
+    expect(CAPTURE_INFERENCE_DESCRIPTION).toMatch(/entity ids/i);
+    expect(CAPTURE_INFERENCE_DESCRIPTION).toMatch(/evidence, not identity/i);
+    expect(VALIDATE_INFERENCE_DESCRIPTION).toMatch(/entity ids/i);
+  });
 });
