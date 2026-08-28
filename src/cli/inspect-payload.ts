@@ -247,7 +247,6 @@ export async function loadGraphPayload(
   db: Db,
   opts: { cap: number; entity?: string; all?: boolean },
 ): Promise<InspectGraphPayload> {
-  const currency = currencyClause();
   const entityRows = (await db
     .prepare(`SELECT id, name, type, canonical_name FROM entities`)
     .all()) as Array<{
