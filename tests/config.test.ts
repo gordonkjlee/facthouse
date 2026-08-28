@@ -205,6 +205,20 @@ describe("config loader", () => {
     expect(cfg.extraction.enabled).toBe(true);
     expect(cfg.consolidation.threshold).toBe(10);
   });
+
+  it("reads optional interlocutor weights and leaves them unset otherwise", () => {
+    expect(loadConfig(dir).interlocutor).toBeUndefined();
+    writeFileSync(
+      path.join(dir, "config.json"),
+      JSON.stringify({
+        interlocutor: { speaker_weights: { Alex: 1.2 }, role_weights: { user: 1.1 } },
+      }),
+    );
+    const cfg = loadConfig(dir);
+    expect(cfg.interlocutor?.speaker_weights).toEqual({ Alex: 1.2 });
+    expect(cfg.interlocutor?.role_weights).toEqual({ user: 1.1 });
+    expect(cfg.extraction.enabled).toBe(true);
+  });
 });
 
 describe("ensureBitemporalSince", () => {

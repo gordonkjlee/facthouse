@@ -135,6 +135,7 @@ describe("init knobs — one definition", () => {
       storage: { provider: "postgres" },
       intelligence: { provider: "heuristic" },
       ann: true,
+      interlocutor: { role_weights: { user: 2 } },
     };
     const next = applyInitOverlay(defaultServerConfig(), sneaky);
     expect(next.embedding.provider).toBe("voyage");
@@ -143,6 +144,8 @@ describe("init knobs — one definition", () => {
     expect(next.intelligence.provider).toBe(
       defaultServerConfig().intelligence.provider,
     );
+    expect(next.interlocutor).toBeUndefined();
+    expect(defaultServerConfig().interlocutor).toBeUndefined();
   });
 
   it("README two-memories JSON uses INIT_SYNTHETIC paths", () => {

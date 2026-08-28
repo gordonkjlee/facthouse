@@ -3,6 +3,7 @@
  */
 
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { PGlite } from "@electric-sql/pglite";
 import type { Db } from "../../src/db/connection.js";
 import {
   applySchema,
@@ -10,9 +11,14 @@ import {
   SCHEMA_VERSION,
 } from "../../src/db/schema.js";
 import { closeDatabase, withTransaction } from "../../src/db/connection.js";
+import { attachPostgres } from "../../src/db/postgres.js";
 import { insertFact, getFact, keywordSearch } from "../../src/db/facts.js";
 import { createSession, insertEvent, getEvents } from "../../src/db/sessions.js";
-import { insertSessionFact } from "../../src/db/session-facts.js";
+import {
+  insertSessionFact,
+  linkFactSource,
+  getFactSources,
+} from "../../src/db/session-facts.js";
 import { createEntity, findEntity } from "../../src/db/entities.js";
 import { ensureDomain, getDomains } from "../../src/db/domains.js";
 import { openPgliteDatabase } from "../helpers/pglite-store.js";
@@ -154,4 +160,80 @@ describe("postgres dialect (PGlite)", () => {
       console.error = orig;
     }
   });
+
+  it("accepts backing extraction types", async () => {
+    const session = await createSession(db, { source_tool: "test", project: null });
+    const fact = await insertSessionFact(db, {
+      session_id: session.id,
+      content: "Assent fixture sentence.",
+    });
+    const event = await insertEvent(db, {
+      mcp_session_id: session.id,
+      event_type: "message",
+      role: "user",
+      content: "yes",
+    });
+    expect(fact).not.toBeNull();
+    await linkFactSource(db, {
+      session_fact_id: fact!.id,
+      event_id: event.id,
+      relevance: 0.7,
+      extraction_type: "assent",
+    });
+    const sources = await getFactSources(db, fact!.id);
+    expect(sources.map((s) => s.extraction_type)).toContain("assent");
+  });
+});
+
+describe("postgres schema 18 widens an existing store", () => {
+  it("lets a v17 CHECK accept assent after applySchema", async () => {
+    const pg = new PGlite();
+    await pg.waitReady;
+    const legacy = attachPostgres({
+      async query(sql, params) {
+        const result = await pg.query(sql, params ?? []);
+        return {
+          rows: result.rows as Record<string, unknown>[],
+          rowCount: result.affectedRows ?? result.rowCount ?? result.rows.length,
+        };
+      },
+      async exec(sql) {
+        await pg.exec(sql);
+      },
+      async close() {
+        await pg.close();
+      },
+    });
+    await legacy.exec(`
+      CREATE TABLE schema_migrations (
+        version INTEGER PRIMARY KEY,
+        applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      );
+      CREATE TABLE session_fact_sources (
+        session_fact_id TEXT NOT NULL,
+        event_id TEXT NOT NULL,
+        relevance DOUBLE PRECISION NOT NULL DEFAULT 1.0,
+        extraction_type TEXT NOT NULL DEFAULT 'contextual'
+          CHECK (extraction_type IN ('primary', 'corroborating', 'contextual')),
+        PRIMARY KEY (session_fact_id, event_id)
+      );
+      INSERT INTO schema_migrations (version) VALUES (17);
+    `);
+    await applySchema(legacy);
+    expect(await getSchemaVersion(legacy)).toBe(SCHEMA_VERSION);
+    await legacy
+      .prepare(
+        `INSERT INTO session_fact_sources
+           (session_fact_id, event_id, relevance, extraction_type)
+         VALUES (?, ?, ?, ?)`,
+      )
+      .run("f1", "e1", 0.7, "assent");
+    const row = (await legacy
+      .prepare(
+        `SELECT extraction_type FROM session_fact_sources WHERE session_fact_id = ?`,
+      )
+      .get("f1")) as { extraction_type: string };
+    expect(row.extraction_type).toBe("assent");
+    await closeDatabase(legacy);
+  }, 60_000);
 });

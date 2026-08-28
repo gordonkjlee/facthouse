@@ -74,6 +74,9 @@ export async function applySchema(db: Db): Promise<void> {
   if (version < 17) {
     await applyV17(db);
   }
+  if (version < 18) {
+    await applyV18(db);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -738,4 +741,35 @@ async function applyV17(db: Db): Promise<void> {
     ALTER TABLE facts ADD COLUMN speaker TEXT;
   `);
   await pragmaWrite(db, "user_version = 17");
+}
+
+// ---------------------------------------------------------------------------
+// Schema version 18 — backing kinds on session_fact_sources
+//
+// `corroborating` stays "mentioned again" (same speaker repeating the
+// sentence). Assent, tool observation, and restatement by a different
+// speaker are extra evidence, not a second fact and not a confidence bump.
+// SQLite cannot ALTER a CHECK, so the table is rebuilt.
+// ---------------------------------------------------------------------------
+async function applyV18(db: Db): Promise<void> {
+  await db.exec(`
+    CREATE TABLE session_fact_sources_v18 (
+      session_fact_id TEXT NOT NULL,
+      event_id TEXT NOT NULL,
+      relevance REAL NOT NULL DEFAULT 1.0,
+      extraction_type TEXT NOT NULL DEFAULT 'contextual'
+        CHECK (extraction_type IN (
+          'primary', 'corroborating', 'contextual',
+          'assent', 'observation', 'restatement'
+        )),
+      PRIMARY KEY (session_fact_id, event_id)
+    );
+    INSERT INTO session_fact_sources_v18
+      (session_fact_id, event_id, relevance, extraction_type)
+      SELECT session_fact_id, event_id, relevance, extraction_type
+      FROM session_fact_sources;
+    DROP TABLE session_fact_sources;
+    ALTER TABLE session_fact_sources_v18 RENAME TO session_fact_sources;
+  `);
+  await pragmaWrite(db, "user_version = 18");
 }

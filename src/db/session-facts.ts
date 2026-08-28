@@ -5,7 +5,15 @@
 import { randomUUID, createHash } from "node:crypto";
 import { withTransaction } from "./connection.js";
 import type { Db } from "./connection.js";
-import type { SessionEvent, SessionFact, SessionFactSource, SpeakerRole } from "../types/data.js";
+import type {
+  SessionEvent,
+  SessionFact,
+  SessionFactSource,
+  SpeakerRole,
+  ExtractionType,
+  BackingType,
+} from "../types/data.js";
+import { BACKING_TYPES } from "../types/data.js";
 
 const SPEAKER_ROLES: readonly SpeakerRole[] = [
   "user",
@@ -88,7 +96,7 @@ export interface NewFactSource {
   session_fact_id: string;
   event_id: string;
   relevance?: number;
-  extraction_type?: "primary" | "corroborating" | "contextual";
+  extraction_type?: ExtractionType;
 }
 
 // ---------------------------------------------------------------------------
@@ -296,6 +304,34 @@ export async function getFactSources(
       `SELECT * FROM session_fact_sources WHERE session_fact_id = ?`,
     )
     .all(sessionFactId)) as unknown as SessionFactSource[];
+}
+
+/** Backing kinds (assent / observation / restatement) keyed by fact sentence. */
+export async function getBackingKindsByContent(
+  db: Db,
+  contents: string[],
+): Promise<Map<string, BackingType[]>> {
+  const out = new Map<string, BackingType[]>();
+  if (contents.length === 0) return out;
+  const placeholders = contents.map(() => "?").join(", ");
+  const kindPlaceholders = BACKING_TYPES.map(() => "?").join(", ");
+  const rows = (await db
+    .prepare(
+      `SELECT sf.content AS content, sfs.extraction_type AS kind
+         FROM session_fact_sources sfs
+         JOIN session_facts sf ON sf.id = sfs.session_fact_id
+        WHERE sf.content IN (${placeholders})
+          AND sfs.extraction_type IN (${kindPlaceholders})`,
+    )
+    .all(...contents, ...BACKING_TYPES)) as Array<{ content: string; kind: string }>;
+  for (const row of rows) {
+    const kind = row.kind as BackingType;
+    if (!(BACKING_TYPES as readonly string[]).includes(kind)) continue;
+    const list = out.get(row.content) ?? [];
+    if (!list.includes(kind)) list.push(kind);
+    out.set(row.content, list);
+  }
+  return out;
 }
 
 // ---------------------------------------------------------------------------

@@ -16,6 +16,7 @@ import type { VectorSearchOpts } from "../search/vector.js";
 import type { EmbeddingProvider } from "../embedding/types.js";
 import { getStats, type KnowledgeStats } from "../db/stats.js";
 import type { EpisodeSlice, SearchResponse } from "../types/data.js";
+import type { InterlocutorConfig } from "../types/config.js";
 
 // ---------------------------------------------------------------------------
 // search
@@ -36,6 +37,7 @@ export async function runSearch(
   /** Null when semantic search is off — the shipped default. */
   embedding: EmbeddingProvider | null = null,
   tuning?: VectorSearchOpts,
+  interlocutor?: InterlocutorConfig,
 ): Promise<SearchResponse> {
   // Same entry point the MCP tool uses, so the command line and an assistant
   // cannot get different answers to the same question.
@@ -44,6 +46,7 @@ export async function runSearch(
     limit: args.limit,
     asOfSystemTime: args.asOfSystemTime,
     tuning,
+    interlocutor,
   });
 }
 

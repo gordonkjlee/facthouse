@@ -66,6 +66,9 @@ describe("initDataDir", () => {
     // only provider that cannot itself fail. A knob that does nothing is worse
     // than no knob, so this asserts it stays gone.
     expect(written.intelligence).not.toHaveProperty("fallback");
+    // Ranking priors are a store opinion. Init must not write an empty object
+    // that looks like a shipped default.
+    expect(written).not.toHaveProperty("interlocutor");
     expect(written.consolidation.triggers).toBeInstanceOf(Array);
     expect(written.extraction).toHaveProperty("enabled");
     expect(written.retention).toHaveProperty("prune_keep_per_session");

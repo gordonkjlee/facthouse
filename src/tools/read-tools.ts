@@ -13,7 +13,7 @@ import { getFactsByEntity, parseSystemTime } from "../db/facts.js";
 import { lookupNamedSubject } from "../search/entity.js";
 import { getDomains } from "../db/domains.js";
 import { getStats } from "../db/stats.js";
-import type { TemporalConfig } from "../types/config.js";
+import type { InterlocutorConfig, TemporalConfig } from "../types/config.js";
 import { systemTimeWarning } from "../config.js";
 
 // ---------------------------------------------------------------------------
@@ -32,6 +32,7 @@ export function registerReadTools(
    * simple (the default) omits it so the tool description costs no extra tokens.
    */
   temporal?: TemporalConfig,
+  interlocutor?: InterlocutorConfig,
 ): void {
   const bitemporal = temporal?.mode === "bitemporal";
   // -----------------------------------------------------------------
@@ -117,6 +118,7 @@ export function registerReadTools(
         domain: args.domain,
         tuning,
         asOfSystemTime,
+        interlocutor,
       });
       if (asOfSystemTime) {
         response.system_time_warning = systemTimeWarning(
@@ -229,7 +231,7 @@ export function registerReadTools(
     },
     async (args) => {
       // Hybrid search for the topic
-      const searchResponse = await hybridSearch(db, args.topic);
+      const searchResponse = await hybridSearch(db, args.topic, { interlocutor });
 
       // Check if the topic matches an entity
       const entity = await findEntity(db, args.topic);

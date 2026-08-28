@@ -390,6 +390,7 @@ async function runSearchCmd() {
         ann: config.embedding?.ann,
         annMaxBytes: config.embedding?.ann_max_bytes,
       },
+      config.interlocutor,
     ),
   );
   if (asOfSystemTime) {

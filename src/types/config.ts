@@ -53,6 +53,16 @@ export interface TemporalConfig {
 /** Intelligence provider type. */
 export type IntelligenceProviderType = "heuristic" | "sampling" | "cli" | "api";
 
+/**
+ * Optional ranking priors by channel or by display name. Absent means no
+ * weight, not 0.5. Engine ships none. Search ranking only — not capture
+ * confidence.
+ */
+export interface InterlocutorConfig {
+  role_weights?: Partial<Record<"user" | "assistant" | "system" | "tool", number>>;
+  speaker_weights?: Record<string, number>;
+}
+
 /** Knowledge capture configuration. */
 export interface CaptureConfig {
   /** Default confidence when the AI doesn't specify (0.0–1.0). */
@@ -341,6 +351,12 @@ export interface ServerConfig {
    * other config array: a user-supplied list is the whole list.
    */
   sources: CaptureSource[];
+
+  /**
+   * Optional who-said-it ranking priors. Omitted from shipped defaults so
+   * init does not write an opinion. Unset keys are no multiplier.
+   */
+  interlocutor?: InterlocutorConfig;
 
   /** Optional seed domains with suggested subdomains, created on init.
    *  New domains can also be created at runtime by the calling LLM or server.
