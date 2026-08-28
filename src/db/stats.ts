@@ -10,6 +10,11 @@ import { prunableEvents } from "./prune.js";
 import { getBoundDiskBudget, keepPerSessionOf, storeBytes } from "./disk-budget.js";
 import { extractWatermark, unexaminedEventCount } from "./extract-watermarks.js";
 import { currencyClause } from "./facts.js";
+import { listIntelligenceRuns } from "./intelligence-runs.js";
+import {
+  rollupRuns,
+  type IntelligenceSpendStats,
+} from "../intelligence/usage.js";
 
 export interface KnowledgeStats {
   facts: {
@@ -63,6 +68,12 @@ export interface KnowledgeStats {
   extract: { watermark: number; unextracted_events: number };
   /** session_facts not yet claimed by a graduate (`consolidation_id` is null). */
   pending_facts: number;
+  /**
+   * Billed intelligence: 24h and all-time roll-ups plus the last N runs.
+   * Embeddings are not this number. Token keys are omitted when the provider
+   * did not report them.
+   */
+  intelligence: IntelligenceSpendStats;
   /**
    * CLI-only: whether a scheduler is bound for this data dir. MCP `get_stats`
    * omits it — the process answering the tool *is* the listener.
@@ -140,5 +151,6 @@ export async function getStats(db: Db): Promise<KnowledgeStats> {
       db,
       `SELECT COUNT(*) as count FROM session_facts WHERE consolidation_id IS NULL`,
     ),
+    intelligence: rollupRuns(await listIntelligenceRuns(db)),
   };
 }

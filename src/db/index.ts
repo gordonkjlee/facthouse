@@ -42,6 +42,7 @@ export * from "./watermarks.js";
 export * from "./extract-watermarks.js";
 export * from "./consolidations.js";
 export * from "./stats.js";
+export * from "./intelligence-runs.js";
 export * from "./inferences.js";
 export * from "./disk-budget.js";
 export * from "./prune.js";

@@ -76,7 +76,7 @@ async function postgresSchemaVersionSafe(db: Db): Promise<number> {
 }
 
 /**
- * Current shape (schema v19). `rowid` is an identity column so SQLite queries
+ * Current shape (schema v20). `rowid` is an identity column so SQLite queries
  * that join FTS on rowid or order by insert order still have a column to use.
  * Word search is `tsvector` + GIN, not FTS5.
  */
@@ -317,4 +317,13 @@ CREATE TABLE IF NOT EXISTS inference_evidence (
   fact_id TEXT NOT NULL,
   PRIMARY KEY (inference_id, fact_id)
 );
+
+CREATE TABLE IF NOT EXISTS intelligence_runs (
+  id TEXT PRIMARY KEY,
+  kind TEXT NOT NULL CHECK (kind IN ('consolidate', 'capture')),
+  consolidation_id TEXT,
+  created_at TIMESTAMPTZ NOT NULL,
+  usage TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_intelligence_runs_created ON intelligence_runs(created_at);
 `;

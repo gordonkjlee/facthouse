@@ -142,7 +142,7 @@ async function main() {
         `  init [dir]    Create the data directory, database, and default config (--yes never prompts)\n` +
         `  search <q>    Search the knowledge base\n` +
         `  stats         Show knowledge base statistics\n` +
-        `  inspect       Sample D / I / K and write a local HTML graph\n` +
+        `  inspect       Sample D / I / K and write a local HTML graph + spend\n` +
         `  prune         Reclaim raw events nothing can reach (dry run by default)\n` +
         `  pull          Ingest new events from named capture sources\n` +
         `  log-event     Log a session event (used by hooks)\n` +

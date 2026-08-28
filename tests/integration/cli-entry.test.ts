@@ -410,6 +410,8 @@ describe.skipIf(!runnable)("cli entry — search and stats", () => {
     expect(r.status).toBe(0);
     expect(r.stdout).toContain("3 current");
     expect(r.stdout).toContain("preferences");
+    expect(r.stdout).toContain("Intelligence");
+    expect(r.stdout).toContain("0 calls");
   });
 
   it("stats --json emits parseable JSON on stdout", async () => {
@@ -424,6 +426,8 @@ describe.skipIf(!runnable)("cli entry — search and stats", () => {
     expect(parsed.facts.active_latest).toBe(3);
     expect(typeof parsed.package_version).toBe("string");
     expect(parsed.package_version.length).toBeGreaterThan(0);
+    expect(parsed.intelligence.last_24h.calls).toBe(0);
+    expect(parsed.intelligence.recent).toEqual([]);
   });
 
   it("inspect --graph writes inspect.html under the data dir and does not dump cwd", async () => {
@@ -438,6 +442,8 @@ describe.skipIf(!runnable)("cli entry — search and stats", () => {
     expect(html).toContain("OpenMemory inspect");
     expect(html).toContain('id="q"');
     expect(html).toContain("Acme");
+    expect(html).toContain('id="viewSpend"');
+    expect(html).toContain("spend-board");
   });
 
   it("inspect --layer k prints currently-true facts", async () => {

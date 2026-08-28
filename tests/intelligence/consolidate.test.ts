@@ -17,6 +17,8 @@ const { ensureDomain } = await import("../../src/db/domains.js");
 const { getFactsMissingEmbeddings, countEmbeddings } = await import("../../src/db/embeddings.js");
 const { consolidate } = await import("../../src/intelligence/consolidate.js");
 const { createHeuristicProvider } = await import("../../src/intelligence/heuristic.js");
+const { listIntelligenceRuns } = await import("../../src/db/intelligence-runs.js");
+const { UsageAccumulator } = await import("../../src/intelligence/usage.js");
 import { PERSONAL_VOCABULARY } from "../fixtures/vocabulary.js";
 
 // ---------------------------------------------------------------------------
@@ -119,6 +121,55 @@ describe("consolidation pipeline", () => {
     expect(profileFacts.every((f) => f.valid_from === null)).toBe(true);
     expect(prefFacts.every((f) => f.valid_from === null)).toBe(true);
     expect(medFacts.every((f) => f.valid_from === null)).toBe(true);
+  });
+
+  it("does not invent a spend row for the heuristic provider", async () => {
+    const sessionId = await setupSession();
+    await insertSessionFact(db, {
+      session_id: sessionId,
+      content: "The user prefers oat milk in coffee",
+      domain_hint: "preferences",
+    });
+    const result = await consolidate(db, createHeuristicProvider(PERSONAL_VOCABULARY));
+    expect(result.usage).toBeUndefined();
+    expect(await listIntelligenceRuns(db)).toEqual([]);
+  });
+
+  it("persists classify spend for explicit captures on the graduate run", async () => {
+    const sessionId = await setupSession();
+    const base = createHeuristicProvider(PERSONAL_VOCABULARY);
+    const acc = new UsageAccumulator({ provider: "cli", model: "haiku" });
+    const provider = {
+      ...base,
+      async classifyFacts(
+        facts: Parameters<typeof base.classifyFacts>[0],
+        ctx?: string,
+      ) {
+        acc.record("classify", {
+          input_tokens: 80,
+          output_tokens: 12,
+          elapsed_ms: 25,
+        });
+        return base.classifyFacts(facts, ctx);
+      },
+      takeUsage() {
+        return acc.take();
+      },
+    };
+    await insertSessionFact(db, {
+      session_id: sessionId,
+      content: "The user prefers oat milk in coffee",
+    });
+    const result = await consolidate(db, provider);
+    expect(result.usage?.stages.classify.calls).toBe(1);
+    expect(result.usage?.stages.classify.provider).toBe("cli");
+    expect(result.usage?.stages.classify.model).toBe("haiku");
+    expect(result.usage).not.toHaveProperty("total_cost_usd");
+    const rows = await listIntelligenceRuns(db);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].kind).toBe("consolidate");
+    expect(rows[0].usage.stages.classify.calls).toBe(1);
+    expect(rows[0].consolidation_id).toBe(result.consolidationId);
   });
 
   it("graduates a stated valid_from_hint and leaves an untimed fact undated", async () => {

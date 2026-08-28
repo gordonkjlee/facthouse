@@ -1,6 +1,6 @@
 /**
- * `openmemory inspect` — sample D / I / K and write a local HTML graph.
- * Does not open a browser.
+ * `openmemory inspect` — sample D / I / K and write a local HTML app
+ * (graph + spend). Does not open a browser.
  */
 
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -15,6 +15,7 @@ import {
   loadLayerRows,
   type InspectLayerRows,
 } from "./inspect-payload.js";
+import { loadSpendDashboard } from "./spend-dashboard.js";
 
 export const INSPECT_LAYERS = [
   "health",
@@ -178,8 +179,11 @@ export async function runInspect(db: Db, opts: InspectOpts): Promise<InspectResu
       ? path.resolve(opts.output)
       : path.join(opts.dataDir, "inspect.html");
     mkdirSync(path.dirname(dest), { recursive: true });
+    const spend = await loadSpendDashboard(db);
     const html = renderInspectHtml({
       ...graph,
+      health,
+      spend,
       package_version: version,
     });
     writeFileSync(dest, html, "utf8");

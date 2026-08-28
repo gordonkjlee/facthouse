@@ -32,6 +32,11 @@ import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { IntelligenceProvider, ExtractedFact, ExtractedEntity, Referent } from "./types.js";
+import {
+  UsageAccumulator,
+  parseEnvelopeUsage,
+  type IntelligenceUsage,
+} from "./usage.js";
 import { createHeuristicProvider } from "./heuristic.js";
 import { domainRoutingInstruction, normaliseDomainName } from "../schemas/domains.js";
 import {
@@ -113,6 +118,7 @@ interface SubprocessFailure {
   detail?: string;
   exitCode?: number | null;
   stderr?: string;
+  elapsedMs?: number;
 }
 
 /** Transient extract failures that are retried once. Not spawn/parse/is-error. */
@@ -175,14 +181,17 @@ async function invokeClaude(
 
   return new Promise((resolve) => {
     let resolved = false;
+    const started = Date.now();
     const finish = (value: SubprocessResult | SubprocessFailure) => {
       if (resolved) return;
       resolved = true;
+      if (typeof value.elapsedMs !== "number") {
+        (value as SubprocessFailure).elapsedMs = Date.now() - started;
+      }
       resolve(value);
     };
 
     let child: import("node:child_process").ChildProcess;
-    const started = Date.now();
     try {
       child = spawn(cmd, args, {
         cwd: opts.cwd,
@@ -645,6 +654,25 @@ export function createCliProvider(
     if (opts.debug) console.error("[openmemory cli-provider]", ...args);
   };
 
+  const usageAcc = new UsageAccumulator({
+    provider: "cli",
+    model: opts.model,
+  });
+
+  function recordAttempt(
+    stageName: string,
+    result: SubprocessResult | SubprocessFailure,
+  ): void {
+    const tokens =
+      "envelope" in result ? parseEnvelopeUsage(result.envelope) : {};
+    usageAcc.record(stageName, {
+      ...tokens,
+      elapsed_ms: result.elapsedMs ?? 0,
+      provider: "cli",
+      model: opts.model,
+    });
+  }
+
   /** Standardised stage runner. Returns null on failure so callers can fall back. */
   async function runStage<T>(
     stageName: string,
@@ -662,6 +690,7 @@ export function createCliProvider(
     const attempt = () => invokeClaude(prompt, schema, getCommand(), opts);
 
     let result = await attempt();
+    recordAttempt(stageName, result);
     if ("error" in result) {
       const retryable =
         retryTransient &&
@@ -672,6 +701,7 @@ export function createCliProvider(
       }));
       if (retryable) {
         result = await attempt();
+        recordAttempt(stageName, result);
         if ("error" in result) {
           console.error(formatStageFailure(stageName, result, "retry", {
             timeoutMs: result.error === "timeout" ? opts.timeoutMs : undefined,
@@ -1014,6 +1044,10 @@ export function createCliProvider(
         return fallback.summarise(sessionFacts, graduatedFacts, priorSummary);
       }
       return { summary: result.summary, openThreads: result.openThreads };
+    },
+
+    takeUsage(): IntelligenceUsage | null {
+      return usageAcc.take();
     },
   };
 }

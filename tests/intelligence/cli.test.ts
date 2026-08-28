@@ -846,3 +846,130 @@ describe("createCliProvider — explicit captures get real intelligence", () => 
     expect(lastSpawnArgs).toBeNull();
   });
 });
+
+describe("createCliProvider — billed usage", () => {
+  const stubFallback = {
+    async classifyFacts() { return []; },
+    async extractEntities() { return new Map(); },
+    async extractFactsFromEvents() {
+      return { facts: [], degraded: false };
+    },
+    async detectSupersession() { return null; },
+    async reconcile() { return { kind: "add" as const }; },
+    async summarise() { return { summary: "", openThreads: [] }; },
+  };
+
+  it("records provider, model, and tokens from the envelope", async () => {
+    nextMockChildBehaviour = respondWith({
+      is_error: false,
+      result: "ok",
+      usage: { input_tokens: 120, output_tokens: 15, total_cost_usd: 0.01 },
+      structured_output: { facts: [] },
+    });
+    const provider = createCliProvider({ model: "haiku" });
+    await provider.extractFactsFromEvents(
+      [{ id: "e1", role: "user", content: "The user prefers oat milk", sequence: 1 } as any],
+      [],
+    );
+    const usage = provider.takeUsage?.();
+    expect(usage).toBeTruthy();
+    expect(usage!.calls).toBe(1);
+    expect(usage!.input_tokens).toBe(120);
+    expect(usage!.output_tokens).toBe(15);
+    expect(usage).not.toHaveProperty("total_cost_usd");
+    expect(usage!.stages.extract.provider).toBe("cli");
+    expect(usage!.stages.extract.model).toBe("haiku");
+  });
+
+  it("omits token keys when the envelope has no usage", async () => {
+    nextMockChildBehaviour = respondWith({
+      is_error: false,
+      result: "ok",
+      structured_output: { facts: [] },
+    });
+    const provider = createCliProvider();
+    await provider.extractFactsFromEvents(
+      [{ id: "e1", role: "user", content: "The user prefers oat milk", sequence: 1 } as any],
+      [],
+    );
+    const usage = provider.takeUsage?.();
+    expect(usage!.calls).toBe(1);
+    expect(usage).not.toHaveProperty("input_tokens");
+    expect(usage!.stages.extract).not.toHaveProperty("input_tokens");
+  });
+
+  it("counts a retried extract as two calls", async () => {
+    behaviourQueue.push((child) => child.emit("close", 1));
+    behaviourQueue.push(
+      respondWith({
+        is_error: false,
+        result: "ok",
+        usage: { input_tokens: 10, output_tokens: 2 },
+        structured_output: { facts: [] },
+      }),
+    );
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    const provider = createCliProvider({}, stubFallback);
+    await provider.extractFactsFromEvents(
+      [{ id: "e1", role: "user", content: "The user prefers oat milk", sequence: 1 } as any],
+      [],
+    );
+    err.mockRestore();
+    const usage = provider.takeUsage?.();
+    expect(usage!.stages.extract.calls).toBe(2);
+    expect(usage!.input_tokens).toBe(10);
+  });
+
+  it("counts two extract calls plus a retry as three", async () => {
+    behaviourQueue.push((child) => child.emit("close", 1));
+    behaviourQueue.push(
+      respondWith({
+        is_error: false,
+        result: "ok",
+        usage: { input_tokens: 10, output_tokens: 1 },
+        structured_output: { facts: [] },
+      }),
+    );
+    behaviourQueue.push(
+      respondWith({
+        is_error: false,
+        result: "ok",
+        usage: { input_tokens: 20, output_tokens: 2 },
+        structured_output: { facts: [] },
+      }),
+    );
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    const provider = createCliProvider({}, stubFallback);
+    const event = { id: "e1", role: "user", content: "The user prefers oat milk", sequence: 1 } as any;
+    await provider.extractFactsFromEvents([event], []);
+    await provider.extractFactsFromEvents([{ ...event, id: "e2", sequence: 2 }], []);
+    err.mockRestore();
+    const usage = provider.takeUsage?.();
+    expect(usage!.stages.extract.calls).toBe(3);
+    expect(usage!.input_tokens).toBe(30);
+  });
+
+  it("records classify as its own stage with identity", async () => {
+    nextMockChildBehaviour = respondWith({
+      is_error: false,
+      result: "",
+      usage: { input_tokens: 40, output_tokens: 6 },
+      structured_output: {
+        classifications: [{ id: "f1", domain: "preferences", subdomain: null }],
+      },
+    });
+    const provider = createCliProvider({ model: "haiku" }, stubFallback as any);
+    await provider.classifyFacts([
+      { id: "f1", content: "The user prefers oat milk" } as any,
+    ]);
+    const usage = provider.takeUsage?.();
+    expect(usage!.stages.classify).toMatchObject({
+      provider: "cli",
+      model: "haiku",
+      calls: 1,
+      input_tokens: 40,
+      output_tokens: 6,
+    });
+    expect(usage!.stages).not.toHaveProperty("extract");
+  });
+});
