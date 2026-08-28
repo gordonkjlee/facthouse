@@ -247,9 +247,10 @@ export interface EmbeddingConfig {
    */
   min_similarity: number | null;
   /**
-   * HNSW on Postgres for meaning-search. null = auto above
-   * `ann_max_bytes`; false = never; true = force when dialect and the
-   * `vector` extension allow. SQLite ignores this and stays an exact scan.
+   * HNSW for meaning-search. null = auto above `ann_max_bytes`; false =
+   * never; true = force when the engine allows (Postgres `vector`
+   * extension, or the in-process index on SQLite). Exact scan below the
+   * threshold and when the engine is missing.
    */
   ann: boolean | null;
   /**

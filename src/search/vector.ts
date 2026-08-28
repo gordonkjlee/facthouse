@@ -1,10 +1,10 @@
 /**
  * Semantic recall — cosine similarity over stored vectors.
  *
- * Default is an exact JavaScript scan of BLOBs. On Postgres, when the current
- * model+dimension working set is large and the `vector` extension is present,
- * an HNSW sidecar of that set is used instead. SQLite never uses the sidecar.
- * The scan **ranks; it does not gate**.
+ * Default is an exact JavaScript scan of BLOBs. When the current
+ * model+dimension working set is large, an HNSW index of that set is used
+ * instead: a pgvector sidecar on Postgres, an in-process graph on SQLite.
+ * Missing engine keeps the exact scan. The scan **ranks; it does not gate**.
  */
 
 import type { Db } from "../db/connection.js";
@@ -18,7 +18,7 @@ import {
   postgresHnswFallbackWarning,
   postgresMissingVectorWarning,
   shouldUseAnn,
-  sqliteScaleWarning,
+  sqliteEngineMissingWarning,
   wouldWantAnn,
 } from "./ann.js";
 
@@ -67,8 +67,8 @@ export interface VectorSearchOpts {
    */
   minSimilarity?: number;
   /**
-   * HNSW gate. null/omit = auto above `annMaxBytes` on Postgres;
-   * false = never; true = force when the extension allows.
+   * HNSW gate. null/omit = auto above `annMaxBytes`;
+   * false = never; true = force when the engine allows.
    */
   ann?: boolean | null;
   /** Auto threshold in bytes. Omit for ANN_DEFAULT_MAX_BYTES. */
@@ -137,32 +137,32 @@ export async function vectorSearch(
   const maxBytes = opts.annMaxBytes ?? ANN_DEFAULT_MAX_BYTES;
   const ann = opts.ann ?? null;
 
-  if (db.dialect === "sqlite" && ann !== false && bytes > maxBytes) {
-    emitAnnWarningOnce("sqlite-scale", sqliteScaleWarning());
+  const enginePresent = await resolveEnginePresent(db);
+  const wantAnn = wouldWantAnn({ dialect: db.dialect, ann, bytes, maxBytes });
+  if (wantAnn && !enginePresent) {
+    emitAnnWarningOnce(
+      db.dialect === "postgres" ? "pg-vector-missing" : "sqlite-engine-missing",
+      db.dialect === "postgres"
+        ? postgresMissingVectorWarning()
+        : sqliteEngineMissingWarning(),
+    );
   }
 
   let scored: Array<{ id: string; score: number }>;
-  if (db.dialect === "postgres") {
-    const { hasVectorExtension, ensureHnswSidecar, hnswSearchHits } = await import(
-      "../db/embeddings-hnsw.js"
-    );
-    const extensionPresent = await hasVectorExtension(db);
-    if (wouldWantAnn({ dialect: db.dialect, ann, bytes, maxBytes }) && !extensionPresent) {
-      emitAnnWarningOnce("pg-vector-missing", postgresMissingVectorWarning());
-    }
-    if (
-      shouldUseAnn({ dialect: db.dialect, ann, bytes, maxBytes, extensionPresent })
-    ) {
-      try {
-        await ensureHnswSidecar(db, model, dimensions);
-        const fetch = Math.min(n, Math.max(limit * 20, 64));
-        scored = await hnswSearchHits(db, queryVector, fetch);
-      } catch (err) {
-        const detail = err instanceof Error ? err.message : String(err);
-        emitAnnWarningOnce("hnsw-fallback", postgresHnswFallbackWarning(detail));
-        scored = await exactCosineScores(db, queryVector, model, dimensions);
-      }
-    } else {
+  if (
+    shouldUseAnn({
+      dialect: db.dialect,
+      ann,
+      bytes,
+      maxBytes,
+      enginePresent,
+    })
+  ) {
+    try {
+      scored = await hnswScores(db, queryVector, model, dimensions, n, limit);
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : String(err);
+      emitAnnWarningOnce("hnsw-fallback", postgresHnswFallbackWarning(detail));
       scored = await exactCosineScores(db, queryVector, model, dimensions);
     }
   } else {
@@ -223,6 +223,34 @@ export async function vectorSearch(
     if (fact) out.push(fact);
   }
   return out;
+}
+
+async function resolveEnginePresent(db: Db): Promise<boolean> {
+  if (db.dialect === "postgres") {
+    const { hasVectorExtension } = await import("../db/embeddings-hnsw.js");
+    return hasVectorExtension(db);
+  }
+  const { inProcessEnginePresent } = await import("./hnsw-ram.js");
+  return inProcessEnginePresent();
+}
+
+async function hnswScores(
+  db: Db,
+  queryVector: Float32Array,
+  model: string,
+  dimensions: number,
+  n: number,
+  limit: number,
+): Promise<Array<{ id: string; score: number }>> {
+  const fetch = Math.min(n, Math.max(limit * 20, 64));
+  if (db.dialect === "postgres") {
+    const { ensureHnswSidecar, hnswSearchHits } = await import("../db/embeddings-hnsw.js");
+    await ensureHnswSidecar(db, model, dimensions);
+    return hnswSearchHits(db, queryVector, fetch);
+  }
+  const { ensureRamHnsw, ramHnswSearchHits } = await import("./hnsw-ram.js");
+  const graph = await ensureRamHnsw(db, model, dimensions);
+  return ramHnswSearchHits(graph, queryVector, fetch);
 }
 
 async function exactCosineScores(
