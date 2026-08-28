@@ -7,6 +7,7 @@ import type { KnowledgeStats } from "../db/stats.js";
 import { emptySpendStats } from "../intelligence/usage.js";
 import type { InspectGraphPayload } from "./inspect-payload.js";
 import { spendDashboardFromStats, type SpendDashboard } from "./spend-dashboard.js";
+import { ledgerInspectCss } from "./inspect-theme.js";
 import { renderSpendBoard, SPEND_BOARD_CSS } from "./stats-html.js";
 
 function emptyHealth(): KnowledgeStats {
@@ -37,35 +38,13 @@ export function renderInspectHtml(
     spend ?? spendDashboardFromStats(health ?? emptyHealth()),
   );
   return `<!DOCTYPE html>
-<html lang="en" data-theme="system">
+<html lang="en-GB" data-theme="system">
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
 <title>OpenMemory inspect</title>
 <style>
-  :root {
-    color-scheme: dark;
-    --bg: #0e1218; --panel: #161c25; --line: #2a3340; --text: #e7edf5;
-    --muted: #8b98a8; --accent: #6ea8ff; --about: #7dcea0; --mention: #e0b44a;
-    --elev: #1c2430; --input: #0e1218; --chip: #243044; --glow: #152033;
-    --canvas-label: rgba(14,18,24,0.78); --canvas-label-text: #e7edf5;
-  }
-  html[data-theme="light"] {
-    color-scheme: light;
-    --bg: #f3f5f7; --panel: #ffffff; --line: #d5dbe3; --text: #1a2330;
-    --muted: #5c6b7a; --accent: #245fd6; --about: #18764a; --mention: #9a5700;
-    --elev: #eef1f5; --input: #ffffff; --chip: #e4e9f0; --glow: #dce6f2;
-    --canvas-label: rgba(255,255,255,0.88); --canvas-label-text: #1a2330;
-  }
-  @media (prefers-color-scheme: light) {
-    html[data-theme="system"] {
-      color-scheme: light;
-      --bg: #f3f5f7; --panel: #ffffff; --line: #d5dbe3; --text: #1a2330;
-      --muted: #5c6b7a; --accent: #245fd6; --about: #18764a; --mention: #9a5700;
-      --elev: #eef1f5; --input: #ffffff; --chip: #e4e9f0; --glow: #dce6f2;
-      --canvas-label: rgba(255,255,255,0.88); --canvas-label-text: #1a2330;
-    }
-  }
+${ledgerInspectCss()}
   * { box-sizing: border-box; }
   html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
     font: 13px/1.45 ui-sans-serif, system-ui, sans-serif; }
@@ -174,7 +153,7 @@ export function renderInspectHtml(
   #stage, #spend { grid-row: 2; min-height: 0; }
   #spend {
     display: none; overflow: auto; padding: 20px 24px 48px;
-    --card: var(--elev); --ink: var(--text); --gold: var(--mention); --warn: #c97b6a;
+    --card: var(--elev); --ink: var(--text); --gold: var(--mention);
   }
   ${SPEND_BOARD_CSS}
 </style>
@@ -182,7 +161,7 @@ export function renderInspectHtml(
 <body>
 <div id="app">
   <header>
-    <h1>OpenMemory inspect</h1>
+    <h1>OpenMemory</h1>
     <div class="views" role="tablist">
       <button type="button" class="view-btn on" data-view="graph" id="viewGraph">Graph</button>
       <button type="button" class="view-btn" data-view="spend" id="viewSpend">Spend</button>
@@ -330,8 +309,9 @@ function draw(){
   for(const e of DATA.edges||[]){if(!idSet.has(e.from)||!idSet.has(e.to))continue;const a=pmap.get(e.from),b=pmap.get(e.to);
     const edgeOn=selectedEdge&&((selectedEdge.from===e.from&&selectedEdge.to===e.to)||(selectedEdge.from===e.to&&selectedEdge.to===e.from));
     const hot=edgeOn||(selected&&(e.from===selected.id||e.to===selected.id));
-    ctx.strokeStyle=edgeOn?"rgba(224,180,74,0.9)":hot?"rgba(110,168,255,0.7)":"rgba(139,152,168,0.22)";
-    ctx.lineWidth=edgeOn?2.4:hot?1.6:0.6+e.strength;ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke();}
+    const gold=css.getPropertyValue("--accent").trim()||"#c4a35a";const muted=css.getPropertyValue("--muted").trim()||"#9a9486";
+    ctx.strokeStyle=edgeOn?gold:hot?gold:muted;ctx.globalAlpha=edgeOn?0.9:hot?0.55:0.22;
+    ctx.lineWidth=edgeOn?2.4:hot?1.6:0.6+e.strength;ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke();ctx.globalAlpha=1;}
   for(const n of sim){const r=radius(n);ctx.beginPath();ctx.fillStyle=colour(n.type);
     const dim=selected&&selected.id!==n.id&&!selectedEdge&&hotSet&&!hotSet.has(n.id);ctx.globalAlpha=dim?0.35:1;ctx.arc(n.x,n.y,r,0,Math.PI*2);ctx.fill();ctx.globalAlpha=1;
     if((selected&&selected.id===n.id)||(selectedEdge&&(selectedEdge.from===n.id||selectedEdge.to===n.id))){ctx.strokeStyle=selStroke||"#fff";ctx.lineWidth=2;ctx.stroke();}

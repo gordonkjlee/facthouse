@@ -1,3 +1,5 @@
+<img src="media/mascot-right.png" width="128" align="right" alt="OpenMemory mascot">
+
 # OpenMemory
 
 Local-first AI memory engine exposed as an MCP server. GitHub [`gordonkjlee/openmemory`](https://github.com/gordonkjlee/openmemory), npm [`@openmem/mcp`](https://www.npmjs.com/package/@openmem/mcp). Structured knowledge with server-side intelligence — domain routing, entity extraction, deduplication, and supersession. Any AI tool can query it. You own the SQLite file.
