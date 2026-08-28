@@ -16,6 +16,7 @@ import { closeDatabase, type Db } from "./db/connection.js";
 import { openStore } from "./db/store.js";
 import { applySchema } from "./db/schema.js";
 import { ensureSelfEntity } from "./db/entities.js";
+import { loadStoreVocabulary } from "./db/domains.js";
 import { createEmbeddingProvider } from "./embedding/provider.js";
 import { createSessionManager, registerSessionReadTools } from "./tools/session-manager.js";
 import { createFactManager } from "./tools/fact-manager.js";
@@ -138,9 +139,13 @@ async function main() {
   // the CLI provider: subprocess `claude -p` for real LLM consolidation
   // via the user's own subscription. The OPENMEMORY_PROVIDER env var overrides
   // the config.json choice (kill-switch, e.g. OPENMEMORY_PROVIDER=heuristic).
-  const heuristic = createHeuristicProvider();
+  const storeVocabulary = await loadStoreVocabulary(
+    database,
+    config.domains ?? [],
+  );
+  const heuristic = createHeuristicProvider(storeVocabulary);
   const intelligence = createIntelligenceProvider(config.intelligence, {
-    vocabulary: config.domains ?? [],
+    vocabulary: storeVocabulary,
     server: server.server,
     heuristic,
   });

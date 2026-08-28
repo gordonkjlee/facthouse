@@ -60,7 +60,7 @@ Git Bash / macOS / Linux:
 
 ```bash
 export OPENMEMORY_DATA=/tmp/openmemory-try
-om() { npx -y -p @openmem/mcp@0.22.0 openmemory "$@"; }
+om() { npx -y -p @openmem/mcp@0.22.0 -- openmemory "$@"; }
 om init --yes
 ```
 
@@ -68,7 +68,7 @@ PowerShell:
 
 ```powershell
 $env:OPENMEMORY_DATA = Join-Path $env:TEMP "openmemory-try"
-function om { npx -y -p "@openmem/mcp@0.22.0" openmemory @args }
+function om { npx -y -p "@openmem/mcp@0.22.0" -- openmemory @args }
 om init --yes
 ```
 <!-- x-release-please-end -->
@@ -141,7 +141,7 @@ Example — placeholders only; do not put a real password in a committed file:
   "mcpServers": {
     "openmemory": {
       "command": "npx",
-      "args": ["-y", "@openmem/mcp"],
+      "args": ["-y", "@openmem/mcp@0.22.0"],
       "env": {
         "OPENMEMORY_DATA": "C:\\Users\\alex\\.openmemory-work",
         "OPENMEMORY_STORAGE": "postgres",
@@ -164,7 +164,7 @@ Do not install log-event hooks on this store — both write the same rows. OpenM
 
 ### Hooks (after the first CLI pull)
 
-`mcp.json` `env` is **not** visible to hooks. Pass the same `--data` (or export `OPENMEMORY_DATA` in the environment the client itself inherits). The command must invoke the CLI (`openmemory`), never the server binary. `npx -y @openmem/mcp` with no `-p` / `openmemory` starts the MCP **server** and hangs a hook.
+`mcp.json` `env` is **not** visible to hooks. Pass the same `--data` (or export `OPENMEMORY_DATA` in the environment the client itself inherits). The command must invoke the CLI (`openmemory`), never the server binary. `npx -y @openmem/mcp` with no `-p` / `openmemory` starts the MCP **server** and hangs a hook. Pin the package version and put `--` before `openmemory` so a globally installed older `openmemory` on PATH cannot win.
 
 <details>
 <summary>Stop / PreCompact hook JSON</summary>
@@ -177,7 +177,7 @@ Do not install log-event hooks on this store — both write the same rows. OpenM
         "hooks": [
           {
             "type": "command",
-            "command": "npx -y -p @openmem/mcp openmemory pull --data /absolute/path/to/the-same-store"
+            "command": "npx -y -p @openmem/mcp@0.22.0 -- openmemory pull --data /absolute/path/to/the-same-store"
           }
         ]
       }
@@ -187,7 +187,7 @@ Do not install log-event hooks on this store — both write the same rows. OpenM
         "hooks": [
           {
             "type": "command",
-            "command": "npx -y -p @openmem/mcp openmemory signal flush --data /absolute/path/to/the-same-store"
+            "command": "npx -y -p @openmem/mcp@0.22.0 -- openmemory signal flush --data /absolute/path/to/the-same-store"
           }
         ]
       }
@@ -199,6 +199,10 @@ Do not install log-event hooks on this store — both write the same rows. OpenM
 </details>
 
 Stop tails new lines (pull then ticks the server to extract when the threshold is due). PreCompact `signal flush` graduates pending facts without re-reading the transcript. It does not insert `session_events`. On Windows the `--data` path is the same absolute directory you put in `OPENMEMORY_DATA` (for example `C:\\Users\\alex\\AppData\\Local\\Temp\\openmemory-try`).
+
+Stop-hook pull slices a long conversation across other chats, so event sequences **interleave**. Extract keeps an honest prefix only when examined sequences sit entirely below remaining ones; a later failed call on an interleaved store holds the watermark and retries the whole run. Shrinking `extraction.batch_size` makes each call cheaper and **raises** the chance a run contains one unrecovered failure. Raise `intelligence.cli.timeout_ms` instead. `openmemory stats` reports unextracted events sitting above the watermark.
+
+If the MCP server does not start, or lists no tools, check the package version the client actually spawned. A global `openmemory` on PATH can be years behind the pin in this README. Diagnose with `openmemory stats --data <dir>` (the CLI prints whether the scheduler is listening) and by inspecting `serverInfo.version` from `initialize` plus `tools/list` over stdio. `0.2.x` answers `initialize` then throws on `tools/list`.
 
 ### Embeddings, model, timeout, bitemporal
 
@@ -218,7 +222,7 @@ Throwaway store, not the capture path for a real Claude Code or Cursor home. The
 
 ```bash
 export OPENMEMORY_DATA=/tmp/openmemory-demo
-om() { npx -y -p @openmem/mcp openmemory "$@"; }
+om() { npx -y -p @openmem/mcp@0.22.0 -- openmemory "$@"; }
 
 om init --yes
 
@@ -231,7 +235,7 @@ om consolidate
 
 ```powershell
 $env:OPENMEMORY_DATA = Join-Path $env:TEMP "openmemory-demo"
-function om { npx -y -p "@openmem/mcp" openmemory @args }
+function om { npx -y -p "@openmem/mcp@0.22.0" -- openmemory @args }
 om init --yes
 om log-event --role user --content "I prefer dark mode in every editor, and I never want telemetry enabled."
 om log-event --role user --content "I am allergic to shellfish, so avoid seafood restaurants when booking anything."

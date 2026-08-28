@@ -43,6 +43,7 @@ import {
   EXTRACT_CONTEXT_CONTRACT,
   EXTRACT_DURABLE_JOB,
   SUBJECT_MARKING_CONTRACT,
+  entityTypeInstruction,
   extractEventPayload,
   extractTodayUtcDate,
   parseExtractedIso,
@@ -715,10 +716,11 @@ export function createCliProvider(
         "stage-1-extract",
         EXTRACT_DURABLE_JOB +
           " " +
-          `${domainRoutingInstruction(vocabulary)} ` +
+          `${domainRoutingInstruction(extras?.vocabulary ?? vocabulary)} ` +
           "optional subdomain, confidence 0-1, importance 0-1, and any named " +
           "things mentioned (people, organisations, places, projects, products, " +
           "systems, concepts — whatever the fact concerns), each with a short lowercase type. " +
+          `${entityTypeInstruction(extras?.entityTypes ?? [])} ` +
           SUBJECT_MARKING_CONTRACT + " " +
           EXTRACT_CONTEXT_CONTRACT + " " +
           "If an entity matches one of the entities referenced in long_term_memory (by name or " +

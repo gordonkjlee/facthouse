@@ -155,6 +155,8 @@ describe("formatStats", () => {
       domain_distribution: [],
       embeddings: [],
       events: { count: 0, bytes: 0, reclaimable: { events: 0, bytes: 0 } },
+      extract: { watermark: 0, unextracted_events: 0 },
+      pending_facts: 0,
       ...over,
     };
   }
@@ -261,5 +263,20 @@ describe("formatStats", () => {
     );
     expect(out).toContain("Store file");
     expect(out).toContain("1 GB of 2 GB");
+  });
+
+  it("prints extract watermark, unextracted events, and pending I", () => {
+    const out = formatStats(
+      stats({
+        facts: { active_latest: 4, total: 4 },
+        extract: { watermark: 12, unextracted_events: 3 },
+        pending_facts: 2,
+        listener: false,
+      }),
+    );
+    expect(out).toContain("watermark           12");
+    expect(out).toContain("unextracted events  3");
+    expect(out).toContain("pending facts (I)   2");
+    expect(out).toContain("not listening");
   });
 });

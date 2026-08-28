@@ -23,6 +23,7 @@ const {
   compilePatterns,
   importanceDefaults,
   domainRoutingInstruction,
+  mergeVocabulary,
 } = await import("../../src/schemas/domains.js");
 
 /** A vocabulary that is deliberately not personal — the point of the exercise. */
@@ -171,6 +172,40 @@ describe("domainRoutingInstruction", () => {
   it("never offers the fallback as a routing destination", () => {
     const listed = domainRoutingInstruction(CORPORATE).split("Invent")[0];
     expect(listed).not.toContain("general (");
+  });
+});
+
+describe("mergeVocabulary", () => {
+  it("uses store names when config is empty — the default store state", () => {
+    const merged = mergeVocabulary(
+      [{ name: "warehouse", subdomains: [] }],
+      [],
+    );
+    expect(domainRoutingInstruction(merged)).toMatch(/warehouse/);
+    expect(domainRoutingInstruction(merged)).not.toMatch(/no domains yet/i);
+  });
+
+  it("overlays config importance onto a matching store domain", () => {
+    const merged = mergeVocabulary(
+      [{ name: "incidents", subdomains: ["sev"] }],
+      [{ name: "incidents", subdomains: [], importance: 0.9 }],
+    );
+    expect(importanceDefaults(merged)).toEqual({ incidents: 0.9 });
+    expect(merged[0]?.subdomains).toEqual(["sev"]);
+  });
+
+  it("does not treat warehouse and data-warehouse as one name", () => {
+    const merged = mergeVocabulary(
+      [
+        { name: "warehouse", subdomains: [] },
+        { name: "data-warehouse", subdomains: [] },
+      ],
+      [],
+    );
+    expect(merged.map((d) => d.name).sort()).toEqual([
+      "data-warehouse",
+      "warehouse",
+    ]);
   });
 });
 

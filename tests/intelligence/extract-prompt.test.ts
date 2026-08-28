@@ -8,6 +8,8 @@ import {
   EXTRACT_DURABLE_JOB,
   EXTRACT_RELATED_K_CAP,
   SUBJECT_MARKING_CONTRACT,
+  ENTITY_TYPE_PROMPT_CAP,
+  entityTypeInstruction,
   REFERENT_CAP,
   capReferents,
   extractEventPayload,
@@ -129,5 +131,31 @@ describe("EXTRACT_CONTEXT_CONTRACT", () => {
     expect(capReferents(nine)).toHaveLength(REFERENT_CAP);
     expect(capReferents(nine)[0].phrase).toBe("p0");
     expect(capReferents(undefined)).toEqual([]);
+  });
+});
+
+describe("entityTypeInstruction", () => {
+  it("says so when the store has no types yet", () => {
+    expect(entityTypeInstruction([])).toMatch(/short lowercase type/i);
+    expect(entityTypeInstruction([])).not.toMatch(/already in use/);
+  });
+
+  it("names types so extract reuses them", () => {
+    const text = entityTypeInstruction(["dbt_model", "column"]);
+    expect(text).toContain("dbt_model");
+    expect(text).toContain("column");
+    expect(text).toMatch(/never coin a synonym/i);
+  });
+
+  it("does not treat dbt_model and model as one type", () => {
+    const text = entityTypeInstruction(["dbt_model", "model"]);
+    expect(text).toContain("dbt_model");
+    expect(text).toMatch(/\bmodel\b/);
+  });
+
+  it("caps the list so a large graph cannot blow the prompt", () => {
+    const types = Array.from({ length: ENTITY_TYPE_PROMPT_CAP + 10 }, (_, i) => `t${i}`);
+    const named = entityTypeInstruction(types);
+    expect(named.split(", ").length).toBe(ENTITY_TYPE_PROMPT_CAP);
   });
 });

@@ -120,6 +120,43 @@ export function importanceDefaults(
  * steered by showing what exists, never by forbidding new labels — with no
  * shipped vocabulary, forbidding them would mean routing nothing at all.
  */
+/**
+ * One vocabulary for routing: domains the store already created, overlaid
+ * with config (importance, description, patterns). Config-only names are
+ * appended. Canonical name is the key — `Warehouse` and `warehouse` are one.
+ *
+ * Extract and classify must call this (via `loadStoreVocabulary`) rather than
+ * reading `config.domains` alone. Config defaults to `[]`, so a used store
+ * would otherwise be told it has no domains and would coin synonyms.
+ */
+export function mergeVocabulary(
+  fromStore: DomainDef[],
+  fromConfig: DomainDef[] = [],
+): DomainDef[] {
+  const byName = new Map<string, DomainDef>();
+  for (const d of fromStore) {
+    const name = normaliseDomainName(d.name);
+    byName.set(name, { ...d, name });
+  }
+  for (const d of fromConfig) {
+    const name = normaliseDomainName(d.name);
+    const existing = byName.get(name);
+    if (!existing) {
+      byName.set(name, { ...d, name });
+      continue;
+    }
+    byName.set(name, {
+      ...existing,
+      description: d.description ?? existing.description,
+      patterns: d.patterns ?? existing.patterns,
+      importance: d.importance ?? existing.importance,
+      subdomains:
+        existing.subdomains.length > 0 ? existing.subdomains : d.subdomains,
+    });
+  }
+  return [...byName.values()];
+}
+
 export function domainRoutingInstruction(known: DomainDef[] = []): string {
   const described = known
     .map((d) => {

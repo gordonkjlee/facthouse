@@ -77,9 +77,10 @@ import {
   upsertEntityEdge,
   ensureSelfEntity,
   SUBJECT_OF,
+  listEntityTypes,
 } from "../db/entities.js";
 import { isAboutTheUser } from "./subject.js";
-import { ensureDomain } from "../db/domains.js";
+import { ensureDomain, loadStoreVocabulary } from "../db/domains.js";
 import { importanceDefaults, normaliseDomainName } from "../schemas/domains.js";
 import { acquireLock, releaseLock } from "../db/consolidation-lock.js";
 import type { EmbeddingProvider } from "../embedding/types.js";
@@ -155,7 +156,8 @@ export async function consolidate(
   // vocabulary owns its calibration: a missed allergy is the costliest error in a
   // personal store, a missed SLA breach in a corporate one, and the engine cannot
   // know which it is looking at.
-  const defaultsByDomain = importanceDefaults(config?.domains ?? []);
+  const storeVocabulary = await loadStoreVocabulary(db, config?.domains ?? []);
+  const defaultsByDomain = importanceDefaults(storeVocabulary);
 
   // Phase A: Acquire lock
   const locked = await acquireLock(db, consolidationId);
@@ -1000,14 +1002,10 @@ async function linkExtractedFactToEvents(
     }
   }
   if (!linkedPrimary) {
-    for (const event of groupEvents) {
-      await linkFactSource(db, {
-        session_fact_id: sessionFactId,
-        event_id: event.id,
-        relevance: 0.3,
-        extraction_type: "contextual",
-      });
-    }
+    // Rewritten extracts are not a substring of any event. Linking every
+    // event in the conversation as contextual makes provenance unanswerable
+    // (hundreds of 0.3 rows, one primary). Leave the fact unlinked rather
+    // than claiming the whole episode as origin.
     return;
   }
 
@@ -1339,6 +1337,9 @@ async function extractFactsFromEvents(
   const groups = groupByConversation(newEvents);
   if (groups.length === 0) return empty;
 
+  const vocabulary = await loadStoreVocabulary(db, config?.domains ?? []);
+  const entityTypes = await listEntityTypes(db);
+
   const pending: ExtractPending[] = [];
   const remainingGroups = [...groups];
 
@@ -1369,6 +1370,8 @@ async function extractFactsFromEvents(
         referents: prior?.referents ?? [],
         segments: prior?.segments ?? [],
         relatedFacts,
+        vocabulary,
+        entityTypes,
       };
 
       let outcome = await intelligence.extractFactsFromEvents(

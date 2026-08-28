@@ -85,6 +85,16 @@ export interface ExtractExtras {
    * Same list as the longTermMemory argument. Cue, not veto.
    */
   relatedFacts?: Fact[];
+  /**
+   * Domains this store already uses (table + config). Extract must name these
+   * so the model reuses `warehouse` rather than coining `data-warehouse`.
+   */
+  vocabulary?: import("../types/config.js").DomainDef[];
+  /**
+   * Entity types already in the graph, most-used first. Same job as vocabulary
+   * for `type` spellings (`dbt_model` vs `model`).
+   */
+  entityTypes?: string[];
 }
 
 /** Rich per-fact output from holistic D→I extraction. */
