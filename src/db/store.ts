@@ -15,7 +15,12 @@ import {
   postgresConnectFailedMessage,
   postgresUrlOrThrow,
 } from "../config.js";
-import type { ServerConfig } from "../types/config.js";
+import { DEFAULT_CONFIG, type ServerConfig } from "../types/config.js";
+import {
+  applySqliteDiskBudget,
+  bindDiskBudget,
+  parseDiskBudget,
+} from "./disk-budget.js";
 
 /** Filename of the SQLite file when that engine is selected. One definition. */
 export const SQLITE_MEMORY_FILENAME = "memory.db";
@@ -35,9 +40,15 @@ export async function openStore(
 ): Promise<Db> {
   const provider = configuredStorageProvider(config, env);
   assertSupportedStorage(provider);
-  if (provider === "sqlite") {
-    return openDatabase(sqliteMemoryPath(dataDir));
-  }
+  const db =
+    provider === "sqlite"
+      ? openDatabase(sqliteMemoryPath(dataDir))
+      : await connectPostgresOrThrow(env);
+  await attachDiskBudget(db, config);
+  return db;
+}
+
+async function connectPostgresOrThrow(env: NodeJS.ProcessEnv): Promise<Db> {
   const url = postgresUrlOrThrow(env);
   try {
     const { connectPostgres } = await import("./pg-backend.js");
@@ -45,4 +56,18 @@ export async function openStore(
   } catch (err) {
     throw new Error(postgresConnectFailedMessage(err), { cause: err });
   }
+}
+
+async function attachDiskBudget(db: Db, config: ServerConfig): Promise<void> {
+  const bytes = parseDiskBudget(config.retention?.disk_budget);
+  if (!bytes) {
+    bindDiskBudget(db, null);
+    return;
+  }
+  const keep =
+    config.retention?.prune_keep_per_session ??
+    config.extraction?.working_memory_size ??
+    DEFAULT_CONFIG.extraction.working_memory_size;
+  if (db.dialect === "sqlite") await applySqliteDiskBudget(db, bytes);
+  bindDiskBudget(db, { bytes, keepPerSession: keep });
 }

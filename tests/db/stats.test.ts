@@ -58,6 +58,7 @@ describe("getStats", () => {
     expect(s.entities).toBe(0);
     expect(s.consolidations).toBe(0);
     expect(s.domain_distribution).toEqual([]);
+    expect(s.events.reclaimable).toEqual({ events: 0, bytes: 0 });
   });
 
   it("counts a captured fact as both current and total", async () => {

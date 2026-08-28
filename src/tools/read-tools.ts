@@ -329,7 +329,8 @@ export function registerReadTools(
     "get_stats",
     `Get knowledge base statistics — how many facts are currently true, how ` +
       `many are held in total including superseded history, entity and domain ` +
-      `counts, and how facts are distributed across domains.\n\n` +
+      `counts, how facts are distributed across domains, and how much raw log ` +
+      `can be reclaimed.\n\n` +
       `Call this when the user asks what you know or remember about them, how ` +
       `much you have stored, or whether their memory is working. This answers ` +
       `"how much do you know", not "what do you know" — use search_knowledge, ` +

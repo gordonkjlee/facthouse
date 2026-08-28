@@ -463,12 +463,14 @@ No pull adapter yet. Tool descriptions handle search and optional `capture_fact`
 
 OpenMemory logs raw conversation and tool output to `session_events`. On a store wired into an agentic client this becomes almost all of the database. A store measured in daily use held 47,000 events and 493 MB against 21 graduated facts.
 
-`openmemory stats` reports the raw layer alongside the knowledge. To reclaim it:
+`openmemory stats` reports the raw layer alongside the knowledge, including how much is reclaimable. To reclaim it:
 
 ```bash
 openmemory prune                    # report only — nothing is deleted
 openmemory prune --apply --vacuum   # delete, then rebuild the file
 ```
+
+Set `retention.disk_budget` in `config.json` to a size such as `"2GB"` to cap `memory.db`. Unset is unlimited; init does not write a cap. When a cap is set and the file is full, unreachable raw events are pruned automatically so new logs can reuse that space; if nothing unused remains, more raw events are refused. Facts are never deleted to meet the number. Compacting (`--vacuum`) is still a human step — it copies the whole file so the operating system sees the smaller size.
 
 If most of that volume is tool output you judge to be noise, `extraction.event_types` and `extraction.roles` restrict what is examined, and `extraction.min_content_length` skips trivial events. Measure before you do. Volume and value are not the same axis.
 
@@ -478,7 +480,7 @@ If most of that volume is tool output you judge to be noise, `extraction.event_t
 2. No fact's provenance cites it.
 3. It has fallen outside its own session's most recent `extraction.working_memory_size` events — a spare so consolidation can still glance at recent raw notes. That window is evidence of the current topic, not a pronoun dictionary.
 
-No fact, entity, embedding or search result is affected. Deleting rows does not shrink the file on its own — that is `--vacuum`. Nothing prunes automatically.
+No fact, entity, embedding or search result is affected. Deleting rows does not shrink the file on its own — that is `--vacuum`. Without a cap, nothing prunes automatically.
 
 ## Development
 

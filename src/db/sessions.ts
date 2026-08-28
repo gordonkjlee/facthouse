@@ -7,6 +7,7 @@ import { withTransaction } from "./connection.js";
 import type { Db } from "./connection.js";
 import type { Session, SessionEvent } from "../types/data.js";
 import { speakerNameOf } from "./session-facts.js";
+import { ensureRoomForData } from "./disk-budget.js";
 
 // ---------------------------------------------------------------------------
 // Input types
@@ -174,6 +175,8 @@ export async function insertEvent(
   db: Db,
   event: NewSessionEvent,
 ): Promise<SessionEvent> {
+  await ensureRoomForData(db);
+
   const id = randomUUID();
   const now = new Date().toISOString();
   // Empty string is missing — same truthiness as conversationRef / prune NULLIF.

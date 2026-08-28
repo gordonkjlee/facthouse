@@ -154,7 +154,7 @@ describe("formatStats", () => {
       consolidations: 0,
       domain_distribution: [],
       embeddings: [],
-      events: { count: 0, bytes: 0 },
+      events: { count: 0, bytes: 0, reclaimable: { events: 0, bytes: 0 } },
       ...over,
     };
   }
@@ -234,5 +234,32 @@ describe("formatStats", () => {
 
   it("omits the distribution section entirely when there is nothing to show", () => {
     expect(formatStats(stats())).not.toContain("By domain");
+  });
+
+  it("reports reclaimable raw events below the old 50 MB gate", () => {
+    const out = formatStats(
+      stats({
+        facts: { active_latest: 2, total: 2 },
+        events: {
+          count: 10,
+          bytes: 1024 * 1024,
+          reclaimable: { events: 8, bytes: 512 * 1024 },
+        },
+      }),
+    );
+    expect(out).toContain("Reclaimable");
+    expect(out).toContain("8 events");
+    expect(out).toContain("openmemory prune");
+  });
+
+  it("shows store file against a budget when set", () => {
+    const out = formatStats(
+      stats({
+        facts: { active_latest: 1, total: 1 },
+        store: { bytes: 1024 * 1024 * 1024, budget_bytes: 2 * 1024 * 1024 * 1024 },
+      }),
+    );
+    expect(out).toContain("Store file");
+    expect(out).toContain("1 GB of 2 GB");
   });
 });

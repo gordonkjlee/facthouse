@@ -27,6 +27,8 @@ import type { Fact } from "../types/data.js";
 import { structuredSearch } from "../search/index.js";
 import { getLatestSummarised } from "../db/consolidations.js";
 import { keyFacts } from "../search/key-facts.js";
+import { formatDiskBudget } from "../db/disk-budget.js";
+import { getStats } from "../db/stats.js";
 
 // The URI keeps its historical name so existing subscribers do not break; the
 // content is no longer domain-scoped. It is the store's key facts, whatever the
@@ -176,6 +178,13 @@ export async function buildBriefing(db: Db): Promise<string> {
   if (!key.length && !last?.summary && !recent.length) {
     parts.push(
       "\nNo knowledge captured yet. Facts appear here once they have been captured and consolidated.",
+    );
+  }
+
+  const reclaim = (await getStats(db)).events.reclaimable;
+  if (reclaim.events > 0) {
+    parts.push(
+      `\n${reclaim.events} raw events (${formatDiskBudget(reclaim.bytes)} of content) can be reclaimed with \`openmemory prune\`.`,
     );
   }
 

@@ -27,11 +27,12 @@
  *      of this conversation. Without this spare, prune would delete the notes
  *      extract glances at when now/referents are not enough.
  *
- * Nothing here runs automatically. Deletion is irreversible and this is a
- * memory product; the caller asks, having been shown what would go.
+ * The CLI is dry-run by default and never automatic. A store that set
+ * `retention.disk_budget` may apply this same rule before more D ingest,
+ * then refuse if the file is still at the ceiling. That path does not VACUUM.
  */
 
-import type { Db, SqlParam } from "./connection.js";
+import { withTransaction, type Db, type SqlParam } from "./connection.js";
 
 export interface PruneStats {
   /** Number of events matching the rule. */
@@ -103,8 +104,7 @@ export async function prunableEvents(db: Db, keepPerSession: number): Promise<Pr
 export async function pruneEvents(db: Db, keepPerSession: number): Promise<PruneStats> {
   const keep = Math.max(0, keepPerSession) as SqlParam;
 
-  await db.exec("BEGIN IMMEDIATE");
-  try {
+  return withTransaction(db, async () => {
     const before = await prunableEvents(db, keepPerSession);
     await db
       .prepare(
@@ -112,12 +112,8 @@ export async function pruneEvents(db: Db, keepPerSession: number): Promise<Prune
         WHERE id IN (${RANKED} SELECT r.id FROM ranked r WHERE ${UNREACHABLE})`,
       )
       .run(keep);
-    await db.exec("COMMIT");
     return before;
-  } catch (err) {
-    await db.exec("ROLLBACK");
-    throw err;
-  }
+  });
 }
 
 /**

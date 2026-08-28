@@ -4,7 +4,8 @@ import type { Db } from "../../src/db/connection.js";
 const { openDatabase, closeDatabase } = await import("../../src/db/connection.js");
 const { applySchema } = await import("../../src/db/schema.js");
 const { insertFact } = await import("../../src/db/facts.js");
-const { insertEvent } = await import("../../src/db/sessions.js");
+const { insertEvent, createSession } = await import("../../src/db/sessions.js");
+const { bindDiskBudget } = await import("../../src/db/disk-budget.js");
 const { createSource } = await import("../../src/db/sources.js");
 const { getLatestConsolidation, getLatestSummarised } = await import(
   "../../src/db/consolidations.js"
@@ -221,6 +222,28 @@ describe("memory://briefing", () => {
   it("exposes the URIs the spec names", () => {
     expect(PROFILE_URI).toBe("memory://profile");
     expect(BRIEFING_URI).toBe("memory://briefing");
+  });
+
+  it("names reclaimable raw events when the prune rule matches", async () => {
+    bindDiskBudget(db, { bytes: 1024 * 1024 * 1024 * 1024, keepPerSession: 0 });
+    const session = await createSession(db, { source_tool: "test", project: null });
+    const event = await insertEvent(db, {
+      mcp_session_id: session.id,
+      event_type: "tool_result",
+      role: "tool",
+      content: "a bulky tool dump for Acme",
+    });
+    await db
+      .prepare(
+        `INSERT INTO consolidations
+           (id, session_id, facts_in, facts_graduated, facts_rejected, entities_created,
+            entities_linked, supersessions, summary, open_threads, last_event_sequence, created_at)
+         VALUES ('c-reclaim', NULL, 0, 0, 0, 0, 0, 0, NULL, NULL, ?, datetime('now'))`,
+      )
+      .run(event.sequence);
+    const md = await buildBriefing(db);
+    expect(md).toMatch(/raw events/);
+    expect(md).toContain("openmemory prune");
   });
 });
 

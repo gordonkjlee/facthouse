@@ -161,7 +161,8 @@ export interface ConsolidationConfig {
  * month should not lose events it has not extracted yet.
  *
  * Explicit rather than scheduled, because deletion is irreversible and this is
- * a memory product. If automatic pruning is ever added, it belongs here.
+ * a memory product. Automatic prune is allowed only against `disk_budget`,
+ * and only of already-unreachable D.
  */
 export interface RetentionConfig {
   /**
@@ -170,6 +171,14 @@ export interface RetentionConfig {
    * two must not drift, so there is normally no reason to set this.
    */
   prune_keep_per_session: number | null;
+  /**
+   * Optional ceiling on this brain's main database file (`2GB`, `1TB`,
+   * `512MB`). Omitted or null is unlimited — the engine ships none. Init
+   * does not write it. Cap-driven prune reuses the reachability rule and
+   * does not compact; a human `prune --apply --vacuum` returns space to
+   * the operating system.
+   */
+  disk_budget?: string | null;
 }
 
 /** Gated hypotheses. Off until a store opts in. */

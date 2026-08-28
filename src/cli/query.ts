@@ -15,6 +15,7 @@ import { searchWithProvider } from "../search/index.js";
 import type { VectorSearchOpts } from "../search/vector.js";
 import type { EmbeddingProvider } from "../embedding/types.js";
 import { getStats, type KnowledgeStats } from "../db/stats.js";
+import { formatDiskBudget } from "../db/disk-budget.js";
 import type { EpisodeSlice, SearchResponse } from "../types/data.js";
 import type { InterlocutorConfig } from "../types/config.js";
 
@@ -177,6 +178,17 @@ export function formatStats(stats: KnowledgeStats): string {
     }
   }
 
+  if (stats.store?.bytes != null || stats.store?.budget_bytes != null) {
+    lines.push("", "  Store file");
+    const used =
+      stats.store.bytes != null ? formatDiskBudget(stats.store.bytes) : "unknown";
+    if (stats.store.budget_bytes != null) {
+      lines.push(`    ${used} of ${formatDiskBudget(stats.store.budget_bytes)}`);
+    } else {
+      lines.push(`    ${used}`);
+    }
+  }
+
   // Shown against the fact count, because the ratio is the finding. A store
   // whose raw layer is three orders of magnitude larger than its knowledge is
   // working correctly and still worth knowing about.
@@ -187,7 +199,11 @@ export function formatStats(stats: KnowledgeStats): string {
       `    ${stats.events.count} logged` +
         (mb >= 0.1 ? `  (${mb.toFixed(1)} MB of content)` : ""),
     );
-    if (mb >= 50) {
+    const reclaim = stats.events.reclaimable;
+    if (reclaim && reclaim.events > 0) {
+      lines.push(
+        `    Reclaimable    ${reclaim.events} events  (${formatDiskBudget(reclaim.bytes)} of content)`,
+      );
       lines.push(`    Reclaim what nothing can reach:  openmemory prune`);
     }
   }
