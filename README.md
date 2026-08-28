@@ -22,7 +22,7 @@ Or skip init and paste this. The server creates `~/.openmemory` on first boot; y
   "mcpServers": {
     "openmemory": {
       "command": "npx",
-      "args": ["-y", "@openmem/mcp@0.21.0"]
+      "args": ["-y", "@openmem/mcp@0.22.0"]
     }
   }
 }
@@ -60,7 +60,7 @@ Git Bash / macOS / Linux:
 
 ```bash
 export OPENMEMORY_DATA=/tmp/openmemory-try
-om() { npx -y -p @openmem/mcp@0.21.0 openmemory "$@"; }
+om() { npx -y -p @openmem/mcp@0.22.0 openmemory "$@"; }
 om init --yes
 ```
 
@@ -68,7 +68,7 @@ PowerShell:
 
 ```powershell
 $env:OPENMEMORY_DATA = Join-Path $env:TEMP "openmemory-try"
-function om { npx -y -p "@openmem/mcp@0.21.0" openmemory @args }
+function om { npx -y -p "@openmem/mcp@0.22.0" openmemory @args }
 om init --yes
 ```
 <!-- x-release-please-end -->
@@ -111,12 +111,12 @@ A non-default data directory prints a distinct MCP server name so two stores can
   "mcpServers": {
     "openmemory-personal": {
       "command": "npx",
-      "args": ["-y", "@openmem/mcp@0.21.0"],
+      "args": ["-y", "@openmem/mcp@0.22.0"],
       "env": { "OPENMEMORY_DATA": "C:\\Users\\alex\\.openmemory-personal" }
     },
     "openmemory-work": {
       "command": "npx",
-      "args": ["-y", "@openmem/mcp@0.21.0"],
+      "args": ["-y", "@openmem/mcp@0.22.0"],
       "env": { "OPENMEMORY_DATA": "C:\\Users\\alex\\.openmemory-work" }
     }
   }
