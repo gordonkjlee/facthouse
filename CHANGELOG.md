@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.22.0](https://github.com/gordonkjlee/openmemory/compare/v0.21.0...v0.22.0) (2026-08-28)
+
+
+### Features
+
+* **db:** attribute owner speech and record backing ([#195](https://github.com/gordonkjlee/openmemory/issues/195)) ([cd3b8f5](https://github.com/gordonkjlee/openmemory/commit/cd3b8f5ea8548557c6f9cf47b3050f9fcd4a6ea7))
+* **db:** cap store size and report reclaimable D ([#196](https://github.com/gordonkjlee/openmemory/issues/196)) ([7f5db7f](https://github.com/gordonkjlee/openmemory/commit/7f5db7f104e07187b9df6f8fc9f98f30e4b7e38a))
+* **db:** connect Postgres when asked, fail closed ([#190](https://github.com/gordonkjlee/openmemory/issues/190)) ([f520bec](https://github.com/gordonkjlee/openmemory/commit/f520bec5e6d6329ab54d3f43d0bec2fc4c92e8b2))
+* **search:** HNSW on Postgres when meaning-vectors are large ([#192](https://github.com/gordonkjlee/openmemory/issues/192)) ([9d3010c](https://github.com/gordonkjlee/openmemory/commit/9d3010c965463a926d3d64df5287a25f5bfde940))
+* **search:** HNSW on SQLite for large stores ([#194](https://github.com/gordonkjlee/openmemory/issues/194)) ([8df3fe0](https://github.com/gordonkjlee/openmemory/commit/8df3fe06a45f099a95eddd4330eb3e59c395fa2b))
+
 ## [0.21.0](https://github.com/gordonkjlee/openmemory/compare/v0.20.0...v0.21.0) (2026-08-27)
 
 
