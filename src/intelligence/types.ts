@@ -11,6 +11,7 @@ import type {
   Referent,
   TopicSegment,
 } from "../types/data.js";
+import type { IntelligenceUsage } from "./usage.js";
 
 export type { Referent, TopicSegment };
 
@@ -208,4 +209,10 @@ export interface IntelligenceProvider {
     priorSummary?: string | null,
     closedTopics?: string[],
   ): Promise<SessionSummary>;
+
+  /**
+   * Drain billed usage recorded since the last take. Absent on the heuristic
+   * provider (no subprocess). Null when nothing was billed — not a zero blob.
+   */
+  takeUsage?(): IntelligenceUsage | null;
 }

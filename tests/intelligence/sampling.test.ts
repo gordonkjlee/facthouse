@@ -198,6 +198,33 @@ describe("sampling intelligence provider", () => {
     expect(result[0].domain).toBe("preferences");
     expect(result[0].subdomain).toBe("beverage");
   });
+
+  it("records sampling calls without inventing tokens", async () => {
+    const server = makeServer({
+      createMessage: vi.fn().mockResolvedValue({
+        model: "claude-sonnet",
+        content: {
+          type: "text",
+          text: JSON.stringify([
+            { id: "s1", domain: "preferences", subdomain: null },
+          ]),
+        },
+      }),
+    });
+    const provider = createSamplingProvider(
+      server,
+      createHeuristicProvider(PERSONAL_VOCABULARY),
+      PERSONAL_VOCABULARY,
+    );
+    await provider.classifyFacts([
+      { id: "s1", content: "The user prefers oat milk", domain_hint: null } as any,
+    ]);
+    const usage = provider.takeUsage?.();
+    expect(usage!.stages.classify.provider).toBe("sampling");
+    expect(usage!.stages.classify.model).toBe("claude-sonnet");
+    expect(usage!.stages.classify.calls).toBe(1);
+    expect(usage).not.toHaveProperty("input_tokens");
+  });
 });
 import { PERSONAL_VOCABULARY } from "../fixtures/vocabulary.js";
 import { createHeuristicProvider } from "../../src/intelligence/heuristic.js";

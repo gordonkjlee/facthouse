@@ -157,6 +157,11 @@ describe("formatStats", () => {
       events: { count: 0, bytes: 0, reclaimable: { events: 0, bytes: 0 } },
       extract: { watermark: 0, unextracted_events: 0 },
       pending_facts: 0,
+      intelligence: {
+        last_24h: { calls: 0, elapsed_ms: 0, by_stage: {}, by_provider: {} },
+        all_time: { calls: 0, elapsed_ms: 0, by_stage: {}, by_provider: {} },
+        recent: [],
+      },
       ...over,
     };
   }
@@ -278,5 +283,59 @@ describe("formatStats", () => {
     expect(out).toContain("unextracted events  3");
     expect(out).toContain("pending facts (I)   2");
     expect(out).toContain("not listening");
+  });
+
+  it("prints intelligence spend with provider and model on recent runs", () => {
+    const out = formatStats(
+      stats({
+        facts: { active_latest: 4, total: 4 },
+        intelligence: {
+          last_24h: {
+            calls: 3,
+            elapsed_ms: 90,
+            input_tokens: 200,
+            output_tokens: 20,
+            by_stage: { extract: { calls: 2, elapsed_ms: 70, input_tokens: 180, output_tokens: 16 } },
+            by_provider: { cli: { calls: 3, elapsed_ms: 90, input_tokens: 200, output_tokens: 20 } },
+          },
+          all_time: {
+            calls: 3,
+            elapsed_ms: 90,
+            input_tokens: 200,
+            output_tokens: 20,
+            by_stage: {},
+            by_provider: { cli: { calls: 3, elapsed_ms: 90, input_tokens: 200, output_tokens: 20 } },
+          },
+          recent: [
+            {
+              id: "r1",
+              kind: "consolidate",
+              created_at: "2026-08-28T12:00:00.000Z",
+              consolidation_id: "c1",
+              calls: 2,
+              elapsed_ms: 70,
+              input_tokens: 180,
+              output_tokens: 16,
+              stages: {
+                extract: {
+                  provider: "cli",
+                  model: "haiku",
+                  calls: 2,
+                  elapsed_ms: 70,
+                  input_tokens: 180,
+                  output_tokens: 16,
+                },
+              },
+            },
+          ],
+        },
+      }),
+    );
+    expect(out).toContain("Intelligence");
+    expect(out).toContain("last 24h");
+    expect(out).toContain("3 calls");
+    expect(out).toContain("200 in / 20 out");
+    expect(out).toContain("cli");
+    expect(out).toContain("extract×2 (cli/haiku)");
   });
 });

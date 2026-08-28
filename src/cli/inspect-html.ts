@@ -1,13 +1,41 @@
 /**
  * Self-contained inspect HTML. No viz npm dependency. Does not open a browser.
+ * Graph and spend are pages of this one file.
  */
 
+import type { KnowledgeStats } from "../db/stats.js";
+import { emptySpendStats } from "../intelligence/usage.js";
 import type { InspectGraphPayload } from "./inspect-payload.js";
+import { spendDashboardFromStats, type SpendDashboard } from "./spend-dashboard.js";
+import { renderSpendBoard, SPEND_BOARD_CSS } from "./stats-html.js";
+
+function emptyHealth(): KnowledgeStats {
+  return {
+    facts: { active_latest: 0, total: 0 },
+    entities: 0,
+    domains: 0,
+    consolidations: 0,
+    domain_distribution: [],
+    embeddings: [],
+    events: { count: 0, bytes: 0, reclaimable: { events: 0, bytes: 0 } },
+    extract: { watermark: 0, unextracted_events: 0 },
+    pending_facts: 0,
+    intelligence: emptySpendStats(),
+  };
+}
 
 export function renderInspectHtml(
-  payload: InspectGraphPayload & { package_version?: string | null },
+  payload: InspectGraphPayload & {
+    package_version?: string | null;
+    health?: KnowledgeStats;
+    spend?: SpendDashboard;
+  },
 ): string {
-  const json = JSON.stringify(payload).replace(/</g, "\\u003c");
+  const { health, spend, ...graph } = payload;
+  const json = JSON.stringify(graph).replace(/</g, "\\u003c");
+  const spendHtml = renderSpendBoard(
+    spend ?? spendDashboardFromStats(health ?? emptyHealth()),
+  );
   return `<!DOCTYPE html>
 <html lang="en" data-theme="system">
 <head>
@@ -138,16 +166,31 @@ export function renderInspectHtml(
   .dock-ico.left::after { top: 0; left: 0; bottom: 0; width: 38%; }
   .dock-ico.bottom::after { left: 0; right: 0; bottom: 0; height: 38%; }
   .dock-ico.top::after { left: 0; right: 0; top: 0; height: 38%; }
+  .views { display: flex; gap: 4px; }
+  .view-btn.on { border-color: var(--accent); color: var(--accent); }
+  html.view-spend #stage { display: none; }
+  html.view-spend #spend { display: block; }
+  html.view-spend .graph-only { display: none; }
+  #stage, #spend { grid-row: 2; min-height: 0; }
+  #spend {
+    display: none; overflow: auto; padding: 20px 24px 48px;
+    --card: var(--elev); --ink: var(--text); --gold: var(--mention); --warn: #c97b6a;
+  }
+  ${SPEND_BOARD_CSS}
 </style>
 </head>
 <body>
 <div id="app">
   <header>
     <h1>OpenMemory inspect</h1>
+    <div class="views" role="tablist">
+      <button type="button" class="view-btn on" data-view="graph" id="viewGraph">Graph</button>
+      <button type="button" class="view-btn" data-view="spend" id="viewSpend">Spend</button>
+    </div>
     <div class="meta" id="meta"></div>
     <div class="controls">
-      <input id="q" type="search" placeholder="Find an entity by name"/>
-      <select id="type"><option value="">All types</option></select>
+      <input id="q" class="graph-only" type="search" placeholder="Find an entity by name"/>
+      <select id="type" class="graph-only"><option value="">All types</option></select>
       <button type="button" id="themeBtn" class="icon-btn" title="Toggle colour theme">
         <svg id="themeSun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
         <svg id="themeMoon" viewBox="0 0 24 24" hidden><path d="M21 14.3A8.5 8.5 0 1 1 9.7 3 7 7 0 0 0 21 14.3z"/></svg>
@@ -191,9 +234,22 @@ export function renderInspectHtml(
       <div class="body" id="body"></div>
     </aside>
   </div>
+  <div id="spend">${spendHtml}</div>
 </div>
 <script>
 const DATA = ${json};
+function setInspectView(v){
+  document.documentElement.classList.toggle("view-spend", v==="spend");
+  document.querySelectorAll(".view-btn").forEach(function(b){
+    b.classList.toggle("on", b.getAttribute("data-view")===v);
+  });
+  if (v==="spend") location.hash="spend";
+  else if (location.hash==="#spend") location.hash="graph";
+}
+document.querySelectorAll(".view-btn").forEach(function(b){
+  b.addEventListener("click", function(){ setInspectView(b.getAttribute("data-view")); });
+});
+if (location.hash==="#spend") setInspectView("spend");
 const SUBJECT = "subject_of";
 const NEAR_USER = 8;
 const NEAR_RADIUS = 3;

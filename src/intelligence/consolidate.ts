@@ -93,6 +93,11 @@ import {
   getFactsMissingEmbeddings,
   insertEmbeddings,
 } from "../db/embeddings.js";
+import { insertIntelligenceRun } from "../db/intelligence-runs.js";
+import {
+  takeProviderUsage,
+  type IntelligenceUsage,
+} from "./usage.js";
 
 // ---------------------------------------------------------------------------
 // Result type
@@ -133,6 +138,12 @@ export interface ConsolidationResult {
   examinedThrough: number;
   /** True when a later extract call failed but an honest prefix was kept. */
   prefixCommitted?: boolean;
+  /**
+   * Billed intelligence for this run. Absent when nothing was billed (heuristic,
+   * skip-if-busy, or a provider that does not report). Token keys are omitted
+   * rather than zero when the provider did not send usage.
+   */
+  usage?: IntelligenceUsage;
 }
 
 // ---------------------------------------------------------------------------
@@ -196,6 +207,11 @@ export async function consolidate(
   let prefixCommitted = false;
 
   let phaseDCommitted = false;
+  const finish = async (result: ConsolidationResult) => {
+    const usage = await persistIntelligenceUsage(db, intelligence, consolidationId);
+    if (usage) result.usage = usage;
+    return result;
+  };
   try {
     // Phase B: D→I event extraction (if this run examines events).
     // Session facts land unclaimed so a later graduate-only flush can pick
@@ -269,7 +285,7 @@ export async function consolidate(
         (n, p) => n + p.facts.length,
         0,
       );
-      return {
+      return await finish({
         consolidationId,
         extractionDegraded,
         factsIn: extractedCount,
@@ -283,7 +299,7 @@ export async function consolidate(
         skipped: false,
         examinedThrough: effectiveWatermark,
         prefixCommitted,
-      };
+      });
     }
 
     // Phase C: I→K graduation pipeline (LLM calls happen here, outside transaction)
@@ -821,7 +837,7 @@ export async function consolidate(
       }
     }
 
-    return {
+    return await finish({
       consolidationId,
       extractionDegraded,
       factsIn: sessionFacts.length,
@@ -835,7 +851,7 @@ export async function consolidate(
       skipped: false,
       examinedThrough: effectiveWatermark,
       prefixCommitted,
-    };
+    });
   } catch (err) {
     // Only unclaim if Phase D hasn't committed — otherwise the facts are
     // already graduated and unclaiming would cause re-processing on the next run.
@@ -846,8 +862,29 @@ export async function consolidate(
     }
     // Release lock on error if not already released
     await releaseLock(db, consolidationId);
+    await persistIntelligenceUsage(db, intelligence, consolidationId);
     throw err;
   }
+}
+
+/** Persist billed usage for this run. Must not fail the pipeline. */
+async function persistIntelligenceUsage(
+  db: Db,
+  intelligence: IntelligenceProvider,
+  consolidationId: string,
+): Promise<IntelligenceUsage | null> {
+  const usage = takeProviderUsage(intelligence);
+  if (!usage || usage.calls < 1) return usage;
+  try {
+    await insertIntelligenceRun(db, {
+      kind: "consolidate",
+      consolidationId,
+      usage,
+    });
+  } catch {
+    // Spend is derived. A failed insert must not cost graduated facts.
+  }
+  return usage;
 }
 
 // ---------------------------------------------------------------------------

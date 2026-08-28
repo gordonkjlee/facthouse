@@ -181,6 +181,10 @@ describe("inspect graph HTML", () => {
     });
     expect(html).toContain("Nothing selected");
     expect(html).toContain("const DATA =");
+    expect(html).toContain('id="viewSpend"');
+    expect(html).toContain("spend-board");
+    expect(html).toContain("Catch-up");
+    expect(html).toContain("More detail");
   });
 
   it("inspect --json includes package_version", async () => {
@@ -191,5 +195,6 @@ describe("inspect graph HTML", () => {
     });
     const parsed = JSON.parse(result.stdout!);
     expect(parsed.package_version).toBe("0.22.0");
+    expect(parsed.health.intelligence.last_24h.calls).toBe(0);
   });
 });

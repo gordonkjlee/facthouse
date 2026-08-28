@@ -216,6 +216,10 @@ Unnamed user-channel speech is attributed to the store's owner; a display name s
 
 Set `temporal.mode` to `bitemporal` to record when the system retracted a belief, so search can answer what the store believed at an instant.
 
+### Intelligence spend
+
+`openmemory stats` and `get_stats` report billed consolidation calls: tokens, elapsed time, and the provider plus model on each stage (extract, classify, entities, reconcile, supersede, summarise). A run that did not report tokens omits those fields rather than showing zero. Embeddings are a different API and are not this number. There is no token cap yet; the figure is there so you can see what extract actually costs.
+
 ### CLI demo (no transcript source)
 
 Throwaway store, not the capture path for a real Claude Code or Cursor home. These three lines are typed in.
@@ -287,7 +291,7 @@ Both are read-only views over the same database the tools query. Clients that ne
 
 ### Meta
 - `get_schemas` — Available domains and structure
-- `get_stats` — Fact count, entity count, domain distribution
+- `get_stats` — Fact count, entity count, domain distribution, extract backlog, intelligence spend
 
 ## CLI Reference
 
@@ -393,11 +397,11 @@ openmemory stats
 openmemory stats --json
 ```
 
-Facts are immutable — superseded facts are kept — so the current count and the total legitimately differ once anything has been superseded. `--json` includes the answering binary's package version.
+Facts are immutable — superseded facts are kept — so the current count and the total legitimately differ once anything has been superseded. `--json` includes the answering binary's package version. Intelligence spend is calls, tokens, and elapsed time for extract / classify / entities / reconcile / supersede / summarise, with provider and model per stage. Embeddings are not that number.
 
 #### `openmemory inspect`
 
-Sample D, I, K, entities, and the graph. Writes a local HTML file under the data directory (not the cwd). Prints the path. Does not open a browser. The file is a memory export — treat it like `stats --json`.
+Sample D, I, K, entities, and the graph. Writes a local HTML file under the data directory (not the cwd). Prints the path. Does not open a browser. The file is a memory export — treat it like `stats --json`. The same page also shows intelligence spend (Graph / Spend).
 
 ```bash
 openmemory inspect

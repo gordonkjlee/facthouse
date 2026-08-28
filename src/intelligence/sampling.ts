@@ -23,6 +23,7 @@ import type {
   SessionSummary,
   Referent,
 } from "./types.js";
+import { UsageAccumulator, type IntelligenceUsage } from "./usage.js";
 import { createHeuristicProvider } from "./heuristic.js";
 import { domainRoutingInstruction } from "../schemas/domains.js";
 import type { DomainDef } from "../types/config.js";
@@ -166,20 +167,41 @@ export function createSamplingProvider(
   // provider is instantiated before the MCP handshake completes.
   // getClientCapabilities() returns the client's advertised capabilities once
   // initialize has been processed.
+  const usageAcc = new UsageAccumulator({ provider: "sampling" });
+
   async function ask(
     systemPrompt: string,
     userText: string,
+    stage: string,
   ): Promise<string> {
     const capabilities = server.getClientCapabilities();
     if (!capabilities?.sampling) throw new Error("Sampling unavailable");
-    const result = await server.createMessage({
-      systemPrompt,
-      maxTokens: DEFAULT_MAX_TOKENS,
-      messages: [
-        { role: "user", content: { type: "text", text: userText } },
-      ],
-    });
-    return readText(result);
+    const started = Date.now();
+    try {
+      const result = await server.createMessage({
+        systemPrompt,
+        maxTokens: DEFAULT_MAX_TOKENS,
+        messages: [
+          { role: "user", content: { type: "text", text: userText } },
+        ],
+      });
+      const model =
+        typeof (result as { model?: unknown }).model === "string"
+          ? (result as { model: string }).model
+          : undefined;
+      usageAcc.record(stage, {
+        provider: "sampling",
+        model,
+        elapsed_ms: Date.now() - started,
+      });
+      return readText(result);
+    } catch (err) {
+      usageAcc.record(stage, {
+        provider: "sampling",
+        elapsed_ms: Date.now() - started,
+      });
+      throw err;
+    }
   }
 
   return {
@@ -200,6 +222,7 @@ export function createSamplingProvider(
               "Respond with JSON only: an array of {id, domain, subdomain} objects. " +
               "subdomain may be null. No prose.",
             `Classify these facts:\n${JSON.stringify(payload)}${context}`,
+            "classify",
           );
           const parsed = parseJson<ClassifiedFact[]>(raw);
           // Preserve input order and content — only trust the model's classification.
@@ -233,6 +256,7 @@ export function createSamplingProvider(
               "Respond with JSON only: {factId: [{name, type, relationship}, ...]}. " +
               "Omit facts with no entities. No prose.",
             `Extract entities from:\n${JSON.stringify(payload)}`,
+            "entities",
           );
           const parsed = parseJson<Record<string, ExtractedEntity[]>>(raw);
           const map = new Map<string, ExtractedEntity[]>();
@@ -274,6 +298,7 @@ export function createSamplingProvider(
               reminder_events: (extras?.reminderEvents ?? []).map(extractEventPayload),
               candidate_events: events.map(extractEventPayload),
             }),
+            "extract",
           );
           const parsed: unknown = parseJson(raw);
           const shaped = shapeExtractPayload(parsed);
@@ -326,6 +351,7 @@ export function createSamplingProvider(
               "Paraphrase or additional detail is NOT supersession. " +
               "Respond with JSON only: either {existingFactId: '...', reason: '...'} or null. No prose.",
             JSON.stringify(payload),
+            "supersede",
           );
           const parsed = parseJson<SupersessionCandidate | null>(raw);
           if (!parsed || !parsed.existingFactId) return null;
@@ -353,6 +379,7 @@ export function createSamplingProvider(
               "Supersession (contradictions/updates) is handled separately — treat contradictions as 'add'. " +
               "Respond with JSON only: {decision: 'add'} | {decision: 'noop'} | {decision: 'enrich', existingFactId: '...'}. No prose.",
             JSON.stringify(payload),
+            "reconcile",
           );
           const parsed = parseJson<
             | { decision: "add" }
@@ -399,6 +426,7 @@ export function createSamplingProvider(
               "Then list up to 5 open threads — questions or follow-ups the user might want revisited. " +
               "Respond with JSON only: {summary: string, openThreads: string[]}. No prose.",
             JSON.stringify(payload),
+            "summarise",
           );
           const parsed = parseJson<SessionSummary>(raw);
           return {
@@ -408,6 +436,10 @@ export function createSamplingProvider(
         },
         () => fallback.summarise(sessionFacts, graduatedFacts, priorSummary),
       );
+    },
+
+    takeUsage(): IntelligenceUsage | null {
+      return usageAcc.take();
     },
   };
 }

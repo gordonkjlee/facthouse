@@ -62,6 +62,8 @@ describe("getStats", () => {
     expect(s.domain_distribution).toEqual([]);
     expect(s.events.reclaimable).toEqual({ events: 0, bytes: 0 });
     expect(s.extract).toEqual({ watermark: 0, unextracted_events: 0 });
+    expect(s.intelligence.recent).toEqual([]);
+    expect(s.intelligence.all_time.calls).toBe(0);
   });
 
   it("counts a captured fact as both current and total", async () => {

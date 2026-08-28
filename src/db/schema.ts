@@ -81,6 +81,9 @@ export async function applySchema(db: Db): Promise<void> {
   if (version < 19) {
     await applyV19(db);
   }
+  if (version < 20) {
+    await applyV20(db);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -799,4 +802,25 @@ async function applyV19(db: Db): Promise<void> {
   `);
   await seedExtractWatermarksFromConsolidations(db);
   await pragmaWrite(db, "user_version = 19");
+}
+
+// ---------------------------------------------------------------------------
+// Schema version 20 — intelligence spend meter
+//
+// One row per billed intelligence run. Not a column on consolidations: capture
+// may later bill without a run row, and stats must not have two definitions.
+// ---------------------------------------------------------------------------
+async function applyV20(db: Db): Promise<void> {
+  await db.exec(`
+    CREATE TABLE IF NOT EXISTS intelligence_runs (
+      id TEXT PRIMARY KEY,
+      kind TEXT NOT NULL CHECK (kind IN ('consolidate', 'capture')),
+      consolidation_id TEXT,
+      created_at TEXT NOT NULL,
+      usage TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_intelligence_runs_created
+      ON intelligence_runs(created_at);
+  `);
+  await pragmaWrite(db, "user_version = 20");
 }

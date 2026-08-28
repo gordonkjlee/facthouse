@@ -308,7 +308,12 @@ export function registerReadTools(
       `\`extract.unextracted_events\` is how many transcript lines extract has ` +
       `not examined. \`pending_facts\` is I not yet graduated. ` +
       `A large unextracted count with a healthy fact count means capture is ` +
-      `writing D that extract has not examined.`,
+      `writing D that extract has not examined.\n\n` +
+      `\`intelligence\` is billed consolidation spend (calls, tokens, elapsed), ` +
+      `broken down by stage and provider for the last 24 hours, all time, and ` +
+      `the last few runs. Embeddings are not this number — they are a separate ` +
+      `API. Token fields are omitted when the provider did not report them, ` +
+      `not shown as zero.`,
     {},
     async () => {
       // Shared with `openmemory stats` so the tool and the CLI can't disagree.

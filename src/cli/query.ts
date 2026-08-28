@@ -15,6 +15,10 @@ import { searchWithProvider } from "../search/index.js";
 import type { VectorSearchOpts } from "../search/vector.js";
 import type { EmbeddingProvider } from "../embedding/types.js";
 import { getStats, type KnowledgeStats } from "../db/stats.js";
+import type {
+  IntelligenceRunSummary,
+  IntelligenceSpendRollup,
+} from "../intelligence/usage.js";
 import { formatDiskBudget } from "../db/disk-budget.js";
 import type { EpisodeSlice, SearchResponse } from "../types/data.js";
 import type { InterlocutorConfig } from "../types/config.js";
@@ -218,12 +222,56 @@ export function formatStats(stats: KnowledgeStats): string {
     );
   }
 
+  const spend = stats.intelligence;
+  if (spend) {
+    lines.push("", "  Intelligence");
+    lines.push(`    last 24h           ${formatSpendLine(spend.last_24h)}`);
+    lines.push(`    all time           ${formatSpendLine(spend.all_time)}`);
+    const providers = Object.keys(spend.all_time.by_provider).sort();
+    if (providers.length > 0) {
+      for (const p of providers) {
+        const bucket = spend.all_time.by_provider[p];
+        lines.push(`    ${p.padEnd(18)}  ${formatSpendLine(bucket)}`);
+      }
+    }
+    if (spend.recent.length > 0) {
+      lines.push("    recent");
+      for (const run of spend.recent) {
+        lines.push(`      ${formatRecentRun(run)}`);
+      }
+    }
+  }
+
   if (stats.facts.total === 0) {
     lines.push("", "  Nothing captured yet.");
   }
 
   lines.push("");
   return lines.join("\n");
+}
+
+function formatSpendLine(
+  s: Pick<IntelligenceSpendRollup, "calls" | "input_tokens" | "output_tokens" | "elapsed_ms">,
+): string {
+  const parts = [`${s.calls} call${s.calls === 1 ? "" : "s"}`];
+  if (s.input_tokens != null || s.output_tokens != null) {
+    parts.push(`${s.input_tokens ?? "—"} in / ${s.output_tokens ?? "—"} out`);
+  }
+  if (s.elapsed_ms > 0) parts.push(`${s.elapsed_ms} ms`);
+  return parts.join("  ");
+}
+
+function formatRecentRun(run: IntelligenceRunSummary): string {
+  const stageBits = Object.entries(run.stages).map(([name, stage]) => {
+    const who = stage.model ? `${stage.provider}/${stage.model}` : stage.provider;
+    return `${name}×${stage.calls} (${who})`;
+  });
+  const tokens =
+    run.input_tokens != null || run.output_tokens != null
+      ? `  ${run.input_tokens ?? "—"}/${run.output_tokens ?? "—"} tok`
+      : "";
+  return `${run.created_at}  ${run.kind}  ${run.calls} calls${tokens}` +
+    (stageBits.length ? `  ${stageBits.join(", ")}` : "");
 }
 
 /**
