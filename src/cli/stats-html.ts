@@ -16,6 +16,7 @@ import {
   type SpendDashboard,
   type SpendGrain,
 } from "./spend-dashboard.js";
+import { LEDGER, ledgerSpendCss } from "./inspect-theme.js";
 
 export function spendBucketLabel(day: string, grain: SpendGrain = "day"): string {
   const p = (day || "").split("-");
@@ -52,14 +53,7 @@ export function spendAxisTicks(
   return { day: showDay ? dayn : "", month: monthBoundary ? mon : "" };
 }
 
-const STAGE_COLOUR: Record<string, string> = {
-  extract: "#6ea8ff",
-  classify: "#7dcea0",
-  entities: "#5bb8a9",
-  reconcile: "#e0b44a",
-  supersede: "#d08b9a",
-  summarise: "#9b8fd4",
-};
+const STAGE_COLOUR: Record<string, string> = { ...LEDGER.stage };
 
 export const SPEND_BOARD_CSS = `
   .spend-board { max-width: 920px; margin: 0 auto; color: var(--ink, var(--text)); }
@@ -71,8 +65,8 @@ export const SPEND_BOARD_CSS = `
     letter-spacing: .02em; text-transform: uppercase; }
   .spend-hero-card p { margin: 0 0 8px; font-size: 16px; line-height: 1.4; }
   .spend-hero-card p.lead { font-size: 22px; font-weight: 650; letter-spacing: -.02em; }
-  .spend-hero-card.warn p.lead { color: var(--warn, #e0b44a); }
-  .spend-hero-card .do { color: var(--accent, #6ea8ff); font-size: 13px; margin: 10px 0 0; }
+  .spend-hero-card.warn p.lead { color: var(--warn); }
+  .spend-hero-card .do { color: var(--accent); font-size: 13px; margin: 10px 0 0; }
   .spend-card { background: var(--card, var(--elev)); border: 1px solid var(--line);
     border-radius: 12px; padding: 16px 18px 14px; margin-bottom: 12px; }
   .spend-toolbar { display: flex; flex-wrap: wrap; gap: 8px 0; align-items: center; margin-bottom: 10px; }
@@ -83,7 +77,7 @@ export const SPEND_BOARD_CSS = `
   }
   .spend-seg {
     display: inline-flex; gap: 2px; padding: 3px; width: max-content; max-width: 100%;
-    background: var(--input, #0e1218); border: 1px solid var(--line); border-radius: 8px;
+    background: var(--input); border: 1px solid var(--line); border-radius: 8px;
   }
   .spend-board .spend-seg button {
     font-size: 12px; padding: 5px 10px; border: 1px solid transparent;
@@ -91,10 +85,10 @@ export const SPEND_BOARD_CSS = `
   }
   .spend-board .spend-seg button.on {
     background: var(--chip, #243044); border-color: transparent;
-    color: var(--accent, #6ea8ff);
+    color: var(--accent);
   }
   #om-detail { font-size: 12px; padding: 5px 10px; }
-  #om-detail.on { border-color: var(--accent, #6ea8ff); color: var(--accent, #6ea8ff); }
+  #om-detail.on { border-color: var(--accent); color: var(--accent); }
   .spend-toolbar .grow { margin-left: auto; }
   .spend-chart-title { margin: 0 0 8px; font-size: 14px; font-weight: 600; }
   #om-chart { width: 100%; height: auto; display: block; }
@@ -227,11 +221,7 @@ export function formatStatsHtml(stats: KnowledgeStats, generatedAt = new Date())
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>OpenMemory spend</title>
 <style>
-  :root {
-    --bg: #0e1218; --card: #161c25; --ink: #e7edf5; --muted: #8b98a8;
-    --line: #2a3340; --gold: #e0b44a; --warn: #e0b44a; --accent: #6ea8ff;
-    --elev: #1c2430; --input: #0e1218; --chip: #243044; --text: #e7edf5;
-  }
+${ledgerSpendCss()}
   html, body { margin: 0; background: var(--bg); color: var(--ink);
     font: 15px/1.45 ui-sans-serif, system-ui, sans-serif; }
   main { padding: 28px 20px 56px; }
@@ -358,6 +348,12 @@ function esc(value: string): string {
 }
 
 const SPEND_BOARD_JS = `(function(){
+  var C = ${JSON.stringify({
+    drafts: LEDGER.stage.classify,
+    lasting: LEDGER.stage.entities,
+    waiting: LEDGER.stage.extract,
+    muted: LEDGER.dark.muted,
+  })};
   var box = document.getElementById("om-spend-json");
   if (!box) return;
   var D;
@@ -517,16 +513,16 @@ const SPEND_BOARD_JS = `(function(){
         var gH = max ? d.graduated / max * ih : 0;
         var yS = t + ih - gH - stH;
         var yG = t + ih - gH;
-        if (stH > 0) svg += '<rect x="'+x+'" y="'+yS+'" width="'+bw+'" height="'+stH+'" fill="#6ea8ff" rx="2"/>';
-        if (gH > 0) svg += '<rect x="'+x+'" y="'+yG+'" width="'+bw+'" height="'+gH+'" fill="#7dcea0" rx="2"/>';
+        if (stH > 0) svg += '<rect x="'+x+'" y="'+yS+'" width="'+bw+'" height="'+stH+'" fill="'+C.drafts+'" rx="2"/>';
+        if (gH > 0) svg += '<rect x="'+x+'" y="'+yG+'" width="'+bw+'" height="'+gH+'" fill="'+C.lasting+'" rx="2"/>';
         if (d.staged + d.graduated === 0) svg += '<rect x="'+x+'" y="'+(t+ih-2)+'" width="'+bw+'" height="2" fill="var(--line)"/>';
       } else if (mode === "catchup"){
         var examH = max ? d.examined / max * ih : 0;
         var unreadH = max ? d.unread / max * ih : 0;
         var yU = t + ih - examH - unreadH;
         var yE = t + ih - examH;
-        if (unreadH > 0) svg += '<rect x="'+x+'" y="'+yU+'" width="'+bw+'" height="'+unreadH+'" fill="#e0b44a" rx="2"/>';
-        if (examH > 0) svg += '<rect x="'+x+'" y="'+yE+'" width="'+bw+'" height="'+examH+'" fill="#7dcea0" rx="2"/>';
+        if (unreadH > 0) svg += '<rect x="'+x+'" y="'+yU+'" width="'+bw+'" height="'+unreadH+'" fill="'+C.waiting+'" rx="2"/>';
+        if (examH > 0) svg += '<rect x="'+x+'" y="'+yE+'" width="'+bw+'" height="'+examH+'" fill="'+C.lasting+'" rx="2"/>';
         if (d.logged === 0) svg += '<rect x="'+x+'" y="'+(t+ih-2)+'" width="'+bw+'" height="2" fill="var(--line)"/>';
       } else {
         var y = t + ih;
@@ -583,13 +579,13 @@ const SPEND_BOARD_JS = `(function(){
   function legendHtml(){
     if (!legend) return;
     if (mode === "catchup" && cmetric === "facts"){
-      legend.innerHTML = '<span><i class="sw" style="background:#6ea8ff"></i>Drafts</span>'+
-        '<span><i class="sw" style="background:#7dcea0"></i>Lasting facts</span>';
+      legend.innerHTML = '<span><i class="sw" style="background:'+C.drafts+'"></i>Drafts</span>'+
+        '<span><i class="sw" style="background:'+C.lasting+'"></i>Lasting facts</span>';
       return;
     }
     if (mode === "catchup"){
-      legend.innerHTML = '<span><i class="sw" style="background:#7dcea0"></i>Already read</span>'+
-        '<span><i class="sw" style="background:#e0b44a"></i>Still waiting</span>';
+      legend.innerHTML = '<span><i class="sw" style="background:'+C.lasting+'"></i>Already read</span>'+
+        '<span><i class="sw" style="background:'+C.waiting+'"></i>Still waiting</span>';
       return;
     }
     legend.innerHTML = activeStages().map(function(s){
@@ -661,15 +657,15 @@ const SPEND_BOARD_JS = `(function(){
     if (mode === "catchup"){
       if (cmetric === "facts"){
         paintBars([
-          { title: "Drafts", n: d.staged, colour: "#6ea8ff", label: fmt(d.staged) },
-          { title: "Lasting facts", n: d.graduated, colour: "#7dcea0", label: fmt(d.graduated) }
+          { title: "Drafts", n: d.staged, colour: C.drafts, label: fmt(d.staged) },
+          { title: "Lasting facts", n: d.graduated, colour: C.lasting, label: fmt(d.graduated) }
         ], false);
         if (dayNote) dayNote.textContent = "Click another bar to compare.";
       } else {
         paintBars([
-          { title: "New chat", n: d.logged, colour: "#8b98a8", label: fmt(d.logged) },
-          { title: "Already read", n: d.examined, colour: "#7dcea0", label: fmt(d.examined) },
-          { title: "Still waiting", n: d.unread, colour: "#e0b44a", label: fmt(d.unread) }
+          { title: "New chat", n: d.logged, colour: C.muted, label: fmt(d.logged) },
+          { title: "Already read", n: d.examined, colour: C.lasting, label: fmt(d.examined) },
+          { title: "Still waiting", n: d.unread, colour: C.waiting, label: fmt(d.unread) }
         ], false);
         if (dayNote) dayNote.textContent = "Click another bar to compare.";
       }
