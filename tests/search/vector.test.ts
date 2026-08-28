@@ -23,20 +23,28 @@ const {
   countEmbeddings,
 } = await import("../../src/db/embeddings.js");
 const { cosineSimilarity, vectorSearch } = await import("../../src/search/vector.js");
-const { resetAnnWarningState, sqliteScaleWarning } = await import(
+const { resetAnnWarningState, sqliteEngineMissingWarning } = await import(
   "../../src/search/ann.js"
 );
+const {
+  setInProcessEngineAvailableForTest,
+  resetInProcessEngineForTest,
+  failNextRamHnswEnsureForTest,
+  dropRamHnsw,
+} = await import("../../src/search/hnsw-ram.js");
 const { hybridSearch } = await import("../../src/search/index.js");
 
 let db: Db;
 
 beforeEach(async () => {
   resetAnnWarningState();
+  resetInProcessEngineForTest();
   db = dbMod.openDatabase(":memory:");
   await applySchema(db);
 });
 
 afterEach(async () => {
+  dropRamHnsw(db);
   await dbMod.closeDatabase(db);
 });
 
@@ -493,8 +501,36 @@ describe("the absolute floor", () => {
   });
 });
 
-describe("sqlite scale warning", () => {
-  it("stays exact and warns once when over the byte threshold", async () => {
+describe("sqlite in-process HNSW", () => {
+  it("top HNSW hit matches exact cosine on a distinctive set", async () => {
+    const axis = await addFact("axis fact");
+    const other = await addFact("other fact");
+    await insertEmbeddings(
+      db,
+      [
+        { fact_id: axis.id, vector: vec(1, 0, 0, 0) },
+        { fact_id: other.id, vector: vec(0, 1, 0, 0) },
+      ],
+      "m",
+      4,
+    );
+    const exact = await vectorSearch(db, vec(1, 0, 0, 0), "m", 4, 5, { ann: false });
+    const approx = await vectorSearch(db, vec(1, 0, 0, 0), "m", 4, 5, { ann: true });
+    expect(exact[0]?.id).toBe(axis.id);
+    expect(approx[0]?.id).toBe(exact[0]?.id);
+  });
+
+  it("does not mix models in the RAM index", async () => {
+    const a = await addFact("under A");
+    const b = await addFact("under B");
+    await insertEmbeddings(db, [{ fact_id: a.id, vector: vec(1, 0) }], "model-a", 2);
+    await insertEmbeddings(db, [{ fact_id: b.id, vector: vec(1, 0) }], "model-b", 2);
+    const hits = await vectorSearch(db, vec(1, 0), "model-a", 2, 5, { ann: true });
+    expect(hits.map((h) => h.id)).toEqual([a.id]);
+  });
+
+  it("stays exact and warns once when the engine is missing over the threshold", async () => {
+    setInProcessEngineAvailableForTest(false);
     const errors: string[] = [];
     const orig = console.error;
     console.error = (msg: unknown) => {
@@ -506,7 +542,27 @@ describe("sqlite scale warning", () => {
       const hits = await vectorSearch(db, vec(1, 0), "m", 2, 10, { annMaxBytes: 0 });
       expect(hits.map((h) => h.id)).toEqual([f.id]);
       await vectorSearch(db, vec(1, 0), "m", 2, 10, { annMaxBytes: 0 });
-      expect(errors.filter((e) => e.includes(sqliteScaleWarning()))).toHaveLength(1);
+      expect(
+        errors.filter((e) => e.includes(sqliteEngineMissingWarning())),
+      ).toHaveLength(1);
+    } finally {
+      console.error = orig;
+    }
+  });
+
+  it("does not warn when HNSW ran, including over the byte threshold", async () => {
+    const errors: string[] = [];
+    const orig = console.error;
+    console.error = (msg: unknown) => {
+      errors.push(String(msg));
+    };
+    try {
+      const f = await addFact("the user is allergic to shellfish");
+      await insertEmbeddings(db, [{ fact_id: f.id, vector: vec(1, 0) }], "m", 2);
+      const hits = await vectorSearch(db, vec(1, 0), "m", 2, 10, { annMaxBytes: 0 });
+      expect(hits.map((h) => h.id)).toEqual([f.id]);
+      expect(errors.join("")).not.toContain("Postgres is the scale path");
+      expect(errors.join("")).not.toContain(sqliteEngineMissingWarning());
     } finally {
       console.error = orig;
     }
@@ -523,8 +579,60 @@ describe("sqlite scale warning", () => {
       await insertEmbeddings(db, [{ fact_id: f.id, vector: vec(1, 0) }], "m", 2);
       await vectorSearch(db, vec(1, 0), "m", 2, 10, { ann: false, annMaxBytes: 0 });
       expect(errors.join("")).not.toContain("Postgres is the scale path");
+      expect(errors.join("")).not.toContain(sqliteEngineMissingWarning());
     } finally {
       console.error = orig;
+    }
+  });
+
+  it("falls back to exact when ensure throws", async () => {
+    const errors: string[] = [];
+    const orig = console.error;
+    console.error = (msg: unknown) => {
+      errors.push(String(msg));
+    };
+    try {
+      const f = await addFact("the user is allergic to shellfish");
+      await insertEmbeddings(db, [{ fact_id: f.id, vector: vec(1, 0) }], "m", 2);
+      failNextRamHnswEnsureForTest();
+      const hits = await vectorSearch(db, vec(1, 0), "m", 2, 10, { ann: true });
+      expect(hits.map((h) => h.id)).toEqual([f.id]);
+      expect(errors.join("")).toMatch(/injected HNSW ensure failure/);
+      expect(errors.join("")).toMatch(/exact scan/);
+    } finally {
+      console.error = orig;
+    }
+  });
+
+  it("picks up a later insert once the RAM index exists", async () => {
+    const first = await addFact("first");
+    await insertEmbeddings(db, [{ fact_id: first.id, vector: vec(1, 0, 0, 0) }], "m", 4);
+    await vectorSearch(db, vec(1, 0, 0, 0), "m", 4, 5, { ann: true });
+    const second = await addFact("second");
+    await insertEmbeddings(db, [{ fact_id: second.id, vector: vec(0, 1, 0, 0) }], "m", 4);
+    const hits = await vectorSearch(db, vec(0, 1, 0, 0), "m", 4, 5, { ann: true });
+    expect(hits[0]?.id).toBe(second.id);
+  });
+
+  it("keeps two databases' indexes apart", async () => {
+    const dbB = dbMod.openDatabase(":memory:");
+    await applySchema(dbB);
+    try {
+      const a = await addFact("in store A");
+      await insertEmbeddings(db, [{ fact_id: a.id, vector: vec(1, 0) }], "m", 2);
+      const bFact = await insertFact(dbB, {
+        content: "in store B",
+        domain: "general",
+        source_type: "explicit",
+      });
+      await insertEmbeddings(dbB, [{ fact_id: bFact.id, vector: vec(1, 0) }], "m", 2);
+      const hitsA = await vectorSearch(db, vec(1, 0), "m", 2, 5, { ann: true });
+      const hitsB = await vectorSearch(dbB, vec(1, 0), "m", 2, 5, { ann: true });
+      expect(hitsA.map((h) => h.id)).toEqual([a.id]);
+      expect(hitsB.map((h) => h.id)).toEqual([bFact.id]);
+    } finally {
+      dropRamHnsw(dbB);
+      await dbMod.closeDatabase(dbB);
     }
   });
 });

@@ -204,7 +204,7 @@ Stop tails new lines (pull then ticks the server to extract when the threshold i
 
 Set `embedding.provider` in `config.json` to `"ollama"` (local, no API key) or `"voyage"` (hosted), run `openmemory consolidate`, and `search "food"` starts returning the allergy. Facts are embedded when they are consolidated. Voyage applies a **3 requests/minute** rate limit until a payment method is on the account.
 
-Meaning-search is an exact scan of stored vectors on SQLite. On Postgres, when that set is large (default 32 MiB of the current model) and the `vector` extension is enabled, an HNSW index of those vectors is used instead. Small stores stay exact. Missing the extension keeps exact search and prints a warning; OpenMemory does not install it. `embedding.ann` is `null` (auto), `false` (never), or `true` (force when the extension allows). This does not turn embeddings on.
+Meaning-search is an exact scan of stored vectors when the set is small. When that set is large (default 32 MiB of the current model), an HNSW index of those vectors is used instead: in-process on SQLite, or a Postgres `vector` sidecar when the extension is enabled. Small stores stay exact. A missing engine keeps exact search and prints a warning; OpenMemory does not install a native addon. `embedding.ann` is `null` (auto), `false` (never), or `true` (force when the engine allows). This does not turn embeddings on.
 
 `intelligence.cli.model` and `intelligence.cli.timeout_ms` are the extra knobs More settings can write. Init does not ask `intelligence.provider`; `OPENMEMORY_PROVIDER=heuristic` is the kill-switch. The heuristic fallback **does not extract facts from transcripts**.
 

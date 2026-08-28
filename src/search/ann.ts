@@ -1,9 +1,11 @@
 /**
- * When meaning-search may use an HNSW sidecar on Postgres.
+ * When meaning-search may use an HNSW index.
  *
- * SQLite never does. The exact JavaScript scan is the default and the
- * fallback. This module is the one definition of that gate and of the
- * warning copy.
+ * Postgres: pgvector sidecar when the `vector` extension is present.
+ * SQLite: in-process graph rebuilt from BLOBs. The exact JavaScript scan is
+ * the default below the byte threshold and the fallback when the engine is
+ * missing. This module is the one definition of that gate and of the warning
+ * copy.
  */
 
 import type { Dialect } from "../db/connection.js";
@@ -13,40 +15,41 @@ export function embeddingWorkingSetBytes(count: number, dimensions: number): num
   return count * dimensions * 4;
 }
 
+/**
+ * `enginePresent` is the `vector` extension on Postgres and the in-process
+ * engine on SQLite. One flag so the auto / force / off rule is not copied.
+ */
 export function shouldUseAnn(opts: {
   dialect: Dialect;
   ann: boolean | null | undefined;
   bytes: number;
   maxBytes: number;
-  extensionPresent: boolean;
+  enginePresent: boolean;
 }): boolean {
-  if (opts.dialect !== "postgres") return false;
   if (opts.ann === false) return false;
-  if (!opts.extensionPresent) return false;
+  if (!opts.enginePresent) return false;
   if (opts.ann === true) return true;
   const cap = Number.isFinite(opts.maxBytes) ? opts.maxBytes : ANN_DEFAULT_MAX_BYTES;
   return opts.bytes > cap;
 }
 
-/** Would want HNSW if the extension existed (for the missing-extension warning). */
+/** Would want HNSW if the engine existed (for the missing-engine warning). */
 export function wouldWantAnn(opts: {
   dialect: Dialect;
   ann: boolean | null | undefined;
   bytes: number;
   maxBytes: number;
 }): boolean {
-  if (opts.dialect !== "postgres") return false;
   if (opts.ann === false) return false;
   if (opts.ann === true) return true;
   const cap = Number.isFinite(opts.maxBytes) ? opts.maxBytes : ANN_DEFAULT_MAX_BYTES;
   return opts.bytes > cap;
 }
 
-export function sqliteScaleWarning(): string {
+export function sqliteEngineMissingWarning(): string {
   return (
-    "Meaning-search is still exact and will get slower as this SQLite store " +
-    "grows. Postgres is the scale path (enable the vector extension there " +
-    "for an HNSW index). OpenMemory does not copy memory.db for you."
+    "Meaning-search is still exact. The in-process HNSW index could not start; " +
+    "using the exact scan."
   );
 }
 

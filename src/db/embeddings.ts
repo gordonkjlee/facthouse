@@ -113,6 +113,9 @@ export async function insertEmbeddings(
     if (db.dialect === "postgres") {
       const { syncHnswSidecar } = await import("./embeddings-hnsw.js");
       await syncHnswSidecar(db, embeddings, model, dimensions);
+    } else {
+      const { syncRamHnsw } = await import("../search/hnsw-ram.js");
+      syncRamHnsw(db, embeddings, model, dimensions);
     }
   });
 }
