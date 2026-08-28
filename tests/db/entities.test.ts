@@ -10,6 +10,11 @@ const {
   findEntitiesByName,
   findEntityByCanonical,
   findOrCreateEntity,
+  foldEntityToken,
+  resolveEntityFamily,
+  storedCanonicalName,
+  TYPE_SPELLINGS_KEY,
+  listEntityTypes,
   linkFactEntity,
   getEntitiesForFacts,
   getSelfEntity,
@@ -143,7 +148,7 @@ describe("entities", () => {
     expect(result.entity.canonical_name).toBe("alice");
   });
 
-  it("findOrCreateEntity still mints a sibling type (write-reuse is not this slice)", async () => {
+  it("findOrCreateEntity still mints a sibling when types do not fold", async () => {
     const first = await findOrCreateEntity(db, { type: "dbt_model", name: "stg_orders" });
     const second = await findOrCreateEntity(db, { type: "table", name: "stg_orders" });
 
@@ -152,6 +157,92 @@ describe("entities", () => {
     expect(second.entity.id).not.toBe(first.entity.id);
     const all = await findEntitiesByName(db, "stg_orders");
     expect(all).toHaveLength(2);
+  });
+
+  it("foldEntityToken collapses hyphen, underscore, and stray punctuation", () => {
+    expect(foldEntityToken("dbt_model")).toBe("dbt model");
+    expect(foldEntityToken("dbt-model")).toBe("dbt model");
+    expect(foldEntityToken("mr !412")).toBe("mr 412");
+    expect(foldEntityToken("mr 412")).toBe("mr 412");
+    expect(foldEntityToken("mr412")).toBe("mr412");
+    expect(foldEntityToken("!!!")).toBe("");
+    expect(storedCanonicalName("  Stg_Orders  ")).toBe("stg_orders");
+  });
+
+  it("findOrCreateEntity reuses a unique type-punctuation fold", async () => {
+    const first = await findOrCreateEntity(db, { type: "dbt_model", name: "stg_orders" });
+    const second = await findOrCreateEntity(db, { type: "dbt-model", name: "stg_orders" });
+
+    expect(second.created).toBe(false);
+    expect(second.entity.id).toBe(first.entity.id);
+    expect(second.entity.type).toBe("dbt_model");
+    expect(second.entity.metadata?.[TYPE_SPELLINGS_KEY]).toEqual(["dbt-model"]);
+    expect(await listEntityTypes(db)).toEqual(["dbt_model"]);
+  });
+
+  it("findOrCreateEntity does not glue Alex-the-project onto Alex-the-person", async () => {
+    const person = await findOrCreateEntity(db, { type: "person", name: "Alex" });
+    const project = await findOrCreateEntity(db, { type: "project", name: "Alex" });
+
+    expect(project.created).toBe(true);
+    expect(project.entity.id).not.toBe(person.entity.id);
+  });
+
+  it("findOrCreateEntity reuses the unique type-fold among several siblings", async () => {
+    const model = await findOrCreateEntity(db, { type: "dbt_model", name: "stg_orders" });
+    await findOrCreateEntity(db, { type: "table", name: "stg_orders" });
+    const hyphen = await findOrCreateEntity(db, { type: "dbt-model", name: "stg_orders" });
+
+    expect(hyphen.created).toBe(false);
+    expect(hyphen.entity.id).toBe(model.entity.id);
+  });
+
+  it("findOrCreateEntity attaches a hyphenated name to the unique folded family", async () => {
+    const first = await findOrCreateEntity(db, { type: "dbt_model", name: "stg_orders" });
+    const second = await findOrCreateEntity(db, { type: "dbt_model", name: "stg-orders" });
+
+    expect(second.created).toBe(false);
+    expect(second.entity.id).toBe(first.entity.id);
+  });
+
+  it("findOrCreateEntity creates a sibling on the family's stored name", async () => {
+    await findOrCreateEntity(db, { type: "dbt_model", name: "stg_orders" });
+    const sibling = await findOrCreateEntity(db, { type: "table", name: "stg-orders" });
+
+    expect(sibling.created).toBe(true);
+    expect(sibling.entity.name).toBe("stg_orders");
+    expect(sibling.entity.canonical_name).toBe("stg_orders");
+    expect(sibling.entity.canonical_name).toBe(
+      storedCanonicalName(sibling.entity.name),
+    );
+    expect(sibling.entity.type).toBe("table");
+    expect(await findEntitiesByName(db, "stg-orders")).toEqual([]);
+    expect(await resolveEntityFamily(db, "stg-orders")).toHaveLength(2);
+  });
+
+  it("resolveEntityFamily fail-closes when two canonicals fold together", async () => {
+    await createEntity(db, { type: "ticket", name: "mr !412" });
+    await createEntity(db, { type: "ticket", name: "mr 412" });
+
+    expect(await resolveEntityFamily(db, "mr !412")).toHaveLength(1);
+    expect(await resolveEntityFamily(db, "mr 412")).toHaveLength(1);
+    expect(await resolveEntityFamily(db, "mr-412")).toEqual([]);
+
+    const third = await findOrCreateEntity(db, { type: "ticket", name: "mr-412" });
+    expect(third.created).toBe(true);
+    expect(third.entity.canonical_name).toBe("mr-412");
+    expect(await findEntitiesByName(db, "mr !412")).toHaveLength(1);
+    expect(await findEntitiesByName(db, "mr 412")).toHaveLength(1);
+  });
+
+  it("dau does not reuse mau; bookings does not reuse stg_orders", async () => {
+    const dau = await findOrCreateEntity(db, { type: "metric", name: "dau" });
+    const mau = await findOrCreateEntity(db, { type: "metric", name: "mau" });
+    expect(mau.entity.id).not.toBe(dau.entity.id);
+
+    const orders = await findOrCreateEntity(db, { type: "model", name: "stg_orders" });
+    const bookings = await findOrCreateEntity(db, { type: "concept", name: "bookings" });
+    expect(bookings.entity.id).not.toBe(orders.entity.id);
   });
 
   it("createEntity stores and retrieves metadata", async () => {

@@ -32,6 +32,31 @@ export interface NewEntity {
  */
 export const SUBJECT_OF = "subject_of";
 
+/**
+ * Extra type spellings seen on reuse, stored on `entities.metadata`.
+ * Telemetry only — `listEntityTypes` still reads the `type` column.
+ */
+export const TYPE_SPELLINGS_KEY = "type_spellings";
+
+/** Stored lookup key. Every row must satisfy canonical_name === this. */
+export function storedCanonicalName(name: string): string {
+  return name.toLowerCase().trim();
+}
+
+/**
+ * Comparison fold for name/type punctuation. Not stored.
+ * Hyphen, underscore, and whitespace become a space; other punctuation
+ * becomes a space; runs collapse. Empty fold matches nothing.
+ */
+export function foldEntityToken(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[\s\-_]+/g, " ")
+    .replace(/[^\p{L}\p{N} ]+/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 /** Distinct entity types, most used first — extract names these so it reuses them. */
 export async function listEntityTypes(db: Db): Promise<string[]> {
   const rows = (await db
@@ -76,7 +101,8 @@ function parseEntityRow(
 
 /**
  * One matching row. Without a type, the oldest (`created_at`, then id).
- * Callers that need every type-variant must use `findEntitiesByName`.
+ * Callers that need every type-variant, including a punctuation-folded
+ * name, must use `resolveEntityFamily`.
  */
 export async function findEntity(
   db: Db,
@@ -96,7 +122,7 @@ export async function findEntitiesByName(
   name: string,
   type?: string,
 ): Promise<Entity[]> {
-  const canonical = name.toLowerCase().trim();
+  const canonical = storedCanonicalName(name);
   let sql = `SELECT * FROM entities WHERE canonical_name = ?`;
   const params: SqlParam[] = [canonical];
   if (type !== undefined) {
@@ -108,6 +134,34 @@ export async function findEntitiesByName(
     Omit<Entity, "metadata"> & { metadata: string | null }
   >;
   return rows.map(parseEntityRow);
+}
+
+/**
+ * Type-split rows of one name, including a unique punctuation-folded
+ * canonical when the exact name misses. Empty when the fold would bind
+ * two stored canonicals (fail closed) or when nothing matches.
+ *
+ * The one family lookup — write, named read, and search RRF all use this.
+ */
+export async function resolveEntityFamily(
+  db: Db,
+  name: string,
+): Promise<Entity[]> {
+  const exact = await findEntitiesByName(db, name);
+  if (exact.length > 0) return exact;
+
+  const folded = foldEntityToken(name);
+  if (!folded) return [];
+
+  const rows = (await db
+    .prepare(`SELECT * FROM entities ORDER BY created_at ASC, id ASC`)
+    .all()) as Array<Omit<Entity, "metadata"> & { metadata: string | null }>;
+  const matches = rows
+    .map(parseEntityRow)
+    .filter((e) => foldEntityToken(e.canonical_name) === folded);
+  const canonicals = new Set(matches.map((e) => e.canonical_name));
+  if (canonicals.size !== 1) return [];
+  return matches;
 }
 
 /** Find an entity by exact canonical name. No normalisation applied — caller must lowercase/trim.
@@ -135,7 +189,7 @@ export async function createEntity(
 ): Promise<Entity> {
   const id = randomUUID();
   const now = new Date().toISOString();
-  const canonical = entity.name.toLowerCase().trim();
+  const canonical = storedCanonicalName(entity.name);
   const metadata = entity.metadata ? JSON.stringify(entity.metadata) : null;
 
   const isSelf: 0 | 1 = entity.is_self ? 1 : 0;
@@ -168,9 +222,65 @@ export async function findOrCreateEntity(
     const existing = await findEntity(db, entity.name, entity.type);
     if (existing) return { entity: existing, created: false };
 
+    const family = await resolveEntityFamily(db, entity.name);
+    if (family.length > 0) {
+      const exactType = family.filter((e) => e.type === entity.type);
+      if (exactType.length === 1) {
+        return { entity: exactType[0]!, created: false };
+      }
+
+      const typeFold = foldEntityToken(entity.type);
+      if (typeFold) {
+        const foldHits = family.filter(
+          (e) => foldEntityToken(e.type) === typeFold,
+        );
+        if (foldHits.length === 1) {
+          const hit = foldHits[0]!;
+          if (entity.type !== hit.type) {
+            return {
+              entity: await recordTypeSpelling(db, hit, entity.type),
+              created: false,
+            };
+          }
+          return { entity: hit, created: false };
+        }
+      }
+
+      const oldest = family[0]!;
+      const created = await createEntity(db, {
+        type: entity.type,
+        name: oldest.name,
+        metadata: entity.metadata,
+      });
+      return { entity: created, created: true };
+    }
+
     const created = await createEntity(db, entity);
     return { entity: created, created: true };
   });
+}
+
+async function recordTypeSpelling(
+  db: Db,
+  entity: Entity,
+  spelling: string,
+): Promise<Entity> {
+  if (spelling === entity.type) return entity;
+  const meta: Record<string, unknown> = { ...(entity.metadata ?? {}) };
+  const extra = extraTypeSpellings(meta);
+  if (extra.includes(spelling)) return entity;
+  extra.push(spelling);
+  meta[TYPE_SPELLINGS_KEY] = extra;
+  await db
+    .prepare(`UPDATE entities SET metadata = ? WHERE id = ?`)
+    .run(JSON.stringify(meta), entity.id);
+  return { ...entity, metadata: meta };
+}
+
+function extraTypeSpellings(metadata: Record<string, unknown>): string[] {
+  const raw = metadata[TYPE_SPELLINGS_KEY];
+  if (!Array.isArray(raw)) return [];
+  return raw.filter((x): x is string => typeof x === "string");
 }
 
 // ---------------------------------------------------------------------------

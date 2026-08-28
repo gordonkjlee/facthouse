@@ -11,7 +11,7 @@
 import type { Db } from "../db/connection.js";
 import type { Entity, EntityEdge, EntityFact, SearchResponse } from "../types/data.js";
 import type { InterlocutorConfig } from "../types/config.js";
-import { findEntitiesByName, getEntityEdges } from "../db/entities.js";
+import { resolveEntityFamily, getEntityEdges } from "../db/entities.js";
 import { getFactsByEntity } from "../db/facts.js";
 import { hybridSearch } from "./index.js";
 
@@ -40,7 +40,7 @@ export async function lookupNamedSubject(
   name: string,
   type?: string,
 ): Promise<NamedSubjectLookup> {
-  const siblings = await findEntitiesByName(db, name);
+  const siblings = await resolveEntityFamily(db, name);
   if (type !== undefined) {
     const hit = siblings.filter((e) => e.type === type);
     if (hit.length > 0) return packNamedSubject(db, name, hit, false);

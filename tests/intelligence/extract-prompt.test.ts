@@ -118,6 +118,8 @@ describe("EXTRACT_CONTEXT_CONTRACT", () => {
   it("subject marking is one contract both entity extractors import", () => {
     expect(SUBJECT_MARKING_CONTRACT).toMatch(/subject_of/);
     expect(SUBJECT_MARKING_CONTRACT).toMatch(/entities list ONLY/);
+    expect(SUBJECT_MARKING_CONTRACT).toMatch(/role in this fact/);
+    expect(SUBJECT_MARKING_CONTRACT).not.toMatch(/RDF/i);
     expect(src("intelligence/cli.ts")).toMatch(/SUBJECT_MARKING_CONTRACT/);
     expect(src("intelligence/sampling.ts")).toMatch(/SUBJECT_MARKING_CONTRACT/);
     expect(src("intelligence/heuristic.ts")).not.toMatch(/SUBJECT_MARKING_CONTRACT/);

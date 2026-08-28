@@ -261,6 +261,35 @@ describe("hybridSearch surfaces the entity graph", () => {
     return await dbMod.insertFact(db, { content, domain, source_type: "conversation" });
   }
 
+  it("unions type-split siblings on the entity RRF path, not first-match only", async () => {
+    const asTable = await dbMod.createEntity(db, { type: "table", name: "stg_orders" });
+    const asModel = await dbMod.createEntity(db, { type: "dbt_model", name: "stg_orders" });
+    await db.prepare(`UPDATE entities SET created_at = ? WHERE id = ?`).run(
+      "2026-01-01T00:00:00.000Z",
+      asTable.id,
+    );
+    await db.prepare(`UPDATE entities SET created_at = ? WHERE id = ?`).run(
+      "2026-01-02T00:00:00.000Z",
+      asModel.id,
+    );
+    const fact = await insertFact("the staging relation lacks booked_at", "pipeline");
+    await dbMod.linkFactEntity(db, fact.id, asModel.id, "subject");
+
+    const result = await searchMod.hybridSearch(db, "stg_orders");
+    expect(result.results.some((r) => r.fact.id === fact.id)).toBe(true);
+
+    const hyphen = await searchMod.hybridSearch(db, "stg-orders");
+    expect(hyphen.results.some((r) => r.fact.id === fact.id)).toBe(true);
+  });
+
+  it("skips the entity RRF list when a fold would bind two canonicals", async () => {
+    await dbMod.createEntity(db, { type: "ticket", name: "mr !412" });
+    await dbMod.createEntity(db, { type: "ticket", name: "mr 412" });
+    const fact = await insertFact("the ticket is blocked on review", "work");
+    const result = await searchMod.hybridSearch(db, "mr-412");
+    expect(result.results.every((r) => r.fact.id !== fact.id)).toBe(true);
+  });
+
   it("attaches the entities linked to a matched fact", async () => {
     const fact = await insertFact("Robin at Acme leads the Atlas migration", "work");
     const robin = await dbMod.createEntity(db, { type: "person", name: "Robin" });

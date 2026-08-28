@@ -183,6 +183,41 @@ describe("lookupNamedSubject", () => {
     expect(robinHop!.facts.map((f) => f.id)).toContain(aboutRobin.id);
   });
 
+  it("finds a hyphenated lookup via the unique folded family", async () => {
+    const asDbt = await dbMod.createEntity(db, { type: "dbt_model", name: "stg_orders" });
+    const fact = await dbMod.insertFact(db, {
+      content: "stg_orders is missing booked_at",
+      domain: "pipeline",
+      source_type: "conversation",
+    });
+    await dbMod.linkFactEntity(db, fact.id, asDbt.id, SUBJECT_OF);
+
+    const lookup = await lookupNamedSubject(db, "stg-orders");
+    expect(lookup.found).toBe(true);
+    expect(lookup.entities.map((e) => e.id)).toEqual([asDbt.id]);
+    expect(lookup.facts.map((f) => f.id)).toEqual([fact.id]);
+  });
+
+  it("does not union two punctuation variants that both already exist", async () => {
+    const bang = await dbMod.createEntity(db, { type: "ticket", name: "mr !412" });
+    const space = await dbMod.createEntity(db, { type: "ticket", name: "mr 412" });
+    const aboutBang = await dbMod.insertFact(db, {
+      content: "The bang ticket is blocked on review",
+      domain: "work",
+      source_type: "conversation",
+    });
+    await dbMod.linkFactEntity(db, aboutBang.id, bang.id, SUBJECT_OF);
+
+    const exact = await lookupNamedSubject(db, "mr !412");
+    expect(exact.found).toBe(true);
+    expect(exact.entities.map((e) => e.id)).toEqual([bang.id]);
+
+    const folded = await lookupNamedSubject(db, "mr-412");
+    expect(folded.found).toBe(false);
+    expect(folded.entities).toEqual([]);
+    expect(space.id).toBeTruthy();
+  });
+
   it("unions two Alexes of different types without dropping either", async () => {
     const person = await dbMod.createEntity(db, { type: "person", name: "Alex" });
     const project = await dbMod.createEntity(db, { type: "project", name: "Alex" });

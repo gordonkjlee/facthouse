@@ -173,6 +173,68 @@ describe("extract stamps speaker_role from the primary event", () => {
       .get(person.id, GRAIN)) as { relationship: string };
     expect(link.relationship).toBe(UTTERED_BY);
   });
+
+  it("links uttered_by the person when Alex is also a project", async () => {
+    const session = await createSession(db, { source_tool: "test", project: null });
+    const project = await createEntity(db, { type: "project", name: "Alex" });
+    const person = await createEntity(db, { type: "person", name: "Alex" });
+    await db.prepare(`UPDATE entities SET created_at = ? WHERE id = ?`).run(
+      "2026-01-01T00:00:00.000Z",
+      project.id,
+    );
+    await insertEvent(db, {
+      mcp_session_id: session.id,
+      event_type: "message",
+      role: "user",
+      content: GRAIN,
+      speaker: "Alex",
+    });
+    await consolidate(db, recording([{ content: GRAIN }]) as never, {
+      extraction: { ...DEFAULT_CONFIG.extraction, enabled: true } as never,
+    });
+    const onPerson = (await db
+      .prepare(
+        `SELECT fe.relationship
+           FROM fact_entities fe
+           JOIN facts f ON f.id = fe.fact_id
+          WHERE fe.entity_id = ? AND f.content = ?`,
+      )
+      .get(person.id, GRAIN)) as { relationship: string } | undefined;
+    const onProject = (await db
+      .prepare(
+        `SELECT fe.relationship
+           FROM fact_entities fe
+           JOIN facts f ON f.id = fe.fact_id
+          WHERE fe.entity_id = ? AND f.content = ?`,
+      )
+      .get(project.id, GRAIN)) as { relationship: string } | undefined;
+    expect(onPerson?.relationship).toBe(UTTERED_BY);
+    expect(onProject).toBeUndefined();
+  });
+
+  it("does not tag a project as speaker when no person exists", async () => {
+    const session = await createSession(db, { source_tool: "test", project: null });
+    const project = await createEntity(db, { type: "project", name: "Alex" });
+    await insertEvent(db, {
+      mcp_session_id: session.id,
+      event_type: "message",
+      role: "user",
+      content: GRAIN,
+      speaker: "Alex",
+    });
+    await consolidate(db, recording([{ content: GRAIN }]) as never, {
+      extraction: { ...DEFAULT_CONFIG.extraction, enabled: true } as never,
+    });
+    const onProject = (await db
+      .prepare(
+        `SELECT fe.relationship
+           FROM fact_entities fe
+           JOIN facts f ON f.id = fe.fact_id
+          WHERE fe.entity_id = ? AND f.content = ?`,
+      )
+      .get(project.id, GRAIN)) as { relationship: string } | undefined;
+    expect(onProject).toBeUndefined();
+  });
 });
 
 describe("CLI search names the speaker when known", () => {
