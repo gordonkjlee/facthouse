@@ -16,6 +16,7 @@ import {
   DiskBudgetError,
   sqliteStoreBytes,
 } from "../../src/db/disk-budget.js";
+import { advanceExtractMarksToCurrentMax } from "../../src/db/extract-watermarks.js";
 
 const CHUNK = "x".repeat(8000);
 
@@ -42,19 +43,7 @@ async function addChunk(): Promise<void> {
 }
 
 async function markAllRead(): Promise<void> {
-  const seq = (
-    (await db.prepare(`SELECT COALESCE(MAX(sequence), 0) v FROM session_events`).get()) as {
-      v: number;
-    }
-  ).v;
-  await db
-    .prepare(
-      `INSERT INTO consolidations
-         (id, session_id, facts_in, facts_graduated, facts_rejected, entities_created,
-          entities_linked, supersessions, summary, open_threads, last_event_sequence, created_at)
-       VALUES (?, NULL, 0, 0, 0, 0, 0, 0, NULL, NULL, ?, datetime('now'))`,
-    )
-    .run(`c${seq}`, seq);
+  await advanceExtractMarksToCurrentMax(db);
 }
 
 describe("parseDiskBudget", () => {

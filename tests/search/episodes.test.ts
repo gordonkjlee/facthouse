@@ -88,13 +88,7 @@ describe("searchEpisodes", () => {
     expect((await searchEpisodes(db, sanitiseFtsQuery("kaleidoscope"))).length).toBe(1);
     // Watermark past the event so prune's "already extracted" condition holds,
     // and no fact cites it.
-    await db.prepare(
-      `INSERT INTO consolidations
-         (id, session_id, facts_in, facts_graduated, facts_rejected,
-          entities_created, entities_linked, supersessions,
-          summary, open_threads, last_event_sequence, created_at)
-       VALUES ('c1', 'sess-aaa', 0, 0, 0, 0, 0, 0, NULL, NULL, ?, ?)`,
-    ).run(hit.sequence, new Date().toISOString());
+    await dbMod.advanceExtractMarksToCurrentMax(db);
     await pruneEvents(db, 0);
     expect(await searchEpisodes(db, sanitiseFtsQuery("kaleidoscope"))).toEqual([]);
   });

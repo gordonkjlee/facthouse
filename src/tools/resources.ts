@@ -29,6 +29,7 @@ import { getLatestSummarised } from "../db/consolidations.js";
 import { keyFacts } from "../search/key-facts.js";
 import { formatDiskBudget } from "../db/disk-budget.js";
 import { getStats } from "../db/stats.js";
+import { unexaminedEventCount } from "../db/extract-watermarks.js";
 
 // The URI keeps its historical name so existing subscribers do not break; the
 // content is no longer domain-scoped. It is the store's key facts, whatever the
@@ -74,15 +75,7 @@ function bullet(f: Fact): string {
 }
 
 async function pendingEventCount(db: Db): Promise<number> {
-  const row = (await db
-    .prepare(`SELECT COALESCE(MAX(sequence), 0) AS seq FROM session_events`)
-    .get()) as { seq: number };
-  const last = (await db
-    .prepare(
-      `SELECT COALESCE(MAX(last_event_sequence), 0) AS seq FROM consolidations`,
-    )
-    .get()) as { seq: number };
-  return row.seq - last.seq;
+  return unexaminedEventCount(db);
 }
 
 async function consolidationRunCount(db: Db): Promise<number> {

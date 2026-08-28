@@ -15,6 +15,7 @@ import type { Db } from "../../src/db/connection.js";
 const dbMod = await import("../../src/db/index.js");
 const { applySchema } = await import("../../src/db/schema.js");
 const { prunableEvents, pruneEvents } = await import("../../src/db/prune.js");
+const { advanceExtractMarksToCurrentMax } = await import("../../src/db/extract-watermarks.js");
 const { createSession, insertEvent } = await import("../../src/db/sessions.js");
 const { insertSessionFact } = await import("../../src/db/session-facts.js");
 const { insertFact } = await import("../../src/db/facts.js");
@@ -52,13 +53,7 @@ async function addEvent(session?: string, content = "some tool output"): Promise
 
 /** Move the extraction watermark to cover everything logged so far. */
 async function markAllRead() {
-  const seq = ((await db.prepare(`SELECT COALESCE(MAX(sequence), 0) v FROM session_events`).get()) as { v: number }).v;
-  await db.prepare(
-    `INSERT INTO consolidations
-       (id, session_id, facts_in, facts_graduated, facts_rejected, entities_created,
-        entities_linked, supersessions, summary, open_threads, last_event_sequence, created_at)
-     VALUES (?, NULL, 0, 0, 0, 0, 0, 0, NULL, NULL, ?, datetime('now'))`,
-  ).run(`c${seq}`, seq);
+  await advanceExtractMarksToCurrentMax(db);
 }
 
 async function citeAsProvenance(eventId: string) {

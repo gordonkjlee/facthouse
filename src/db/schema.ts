@@ -7,6 +7,7 @@
 import { pragmaRead, pragmaWrite } from "./connection.js";
 import type { Db } from "./connection.js";
 import { applyPostgresSchema, postgresSchemaVersion } from "./postgres-schema.js";
+import { seedExtractWatermarksFromConsolidations } from "./extract-watermarks.js";
 export { SCHEMA_VERSION } from "./schema-version.js";
 
 /** Read the current schema version from the database. */
@@ -76,6 +77,9 @@ export async function applySchema(db: Db): Promise<void> {
   }
   if (version < 18) {
     await applyV18(db);
+  }
+  if (version < 19) {
+    await applyV19(db);
   }
 }
 
@@ -772,4 +776,27 @@ async function applyV18(db: Db): Promise<void> {
     ALTER TABLE session_fact_sources_v18 RENAME TO session_fact_sources;
   `);
   await pragmaWrite(db, "user_version = 18");
+}
+
+// ---------------------------------------------------------------------------
+// Schema version 19 — per-conversation extract watermarks
+//
+// Consolidation already has last_event_sequence on the run row; that is an
+// audit of a global through, not how far each conversation has been read.
+// Stop-hook pull interleaves sequences, so a MAX over run rows would skip a
+// neighbour. Same split as source_watermarks (how far a file has been
+// consumed) vs extract (how far D→I has read).
+// ---------------------------------------------------------------------------
+async function applyV19(db: Db): Promise<void> {
+  await db.exec(`
+    CREATE TABLE IF NOT EXISTS extract_watermarks (
+      kind TEXT NOT NULL CHECK (kind IN ('client', 'mcp', 'unkeyed')),
+      conversation_id TEXT NOT NULL,
+      last_event_sequence INTEGER NOT NULL,
+      updated_at TEXT NOT NULL,
+      PRIMARY KEY (kind, conversation_id)
+    );
+  `);
+  await seedExtractWatermarksFromConsolidations(db);
+  await pragmaWrite(db, "user_version = 19");
 }

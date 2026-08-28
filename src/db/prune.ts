@@ -15,9 +15,10 @@
  *
  * Three conditions, each protecting a different reader:
  *
- *   1. **Extraction has read it** (`sequence <= watermark`). Ahead of the
- *      watermark the event is still input, and deleting it would discard
- *      conversation that was never examined.
+ *   1. **Extraction has read it** (`sequence <= extractWatermark()`). Ahead
+ *      of the global through the event is still input. The through is MIN of
+ *      unexamined sequences, so a neighbour’s high per-conversation mark
+ *      cannot make this event look examined.
  *   2. **No fact's provenance points at it.** Facts chain back through
  *      `session_fact_sources.event_id`, so a referenced event is the answer to
  *      "why does it believe this?". Deleting it would leave facts whose
@@ -33,6 +34,7 @@
  */
 
 import { withTransaction, type Db, type SqlParam } from "./connection.js";
+import { EXTRACT_WATERMARK_SQL } from "./extract-watermarks.js";
 
 export interface PruneStats {
   /** Number of events matching the rule. */
@@ -49,7 +51,7 @@ export interface PruneStats {
  * from the one the apply deletes is worse than no dry run at all.
  */
 const UNREACHABLE = `
-      r.sequence <= (SELECT COALESCE(MAX(last_event_sequence), 0) FROM consolidations)
+      r.sequence <= (${EXTRACT_WATERMARK_SQL})
   AND r.rn > ?
   AND NOT EXISTS (SELECT 1 FROM session_fact_sources s WHERE s.event_id = r.id)`;
 

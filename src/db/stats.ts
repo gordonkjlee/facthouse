@@ -8,6 +8,7 @@
 import type { Db } from "./connection.js";
 import { prunableEvents } from "./prune.js";
 import { getBoundDiskBudget, keepPerSessionOf, storeBytes } from "./disk-budget.js";
+import { extractWatermark, unexaminedEventCount } from "./extract-watermarks.js";
 
 export interface KnowledgeStats {
   facts: {
@@ -53,8 +54,10 @@ export interface KnowledgeStats {
    */
   store?: { bytes?: number; budget_bytes?: number };
   /**
-   * How far extract has walked D. `watermark` is MAX(consolidations.last_event_sequence).
-   * `unextracted_events` is events above that watermark (0 when caught up).
+   * How far D→I has read. `watermark` is the global through (MIN of
+   * unexamined sequences). `unextracted_events` is the count of events not
+   * covered by `extract_watermarks`, not `max(sequence) − watermark` — that
+   * subtraction treats a neighbour’s high mark as a drained backlog.
    */
   extract: { watermark: number; unextracted_events: number };
   /** session_facts not yet claimed by a graduate (`consolidation_id` is null). */
@@ -128,16 +131,6 @@ export async function getStats(db: Db): Promise<KnowledgeStats> {
         }
       : undefined;
 
-  const maxEvent = (await db
-    .prepare(`SELECT COALESCE(MAX(sequence), 0) AS seq FROM session_events`)
-    .get()) as { seq: number };
-  const watermark = (await db
-    .prepare(
-      `SELECT COALESCE(MAX(last_event_sequence), 0) AS seq FROM consolidations`,
-    )
-    .get()) as { seq: number };
-  const unextracted = Math.max(0, maxEvent.seq - watermark.seq);
-
   return {
     facts: {
       active_latest: await count(db, `SELECT COUNT(*) as count FROM facts WHERE ${CURRENT}`),
@@ -151,8 +144,8 @@ export async function getStats(db: Db): Promise<KnowledgeStats> {
     events: { ...eventVolume, reclaimable },
     store,
     extract: {
-      watermark: watermark.seq,
-      unextracted_events: unextracted,
+      watermark: await extractWatermark(db),
+      unextracted_events: await unexaminedEventCount(db),
     },
     pending_facts: await count(
       db,
