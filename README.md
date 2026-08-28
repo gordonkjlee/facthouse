@@ -393,7 +393,21 @@ openmemory stats
 openmemory stats --json
 ```
 
-Facts are immutable — superseded facts are kept — so the current count and the total legitimately differ once anything has been superseded.
+Facts are immutable — superseded facts are kept — so the current count and the total legitimately differ once anything has been superseded. `--json` includes the answering binary's package version.
+
+#### `openmemory inspect`
+
+Sample D, I, K, entities, and the graph. Writes a local HTML file under the data directory (not the cwd). Prints the path. Does not open a browser. The file is a memory export — treat it like `stats --json`.
+
+```bash
+openmemory inspect
+openmemory inspect --graph
+openmemory inspect --layer k
+openmemory inspect --json
+openmemory inspect --entity Helios --limit 20 --output /tmp/inspect.html
+```
+
+`--layer health|d|i|k|entities|graph|all` prints terminal tables (newest-first, capped). `--graph` (the default when no `--layer` / `--json`) writes `inspect.html`. `--limit` is 10 for tables and 50 for the canvas. `--all` draws every node — a hairball, explicit. Search and type filter in the page can still reach a node that was outside the cap.
 
 ## Integration Patterns
 

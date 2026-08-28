@@ -68,7 +68,7 @@ describe.skipIf(!runnable)("cli entry — dispatch and usage", () => {
   it("prints usage listing every command and exits non-zero with no subcommand", () => {
     const r = run([]);
     expect(r.status).toBe(1);
-    for (const cmd of ["init", "log-event", "signal", "consolidate", "pull"]) {
+    for (const cmd of ["init", "log-event", "signal", "consolidate", "pull", "inspect", "stats"]) {
       expect(r.stderr).toContain(cmd);
     }
   });
@@ -422,6 +422,31 @@ describe.skipIf(!runnable)("cli entry — search and stats", () => {
     // on load goes to stderr, and this asserts it stays there.
     const parsed = JSON.parse(r.stdout);
     expect(parsed.facts.active_latest).toBe(3);
+    expect(typeof parsed.package_version).toBe("string");
+    expect(parsed.package_version.length).toBeGreaterThan(0);
+  });
+
+  it("inspect --graph writes inspect.html under the data dir and does not dump cwd", async () => {
+    const dir = path.join(root, "inspect-graph");
+    await seed(dir);
+    const r = run(["inspect", "--graph", "--data", dir]);
+    expect(r.status).toBe(0);
+    const dest = path.join(dir, "inspect.html");
+    expect(existsSync(dest)).toBe(true);
+    expect(r.stdout).toContain(dest);
+    const html = readFileSync(dest, "utf8");
+    expect(html).toContain("OpenMemory inspect");
+    expect(html).toContain('id="q"');
+    expect(html).toContain("Acme");
+  });
+
+  it("inspect --layer k prints currently-true facts", async () => {
+    const dir = path.join(root, "inspect-k");
+    await seed(dir);
+    const r = run(["inspect", "--layer", "k", "--data", dir]);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("dark roast");
+    expect(existsSync(path.join(dir, "inspect.html"))).toBe(false);
   });
 
   it("search finds a matching fact", async () => {
