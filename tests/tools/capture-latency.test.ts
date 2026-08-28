@@ -82,7 +82,7 @@ describe("capture_fact latency", () => {
     // runner was ~20ms. The tool description's "immediately" is about that
     // gap, not a 10ms stopwatch on the fastest machine.
     expect(median).toBeLessThan(50);
-  });
+  }, 30_000);
 
   it("has an order of magnitude of headroom, which is what makes the claim safe", async () => {
     // Local file-backed db is ~2ms. GitHub Windows was ~12–20ms. This bound
@@ -91,7 +91,7 @@ describe("capture_fact latency", () => {
     // quiet local SSD.
     const median = percentile(await measure(200), 0.5);
     expect(median).toBeLessThan(50);
-  });
+  }, 30_000);
 
   it("does not degrade as the store grows", async () => {
     // Capture is an append. If it ever starts scanning what came before —
@@ -105,14 +105,14 @@ describe("capture_fact latency", () => {
 
     // Generous ratio: this catches O(n) behaviour, not measurement noise.
     expect(late).toBeLessThan(early * 5 + 5);
-    // 30s, because vitest's 5s default was a second assertion nobody wrote.
+    // 90s, because vitest's 5s default was a second assertion nobody wrote.
     // This test performs ~2,300 real inserts against a file-backed database,
-    // and on a loaded CI runner that alone can exceed five seconds — it went
-    // red once on Node 24 and passed on re-run with no change. A timeout that
-    // trips on runner load reports a wall-clock budget, not the property under
-    // test; the ratio above is what catches a regression. Kept finite so a
-    // genuine hang still fails rather than running for ever.
-  }, 30_000);
+    // and a loaded GitHub Windows runner exceeded 30s of wall clock while the
+    // median still held. A timeout that trips on runner load reports a
+    // wall-clock budget, not the property under test; the ratio above is what
+    // catches a regression. Kept finite so a genuine hang still fails rather
+    // than running for ever.
+  }, 90_000);
 
   it("is synchronous — it returns a fact, not a promise", async () => {
     // The latency above only means anything if the call has actually finished
