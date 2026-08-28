@@ -219,6 +219,17 @@ describe("config loader", () => {
     expect(cfg.interlocutor?.role_weights).toEqual({ user: 1.1 });
     expect(cfg.extraction.enabled).toBe(true);
   });
+
+  it("reads optional retention.disk_budget and leaves it unset otherwise", () => {
+    expect(loadConfig(dir).retention.disk_budget).toBeUndefined();
+    writeFileSync(
+      path.join(dir, "config.json"),
+      JSON.stringify({ retention: { disk_budget: "2GB" } }),
+    );
+    const cfg = loadConfig(dir);
+    expect(cfg.retention.disk_budget).toBe("2GB");
+    expect(cfg.retention.prune_keep_per_session).toBeNull();
+  });
 });
 
 describe("ensureBitemporalSince", () => {

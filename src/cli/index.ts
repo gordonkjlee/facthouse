@@ -31,6 +31,7 @@ import { INIT_PROMPTS } from "./init-knobs.js";
 import { defaultDataDir, resolveUserPath } from "../paths.js";
 import { runSearch, formatSearch, formatStats, formatPrune, getStats } from "./query.js";
 import { prunableEvents, pruneEvents, vacuum } from "../db/prune.js";
+import { applySqliteDiskBudget, getBoundDiskBudget } from "../db/disk-budget.js";
 import { closeDatabase, type Db } from "../db/connection.js";
 import { applySchema } from "../db/schema.js";
 import { openStore, sqliteMemoryPath } from "../db/store.js";
@@ -445,14 +446,22 @@ async function runPruneCmd() {
   // Defers to the setting it protects rather than repeating its default, unless
   // a store has deliberately overridden it.
   const keep =
-    config.retention?.prune_keep_per_session ?? config.extraction?.working_memory_size ?? 50;
+    config.retention?.prune_keep_per_session ??
+    config.extraction?.working_memory_size ??
+    DEFAULT_CONFIG.extraction.working_memory_size;
   const apply = values.apply as boolean;
 
   const result = await withDb(dataDir, async (db) => {
     const stats = apply ? await pruneEvents(db, keep) : await prunableEvents(db, keep);
     // Only after a successful delete — vacuuming a database nothing was removed
     // from is a long rewrite for no reason.
-    if (apply && (values.vacuum as boolean) && stats.events > 0) await vacuum(db);
+    if (apply && (values.vacuum as boolean) && stats.events > 0) {
+      await vacuum(db);
+      const cap = getBoundDiskBudget(db);
+      if (cap && db.dialect === "sqlite") {
+        await applySqliteDiskBudget(db, cap.bytes);
+      }
+    }
     return stats;
   });
 

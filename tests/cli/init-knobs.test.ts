@@ -136,6 +136,7 @@ describe("init knobs — one definition", () => {
       intelligence: { provider: "heuristic" },
       ann: true,
       interlocutor: { role_weights: { user: 2 } },
+      disk_budget: "2GB",
     };
     const next = applyInitOverlay(defaultServerConfig(), sneaky);
     expect(next.embedding.provider).toBe("voyage");
@@ -145,6 +146,7 @@ describe("init knobs — one definition", () => {
       defaultServerConfig().intelligence.provider,
     );
     expect(next.interlocutor).toBeUndefined();
+    expect(next.retention.disk_budget).toBeUndefined();
     expect(defaultServerConfig().interlocutor).toBeUndefined();
   });
 

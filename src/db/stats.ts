@@ -6,6 +6,8 @@
  */
 
 import type { Db } from "./connection.js";
+import { prunableEvents } from "./prune.js";
+import { getBoundDiskBudget, keepPerSessionOf, storeBytes } from "./disk-budget.js";
 
 export interface KnowledgeStats {
   facts: {
@@ -39,7 +41,17 @@ export interface KnowledgeStats {
    * facts were healthy, so no other number in this object hinted at it. See
    * `openmemory prune`.
    */
-  events: { count: number; bytes: number };
+  events: {
+    count: number;
+    bytes: number;
+    /** Unreachable D the existing prune rule would remove. Always computed. */
+    reclaimable: { events: number; bytes: number };
+  };
+  /**
+   * Main store size (SQLite pages, or Postgres database size) and the
+   * optional disk budget. Omitted fields mean unknown or unset.
+   */
+  store?: { bytes?: number; budget_bytes?: number };
 }
 
 /**
@@ -93,6 +105,17 @@ export async function getStats(db: Db): Promise<KnowledgeStats> {
     )
     .get()) as { count: number; bytes: number };
 
+  const reclaimable = await prunableEvents(db, keepPerSessionOf(db));
+  const bytes = await storeBytes(db);
+  const budgetBytes = getBoundDiskBudget(db)?.bytes;
+  const store =
+    bytes != null || budgetBytes != null
+      ? {
+          ...(bytes != null ? { bytes } : {}),
+          ...(budgetBytes != null ? { budget_bytes: budgetBytes } : {}),
+        }
+      : undefined;
+
   return {
     facts: {
       active_latest: await count(db, `SELECT COUNT(*) as count FROM facts WHERE ${CURRENT}`),
@@ -103,6 +126,7 @@ export async function getStats(db: Db): Promise<KnowledgeStats> {
     consolidations: await count(db, `SELECT COUNT(*) as count FROM consolidations`),
     domain_distribution: domainDistribution,
     embeddings: embeddingCoverage,
-    events: eventVolume,
+    events: { ...eventVolume, reclaimable },
+    store,
   };
 }

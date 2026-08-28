@@ -183,6 +183,28 @@ describe("postgres dialect (PGlite)", () => {
     const sources = await getFactSources(db, fact!.id);
     expect(sources.map((s) => s.extraction_type)).toContain("assent");
   });
+
+  it("reports database size and refuses D ingest at a 1-byte budget", async () => {
+    const { getStats } = await import("../../src/db/stats.js");
+    const { bindDiskBudget, DiskBudgetError, storeBytes } = await import(
+      "../../src/db/disk-budget.js"
+    );
+    const size = await storeBytes(db);
+    expect(size).toBeGreaterThan(0);
+    const stats = await getStats(db);
+    expect(stats.store?.bytes).toBe(size);
+
+    bindDiskBudget(db, { bytes: 1, keepPerSession: 50 });
+    const session = await createSession(db, { source_tool: "test", project: null });
+    await expect(
+      insertEvent(db, {
+        mcp_session_id: session.id,
+        event_type: "message",
+        role: "user",
+        content: GRAIN,
+      }),
+    ).rejects.toThrow(DiskBudgetError);
+  });
 });
 
 describe("postgres schema 18 widens an existing store", () => {
