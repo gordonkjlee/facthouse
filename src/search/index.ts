@@ -22,7 +22,7 @@ import {
   getFactsByEntity,
   type FactReadOpts,
 } from "../db/facts.js";
-import { findEntity, getEntitiesForFacts } from "../db/entities.js";
+import { resolveEntityFamily, getEntitiesForFacts } from "../db/entities.js";
 import { keywordSearchPending, getBackingKindsByContent } from "../db/session-facts.js";
 import { vectorSearch, type VectorSearchOpts } from "./vector.js";
 import { interlocutorRankMultiplier } from "./interlocutor-rank.js";
@@ -409,11 +409,12 @@ export async function hybridSearch(
   }
 
   // 3. Structured entity path: if the query mentions a known entity,
-  // add facts linked to that entity as a second RRF signal.
-  // No uppercase filter — findEntity canonicalises to lower(trim(name)) so
-  // lowercase queries ("who's alex?") match too. Short terms dropped to
-  // avoid noisy lookups on pronouns/articles; first 5 terms cap work for
-  // pathological long queries.
+  // add facts linked to that family as an RRF signal.
+  // No uppercase filter — stored canonical is lower(trim(name)), and
+  // resolveEntityFamily also folds hyphen/underscore/punctuation so
+  // lowercase queries ("who's alex?") and `stg-orders` match too.
+  // Short terms dropped to avoid noisy lookups on pronouns/articles;
+  // first 5 terms cap work for pathological long queries.
   const terms = query
     .trim()
     .split(/\s+/)
@@ -422,8 +423,8 @@ export async function hybridSearch(
   const entityFacts: Fact[] = [];
   const seenEntityFactIds = new Set<string>();
   for (const term of terms) {
-    const entity = await findEntity(db, term);
-    if (entity) {
+    const family = await resolveEntityFamily(db, term);
+    for (const entity of family) {
       for (const fact of await getFactsByEntity(db, entity.id, readOpts)) {
         if (!seenEntityFactIds.has(fact.id)) {
           seenEntityFactIds.add(fact.id);

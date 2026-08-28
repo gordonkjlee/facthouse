@@ -68,7 +68,8 @@ import {
 import { createSource } from "../db/sources.js";
 import {
   findOrCreateEntity,
-  findEntity,
+  resolveEntityFamily,
+  foldEntityToken,
   getEntityById,
   linkFactEntity,
   upsertEntityEdge,
@@ -642,9 +643,12 @@ export async function consolidate(
         // Named speaker is source, not subject. Link only when the person
         // already exists — do not mint an entity from a Teams display name.
         if (sessionFact.speaker) {
-          const named = await findEntity(db, sessionFact.speaker);
-          if (named) {
-            await linkFactEntity(db, graduatedFact.id, named.id, UTTERED_BY);
+          const family = await resolveEntityFamily(db, sessionFact.speaker);
+          const persons = family.filter(
+            (e) => foldEntityToken(e.type) === "person",
+          );
+          if (persons.length === 1) {
+            await linkFactEntity(db, graduatedFact.id, persons[0]!.id, UTTERED_BY);
             entitiesLinked++;
           }
         } else if (sessionFact.speaker_role === "user") {

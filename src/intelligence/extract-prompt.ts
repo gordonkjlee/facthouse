@@ -104,7 +104,7 @@ export function entityTypeInstruction(types: string[] = []): string {
 }
 
 export const SUBJECT_MARKING_CONTRACT = `
-For each fact, mark the ONE thing it is about by setting that entity's relationship to exactly '${SUBJECT_OF}'. Every other named thing in the same fact keeps a descriptive relationship of your own wording. If a fact is about something unnamed, or you are unsure which thing it is about, use no ${SUBJECT_OF} at all — a wrong subject is worse than none.
+For each fact, mark the ONE thing it is about by setting that entity's relationship to exactly '${SUBJECT_OF}'. Every other named thing in the same fact keeps a descriptive relationship of your own wording. That string is this entity's role in this fact, not a directed edge between entities. If a fact is about something unnamed, or you are unsure which thing it is about, use no ${SUBJECT_OF} at all — a wrong subject is worse than none.
 This applies to the entities list ONLY: never list the user themselves as a named thing — not as 'the user', 'user', 'me' or by their own name. The store represents them already. Facts ABOUT the user are among the most valuable things to extract and must still be extracted in full, exactly as any other fact — they simply carry no entity for the user. Other people, including people close to the user, ARE listed as entities normally.
 `.trim();
 

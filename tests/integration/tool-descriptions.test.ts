@@ -168,6 +168,10 @@ describe.skipIf(!runnable)("tool descriptions are an instruction layer", () => {
     const entity = tools.find((t) => t.name === "get_entity")!;
     expect(entity).toBeTruthy();
     expect(entity.description).toMatch(/organisation|project|system|any/i);
+    expect(entity.description).toMatch(/role/);
+    expect(entity.description).toMatch(/not a directed graph edge/);
+    expect(entity.description).toMatch(/does not join two names already stored/);
+    expect(entity.description).not.toMatch(/RDF/i);
   });
 
   it("no tool is named after a domain the engine does not ship", () => {

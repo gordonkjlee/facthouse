@@ -163,10 +163,14 @@ export function registerReadTools(
       `Treat the difference as real when you answer: "Alex's transfer was ` +
       `approved by Robin" is worth knowing when asked about Robin, but it is a ` +
       `fact about Alex, and reporting it as something you know about Robin ` +
-      `would be wrong.\n\n` +
+      `would be wrong. Other relationship values are the same kind of role — ` +
+      `this entity's part in this fact, free text, not a directed graph edge. ` +
+      `Do not infer who did what to whom from the wording.\n\n` +
       `If several entity rows share that name under different types (the ` +
       `extractor labelled one thing two ways), facts from all of them come ` +
-      `back. If this store has no entity by that exact name, facts that ` +
+      `back. Hyphens, underscores, and stray punctuation count as the same ` +
+      `letters only when that does not join two names already stored as ` +
+      `separate rows. If this store has no entity by that name, facts that ` +
       `mention the wording still come back (is_subject false) rather than an ` +
       `empty miss. found is whether an entity row exists, not whether ` +
       `anything is known.`,
