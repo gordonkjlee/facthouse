@@ -7,6 +7,7 @@ const { applySchema } = await import("../../src/db/schema.js");
 const {
   createEntity,
   findEntity,
+  findEntitiesByName,
   findEntityByCanonical,
   findOrCreateEntity,
   linkFactEntity,
@@ -73,9 +74,42 @@ describe("entities", () => {
     expect(org).not.toBeNull();
     expect(org!.type).toBe("organisation");
 
-    // Without type filter, returns whichever comes first
+    await db.prepare(`UPDATE entities SET created_at = ? WHERE id = ?`).run(
+      "2026-01-01T00:00:00.000Z",
+      org.id,
+    );
+    await db.prepare(`UPDATE entities SET created_at = ? WHERE id = ?`).run(
+      "2026-01-02T00:00:00.000Z",
+      person!.id,
+    );
+
+    // Without type filter, oldest created_at wins.
     const any = await findEntity(db, "Acme");
     expect(any).not.toBeNull();
+    expect(any!.id).toBe(org.id);
+  });
+
+  it("findEntitiesByName returns every type for a canonical name, oldest first", async () => {
+    const person = await createEntity(db, { type: "person", name: "Acme" });
+    const org = await createEntity(db, { type: "organisation", name: "Acme" });
+    await db.prepare(`UPDATE entities SET created_at = ? WHERE id = ?`).run(
+      "2026-01-01T00:00:00.000Z",
+      org.id,
+    );
+    await db.prepare(`UPDATE entities SET created_at = ? WHERE id = ?`).run(
+      "2026-01-02T00:00:00.000Z",
+      person.id,
+    );
+
+    const all = await findEntitiesByName(db, "ACME");
+    expect(all.map((e) => e.id)).toEqual([org.id, person.id]);
+    expect((await findEntityByCanonical(db, "acme"))!.id).toBe(org.id);
+
+    const typed = await findEntitiesByName(db, "Acme", "person");
+    expect(typed).toHaveLength(1);
+    expect(typed[0].id).toBe(person.id);
+
+    expect(await findEntitiesByName(db, "Nobody")).toEqual([]);
   });
 
   it("findEntity returns null when not found", async () => {
@@ -107,6 +141,17 @@ describe("entities", () => {
     expect(result.created).toBe(true);
     expect(result.entity.name).toBe("Alice");
     expect(result.entity.canonical_name).toBe("alice");
+  });
+
+  it("findOrCreateEntity still mints a sibling type (write-reuse is not this slice)", async () => {
+    const first = await findOrCreateEntity(db, { type: "dbt_model", name: "stg_orders" });
+    const second = await findOrCreateEntity(db, { type: "table", name: "stg_orders" });
+
+    expect(first.created).toBe(true);
+    expect(second.created).toBe(true);
+    expect(second.entity.id).not.toBe(first.entity.id);
+    const all = await findEntitiesByName(db, "stg_orders");
+    expect(all).toHaveLength(2);
   });
 
   it("createEntity stores and retrieves metadata", async () => {

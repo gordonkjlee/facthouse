@@ -5,12 +5,11 @@
 import type { Db } from "../db/connection.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { hybridSearch, searchWithProvider } from "../search/index.js";
+import { searchWithProvider } from "../search/index.js";
 import type { VectorSearchOpts } from "../search/vector.js";
 import type { EmbeddingProvider } from "../embedding/types.js";
-import { findEntity, getEntityEdges } from "../db/entities.js";
-import { getFactsByEntity, parseSystemTime } from "../db/facts.js";
-import { lookupNamedSubject } from "../search/entity.js";
+import { parseSystemTime } from "../db/facts.js";
+import { getTopicContext, lookupNamedSubject } from "../search/entity.js";
 import { getDomains } from "../db/domains.js";
 import { getStats } from "../db/stats.js";
 import type { InterlocutorConfig, TemporalConfig } from "../types/config.js";
@@ -165,9 +164,12 @@ export function registerReadTools(
       `approved by Robin" is worth knowing when asked about Robin, but it is a ` +
       `fact about Alex, and reporting it as something you know about Robin ` +
       `would be wrong.\n\n` +
-      `If this store has no entity by that exact name, facts that mention the ` +
-      `wording still come back (is_subject false) rather than an empty miss. ` +
-      `found is whether an entity row exists, not whether anything is known.`,
+      `If several entity rows share that name under different types (the ` +
+      `extractor labelled one thing two ways), facts from all of them come ` +
+      `back. If this store has no entity by that exact name, facts that ` +
+      `mention the wording still come back (is_subject false) rather than an ` +
+      `empty miss. found is whether an entity row exists, not whether ` +
+      `anything is known.`,
     {
       name: z
         .string()
@@ -200,8 +202,10 @@ export function registerReadTools(
               found: lookup.found,
               name: lookup.name,
               entity: lookup.entity,
+              entities: lookup.entities,
               facts: lookup.facts,
               relationships: lookup.relationships,
+              type_missed: lookup.type_missed,
             }),
           },
         ],
@@ -230,64 +234,19 @@ export function registerReadTools(
         .describe("Topic, person, project, or domain to explore"),
     },
     async (args) => {
-      // Hybrid search for the topic
-      const searchResponse = await hybridSearch(db, args.topic, { interlocutor });
-
-      // Check if the topic matches an entity
-      const entity = await findEntity(db, args.topic);
-      const connectedFacts: Array<{
-        entity_name: string;
-        relationship: string;
-        facts: Awaited<ReturnType<typeof getFactsByEntity>>;
-      }> = [];
-
-      if (entity) {
-        // Sort edges by strength DESC — strongest relationships first.
-        // This is a weighted 1-hop neighbour lookup, not spreading activation
-        // (which would recursively propagate across multiple hops with decay).
-        const edges = (await getEntityEdges(db, entity.id))
-          .sort((a, b) => b.strength - a.strength)
-          .slice(0, 10);
-
-        // Collect all connected entity IDs and batch-fetch names (avoids N+1)
-        const connectedIds = edges.map((edge) =>
-          edge.from_entity === entity.id ? edge.to_entity : edge.from_entity,
-        );
-        const nameMap = new Map<string, string>();
-        if (connectedIds.length > 0) {
-          const placeholders = connectedIds.map(() => "?").join(",");
-          const rows = (await db
-            .prepare(`SELECT id, name FROM entities WHERE id IN (${placeholders})`)
-            .all(...connectedIds)) as Array<{ id: string; name: string }>;
-          for (const row of rows) nameMap.set(row.id, row.name);
-        }
-
-        // Traverse edges to get connected entity facts
-        for (const edge of edges) {
-          const connectedEntityId =
-            edge.from_entity === entity.id
-              ? edge.to_entity
-              : edge.from_entity;
-          const facts = (await getFactsByEntity(db, connectedEntityId)).slice(0, 5);
-
-          if (facts.length > 0) {
-            connectedFacts.push({
-              entity_name: nameMap.get(connectedEntityId) ?? connectedEntityId,
-              relationship: edge.relationship,
-              facts,
-            });
-          }
-        }
-      }
+      // Union type-split nodes. First-match would hide edges attached to a
+      // sibling type (stg_orders as model vs table).
+      const ctx = await getTopicContext(db, args.topic, interlocutor);
 
       return {
         content: [
           {
             type: "text" as const,
             text: JSON.stringify({
-              search: searchResponse,
-              entity: entity ?? null,
-              connected: connectedFacts,
+              search: ctx.search,
+              entity: ctx.entity,
+              entities: ctx.entities,
+              connected: ctx.connected,
             }),
           },
         ],

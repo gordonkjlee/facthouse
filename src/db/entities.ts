@@ -49,8 +49,6 @@ export async function listEntityTypes(db: Db): Promise<string[]> {
 // Entities
 // ---------------------------------------------------------------------------
 
-/** Find an entity by name, optionally filtered by type. Uses canonical_name for matching.
- *  Without type, returns first match — non-deterministic if multiple entities share a canonical name. */
 /** Look up an entity by its id. Returns null if not found. */
 export async function getEntityById(
   db: Db,
@@ -62,6 +60,12 @@ export async function getEntityById(
     | (Omit<Entity, "metadata"> & { metadata: string | null })
     | undefined;
   if (!row) return null;
+  return parseEntityRow(row);
+}
+
+function parseEntityRow(
+  row: Omit<Entity, "metadata"> & { metadata: string | null },
+): Entity {
   return {
     ...row,
     metadata: row.metadata
@@ -70,50 +74,57 @@ export async function getEntityById(
   };
 }
 
+/**
+ * One matching row. Without a type, the oldest (`created_at`, then id).
+ * Callers that need every type-variant must use `findEntitiesByName`.
+ */
 export async function findEntity(
   db: Db,
   name: string,
   type?: string,
 ): Promise<Entity | null> {
+  const rows = await findEntitiesByName(db, name, type);
+  return rows[0] ?? null;
+}
+
+/**
+ * Every entity whose canonical name matches. Type is an optional filter,
+ * not the identity key. Ordered oldest-first so callers have a stable list.
+ */
+export async function findEntitiesByName(
+  db: Db,
+  name: string,
+  type?: string,
+): Promise<Entity[]> {
   const canonical = name.toLowerCase().trim();
   let sql = `SELECT * FROM entities WHERE canonical_name = ?`;
   const params: SqlParam[] = [canonical];
-
   if (type !== undefined) {
     sql += ` AND type = ?`;
     params.push(type);
   }
-
-  const row = (await db.prepare(sql).get(...params)) as
-    | (Omit<Entity, "metadata"> & { metadata: string | null })
-    | undefined;
-  if (!row) return null;
-  return {
-    ...row,
-    metadata: row.metadata
-      ? (JSON.parse(row.metadata) as Record<string, unknown>)
-      : null,
-  };
+  sql += ` ORDER BY created_at ASC, id ASC`;
+  const rows = (await db.prepare(sql).all(...params)) as Array<
+    Omit<Entity, "metadata"> & { metadata: string | null }
+  >;
+  return rows.map(parseEntityRow);
 }
 
 /** Find an entity by exact canonical name. No normalisation applied — caller must lowercase/trim.
- *  Without a type filter, non-deterministic if multiple entities share a canonical name. */
+ *  Without a type filter, the oldest row (`created_at`, then id). */
 export async function findEntityByCanonical(
   db: Db,
   canonicalName: string,
 ): Promise<Entity | null> {
   const row = (await db
-    .prepare(`SELECT * FROM entities WHERE canonical_name = ?`)
+    .prepare(
+      `SELECT * FROM entities WHERE canonical_name = ? ORDER BY created_at ASC, id ASC`,
+    )
     .get(canonicalName)) as
     | (Omit<Entity, "metadata"> & { metadata: string | null })
     | undefined;
   if (!row) return null;
-  return {
-    ...row,
-    metadata: row.metadata
-      ? (JSON.parse(row.metadata) as Record<string, unknown>)
-      : null,
-  };
+  return parseEntityRow(row);
 }
 
 /** Create an entity. Sets canonical_name = lower(trim(name)).
@@ -190,12 +201,7 @@ export async function getSelfEntity(db: Db): Promise<Entity | null> {
     .prepare(`SELECT * FROM entities WHERE is_self = 1`)
     .get()) as (Omit<Entity, "metadata"> & { metadata: string | null }) | undefined;
   if (!row) return null;
-  return {
-    ...row,
-    metadata: row.metadata
-      ? (JSON.parse(row.metadata) as Record<string, unknown>)
-      : null,
-  };
+  return parseEntityRow(row);
 }
 
 /**
