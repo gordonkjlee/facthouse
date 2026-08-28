@@ -15,6 +15,8 @@ const { createSource } = await import("../../src/db/sources.js");
 const { ensureDomain } = await import("../../src/db/domains.js");
 const { getStats } = await import("../../src/db/stats.js");
 const { insertEmbeddings } = await import("../../src/db/embeddings.js");
+const { insertEvent } = await import("../../src/db/sessions.js");
+const { insertSessionFact } = await import("../../src/db/session-facts.js");
 
 let db: Db;
 let sourceId: string;
@@ -124,6 +126,44 @@ describe("getStats", () => {
     await fact("c", "preferences");
 
     expect((await getStats(db)).domain_distribution[0]).toEqual({ domain: "work", count: 2 });
+  });
+
+  it("reports zero unextracted events on an empty store", async () => {
+    const s = await getStats(db);
+    expect(s.extract).toEqual({ watermark: 0, unextracted_events: 0 });
+    expect(s.pending_facts).toBe(0);
+  });
+
+  it("counts events above the extract watermark as unextracted", async () => {
+    await insertEvent(db, {
+      event_type: "message",
+      role: "user",
+      content: "Bookings are the grain of the orders mart at Acme.",
+    });
+    await insertEvent(db, {
+      event_type: "message",
+      role: "user",
+      content: "stg_orders is missing booked_at.",
+    });
+    const s = await getStats(db);
+    expect(s.events.count).toBe(2);
+    expect(s.extract.watermark).toBe(0);
+    expect(s.extract.unextracted_events).toBe(2);
+  });
+
+  it("counts unclaimed session_facts as pending I", async () => {
+    await insertSessionFact(db, {
+      session_id: "sess-1",
+      content: "Bookings are the grain of the orders mart at Acme.",
+      consolidation_id: null,
+    });
+    await insertSessionFact(db, {
+      session_id: "sess-1",
+      content: "Alex prefers oat milk.",
+      consolidation_id: "run-already-graduated",
+    });
+    const s = await getStats(db);
+    expect(s.pending_facts).toBe(1);
   });
 
   it("counts registered domains, not just those holding facts", async () => {

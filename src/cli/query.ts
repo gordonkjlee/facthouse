@@ -208,6 +208,16 @@ export function formatStats(stats: KnowledgeStats): string {
     }
   }
 
+  lines.push("", "  Extract");
+  lines.push(`    watermark           ${stats.extract.watermark}`);
+  lines.push(`    unextracted events  ${stats.extract.unextracted_events}`);
+  lines.push(`    pending facts (I)   ${stats.pending_facts}`);
+  if (typeof stats.listener === "boolean") {
+    lines.push(
+      `    MCP scheduler       ${stats.listener ? "listening" : "not listening"}`,
+    );
+  }
+
   if (stats.facts.total === 0) {
     lines.push("", "  Nothing captured yet.");
   }

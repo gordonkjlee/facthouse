@@ -30,6 +30,7 @@ import {
   EXTRACT_CONTEXT_CONTRACT,
   EXTRACT_DURABLE_JOB,
   SUBJECT_MARKING_CONTRACT,
+  entityTypeInstruction,
   extractEventPayload,
   extractTodayUtcDate,
   parseExtractedIso,
@@ -253,6 +254,8 @@ export function createSamplingProvider(
           const raw = await ask(
             EXTRACT_DURABLE_JOB +
               " " +
+              `${domainRoutingInstruction(extras?.vocabulary ?? vocabulary)} ` +
+              `${entityTypeInstruction(extras?.entityTypes ?? [])} ` +
               EXTRACT_CONTEXT_CONTRACT + " " +
               "Respond with JSON only: {facts: [{content, domain_hint, valid_from, valid_until}], session_now?, referents?, topic_shifted?, confidence?}. " +
               `domain_hint is a domain already in use, a new short lowercase noun if none fits, or null. ` +

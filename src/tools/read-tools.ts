@@ -341,7 +341,11 @@ export function registerReadTools(
       `means this store searches by keyword only, which is the default. A count ` +
       `well below the current fact count means some facts are findable by ` +
       `wording but not by meaning — worth mentioning if the user asks why ` +
-      `something was not recalled.`,
+      `something was not recalled.\n\n` +
+      `\`extract.unextracted_events\` is how many transcript lines sit above ` +
+      `the extract watermark. \`pending_facts\` is I not yet graduated. ` +
+      `A large unextracted count with a healthy fact count means capture is ` +
+      `writing D that extract has not examined.`,
     {},
     async () => {
       // Shared with `openmemory stats` so the tool and the CLI can't disagree.

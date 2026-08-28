@@ -41,6 +41,7 @@ import {
 } from "../intelligence/consolidate.js";
 import { createHeuristicProvider } from "../intelligence/heuristic.js";
 import { createIntelligenceProvider, resolveProviderType } from "../intelligence/provider.js";
+import { loadStoreVocabulary } from "../db/domains.js";
 import { createEmbeddingProvider } from "../embedding/provider.js";
 import type { IntelligenceProvider } from "../intelligence/types.js";
 import type { EmbeddingProvider } from "../embedding/types.js";
@@ -55,7 +56,11 @@ import {
   systemTimeWarning,
 } from "../config.js";
 import { parseSystemTime } from "../db/facts.js";
-import { sendSchedulerSignal, type SignalKind } from "../ipc/scheduler-ipc.js";
+import {
+  sendSchedulerSignal,
+  isSchedulerListening,
+  type SignalKind,
+} from "../ipc/scheduler-ipc.js";
 import { pullSources, shouldTickAfterCliPull } from "../sources/pull.js";
 
 const SESSION_ROLES = ["user", "assistant", "system", "tool"] as const;
@@ -418,6 +423,7 @@ async function runStatsCmd() {
 
   const dataDir = resolveUserPath(values.data as string);
   const stats = await withDb(dataDir, (db) => getStats(db));
+  stats.listener = await isSchedulerListening(dataDir);
 
   console.log(values.json ? JSON.stringify(stats, null, 2) : formatStats(stats));
 }
@@ -596,8 +602,11 @@ async function runConsolidate() {
         "facts from transcripts. capture_fact still works.",
     );
   }
+  const vocabulary = await withDb(dataDir, (db) =>
+    loadStoreVocabulary(db, config.domains ?? []),
+  );
   const provider = createIntelligenceProvider(config.intelligence, {
-    vocabulary: config.domains ?? [],
+    vocabulary,
   });
   // Embeddings are written here too, not only by the server. `openmemory
   // consolidate` is the documented way to process a store by hand, and a store

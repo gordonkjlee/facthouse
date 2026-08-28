@@ -70,6 +70,14 @@ function decodeSignal(byte: number): SignalKind | null {
  * nothing is listening on it (i.e. safe to unlink before binding). On
  * Windows this is never needed — pipes are kernel-managed.
  */
+/** True when an MCP server is bound for this data dir (does not send a tick). */
+export async function isSchedulerListening(
+  dataDir: string,
+  timeoutMs = 200,
+): Promise<boolean> {
+  return probeListener(schedulerIpcPath(dataDir), timeoutMs);
+}
+
 async function probeListener(socketPath: string, timeoutMs = 200): Promise<boolean> {
   return new Promise((resolve) => {
     const client = createConnection(socketPath);

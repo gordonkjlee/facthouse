@@ -35,6 +35,8 @@ interface ExtractCall {
   evidence: string[];
   reminders: string[];
   now: string | null | undefined;
+  domainNames: string[];
+  entityTypes: string[];
 }
 
 function recording(
@@ -54,6 +56,8 @@ function recording(
       extras?: {
         now?: string | null;
         reminderEvents?: SessionEvent[];
+        vocabulary?: { name: string }[];
+        entityTypes?: string[];
       },
     ) {
       const callIndex = calls.length;
@@ -62,6 +66,8 @@ function recording(
         evidence: workingMemory.map((e) => e.content ?? ""),
         reminders: (extras?.reminderEvents ?? []).map((e) => e.content ?? ""),
         now: extras?.now,
+        domainNames: (extras?.vocabulary ?? []).map((d) => d.name),
+        entityTypes: extras?.entityTypes ?? [],
       });
       if (handler) return handler(events, callIndex);
       return {
@@ -309,5 +315,22 @@ describe("extraction.enabled false with events is policy, not provider-down", ()
     expect(result.extractionDegraded).toBeFalsy();
     expect(await eventWatermark()).toBe(3);
     expect(await factContents()).toEqual([]);
+  });
+});
+
+describe("extract sees the store's own vocabulary", () => {
+  it("passes domains and entity types from the database, not empty config", async () => {
+    const { ensureDomain } = await import("../../src/db/domains.js");
+    const { findOrCreateEntity } = await import("../../src/db/entities.js");
+    await ensureDomain(db, "warehouse");
+    await findOrCreateEntity(db, { name: "stg_orders", type: "dbt_model" });
+    await seedConversation(1);
+    const { provider, calls } = recording();
+    await consolidate(db, provider as never, {
+      extraction: { enabled: true } as never,
+    });
+    expect(calls.length).toBeGreaterThan(0);
+    expect(calls[0]!.domainNames).toContain("warehouse");
+    expect(calls[0]!.entityTypes).toContain("dbt_model");
   });
 });

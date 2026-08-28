@@ -74,6 +74,35 @@ export const EXTRACT_RELATED_K_CAP = 8;
  * A wrong subject files a fact under the wrong name with nothing downstream
  * to catch it — mark nothing when unsure.
  */
+/** Max distinct entity types named in the extract prompt. Most-used first. */
+export const ENTITY_TYPE_PROMPT_CAP = 40;
+
+/**
+ * Steer extract toward types the store already uses, the same job
+ * `domainRoutingInstruction` does for domains. Empty is a legitimate first run.
+ */
+export function entityTypeInstruction(types: string[] = []): string {
+  const seen = new Set<string>();
+  const cleaned: string[] = [];
+  for (const t of types) {
+    const name = t.trim().toLowerCase();
+    if (!name || seen.has(name)) continue;
+    seen.add(name);
+    cleaned.push(name);
+    if (cleaned.length >= ENTITY_TYPE_PROMPT_CAP) break;
+  }
+  if (cleaned.length === 0) {
+    return (
+      "Each named thing gets a short lowercase type of your own wording " +
+      "(person, organisation, project, place, system, …)."
+    );
+  }
+  return (
+    `Types already in use — reuse the exact spelling where one fits: ${cleaned.join(", ")}. ` +
+    `Invent a new type only when none fits; never coin a synonym for a type above.`
+  );
+}
+
 export const SUBJECT_MARKING_CONTRACT = `
 For each fact, mark the ONE thing it is about by setting that entity's relationship to exactly '${SUBJECT_OF}'. Every other named thing in the same fact keeps a descriptive relationship of your own wording. If a fact is about something unnamed, or you are unsure which thing it is about, use no ${SUBJECT_OF} at all — a wrong subject is worse than none.
 This applies to the entities list ONLY: never list the user themselves as a named thing — not as 'the user', 'user', 'me' or by their own name. The store represents them already. Facts ABOUT the user are among the most valuable things to extract and must still be extracted in full, exactly as any other fact — they simply carry no entity for the user. Other people, including people close to the user, ARE listed as entities normally.

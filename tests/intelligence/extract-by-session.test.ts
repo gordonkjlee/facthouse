@@ -218,7 +218,7 @@ describe("extraction groups by conversation, not by pull batch", () => {
     expect(byNext.get(nextB)?.workingMemory.join(" ")).not.toContain("oat milk");
   });
 
-  it("contextual provenance does not spray onto the other conversation", async () => {
+  it("a rewritten extract does not invent contextual provenance on either conversation", async () => {
     await insertEvent(db, {
       client_session_id: "sess-aaa",
       event_type: "message",
@@ -252,13 +252,74 @@ describe("extraction groups by conversation, not by pull batch", () => {
     });
 
     const oat = await provenanceSessions("The user drinks oat milk.");
-    expect(oat.length).toBeGreaterThan(0);
-    expect(oat.every((s) => s.client_session_id === "sess-aaa")).toBe(true);
-    expect(oat.every((s) => s.type === "contextual")).toBe(true);
+    expect(oat).toEqual([]);
 
     const allergy = await provenanceSessions("The user has a shellfish allergy.");
-    expect(allergy.length).toBeGreaterThan(0);
-    expect(allergy.every((s) => s.client_session_id === "sess-bbb")).toBe(true);
+    expect(allergy).toEqual([]);
+  });
+
+  it("a rewritten extract does not claim every event in the conversation", async () => {
+    for (let i = 0; i < 8; i++) {
+      await insertEvent(db, {
+        client_session_id: "sess-long",
+        event_type: "message",
+        role: "user",
+        content: `tool dump ${i} of the schema listing`,
+      });
+    }
+    const paraphrasing = {
+      ...createHeuristicProvider(PERSONAL_VOCABULARY),
+      async extractFactsFromEvents() {
+        return {
+          facts: [
+            {
+              content:
+                "stg_orders is missing booked_at at the grain of the orders mart.",
+              domain_hint: "pipeline",
+            },
+          ],
+          degraded: false,
+        };
+      },
+    };
+    await consolidate(db, paraphrasing as never, {
+      extraction: { enabled: true } as never,
+    });
+    const links = await provenanceSessions(
+      "stg_orders is missing booked_at at the grain of the orders mart.",
+    );
+    expect(links).toEqual([]);
+  });
+
+  it("a verbatim extract still keeps one primary event", async () => {
+    const said = "Bookings are the grain of the orders mart at Acme.";
+    await insertEvent(db, {
+      client_session_id: "sess-verbatim",
+      event_type: "message",
+      role: "user",
+      content: said,
+    });
+    await insertEvent(db, {
+      client_session_id: "sess-verbatim",
+      event_type: "tool_result",
+      role: "tool",
+      content: "CREATE TABLE stg_orders (id int);",
+    });
+    const echoing = {
+      ...createHeuristicProvider(PERSONAL_VOCABULARY),
+      async extractFactsFromEvents() {
+        return {
+          facts: [{ content: said, domain_hint: "pipeline" }],
+          degraded: false,
+        };
+      },
+    };
+    await consolidate(db, echoing as never, {
+      extraction: { enabled: true } as never,
+    });
+    const links = await provenanceSessions(said);
+    expect(links).toHaveLength(1);
+    expect(links[0]?.type).toBe("primary");
   });
 
   it("same timestamps on the two files still stay separate", async () => {

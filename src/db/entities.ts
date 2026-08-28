@@ -32,6 +32,19 @@ export interface NewEntity {
  */
 export const SUBJECT_OF = "subject_of";
 
+/** Distinct entity types, most used first — extract names these so it reuses them. */
+export async function listEntityTypes(db: Db): Promise<string[]> {
+  const rows = (await db
+    .prepare(
+      `SELECT type, COUNT(*) AS n FROM entities
+       WHERE type IS NOT NULL AND type != ''
+       GROUP BY type
+       ORDER BY n DESC, type ASC`,
+    )
+    .all()) as Array<{ type: string }>;
+  return rows.map((r) => r.type);
+}
+
 // ---------------------------------------------------------------------------
 // Entities
 // ---------------------------------------------------------------------------

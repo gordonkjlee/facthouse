@@ -4,10 +4,19 @@
 
 import type { Db } from "./connection.js";
 import type { DomainDef } from "../types/config.js";
+import { mergeVocabulary } from "../schemas/domains.js";
 
 // ---------------------------------------------------------------------------
 // Domains
 // ---------------------------------------------------------------------------
+
+/** Store domains plus config overlay — the vocabulary extract/classify must see. */
+export async function loadStoreVocabulary(
+  db: Db,
+  configDomains: DomainDef[] = [],
+): Promise<DomainDef[]> {
+  return mergeVocabulary(await getDomains(db), configDomains);
+}
 
 /** Get all domains. */
 export async function getDomains(db: Db): Promise<DomainDef[]> {

@@ -52,6 +52,18 @@ export interface KnowledgeStats {
    * optional disk budget. Omitted fields mean unknown or unset.
    */
   store?: { bytes?: number; budget_bytes?: number };
+  /**
+   * How far extract has walked D. `watermark` is MAX(consolidations.last_event_sequence).
+   * `unextracted_events` is events above that watermark (0 when caught up).
+   */
+  extract: { watermark: number; unextracted_events: number };
+  /** session_facts not yet claimed by a graduate (`consolidation_id` is null). */
+  pending_facts: number;
+  /**
+   * CLI-only: whether a scheduler is bound for this data dir. MCP `get_stats`
+   * omits it — the process answering the tool *is* the listener.
+   */
+  listener?: boolean;
 }
 
 /**
@@ -116,6 +128,16 @@ export async function getStats(db: Db): Promise<KnowledgeStats> {
         }
       : undefined;
 
+  const maxEvent = (await db
+    .prepare(`SELECT COALESCE(MAX(sequence), 0) AS seq FROM session_events`)
+    .get()) as { seq: number };
+  const watermark = (await db
+    .prepare(
+      `SELECT COALESCE(MAX(last_event_sequence), 0) AS seq FROM consolidations`,
+    )
+    .get()) as { seq: number };
+  const unextracted = Math.max(0, maxEvent.seq - watermark.seq);
+
   return {
     facts: {
       active_latest: await count(db, `SELECT COUNT(*) as count FROM facts WHERE ${CURRENT}`),
@@ -128,5 +150,13 @@ export async function getStats(db: Db): Promise<KnowledgeStats> {
     embeddings: embeddingCoverage,
     events: { ...eventVolume, reclaimable },
     store,
+    extract: {
+      watermark: watermark.seq,
+      unextracted_events: unextracted,
+    },
+    pending_facts: await count(
+      db,
+      `SELECT COUNT(*) as count FROM session_facts WHERE consolidation_id IS NULL`,
+    ),
   };
 }
