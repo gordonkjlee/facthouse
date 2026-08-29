@@ -33,6 +33,9 @@ export async function applyPostgresSchema(db: Db): Promise<void> {
   if (version > 0 && version < 19) {
     await seedExtractWatermarksFromConsolidations(db);
   }
+  if (version > 0 && version < 21) {
+    await db.exec(`ALTER TABLE inferences ADD COLUMN IF NOT EXISTS metadata TEXT;`);
+  }
   await db
     .prepare(`INSERT OR IGNORE INTO schema_migrations (version) VALUES (?)`)
     .run(SCHEMA_VERSION);
@@ -307,6 +310,7 @@ CREATE TABLE IF NOT EXISTS inferences (
   status TEXT NOT NULL CHECK (status IN ('pending', 'confirmed', 'rejected')),
   reason TEXT,
   fact_id TEXT,
+  metadata TEXT,
   created_at TIMESTAMPTZ NOT NULL,
   validated_at TIMESTAMPTZ
 );

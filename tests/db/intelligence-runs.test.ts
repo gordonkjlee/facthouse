@@ -40,9 +40,8 @@ const extractUsage = {
 };
 
 describe("intelligence_runs", () => {
-  it("migrates to schema 20 and creates the table", async () => {
+  it("migrates to the current schema and creates the table", async () => {
     expect(await getSchemaVersion(db)).toBe(SCHEMA_VERSION);
-    expect(SCHEMA_VERSION).toBe(20);
     await insertIntelligenceRun(db, { kind: "consolidate", usage: extractUsage });
     expect(await listIntelligenceRuns(db)).toHaveLength(1);
   });

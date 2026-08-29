@@ -12,6 +12,12 @@ const {
   findOrCreateEntity,
   foldEntityToken,
   resolveEntityFamily,
+  recordSameAs,
+  deleteSameAs,
+  recordSameAsForLinkedFoldPair,
+  isSaidFoldIdentityPair,
+  SAME_AS,
+  SAME_AS_FAMILY_CAP,
   storedCanonicalName,
   TYPE_SPELLINGS_KEY,
   listEntityTypes,
@@ -233,6 +239,95 @@ describe("entities", () => {
     expect(third.entity.canonical_name).toBe("mr-412");
     expect(await findEntitiesByName(db, "mr !412")).toHaveLength(1);
     expect(await findEntitiesByName(db, "mr 412")).toHaveLength(1);
+  });
+
+  it("same_as unites two fold-split names for lookup", async () => {
+    const bang = await createEntity(db, { type: "ticket", name: "mr !412" });
+    const space = await createEntity(db, { type: "ticket", name: "mr 412" });
+    await recordSameAs(db, bang.id, space.id);
+
+    const family = await resolveEntityFamily(db, "mr 412");
+    expect(family.map((e) => e.id).sort()).toEqual([bang.id, space.id].sort());
+    expect((await resolveEntityFamily(db, "mr-412")).map((e) => e.id).sort()).toEqual(
+      [bang.id, space.id].sort(),
+    );
+
+    await deleteSameAs(db, bang.id, space.id);
+    expect(await resolveEntityFamily(db, "mr 412")).toHaveLength(1);
+    expect(await resolveEntityFamily(db, "mr-412")).toEqual([]);
+  });
+
+  it("does not walk a subset-of edge as identity", async () => {
+    const parent = await createEntity(db, { type: "model", name: "orders" });
+    const child = await createEntity(db, { type: "model", name: "stg_orders" });
+    await upsertEntityEdge(db, parent.id, child.id, "subset of");
+    expect(await resolveEntityFamily(db, "orders")).toHaveLength(1);
+    expect((await getEntityEdges(db, parent.id))[0]!.relationship).toBe("subset of");
+    expect(SAME_AS).toBe("same_as");
+  });
+
+  it("said fold-pair records same_as; dau and mau stay two", async () => {
+    const bang = await createEntity(db, { type: "ticket", name: "mr !412" });
+    const space = await createEntity(db, { type: "ticket", name: "mr 412" });
+    await recordSameAsForLinkedFoldPair(db, [bang, space]);
+    expect((await resolveEntityFamily(db, "mr 412")).map((e) => e.id).sort()).toEqual(
+      [bang.id, space.id].sort(),
+    );
+
+    const dau = await createEntity(db, { type: "metric", name: "dau" });
+    const mau = await createEntity(db, { type: "metric", name: "mau" });
+    await recordSameAsForLinkedFoldPair(db, [dau, mau]);
+    expect(await resolveEntityFamily(db, "dau")).toHaveLength(1);
+  });
+
+  it("said fold-pair does not same_as across types", async () => {
+    const ticket = await createEntity(db, { type: "ticket", name: "mr !412" });
+    const person = await createEntity(db, { type: "person", name: "mr 412" });
+    expect(isSaidFoldIdentityPair(ticket, person)).toBe(false);
+    await recordSameAsForLinkedFoldPair(db, [ticket, person]);
+    expect(await resolveEntityFamily(db, "mr 412")).toHaveLength(1);
+    expect(await resolveEntityFamily(db, "mr !412")).toHaveLength(1);
+  });
+
+  it("findOrCreateEntity reuses a same_as family of that type instead of minting a third spelling", async () => {
+    const bang = await createEntity(db, { type: "ticket", name: "mr !412" });
+    const space = await createEntity(db, { type: "ticket", name: "mr 412" });
+    await recordSameAs(db, bang.id, space.id);
+
+    const third = await findOrCreateEntity(db, { type: "ticket", name: "mr-412" });
+    expect(third.created).toBe(false);
+    expect([bang.id, space.id]).toContain(third.entity.id);
+    expect(await findEntitiesByName(db, "mr-412")).toEqual([]);
+  });
+
+  it("findOrCreateEntity new sibling keeps the incoming name, not a same_as alias", async () => {
+    const alexander = await createEntity(db, { type: "person", name: "Alexander" });
+    const alex = await createEntity(db, { type: "person", name: "Alex" });
+    await db.prepare(`UPDATE entities SET created_at = ? WHERE id = ?`).run(
+      "2026-01-01T00:00:00.000Z",
+      alexander.id,
+    );
+    await recordSameAs(db, alexander.id, alex.id);
+
+    const sibling = await findOrCreateEntity(db, { type: "project", name: "Alex" });
+    expect(sibling.created).toBe(true);
+    expect(sibling.entity.name).toBe("Alex");
+    expect(sibling.entity.canonical_name).toBe("alex");
+    expect(sibling.entity.type).toBe("project");
+    expect(sibling.entity.id).not.toBe(alex.id);
+    expect(sibling.entity.id).not.toBe(alexander.id);
+  });
+
+  it("resolveEntityFamily fail-closes a same_as component larger than the cap", async () => {
+    const ids: string[] = [];
+    for (let i = 0; i < SAME_AS_FAMILY_CAP + 1; i++) {
+      const row = await createEntity(db, { type: "ticket", name: `alias ${i}` });
+      ids.push(row.id);
+    }
+    for (let i = 0; i < ids.length - 1; i++) {
+      await recordSameAs(db, ids[i]!, ids[i + 1]!);
+    }
+    expect(await resolveEntityFamily(db, "alias 0")).toHaveLength(1);
   });
 
   it("dau does not reuse mau; bookings does not reuse stg_orders", async () => {

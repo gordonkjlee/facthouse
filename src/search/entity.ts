@@ -11,7 +11,7 @@
 import type { Db } from "../db/connection.js";
 import type { Entity, EntityEdge, EntityFact, SearchResponse } from "../types/data.js";
 import type { InterlocutorConfig } from "../types/config.js";
-import { resolveEntityFamily, getEntityEdges } from "../db/entities.js";
+import { resolveEntityFamily, getEntityEdges, SAME_AS } from "../db/entities.js";
 import { getFactsByEntity } from "../db/facts.js";
 import { hybridSearch } from "./index.js";
 
@@ -101,6 +101,13 @@ export async function getTopicContext(
   );
   const edges = edgeLists
     .flat()
+    .filter((edge) => edge.relationship !== SAME_AS)
+    .filter((edge) => {
+      const other = matchedIds.has(edge.from_entity)
+        ? edge.to_entity
+        : edge.from_entity;
+      return !matchedIds.has(other);
+    })
     .sort((a, b) => b.strength - a.strength)
     .slice(0, CONTEXT_EDGE_CAP);
 
@@ -159,6 +166,8 @@ async function packNamedSubject(
       const key = `${edge.from_entity}\0${edge.to_entity}\0${edge.relationship}`;
       if (seenEdge.has(key)) continue;
       seenEdge.add(key);
+      // Surface same_as here so the named read shows the identity cue.
+      // get_context 1-hop omits it so the node is not listed as its neighbour.
       relationships.push(edge);
     }
   }

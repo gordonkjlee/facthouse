@@ -278,6 +278,11 @@ export interface Inference {
   status: InferenceStatus;
   /** Fact ids cited as support. Required at capture; never empty. */
   evidence_fact_ids: string[];
+  /**
+   * Optional pair of entity ids when the hypothesis is that two existing
+   * rows are one thing. Empty unless captured. Confirm writes `same_as`.
+   */
+  entity_ids: string[];
   reason: string | null;
   /** Graduated fact id, set only when confirmed. */
   fact_id: string | null;

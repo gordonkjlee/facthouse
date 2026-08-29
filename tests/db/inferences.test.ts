@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { closeDatabase, openDatabase, type Db } from "../../src/db/connection.js";
 import { applySchema } from "../../src/db/schema.js";
 import { insertFact, getFact } from "../../src/db/facts.js";
+import { createEntity, resolveEntityFamily } from "../../src/db/entities.js";
 import { getSource } from "../../src/db/sources.js";
 import {
   insertInference,
@@ -145,6 +146,43 @@ describe("listInferences", () => {
     const listed = await listInferences(db);
     expect(listed.map((i) => i.id)).toEqual([pending.id]);
     expect(await listInferences(db, "confirmed")).toHaveLength(1);
+  });
+});
+
+describe("same_as via inference confirm", () => {
+  it("pending does not join; confirm does; reject does not", async () => {
+    const factA = await supportingFact(db, "The bang ticket is blocked on review.");
+    const bang = await createEntity(db, { type: "ticket", name: "mr !412" });
+    const space = await createEntity(db, { type: "ticket", name: "mr 412" });
+
+    const pending = await insertInference(db, {
+      hypothesis: "Those two names are one ticket.",
+      evidence_fact_ids: [factA],
+      entity_ids: [bang.id, space.id],
+    });
+    expect(pending.entity_ids.sort()).toEqual([bang.id, space.id].sort());
+    expect(await resolveEntityFamily(db, "mr 412")).toHaveLength(1);
+
+    const rejected = await insertInference(db, {
+      hypothesis: "A guess we will reject.",
+      evidence_fact_ids: [factA],
+      entity_ids: [bang.id, space.id],
+    });
+    await validateInference(db, { id: rejected.id, confirmed: false });
+    expect(await resolveEntityFamily(db, "mr 412")).toHaveLength(1);
+
+    await validateInference(db, { id: pending.id, confirmed: true });
+    expect((await resolveEntityFamily(db, "mr 412")).map((e) => e.id).sort()).toEqual(
+      [bang.id, space.id].sort(),
+    );
+  });
+
+  it("two paraphrases on two nodes write no edge by themselves", async () => {
+    await createEntity(db, { type: "ticket", name: "mr !412" });
+    await createEntity(db, { type: "ticket", name: "mr 412" });
+    await supportingFact(db, "The bang ticket is blocked on review.");
+    await supportingFact(db, "The space ticket is blocked on review.");
+    expect(await resolveEntityFamily(db, "mr 412")).toHaveLength(1);
   });
 });
 
