@@ -36,6 +36,13 @@ export async function applyPostgresSchema(db: Db): Promise<void> {
   if (version > 0 && version < 21) {
     await db.exec(`ALTER TABLE inferences ADD COLUMN IF NOT EXISTS metadata TEXT;`);
   }
+  if (version > 0 && version < 22) {
+    await db.exec(`
+      ALTER TABLE intelligence_runs ADD COLUMN IF NOT EXISTS trigger TEXT;
+      ALTER TABLE intelligence_runs ADD COLUMN IF NOT EXISTS source_tool TEXT;
+      ALTER TABLE intelligence_runs ADD COLUMN IF NOT EXISTS project TEXT;
+    `);
+  }
   await db
     .prepare(`INSERT OR IGNORE INTO schema_migrations (version) VALUES (?)`)
     .run(SCHEMA_VERSION);
@@ -327,7 +334,10 @@ CREATE TABLE IF NOT EXISTS intelligence_runs (
   kind TEXT NOT NULL CHECK (kind IN ('consolidate', 'capture')),
   consolidation_id TEXT,
   created_at TIMESTAMPTZ NOT NULL,
-  usage TEXT NOT NULL
+  usage TEXT NOT NULL,
+  trigger TEXT,
+  source_tool TEXT,
+  project TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_intelligence_runs_created ON intelligence_runs(created_at);
 `;

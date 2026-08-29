@@ -166,7 +166,11 @@ async function main() {
   const factManager = createFactManager(database, sessionManager, {
     intelligence,
     embedding: embeddingProvider,
-    serverConfig: { extraction: config.extraction, temporal: config.temporal },
+    serverConfig: {
+      extraction: config.extraction,
+      temporal: config.temporal,
+      intelligence: config.intelligence,
+    },
     // Both of these shipped in the default config and never reached the code that
     // reads them, so the hardcoded defaults always won whatever a store set.
     captureConfig: config.capture,
@@ -198,7 +202,11 @@ async function main() {
 
   const sched = startScheduler({
     db: database,
-    runConsolidate: (phase) => factManager.runConsolidate(phase),
+    runConsolidate: (phase) =>
+      factManager.runConsolidate(phase, {
+        trigger: "scheduler",
+        project: process.env.OPENMEMORY_PROJECT ?? null,
+      }),
     threshold: config.consolidation.threshold,
   });
   scheduler = sched;

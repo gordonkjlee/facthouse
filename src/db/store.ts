@@ -21,6 +21,10 @@ import {
   bindDiskBudget,
   parseDiskBudget,
 } from "./disk-budget.js";
+import {
+  bindTokenBudget,
+  parseIntelligenceTokenBudget,
+} from "../intelligence/token-budget.js";
 
 /** Filename of the SQLite file when that engine is selected. One definition. */
 export const SQLITE_MEMORY_FILENAME = "memory.db";
@@ -40,11 +44,13 @@ export async function openStore(
 ): Promise<Db> {
   const provider = configuredStorageProvider(config, env);
   assertSupportedStorage(provider);
+  const tokenBudget = parseIntelligenceTokenBudget(config.intelligence);
   const db =
     provider === "sqlite"
       ? openDatabase(sqliteMemoryPath(dataDir))
       : await connectPostgresOrThrow(env);
   await attachDiskBudget(db, config);
+  bindTokenBudget(db, tokenBudget);
   return db;
 }
 

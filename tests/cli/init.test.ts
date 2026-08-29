@@ -70,6 +70,7 @@ describe("initDataDir", () => {
     // that looks like a shipped default.
     expect(written).not.toHaveProperty("interlocutor");
     expect(written.retention).not.toHaveProperty("disk_budget");
+    expect(written.intelligence).not.toHaveProperty("token_budget");
     expect(written.consolidation.triggers).toBeInstanceOf(Array);
     expect(written.extraction).toHaveProperty("enabled");
     expect(written.retention).toHaveProperty("prune_keep_per_session");

@@ -94,4 +94,11 @@ describe("openStore", () => {
     ).rejects.toThrow(/SQLite was not opened/);
     expect(existsSync(path.join(dir, SQLITE_MEMORY_FILENAME))).toBe(false);
   });
+
+  it("refuses a bare token_budget string without opening sqlite", async () => {
+    const cfg = defaultServerConfig();
+    (cfg.intelligence as { token_budget?: unknown }).token_budget = "2M";
+    await expect(openStore(dir, cfg, {})).rejects.toThrow(/token_budget/);
+    expect(existsSync(path.join(dir, SQLITE_MEMORY_FILENAME))).toBe(false);
+  });
 });

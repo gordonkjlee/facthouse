@@ -313,7 +313,11 @@ export function registerReadTools(
       `broken down by stage and provider for the last 24 hours, all time, and ` +
       `the last few runs. Embeddings are not this number — they are a separate ` +
       `API. Token fields are omitted when the provider did not report them, ` +
-      `not shown as zero.`,
+      `not shown as zero.\n\n` +
+      `\`token_budget\` is remaining room under optional ` +
+      `intelligence.token_budget caps (per billed provider, rolling hour / day / ` +
+      `week / month). Unset means unlimited. Over the cap, consolidate skips ` +
+      `extract, holds the watermark, and does not fall back to the heuristic.`,
     {},
     async () => {
       // Shared with `openmemory stats` so the tool and the CLI can't disagree.

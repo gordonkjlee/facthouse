@@ -97,11 +97,20 @@ import {
   getFactsMissingEmbeddings,
   insertEmbeddings,
 } from "../db/embeddings.js";
-import { insertIntelligenceRun } from "../db/intelligence-runs.js";
+import { insertIntelligenceRun, listIntelligenceRunsSince } from "../db/intelligence-runs.js";
 import {
   takeProviderUsage,
   type IntelligenceUsage,
 } from "./usage.js";
+import { resolveProviderType } from "./provider.js";
+import {
+  getBoundTokenBudget,
+  isBilledProvider,
+  loadRunsForBudget,
+  parseIntelligenceTokenBudget,
+  evaluateTokenBudget,
+  verdictForProvider,
+} from "./token-budget.js";
 
 // ---------------------------------------------------------------------------
 // Result type
@@ -115,6 +124,12 @@ import {
  * compaction is not four `claude -p` stages when D was already examined.
  */
 export type ConsolidatePhase = "extract" | "graduate" | "full";
+
+export interface ConsolidateCaller {
+  trigger?: "mcp" | "cli" | "scheduler" | null;
+  sourceTool?: string | null;
+  project?: string | null;
+}
 
 export interface ConsolidationResult {
   consolidationId: string;
@@ -177,6 +192,7 @@ export async function consolidate(
    */
   embeddingProvider: EmbeddingProvider | null = null,
   phase: ConsolidatePhase = "full",
+  caller: ConsolidateCaller = {},
 ): Promise<ConsolidationResult> {
   const consolidationId = randomUUID();
   const doExtract = phase === "extract" || phase === "full";
@@ -224,10 +240,50 @@ export async function consolidate(
 
   let phaseDCommitted = false;
   const finish = async (result: ConsolidationResult) => {
-    const usage = await persistIntelligenceUsage(db, intelligence, consolidationId);
+    const usage = await persistIntelligenceUsage(
+      db,
+      intelligence,
+      consolidationId,
+      caller,
+    );
     if (usage) result.usage = usage;
     return result;
   };
+
+  const billedType = resolveProviderType(
+    config?.intelligence?.provider ?? "cli",
+  );
+  if (isBilledProvider(billedType) && (doExtract || doGraduate)) {
+    const parsed =
+      getBoundTokenBudget(db) ??
+      parseIntelligenceTokenBudget(config?.intelligence);
+    if (parsed) {
+      const runs = await loadRunsForBudget(
+        (since) => listIntelligenceRunsSince(db, since),
+        parsed,
+      );
+      const report = evaluateTokenBudget(runs, parsed);
+      const verdict = verdictForProvider(report, billedType);
+      if (verdict.skip) {
+        await releaseLock(db, consolidationId);
+        return {
+          consolidationId,
+          factsIn: 0,
+          factsGraduated: 0,
+          factsRejected: 0,
+          entitiesCreated: 0,
+          entitiesLinked: 0,
+          supersessions: 0,
+          summary: null,
+          openThreads: [],
+          skipped: true,
+          skipReason: verdict.reason,
+          examinedThrough: prevWatermark,
+        };
+      }
+    }
+  }
+
   try {
     // Phase B: D→I event extraction (if this run examines events).
     // Session facts land unclaimed so a later graduate-only flush can pick
@@ -886,7 +942,7 @@ export async function consolidate(
     }
     // Release lock on error if not already released
     await releaseLock(db, consolidationId);
-    await persistIntelligenceUsage(db, intelligence, consolidationId);
+    await persistIntelligenceUsage(db, intelligence, consolidationId, caller);
     throw err;
   }
 }
@@ -896,6 +952,7 @@ async function persistIntelligenceUsage(
   db: Db,
   intelligence: IntelligenceProvider,
   consolidationId: string,
+  caller: ConsolidateCaller = {},
 ): Promise<IntelligenceUsage | null> {
   const usage = takeProviderUsage(intelligence);
   if (!usage || usage.calls < 1) return usage;
@@ -904,6 +961,9 @@ async function persistIntelligenceUsage(
       kind: "consolidate",
       consolidationId,
       usage,
+      trigger: caller.trigger ?? null,
+      sourceTool: caller.sourceTool ?? null,
+      project: caller.project ?? null,
     });
   } catch {
     // Spend is derived. A failed insert must not cost graduated facts.

@@ -230,6 +230,19 @@ describe("config loader", () => {
     expect(cfg.retention.disk_budget).toBe("2GB");
     expect(cfg.retention.prune_keep_per_session).toBeNull();
   });
+
+  it("reads optional intelligence.token_budget and leaves it unset otherwise", () => {
+    expect(loadConfig(dir).intelligence.token_budget).toBeUndefined();
+    writeFileSync(
+      path.join(dir, "config.json"),
+      JSON.stringify({
+        intelligence: { token_budget: { cli: { week: "10M" } } },
+      }),
+    );
+    const cfg = loadConfig(dir);
+    expect(cfg.intelligence.token_budget).toEqual({ cli: { week: "10M" } });
+    expect(cfg.intelligence.provider).toBe("cli");
+  });
 });
 
 describe("ensureBitemporalSince", () => {

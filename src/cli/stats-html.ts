@@ -16,6 +16,13 @@ import {
   type SpendDashboard,
   type SpendGrain,
 } from "./spend-dashboard.js";
+import {
+  TOKEN_BUDGET_HOW_TO,
+  TOKEN_WINDOW_LABEL,
+  billedProviderName,
+  forBilledProvider,
+  formatTokenCount,
+} from "../intelligence/token-budget.js";
 import { LEDGER, ledgerSpendCss } from "./inspect-theme.js";
 
 export function spendBucketLabel(day: string, grain: SpendGrain = "day"): string {
@@ -131,6 +138,15 @@ export const SPEND_BOARD_CSS = `
   .spend-board:not(.is-cost) .cost-only { display: none !important; }
   .spend-board.is-cost .catch-only { display: none !important; }
   #om-chart-axis text { font-size: 10px; fill: var(--muted); }
+  .spend-caps { margin: 12px 0 2px; display: flex; flex-direction: column; gap: 10px; }
+  .spend-cap-row { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; }
+  .spend-cap-row .nm { color: var(--muted); font-variant-numeric: tabular-nums; }
+  .spend-cap .track { display: block; height: 10px; margin-top: 6px; background: var(--chip, #2a3126);
+    border-radius: 5px; overflow: hidden; }
+  .spend-cap .fill { display: block; height: 100%; width: 0; max-width: 100%;
+    background: var(--accent); border-radius: 5px; }
+  .spend-cap.is-full .fill { background: var(--warn); }
+  .spend-cap.is-broken .track { opacity: 0.45; }
 `;
 
 function isDashboard(input: SpendDashboard | KnowledgeStats): input is SpendDashboard {
@@ -143,15 +159,16 @@ export function renderSpendBoard(
 ): string {
   const data = isDashboard(input) ? input : spendDashboardFromStats(input);
   const json = JSON.stringify(payloadOf(data, generatedAt)).replace(/</g, "\\u003c");
-  return `<div class="spend-board grain-day" id="om-spend">
+  const startCost = Boolean(data.token_budget?.tightest);
+  return `<div class="spend-board grain-day${startCost ? " is-cost" : ""}" id="om-spend">
 <script type="application/json" id="om-spend-json">${json}</script>
 ${hero(data)}
 <div class="spend-card">
   <div class="spend-toolbar">
     <div class="spend-cluster">
       <div class="spend-seg" id="om-mode" role="group" aria-label="What to show">
-        <button type="button" data-mode="catchup" class="on">Catch-up</button>
-        <button type="button" data-mode="cost">Cost</button>
+        <button type="button" data-mode="catchup"${startCost ? "" : ' class="on"'}>Catch-up</button>
+        <button type="button" data-mode="cost"${startCost ? ' class="on"' : ""}>Cost</button>
       </div>
     </div>
     <span class="spend-split" aria-hidden="true"></span>
@@ -181,7 +198,7 @@ ${hero(data)}
     </div>
     <button type="button" class="grow cost-only" id="om-detail">More detail</button>
   </div>
-  <p class="spend-chart-title" id="om-chart-title">Chat written, and how much is still waiting</p>
+  <p class="spend-chart-title" id="om-chart-title">${startCost ? "Tokens the model read" : "Chat written, and how much is still waiting"}</p>
   <div class="spend-seg catch-only" id="om-catch-metric" role="group" aria-label="Catch-up units" style="margin:0 0 8px">
     <button type="button" data-cmetric="waiting" class="on">Waiting vs read</button>
     <button type="button" data-cmetric="facts">Facts written</button>
@@ -266,6 +283,7 @@ function payloadOf(data: SpendDashboard, generatedAt: Date) {
       topCalls,
     },
     hasTokens,
+    budget: data.token_budget ?? null,
     stages: stages.map((id) => {
       const help = STAGE_HELP[id];
       return {
@@ -302,11 +320,36 @@ function hero(data: SpendDashboard): string {
     : calls === 0
       ? "Quiet day."
       : `${fmtInt(calls)} model uses in the last day.`;
-  const costBody = tokens != null && tokens > 0
-    ? `${fmtInt(calls)} uses. Tokens are the bill — one extract of a long chat dwarfs many small matches. Embeddings (search-by-meaning) are not counted.`
+  const budget = data.token_budget;
+  const tight = budget?.tightest;
+  const unmetered = Boolean(
+    budget?.providers && Object.values(budget.providers).some((p) => p?.unmetered),
+  );
+  const capSpent = Boolean(tight && tight.remaining <= 0);
+  const costWarn = capSpent || unmetered;
+  let costLeadBudget = costLead;
+  let costBody = tokens != null && tokens > 0
+    ? `${fmtInt(calls)} uses in the last 24 hours. Embeddings are not counted.`
     : calls === 0
       ? "No billed consolidation in the last 24 hours."
-      : "The model did not report tokens, so uses (how many times it ran) is what we can show. Embeddings are not counted.";
+      : `The model did not report tokens. ${fmtInt(calls)} uses in the last 24 hours.`;
+  if (unmetered) {
+    costLeadBudget = "Tokens were not reported, so billed extract is paused.";
+    costBody = "";
+  } else if (tight) {
+    const window = TOKEN_WINDOW_LABEL[tight.scale];
+    const forWho = forBilledProvider(tight.provider);
+    if (capSpent) {
+      costLeadBudget = `No room left ${forWho} in the ${window}.`;
+      costBody =
+        "Billed extract is paused until the window ages, or you raise the cap.";
+    } else {
+      costLeadBudget =
+        `${compact(tight.remaining)} of ${compact(tight.cap)} left ${forWho} in the ${window}.`;
+      costBody = "";
+    }
+  }
+  const howTo = budget?.how_to ?? TOKEN_BUDGET_HOW_TO;
   const reclaim = data.reclaimable_events > 0
     ? `<p class="do">${fmtInt(data.reclaimable_events)} old lines can be deleted with prune — dry-run first.</p>`
     : "";
@@ -317,22 +360,55 @@ function hero(data: SpendDashboard): string {
       <p>${esc(catchBody)}</p>
       <p class="do">${esc(catchDo)}</p>
     </div>
-    <div class="spend-hero-card">
+    <div class="spend-hero-card${costWarn ? " warn" : ""}">
       <h2>Cost</h2>
-      <p class="lead">${esc(costLead)}</p>
-      <p>${esc(costBody)}</p>
+      <p class="lead">${esc(costLeadBudget)}</p>
+      ${capMeters(data)}
+      ${costBody ? `<p>${esc(costBody)}</p>` : ""}
+      <p class="do">${howToHtml(howTo)}</p>
       ${reclaim}
     </div>
   </div>`;
 }
 
+function capMeters(data: SpendDashboard): string {
+  const budget = data.token_budget;
+  if (!budget) return "";
+  const rows: string[] = [];
+  for (const [provider, slice] of Object.entries(budget.providers)) {
+    if (!slice) continue;
+    if (slice.unmetered) {
+      rows.push(
+        `<div class="spend-cap is-broken" role="img" aria-label="${esc(billedProviderName(provider))}: tokens were not reported">` +
+          `<div class="spend-cap-row"><span>${esc(billedProviderName(provider))}</span>` +
+          `<span class="nm">not reported</span></div>` +
+          `<span class="track"></span></div>`,
+      );
+      continue;
+    }
+    for (const w of slice.windows) {
+      const pct = w.cap > 0 ? Math.min(100, (100 * w.used) / w.cap) : 0;
+      const full = w.remaining <= 0;
+      const name = `${billedProviderName(provider)}, ${TOKEN_WINDOW_LABEL[w.scale]}`;
+      const used = `${compact(w.used)} of ${compact(w.cap)}`;
+      rows.push(
+        `<div class="spend-cap${full ? " is-full" : ""}" role="img" aria-label="${esc(name)}: ${esc(used)} used">` +
+          `<div class="spend-cap-row"><span>${esc(name)}</span>` +
+          `<span class="nm">${esc(used)}</span></div>` +
+          `<span class="track"><span class="fill" style="width:${pct.toFixed(1)}%"></span></span></div>`,
+      );
+    }
+  }
+  return rows.length ? `<div class="spend-caps">${rows.join("")}</div>` : "";
+}
+
+function howToHtml(text: string): string {
+  return text.split("\n").map((line) => esc(line)).join("<br>");
+}
+
 function compact(n: number | undefined): string {
   if (n == null) return "—";
-  if (n >= 10_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`;
-  if (n >= 10_000) return `${Math.round(n / 1000)}k`;
-  if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
-  return fmtInt(n);
+  return formatTokenCount(n);
 }
 
 function fmtInt(n: number): string {
@@ -366,7 +442,7 @@ const SPEND_BOARD_JS = `(function(){
   var spendBucketLabel = ${spendBucketLabel.toString()};
   var grain = "day";
   var periodByGrain = { day: 14, week: 12, month: 12 };
-  var mode = "catchup";
+  var mode = D.budget && D.budget.tightest ? "cost" : "catchup";
   var metric = D.hasTokens ? "tokens" : "calls";
   var cmetric = "waiting";
   var filter = "all";
@@ -384,13 +460,16 @@ const SPEND_BOARD_JS = `(function(){
   if (tip && tip.parentNode !== document.body) document.body.appendChild(tip);
 
   function fmt(n){ return Math.round(n).toLocaleString("en-GB"); }
+  var formatTokenCount = ${formatTokenCount.toString()};
   function compact(n){
     if (n == null) return "—";
-    if (n >= 10000000) return (n/1000000).toFixed(1) + "M";
-    if (n >= 1000000) return (n/1000000).toFixed(2) + "M";
-    if (n >= 10000) return Math.round(n/1000) + "k";
-    if (n >= 1000) return (n/1000).toFixed(1) + "k";
-    return fmt(n);
+    return formatTokenCount(n);
+  }
+  function whoRan(t){
+    if (t === "cli") return "CLI";
+    if (t === "mcp") return "MCP";
+    if (t === "scheduler") return "scheduler";
+    return "—";
   }
   function niceDay(iso){ return spendBucketLabel(iso, grain); }
   function fmtTime(ms){
@@ -489,7 +568,7 @@ const SPEND_BOARD_JS = `(function(){
     var view = viewDays();
     var w = 720, h = 228, l = 44, r = 10, t = 10, b = 42;
     var iw = w - l - r, ih = h - t - b;
-    var max = 1;
+    var max = 0;
     for (var i = 0; i < view.length; i++) {
       var v = dayValue(view[i]);
       if (v > max) max = v;
@@ -497,11 +576,17 @@ const SPEND_BOARD_JS = `(function(){
     var slot = iw / Math.max(view.length, 1);
     var bw = Math.min(slot * 0.72, grain === "day" ? 26 : 52);
     var svg = "";
-    for (var g = 0; g <= 4; g++){
-      var y = t + ih * g / 4;
-      var lab = Math.round(max * (4 - g) / 4);
-      svg += '<line x1="'+l+'" x2="'+(w-r)+'" y1="'+y+'" y2="'+y+'" stroke="var(--line)"/>';
-      svg += '<text x="'+(l-6)+'" y="'+(y+3)+'" text-anchor="end" fill="var(--muted)" font-size="10">'+axisY(lab)+'</text>';
+    if (max <= 0) {
+      var yZero = t + ih;
+      svg += '<line x1="'+l+'" x2="'+(w-r)+'" y1="'+yZero+'" y2="'+yZero+'" stroke="var(--line)"/>';
+      svg += '<text x="'+(l-6)+'" y="'+(yZero+3)+'" text-anchor="end" fill="var(--muted)" font-size="10">0</text>';
+    } else {
+      for (var g = 0; g <= 4; g++){
+        var y = t + ih * g / 4;
+        var lab = Math.round(max * (4 - g) / 4);
+        svg += '<line x1="'+l+'" x2="'+(w-r)+'" y1="'+y+'" y2="'+y+'" stroke="var(--line)"/>';
+        svg += '<text x="'+(l-6)+'" y="'+(y+3)+'" text-anchor="end" fill="var(--muted)" font-size="10">'+axisY(lab)+'</text>';
+      }
     }
     for (var i = 0; i < view.length; i++){
       var d = view[i];
@@ -697,7 +782,7 @@ const SPEND_BOARD_JS = `(function(){
       runsEl.innerHTML = '<p class="spend-quiet">No model run in this bar.</p>';
       return;
     }
-    var html = '<table><thead><tr><th>When</th><th></th><th>Tokens in</th><th>Out</th><th>Uses</th><th>Time</th><th>What ran</th></tr></thead><tbody>';
+    var html = '<table><thead><tr><th>When</th><th>Who</th><th></th><th>Tokens in</th><th>Out</th><th>Uses</th><th>Time</th><th>What ran</th></tr></thead><tbody>';
     list.forEach(function(r){
       var bits = [];
       Object.keys(r.stages || {}).forEach(function(k){
@@ -712,6 +797,7 @@ const SPEND_BOARD_JS = `(function(){
         bits.push((help ? help.title : k)+" "+amt+" ("+who+")");
       });
       html += '<tr><td>'+r.created_at.replace("T"," ").replace(".000Z"," UTC").replace("Z"," UTC")+'</td>'+
+        '<td>'+whoRan(r.trigger)+'</td>'+
         '<td><span class="pill">'+r.kind+'</span></td>'+
         '<td class="num">'+(r.input_tokens == null ? "—" : compact(r.input_tokens))+'</td>'+
         '<td class="num">'+(r.output_tokens == null ? "—" : compact(r.output_tokens))+'</td>'+
@@ -751,6 +837,9 @@ const SPEND_BOARD_JS = `(function(){
     }
     var det = document.getElementById("om-detail");
     if (det) det.classList.toggle("on", detail);
+    document.querySelectorAll("#om-mode button").forEach(function(x){
+      x.classList.toggle("on", x.getAttribute("data-mode") === mode);
+    });
     document.querySelectorAll("#om-grain button").forEach(function(x){
       x.classList.toggle("on", x.getAttribute("data-grain") === grain);
     });

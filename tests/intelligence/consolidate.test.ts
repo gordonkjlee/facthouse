@@ -17,7 +17,10 @@ const { ensureDomain } = await import("../../src/db/domains.js");
 const { getFactsMissingEmbeddings, countEmbeddings } = await import("../../src/db/embeddings.js");
 const { consolidate } = await import("../../src/intelligence/consolidate.js");
 const { createHeuristicProvider } = await import("../../src/intelligence/heuristic.js");
-const { listIntelligenceRuns } = await import("../../src/db/intelligence-runs.js");
+const { insertIntelligenceRun, listIntelligenceRuns } = await import(
+  "../../src/db/intelligence-runs.js"
+);
+const { extractWatermark } = await import("../../src/db/extract-watermarks.js");
 const { UsageAccumulator } = await import("../../src/intelligence/usage.js");
 import { PERSONAL_VOCABULARY } from "../fixtures/vocabulary.js";
 
@@ -160,7 +163,9 @@ describe("consolidation pipeline", () => {
       session_id: sessionId,
       content: "The user prefers oat milk in coffee",
     });
-    const result = await consolidate(db, provider);
+    const result = await consolidate(db, provider, undefined, null, "full", {
+      trigger: "cli",
+    });
     expect(result.usage?.stages.classify.calls).toBe(1);
     expect(result.usage?.stages.classify.provider).toBe("cli");
     expect(result.usage?.stages.classify.model).toBe("haiku");
@@ -170,6 +175,7 @@ describe("consolidation pipeline", () => {
     expect(rows[0].kind).toBe("consolidate");
     expect(rows[0].usage.stages.classify.calls).toBe(1);
     expect(rows[0].consolidation_id).toBe(result.consolidationId);
+    expect(rows[0].trigger).toBe("cli");
   });
 
   it("graduates a stated valid_from_hint and leaves an untimed fact undated", async () => {
@@ -1399,3 +1405,275 @@ describe("extract and graduate can run separately", () => {
     expect(staged[0].consolidation_id).toBe(result.consolidationId);
   });
 });
+
+describe("token budget gate", () => {
+  const prevProvider = process.env.OPENMEMORY_PROVIDER;
+
+  beforeEach(() => {
+    delete process.env.OPENMEMORY_PROVIDER;
+  });
+
+  afterEach(() => {
+    if (prevProvider === undefined) delete process.env.OPENMEMORY_PROVIDER;
+    else process.env.OPENMEMORY_PROVIDER = prevProvider;
+  });
+
+  function extractingSpy() {
+    let calls = 0;
+    const acc = new UsageAccumulator({ provider: "cli", model: "haiku" });
+    const provider = {
+      ...createHeuristicProvider(PERSONAL_VOCABULARY),
+      async extractFactsFromEvents() {
+        calls += 1;
+        acc.record("extract", {
+          input_tokens: 80,
+          output_tokens: 20,
+          elapsed_ms: 10,
+        });
+        return {
+          facts: [
+            {
+              content: "The user prefers dark roast coffee",
+              domain_hint: "preferences",
+            },
+          ],
+          degraded: false,
+        };
+      },
+      takeUsage() {
+        return acc.take();
+      },
+    };
+    return {
+      provider,
+      get calls() {
+        return calls;
+      },
+    };
+  }
+
+  function cliConfig(
+    token_budget: Record<string, Record<string, string | number>>,
+  ) {
+    return {
+      extraction: { enabled: true } as never,
+      intelligence: {
+        provider: "cli" as const,
+        api_key: null,
+        token_budget,
+      },
+    };
+  }
+
+  async function seedEvent(): Promise<void> {
+    const sessionId = await setupSession();
+    await insertEvent(db, {
+      mcp_session_id: sessionId,
+      event_type: "message",
+      role: "user",
+      content: "The user prefers dark roast coffee in the morning",
+    });
+  }
+
+  async function seedCliRun(opts: {
+    tokens?: number;
+    unmetered?: boolean;
+    createdAt?: string;
+    provider?: string;
+  }): Promise<void> {
+    const provider = opts.provider ?? "cli";
+    const stage = opts.unmetered
+      ? { provider, model: "haiku", calls: 1, elapsed_ms: 10 }
+      : {
+          provider,
+          model: "haiku",
+          calls: 1,
+          elapsed_ms: 10,
+          input_tokens: opts.tokens ?? 100,
+          output_tokens: 0,
+        };
+    await insertIntelligenceRun(db, {
+      kind: "consolidate",
+      usage: {
+        calls: 1,
+        elapsed_ms: 10,
+        stages: { extract: stage },
+        ...(opts.unmetered
+          ? {}
+          : { input_tokens: opts.tokens ?? 100, output_tokens: 0 }),
+      },
+      createdAt: opts.createdAt ?? new Date().toISOString(),
+    });
+  }
+
+  it("skips extract at the week cap, holds the watermark, and does not heuristic-extract", async () => {
+    await seedEvent();
+    await seedCliRun({ tokens: 100 });
+    const spy = extractingSpy();
+    const mark = await extractWatermark(db);
+    const result = await consolidate(
+      db,
+      spy.provider as never,
+      cliConfig({ cli: { week: "100" } }),
+    );
+    expect(spy.calls).toBe(0);
+    expect(result.skipped).toBe(true);
+    expect(result.skipReason).toMatch(/CLI/);
+    expect(result.skipReason).toMatch(/last 7 days/);
+    expect(result.skipReason).toMatch(/100/);
+    expect(await extractWatermark(db)).toBe(mark);
+    expect(await listIntelligenceRuns(db)).toHaveLength(1);
+  });
+
+  it("still extracts when no token_budget is set", async () => {
+    await seedEvent();
+    await seedCliRun({ tokens: 9_000_000 });
+    const spy = extractingSpy();
+    const result = await consolidate(
+      db,
+      spy.provider as never,
+      {
+        extraction: { enabled: true } as never,
+        intelligence: { provider: "cli", api_key: null },
+      },
+    );
+    expect(result.skipped).toBe(false);
+    expect(spy.calls).toBe(1);
+  });
+
+  it("skips billed graduate and leaves pending I", async () => {
+    const sessionId = await setupSession();
+    await insertSessionFact(db, {
+      session_id: sessionId,
+      content: "The user prefers oat milk in coffee",
+      domain_hint: "preferences",
+    });
+    await seedCliRun({ tokens: 100 });
+    const spy = extractingSpy();
+    const result = await consolidate(
+      db,
+      spy.provider as never,
+      cliConfig({ cli: { week: "100" } }),
+      null,
+      "graduate",
+    );
+    expect(result.skipped).toBe(true);
+    expect(spy.calls).toBe(0);
+    const pending = (await db
+      .prepare(
+        `SELECT COUNT(*) AS n FROM session_facts WHERE consolidation_id IS NULL`,
+      )
+      .get()) as { n: number };
+    expect(pending.n).toBe(1);
+  });
+
+  it("lets this run finish past the cap and skips the next tick", async () => {
+    await seedEvent();
+    const spy = extractingSpy();
+    const first = await consolidate(
+      db,
+      spy.provider as never,
+      cliConfig({ cli: { week: "50" } }),
+    );
+    expect(first.skipped).toBe(false);
+    expect(spy.calls).toBe(1);
+    expect(first.usage?.input_tokens).toBe(80);
+    const second = await consolidate(
+      db,
+      spy.provider as never,
+      cliConfig({ cli: { week: "50" } }),
+    );
+    expect(second.skipped).toBe(true);
+    expect(spy.calls).toBe(1);
+    expect(second.skipReason).toMatch(/last 7 days/);
+  });
+
+  it("skips cli after an unmetered billed run even when the numeric sum is 0", async () => {
+    await seedEvent();
+    await seedCliRun({ unmetered: true });
+    const spy = extractingSpy();
+    const result = await consolidate(
+      db,
+      spy.provider as never,
+      cliConfig({ cli: { week: "10M" } }),
+    );
+    expect(result.skipped).toBe(true);
+    expect(result.skipReason).toMatch(/without reporting tokens/);
+    expect(spy.calls).toBe(0);
+  });
+
+  it("does not count usage older than the rolling week", async () => {
+    await seedEvent();
+    await seedCliRun({
+      tokens: 100,
+      createdAt: new Date(Date.now() - 8 * 24 * 60 * 60 * 1000).toISOString(),
+    });
+    const spy = extractingSpy();
+    const result = await consolidate(
+      db,
+      spy.provider as never,
+      cliConfig({ cli: { week: "100" } }),
+    );
+    expect(result.skipped).toBe(false);
+    expect(spy.calls).toBe(1);
+  });
+
+  it("still extracts sampling when only cli is at cap", async () => {
+    await seedEvent();
+    await seedCliRun({ tokens: 100 });
+    const spy = extractingSpy();
+    const result = await consolidate(
+      db,
+      spy.provider as never,
+      {
+        extraction: { enabled: true } as never,
+        intelligence: {
+          provider: "sampling",
+          api_key: null,
+          token_budget: { cli: { week: "100" } },
+        },
+      },
+    );
+    expect(result.skipped).toBe(false);
+    expect(spy.calls).toBe(1);
+  });
+
+  it("stamps mcp versus cli without splitting the pot", async () => {
+    await seedEvent();
+    await insertIntelligenceRun(db, {
+      kind: "consolidate",
+      usage: {
+        calls: 1,
+        elapsed_ms: 10,
+        input_tokens: 60,
+        output_tokens: 0,
+        stages: {
+          extract: {
+            provider: "cli",
+            model: "haiku",
+            calls: 1,
+            elapsed_ms: 10,
+            input_tokens: 60,
+            output_tokens: 0,
+          },
+        },
+      },
+      trigger: "mcp",
+    });
+    const spy = extractingSpy();
+    const result = await consolidate(
+      db,
+      spy.provider as never,
+      cliConfig({ cli: { week: "100" } }),
+      null,
+      "full",
+      { trigger: "cli" },
+    );
+    expect(result.skipped).toBe(false);
+    expect(spy.calls).toBe(1);
+    const rows = await listIntelligenceRuns(db);
+    expect(rows.some((r) => r.trigger === "mcp")).toBe(true);
+    expect(rows.some((r) => r.trigger === "cli")).toBe(true);
+  });
+});
+

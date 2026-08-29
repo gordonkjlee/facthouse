@@ -676,7 +676,13 @@ export async function consolidateInProcess(
 
   try {
     await applySchema(db);
-    const result = await consolidate(db, provider, config, embedding, phase);
+    const result = await consolidate(db, provider, config, embedding, phase, {
+      trigger: "cli",
+      project: process.env.OPENMEMORY_PROJECT ?? null,
+    });
+    if (result.skipped && result.skipReason) {
+      console.error(`[openmemory] ${result.skipReason}`);
+    }
     if (result.extractionDegraded) {
       if (result.prefixCommitted) {
         console.error(

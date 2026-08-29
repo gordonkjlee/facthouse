@@ -49,6 +49,9 @@ export interface IntelligenceRunSummary {
   output_tokens?: number;
   elapsed_ms: number;
   stages: Record<string, StageUsage>;
+  trigger?: string | null;
+  source_tool?: string | null;
+  project?: string | null;
 }
 
 export interface IntelligenceSpendStats {
@@ -63,6 +66,9 @@ export interface StoredIntelligenceRun {
   consolidation_id: string | null;
   created_at: string;
   usage: IntelligenceUsage;
+  trigger?: string | null;
+  source_tool?: string | null;
+  project?: string | null;
 }
 
 const STAGE_ALIASES: Record<string, string> = {
@@ -240,6 +246,9 @@ function asSummary(run: StoredIntelligenceRun): IntelligenceRunSummary {
     calls: run.usage.calls,
     elapsed_ms: run.usage.elapsed_ms,
     stages: run.usage.stages,
+    trigger: run.trigger ?? null,
+    source_tool: run.source_tool ?? null,
+    project: run.project ?? null,
   };
   if (run.usage.input_tokens != null) summary.input_tokens = run.usage.input_tokens;
   if (run.usage.output_tokens != null) summary.output_tokens = run.usage.output_tokens;
