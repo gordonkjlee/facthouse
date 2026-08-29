@@ -259,8 +259,27 @@ export async function deleteSameAs(
 }
 
 /**
+ * The said-rule pair: two stored canonicals, one name-fold, one type-fold.
+ * Contrast sentences still match — accepted false-positive of the said rule.
+ */
+export function isSaidFoldIdentityPair(left: Entity, right: Entity): boolean {
+  if (left.canonical_name === right.canonical_name) return false;
+  const foldL = foldEntityToken(left.canonical_name);
+  const foldR = foldEntityToken(right.canonical_name);
+  if (!foldL || foldL !== foldR) return false;
+  const typeL = foldEntityToken(left.type);
+  const typeR = foldEntityToken(right.type);
+  return Boolean(typeL && typeL === typeR);
+}
+
+/**
  * If one fact linked two entities whose names fold together but were stored
  * as two canonicals, they are a fail-closed C pair that speech just unified.
+ *
+ * Same type-fold is required: a ticket and a person that punctuation-fold
+ * are not a spelling variant. Contrast sentences ("mr !412 was replaced by
+ * mr 412") still fire — that is the said-rule's accepted false-positive;
+ * similar facts alone still write nothing.
  */
 export async function recordSameAsForLinkedFoldPair(
   db: Db,
@@ -270,13 +289,30 @@ export async function recordSameAsForLinkedFoldPair(
     for (let j = i + 1; j < entities.length; j++) {
       const left = entities[i]!;
       const right = entities[j]!;
-      if (left.canonical_name === right.canonical_name) continue;
-      const foldL = foldEntityToken(left.canonical_name);
-      const foldR = foldEntityToken(right.canonical_name);
-      if (!foldL || foldL !== foldR) continue;
+      if (!isSaidFoldIdentityPair(left, right)) continue;
       await recordSameAs(db, left.id, right.id);
     }
   }
+}
+
+/**
+ * Stored name for a new type-sibling. Prefer the incoming exact spelling
+ * when that canonical is already in the family; otherwise the unique C-fold
+ * seed. Never an alias reached only through `same_as` — that would mint
+ * Alexander/project from a write that said Alex.
+ */
+function spellingForNewSibling(incomingName: string, family: Entity[]): string {
+  const incomingCanon = storedCanonicalName(incomingName);
+  const exact = family.find((e) => e.canonical_name === incomingCanon);
+  if (exact) return exact.name;
+  const incomingFold = foldEntityToken(incomingName);
+  if (incomingFold) {
+    const folded = family.find(
+      (e) => foldEntityToken(e.canonical_name) === incomingFold,
+    );
+    if (folded) return folded.name;
+  }
+  return family[0]!.name;
 }
 
 /** Find an entity by exact canonical name. No normalisation applied — caller must lowercase/trim.
@@ -340,8 +376,10 @@ export async function findOrCreateEntity(
     const family = await resolveEntityFamily(db, entity.name);
     if (family.length > 0) {
       const exactType = family.filter((e) => e.type === entity.type);
-      if (exactType.length === 1) {
-        return { entity: exactType[0]!, created: false };
+      if (exactType.length > 0) {
+        const incomingCanon = storedCanonicalName(entity.name);
+        const sameCanon = exactType.find((e) => e.canonical_name === incomingCanon);
+        return { entity: sameCanon ?? exactType[0]!, created: false };
       }
 
       const typeFold = foldEntityToken(entity.type);
@@ -361,10 +399,9 @@ export async function findOrCreateEntity(
         }
       }
 
-      const oldest = family[0]!;
       const created = await createEntity(db, {
         type: entity.type,
-        name: oldest.name,
+        name: spellingForNewSibling(entity.name, family),
         metadata: entity.metadata,
       });
       return { entity: created, created: true };

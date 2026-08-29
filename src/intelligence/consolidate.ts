@@ -71,10 +71,12 @@ import {
   findOrCreateEntity,
   resolveEntityFamily,
   foldEntityToken,
+  storedCanonicalName,
   getEntityById,
   linkFactEntity,
   upsertEntityEdge,
   recordSameAsForLinkedFoldPair,
+  isSaidFoldIdentityPair,
   ensureSelfEntity,
   SUBJECT_OF,
   listEntityTypes,
@@ -146,6 +148,18 @@ export interface ConsolidationResult {
    * rather than zero when the provider did not send usage.
    */
   usage?: IntelligenceUsage;
+}
+
+/**
+ * Named speaker is source. After `same_as`, the family can hold several
+ * person rows that are one identity — still link, preferring the row whose
+ * stored name matches the speaker string. No person in the family: do not
+ * guess (leave unlinked). Do not mint from a display name.
+ */
+function pickUtteredByPerson(persons: Entity[], speakerName: string): Entity | null {
+  if (persons.length === 0) return null;
+  const canon = storedCanonicalName(speakerName);
+  return persons.find((e) => e.canonical_name === canon) ?? persons[0]!;
 }
 
 // ---------------------------------------------------------------------------
@@ -635,9 +649,13 @@ export async function consolidate(
 
           // Create entity-entity edges for co-occurring entities (using cached IDs).
           // co_mentioned is undirected — canonicalise by putting smaller id first
-          // so (A, B) and (B, A) collapse to one row.
+          // so (A, B) and (B, A) collapse to one row. Skip a pair that the said
+          // rule just united: identity is not co-mention.
           for (let i = 0; i < resolvedIds.length; i++) {
             for (let j = i + 1; j < resolvedIds.length; j++) {
+              if (isSaidFoldIdentityPair(resolvedEntities[i]!, resolvedEntities[j]!)) {
+                continue;
+              }
               const [a, b] = resolvedIds[i] < resolvedIds[j]
                 ? [resolvedIds[i], resolvedIds[j]]
                 : [resolvedIds[j], resolvedIds[i]];
@@ -668,8 +686,9 @@ export async function consolidate(
           const persons = family.filter(
             (e) => foldEntityToken(e.type) === "person",
           );
-          if (persons.length === 1) {
-            await linkFactEntity(db, graduatedFact.id, persons[0]!.id, UTTERED_BY);
+          const speakerEntity = pickUtteredByPerson(persons, sessionFact.speaker);
+          if (speakerEntity) {
+            await linkFactEntity(db, graduatedFact.id, speakerEntity.id, UTTERED_BY);
             entitiesLinked++;
           }
         } else if (sessionFact.speaker_role === "user") {

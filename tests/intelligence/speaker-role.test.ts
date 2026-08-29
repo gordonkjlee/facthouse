@@ -13,7 +13,7 @@ import {
   speakerRoleOf,
   UTTERED_BY,
 } from "../../src/db/session-facts.js";
-import { createEntity, findEntity } from "../../src/db/entities.js";
+import { createEntity, findEntity, recordSameAs } from "../../src/db/entities.js";
 import { consolidate } from "../../src/intelligence/consolidate.js";
 import { createHeuristicProvider } from "../../src/intelligence/heuristic.js";
 import { DEFAULT_CONFIG } from "../../src/types/config.js";
@@ -210,6 +210,33 @@ describe("extract stamps speaker_role from the primary event", () => {
       .get(project.id, GRAIN)) as { relationship: string } | undefined;
     expect(onPerson?.relationship).toBe(UTTERED_BY);
     expect(onProject).toBeUndefined();
+  });
+
+  it("links uttered_by after same_as of two person names", async () => {
+    const session = await createSession(db, { source_tool: "test", project: null });
+    const alexander = await createEntity(db, { type: "person", name: "Alexander" });
+    const alex = await createEntity(db, { type: "person", name: "Alex" });
+    await recordSameAs(db, alexander.id, alex.id);
+    await insertEvent(db, {
+      mcp_session_id: session.id,
+      event_type: "message",
+      role: "user",
+      content: GRAIN,
+      speaker: "Alex",
+    });
+    await consolidate(db, recording([{ content: GRAIN }]) as never, {
+      extraction: { ...DEFAULT_CONFIG.extraction, enabled: true } as never,
+    });
+    const onAlex = (await db
+      .prepare(
+        `SELECT fe.relationship
+           FROM fact_entities fe
+           JOIN facts f ON f.id = fe.fact_id
+          WHERE fe.entity_id = ? AND f.content = ?`,
+      )
+      .get(alex.id, GRAIN)) as { relationship: string } | undefined;
+    expect(onAlex).toBeDefined();
+    expect(onAlex!.relationship).toBe(UTTERED_BY);
   });
 
   it("does not tag a project as speaker when no person exists", async () => {

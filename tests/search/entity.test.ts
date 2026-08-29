@@ -3,7 +3,7 @@ import type { Db } from "../../src/db/connection.js";
 
 const dbMod = await import("../../src/db/index.js");
 const { getTopicContext, lookupNamedSubject } = await import("../../src/search/entity.js");
-const { SUBJECT_OF, upsertEntityEdge } = await import("../../src/db/entities.js");
+const { SUBJECT_OF, SAME_AS, upsertEntityEdge } = await import("../../src/db/entities.js");
 
 let db: Db;
 
@@ -228,11 +228,32 @@ describe("lookupNamedSubject", () => {
     });
     await dbMod.linkFactEntity(db, aboutBang.id, bang.id, SUBJECT_OF);
     await dbMod.recordSameAs(db, bang.id, space.id);
+    const [from, to] = bang.id < space.id ? [bang.id, space.id] : [space.id, bang.id];
+    await upsertEntityEdge(db, from, to, "co_mentioned");
+    const robin = await dbMod.createEntity(db, { type: "person", name: "Robin" });
+    const aboutRobin = await dbMod.insertFact(db, {
+      content: "Robin owns the bang ticket",
+      domain: "work",
+      source_type: "conversation",
+    });
+    await dbMod.linkFactEntity(db, aboutRobin.id, robin.id, SUBJECT_OF);
+    const [fromRobin, toRobin] =
+      bang.id < robin.id ? [bang.id, robin.id] : [robin.id, bang.id];
+    await upsertEntityEdge(db, fromRobin, toRobin, "co_mentioned");
 
     const lookup = await lookupNamedSubject(db, "mr 412");
     expect(lookup.found).toBe(true);
     expect(lookup.entities.map((e) => e.id).sort()).toEqual([bang.id, space.id].sort());
     expect(lookup.facts.map((f) => f.id)).toContain(aboutBang.id);
+    expect(lookup.relationships.some((e) => e.relationship === SAME_AS)).toBe(true);
+
+    const context = await getTopicContext(db, "mr 412");
+    expect(context.connected.every((c) => c.relationship !== SAME_AS)).toBe(true);
+    expect(context.connected.map((c) => c.entity_name)).not.toContain("mr !412");
+    expect(context.connected.map((c) => c.entity_name)).not.toContain("mr 412");
+    const robinHop = context.connected.find((c) => c.entity_name === "Robin");
+    expect(robinHop).toBeDefined();
+    expect(robinHop!.relationship).toBe("co_mentioned");
   });
 
   it("unions two Alexes of different types without dropping either", async () => {

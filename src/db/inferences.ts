@@ -17,7 +17,10 @@ import type { Fact, Inference, InferenceStatus } from "../types/data.js";
 export interface NewInference {
   hypothesis: string;
   evidence_fact_ids: string[];
-  /** Exactly two existing entity ids, or omit. */
+  /**
+   * Identity pair only. Confirm writes `same_as`. Not a slot for colleague /
+   * subset-of / other typed links — those need their own field later.
+   */
   entity_ids?: string[];
 }
 
