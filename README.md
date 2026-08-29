@@ -220,7 +220,19 @@ Set `temporal.mode` to `bitemporal` to record when the system retracted a belief
 
 ### Intelligence spend
 
-`openmemory stats` and `get_stats` report billed consolidation calls: tokens, elapsed time, and the provider plus model on each stage (extract, classify, entities, reconcile, supersede, summarise). A run that did not report tokens omits those fields rather than showing zero. Embeddings are a different API and are not this number. There is no token cap yet; the figure is there so you can see what extract actually costs.
+`openmemory stats` and `get_stats` report billed consolidation calls: tokens, elapsed time, and the provider plus model on each stage (extract, classify, entities, reconcile, supersede, summarise). A run that did not report tokens omits those fields rather than showing zero. Embeddings are a different API and are not this number.
+
+Optional `intelligence.token_budget` caps billed extract per provider on rolling windows. Unset is unlimited. Over the cap, consolidate skips extract, holds the watermark, and does not fall back to the heuristic.
+
+```json
+"intelligence": {
+  "token_budget": {
+    "cli": { "week": "10M" }
+  }
+}
+```
+
+`hour`, `day`, `week`, and `month` are rolling. Omit a scale to leave it unlimited. Remaining room is on `openmemory stats`, `get_stats`, and inspect Spend. Set the cap in this store's `config.json` — there is no budget command.
 
 ### CLI demo (no transcript source)
 

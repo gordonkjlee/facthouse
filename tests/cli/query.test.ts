@@ -338,4 +338,46 @@ describe("formatStats", () => {
     expect(out).toContain("cli");
     expect(out).toContain("extract×2 (cli/haiku)");
   });
+
+  it("prints how to set a token budget when none is configured", () => {
+    const out = formatStats(stats({ facts: { active_latest: 4, total: 4 } }));
+    expect(out).toContain("Token budget");
+    expect(out).toContain('"week": "10M"');
+    expect(out).toContain("config.json");
+  });
+
+  it("prints remaining room then the one-line how-to when a cap is set", () => {
+    const out = formatStats(
+      stats({
+        facts: { active_latest: 4, total: 4 },
+        token_budget: {
+          how_to: "Edit token_budget in this store's config.json.",
+          tightest: {
+            provider: "cli",
+            scale: "week",
+            used: 1_000_000,
+            cap: 10_000_000,
+            remaining: 9_000_000,
+          },
+          providers: {
+            cli: {
+              unmetered: false,
+              windows: [
+                {
+                  scale: "week",
+                  used: 1_000_000,
+                  cap: 10_000_000,
+                  remaining: 9_000_000,
+                },
+              ],
+            },
+          },
+        },
+      }),
+    );
+    expect(out).toContain("CLI, last 7 days");
+    expect(out).not.toContain("cli week");
+    expect(out).toContain("9,000,000 left");
+    expect(out).toContain("Edit token_budget in this store's config.json.");
+  });
 });

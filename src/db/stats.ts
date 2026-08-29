@@ -10,11 +10,17 @@ import { prunableEvents } from "./prune.js";
 import { getBoundDiskBudget, keepPerSessionOf, storeBytes } from "./disk-budget.js";
 import { extractWatermark, unexaminedEventCount } from "./extract-watermarks.js";
 import { currencyClause } from "./facts.js";
-import { listIntelligenceRuns } from "./intelligence-runs.js";
+import { listIntelligenceRuns, listIntelligenceRunsSince } from "./intelligence-runs.js";
 import {
   rollupRuns,
   type IntelligenceSpendStats,
 } from "../intelligence/usage.js";
+import {
+  evaluateTokenBudget,
+  getBoundTokenBudget,
+  loadRunsForBudget,
+  type TokenBudgetReport,
+} from "../intelligence/token-budget.js";
 
 export interface KnowledgeStats {
   facts: {
@@ -74,6 +80,8 @@ export interface KnowledgeStats {
    * did not report them.
    */
   intelligence: IntelligenceSpendStats;
+  /** Remaining token budget when `intelligence.token_budget` is set. */
+  token_budget?: TokenBudgetReport;
   /**
    * CLI-only: whether a scheduler is bound for this data dir. MCP `get_stats`
    * omits it — the process answering the tool *is* the listener.
@@ -152,5 +160,18 @@ export async function getStats(db: Db): Promise<KnowledgeStats> {
       `SELECT COUNT(*) as count FROM session_facts WHERE consolidation_id IS NULL`,
     ),
     intelligence: rollupRuns(await listIntelligenceRuns(db)),
+    ...(await tokenBudgetStats(db)),
   };
+}
+
+async function tokenBudgetStats(
+  db: Db,
+): Promise<{ token_budget?: TokenBudgetReport }> {
+  const parsed = getBoundTokenBudget(db);
+  if (!parsed) return {};
+  const runs = await loadRunsForBudget(
+    (since) => listIntelligenceRunsSince(db, since),
+    parsed,
+  );
+  return { token_budget: evaluateTokenBudget(runs, parsed) };
 }

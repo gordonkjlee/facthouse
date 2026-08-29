@@ -141,7 +141,9 @@ describe("renderSpendBoard", () => {
     expect(html).not.toContain("Unextracted events");
     expect(html).not.toContain("Pending I");
     expect(html).not.toContain("Hover a stage to see");
-    expect(html).toContain("Tokens are the bill");
+    expect(html).toContain("uses in the last 24 hours");
+    expect(html).toContain("Embeddings are not counted");
+    expect(html).not.toContain("Tokens are the bill");
     expect(html).toContain('"hasTokens":true');
     expect(html).toContain('metric = D.hasTokens ? "tokens" : "calls"');
     expect(html).toContain('id="om-catch-metric"');
@@ -160,10 +162,108 @@ describe("renderSpendBoard", () => {
     expect(html).toContain("Each model run in this bar");
     expect(html).toContain("function spendBucketKey");
     expect(html).toContain("function rollSpendDays");
+    expect(html).toContain("token_budget");
+    expect(html).toContain("10M");
+    expect(html).toContain("config.json");
+    expect(html).not.toContain("spend-caps");
+    expect(html).toContain('data-mode="catchup" class="on"');
+  });
+
+  it("leads Cost with remaining room and the set-cap how-to", () => {
+    const html = renderSpendBoard(
+      stats({
+        facts: { active_latest: 1, total: 1 },
+        token_budget: {
+          how_to: "Edit token_budget in this store's config.json.",
+          tightest: {
+            provider: "cli",
+            scale: "week",
+            used: 2_000_000,
+            cap: 10_000_000,
+            remaining: 8_000_000,
+          },
+          providers: {
+            cli: {
+              unmetered: false,
+              windows: [
+                {
+                  scale: "week",
+                  used: 2_000_000,
+                  cap: 10_000_000,
+                  remaining: 8_000_000,
+                },
+              ],
+            },
+          },
+        },
+      }),
+    );
+    expect(html).toContain("left for the CLI in the last 7 days");
+    expect(html).not.toContain("cli week");
+    expect(html).toContain("Edit token_budget");
+    expect(html).toContain("config.json");
+    expect(html).toContain("spend-caps");
+    expect(html).toContain("CLI, last 7 days");
+    expect(html).toContain("8M of 10M left for the CLI in the last 7 days");
+    expect(html).toContain("2M of 10M");
+    expect(html).toContain("width:20.0%");
+    expect(html).not.toContain("uses in the last 24 hours");
+    expect(html).toContain("is-cost");
+    expect(html).toContain("Tokens the model read");
+    expect(html).toContain('data-mode="cost" class="on"');
+  });
+
+  it("warns when the cap is spent and says extract is paused", () => {
+    const html = renderSpendBoard(
+      stats({
+        facts: { active_latest: 1, total: 1 },
+        token_budget: {
+          how_to: "Edit token_budget in this store's config.json.",
+          tightest: {
+            provider: "cli",
+            scale: "week",
+            used: 10_000_000,
+            cap: 10_000_000,
+            remaining: 0,
+          },
+          providers: {
+            cli: {
+              unmetered: false,
+              windows: [
+                {
+                  scale: "week",
+                  used: 10_000_000,
+                  cap: 10_000_000,
+                  remaining: 0,
+                },
+              ],
+            },
+          },
+        },
+      }),
+    );
+    expect(html).toContain("No room left for the CLI in the last 7 days");
+    expect(html).toContain("Billed extract is paused");
+    expect(html).toContain("spend-hero-card warn");
+    expect(html).toContain("is-full");
+    expect(html).toContain("width:100.0%");
+  });
+
+  it("plots an empty chart against 0, not 1", () => {
+    const html = renderSpendBoard(stats());
+    expect(html).toContain("var max = 0");
+    expect(html).toContain("if (max <= 0)");
+  });
+
+  it("names who invoked each run in More detail", () => {
+    const html = renderSpendBoard(stats());
+    expect(html).toContain("<th>Who</th>");
+    expect(html).toContain("whoRan(r.trigger)");
   });
 
   it("fills stage bars as a block so width is the share of that day's metric", () => {
     expect(SPEND_BOARD_CSS).toContain(".spend-stage .fill { display: block");
+    expect(SPEND_BOARD_CSS).toContain(".spend-cap .fill { display: block");
     expect(SPEND_BOARD_CSS).toContain("width: 0");
     expect(SPEND_BOARD_CSS).toContain(".spend-board:not(.is-cost) #om-detail");
     expect(SPEND_BOARD_CSS).toContain(".spend-split");

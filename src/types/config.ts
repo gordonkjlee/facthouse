@@ -135,6 +135,12 @@ export interface IntelligenceConfig {
   api_key: string | null;
   /** Options for the 'cli' provider. */
   cli?: CliProviderConfig;
+  /**
+   * Optional per-provider token caps. Omit / null = unlimited. Object keyed
+   * by billed provider then rolling window (`hour` / `day` / `week` / `month`).
+   * A bare string is invalid.
+   */
+  token_budget?: Record<string, Record<string, string | number>> | null;
 }
 
 /** Consolidation trigger configuration. */

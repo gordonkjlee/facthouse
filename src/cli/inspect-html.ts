@@ -147,9 +147,12 @@ ${ledgerInspectCss()}
   .dock-ico.top::after { left: 0; right: 0; top: 0; height: 38%; }
   .views { display: flex; gap: 4px; }
   .view-btn.on { border-color: var(--accent); color: var(--accent); }
-  html.view-spend #stage { display: none; }
-  html.view-spend #spend { display: block; }
-  html.view-spend .graph-only { display: none; }
+  html.view-spend #stage,
+  html:has(#spend:target) #stage { display: none; }
+  html.view-spend #spend,
+  #spend:target { display: block; }
+  html.view-spend .graph-only,
+  html:has(#spend:target) .graph-only { display: none; }
   #stage, #spend { grid-row: 2; min-height: 0; }
   #spend {
     display: none; overflow: auto; padding: 20px 24px 48px;
@@ -227,6 +230,9 @@ function setInspectView(v){
 }
 document.querySelectorAll(".view-btn").forEach(function(b){
   b.addEventListener("click", function(){ setInspectView(b.getAttribute("data-view")); });
+});
+window.addEventListener("hashchange", function(){
+  setInspectView(location.hash==="#spend" ? "spend" : "graph");
 });
 if (location.hash==="#spend") setInspectView("spend");
 const SUBJECT = "subject_of";

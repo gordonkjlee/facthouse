@@ -185,6 +185,8 @@ describe("inspect graph HTML", () => {
     expect(html).toContain("spend-board");
     expect(html).toContain("Catch-up");
     expect(html).toContain("More detail");
+    expect(html).toContain("#spend:target");
+    expect(html).toContain("hashchange");
     expect(html).toContain("#10130f");
     expect(html).toContain("#c4a35a");
   });

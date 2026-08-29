@@ -13,6 +13,7 @@ import {
   type IntelligenceRunSummary,
   type StageUsage,
 } from "../intelligence/usage.js";
+import type { TokenBudgetReport } from "../intelligence/token-budget.js";
 
 /** Daily rows kept in the payload so the board can show 12 months of month-bars. */
 export const SPEND_DASHBOARD_DAYS = 366;
@@ -84,6 +85,7 @@ export interface SpendDashboard {
   last_24h_elapsed_ms: number;
   days: SpendDay[];
   runs: IntelligenceRunSummary[];
+  token_budget?: TokenBudgetReport;
 }
 
 export function utcDay(d: Date): string {
@@ -203,6 +205,7 @@ export function spendDashboardFromStats(stats: KnowledgeStats): SpendDashboard {
     last_24h_elapsed_ms: stats.intelligence.last_24h.elapsed_ms,
     days: [],
     runs: stats.intelligence.recent,
+    ...(stats.token_budget ? { token_budget: stats.token_budget } : {}),
   };
 }
 
@@ -274,6 +277,9 @@ export async function loadSpendDashboard(
         stages: r.usage.stages,
         ...(r.usage.input_tokens != null ? { input_tokens: r.usage.input_tokens } : {}),
         ...(r.usage.output_tokens != null ? { output_tokens: r.usage.output_tokens } : {}),
+        trigger: r.trigger ?? null,
+        source_tool: r.source_tool ?? null,
+        project: r.project ?? null,
       }));
     for (const run of next) {
       const day = dayKey(run.created_at);
@@ -300,6 +306,7 @@ export async function loadSpendDashboard(
     last_24h_elapsed_ms: stats.intelligence.last_24h.elapsed_ms,
     days,
     runs,
+    ...(stats.token_budget ? { token_budget: stats.token_budget } : {}),
   };
 }
 

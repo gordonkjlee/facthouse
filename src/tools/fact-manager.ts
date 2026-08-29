@@ -23,6 +23,7 @@ import {
   consolidate,
   type ConsolidationResult,
   type ConsolidatePhase,
+  type ConsolidateCaller,
 } from "../intelligence/consolidate.js";
 import { captureFactDescription } from "./capture-fact-description.js";
 import {
@@ -49,7 +50,10 @@ export interface FactManager {
   getSessionContext(sessionId?: string): Promise<SessionFact[]>;
 
   /** Run the consolidation pipeline. Default `full` (D→I then I→K). */
-  runConsolidate(phase?: ConsolidatePhase): Promise<ConsolidationResult>;
+  runConsolidate(
+    phase?: ConsolidatePhase,
+    caller?: ConsolidateCaller,
+  ): Promise<ConsolidationResult>;
 
   /** Register capture_fact, get_session_context, and consolidate MCP tools. */
   registerTools(server: McpServer): void;
@@ -203,16 +207,29 @@ export function createFactManager(
       return await getUnconsolidatedSessionFacts(db, id);
     },
 
-    async runConsolidate(phase: ConsolidatePhase = "full") {
+    async runConsolidate(
+      phase: ConsolidatePhase = "full",
+      caller: ConsolidateCaller = { trigger: "mcp" },
+    ) {
       if (!intelligence) {
         throw new Error("No intelligence provider configured for consolidation.");
       }
+      const session = sessionManager.getActiveSession();
       const result = await consolidate(
         db,
         intelligence,
         serverConfig,
         embedding,
         phase,
+        {
+          trigger: caller.trigger ?? "mcp",
+          sourceTool: caller.sourceTool ?? session?.source_tool ?? null,
+          project:
+            caller.project ??
+            process.env.OPENMEMORY_PROJECT ??
+            session?.project ??
+            null,
+        },
       );
 
       // Skipped runs (lock contention, nothing pending) changed no knowledge,

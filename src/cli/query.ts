@@ -19,6 +19,11 @@ import type {
   IntelligenceRunSummary,
   IntelligenceSpendRollup,
 } from "../intelligence/usage.js";
+import {
+  TOKEN_BUDGET_HOW_TO,
+  TOKEN_WINDOW_LABEL,
+  billedProviderName,
+} from "../intelligence/token-budget.js";
 import { formatDiskBudget } from "../db/disk-budget.js";
 import type { EpisodeSlice, SearchResponse } from "../types/data.js";
 import type { InterlocutorConfig } from "../types/config.js";
@@ -240,6 +245,33 @@ export function formatStats(stats: KnowledgeStats): string {
         lines.push(`      ${formatRecentRun(run)}`);
       }
     }
+  }
+
+  const budget = stats.token_budget;
+  if (budget) {
+    lines.push("", "  Token budget");
+    const providers = Object.entries(budget.providers);
+    if (providers.length === 0) {
+      for (const line of budget.how_to.split("\n")) lines.push(`    ${line}`);
+    } else {
+      for (const [provider, slice] of providers) {
+        if (slice.unmetered) {
+          lines.push(
+            `    ${billedProviderName(provider).padEnd(22)}  tokens were not reported`,
+          );
+        }
+        for (const w of slice.windows) {
+          const label = `${billedProviderName(provider)}, ${TOKEN_WINDOW_LABEL[w.scale]}`;
+          lines.push(
+            `    ${label.padEnd(22)}  ${w.used.toLocaleString("en-GB")} / ${w.cap.toLocaleString("en-GB")}  ${w.remaining.toLocaleString("en-GB")} left`,
+          );
+        }
+      }
+      lines.push(`    ${budget.how_to}`);
+    }
+  } else {
+    lines.push("", "  Token budget");
+    for (const line of TOKEN_BUDGET_HOW_TO.split("\n")) lines.push(`    ${line}`);
   }
 
   if (stats.facts.total === 0) {

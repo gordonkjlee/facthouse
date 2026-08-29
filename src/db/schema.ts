@@ -87,6 +87,9 @@ export async function applySchema(db: Db): Promise<void> {
   if (version < 21) {
     await applyV21(db);
   }
+  if (version < 22) {
+    await applyV22(db);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -839,4 +842,27 @@ async function applyV21(db: Db): Promise<void> {
     await db.exec(`ALTER TABLE inferences ADD COLUMN metadata TEXT;`);
   }
   await pragmaWrite(db, "user_version = 21");
+}
+
+// ---------------------------------------------------------------------------
+// Schema version 22 — who invoked a billed intelligence run
+//
+// Nullable on migrate so we do not invent a trigger for rows written before
+// this existed. New writes always set trigger.
+// ---------------------------------------------------------------------------
+async function applyV22(db: Db): Promise<void> {
+  const cols = (await db.prepare(`PRAGMA table_info(intelligence_runs)`).all()) as Array<{
+    name: string;
+  }>;
+  const names = new Set(cols.map((c) => c.name));
+  if (!names.has("trigger")) {
+    await db.exec(`ALTER TABLE intelligence_runs ADD COLUMN trigger TEXT;`);
+  }
+  if (!names.has("source_tool")) {
+    await db.exec(`ALTER TABLE intelligence_runs ADD COLUMN source_tool TEXT;`);
+  }
+  if (!names.has("project")) {
+    await db.exec(`ALTER TABLE intelligence_runs ADD COLUMN project TEXT;`);
+  }
+  await pragmaWrite(db, "user_version = 22");
 }
