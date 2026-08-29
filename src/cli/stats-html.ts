@@ -23,7 +23,7 @@ import {
   forBilledProvider,
   formatTokenCount,
 } from "../intelligence/token-budget.js";
-import { LEDGER, ledgerSpendCss } from "./inspect-theme.js";
+import { LEDGER, LEDGER_MARK_SVG, ledgerFaviconHref, ledgerSpendCss } from "./inspect-theme.js";
 
 export function spendBucketLabel(day: string, grain: SpendGrain = "day"): string {
   const p = (day || "").split("-");
@@ -237,15 +237,29 @@ export function formatStatsHtml(stats: KnowledgeStats, generatedAt = new Date())
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>OpenMemory spend</title>
+<link rel="icon" href="${ledgerFaviconHref()}"/>
 <style>
 ${ledgerSpendCss()}
   html, body { margin: 0; background: var(--bg); color: var(--ink);
-    font: 15px/1.45 ui-sans-serif, system-ui, sans-serif; }
-  main { padding: 28px 20px 56px; }
+    font: 15px/1.45 "Segoe UI", ui-sans-serif, system-ui, sans-serif; }
+  .spend-brand { display: flex; align-items: center; gap: 10px; padding: 16px 20px 0;
+    max-width: 920px; margin: 0 auto; }
+  .spend-brand svg { display: block; width: 28px; height: 28px; border-radius: 6px; }
+  .spend-brand h1 { font-size: 15px; font-weight: 650; letter-spacing: -0.02em; margin: 0; }
+  .spend-brand p { margin: 1px 0 0; font-size: 11px; letter-spacing: 0.08em;
+    text-transform: uppercase; color: var(--muted); }
+  main { padding: 20px 20px 56px; }
   ${SPEND_BOARD_CSS}
 </style>
 </head>
 <body>
+<div class="spend-brand">
+  <span>${LEDGER_MARK_SVG}</span>
+  <div>
+    <h1>OpenMemory</h1>
+    <p>Spend</p>
+  </div>
+</div>
 <main>${renderSpendBoard(stats, generatedAt)}</main>
 </body>
 </html>

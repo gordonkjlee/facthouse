@@ -7,7 +7,7 @@ import type { KnowledgeStats } from "../db/stats.js";
 import { emptySpendStats } from "../intelligence/usage.js";
 import type { InspectGraphPayload } from "./inspect-payload.js";
 import { spendDashboardFromStats, type SpendDashboard } from "./spend-dashboard.js";
-import { ledgerInspectCss } from "./inspect-theme.js";
+import { LEDGER_MARK_SVG, ledgerFaviconHref, ledgerInspectCss } from "./inspect-theme.js";
 import { renderSpendBoard, SPEND_BOARD_CSS } from "./stats-html.js";
 
 function emptyHealth(): KnowledgeStats {
@@ -43,26 +43,35 @@ export function renderInspectHtml(
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
 <title>OpenMemory inspect</title>
+<link rel="icon" href="${ledgerFaviconHref()}"/>
 <style>
 ${ledgerInspectCss()}
   * { box-sizing: border-box; }
   html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
-    font: 13px/1.45 ui-sans-serif, system-ui, sans-serif; }
+    font: 13px/1.45 "Segoe UI", ui-sans-serif, system-ui, sans-serif; }
   :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   #app { display: grid; grid-template-rows: auto 1fr; height: 100%; }
-  header { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center;
-    padding: 10px 14px; border-bottom: 1px solid var(--line); background: var(--panel); }
-  header h1 { font-size: 14px; font-weight: 600; margin: 0; }
-  header .meta { color: var(--muted); }
+  header { display: flex; flex-wrap: wrap; gap: 12px 20px; align-items: center;
+    padding: 12px 18px; border-bottom: 1px solid var(--line); background: var(--panel); }
+  .brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
+  .brand-mark { display: block; width: 28px; height: 28px; flex: 0 0 auto; border-radius: 6px;
+    overflow: hidden; box-shadow: 0 0 0 1px var(--line); }
+  .brand-mark svg { display: block; width: 28px; height: 28px; }
+  .brand-copy { min-width: 0; }
+  header h1 { font-size: 15px; font-weight: 650; letter-spacing: -0.02em; margin: 0; line-height: 1.2; }
+  .brand-sub { margin: 1px 0 0; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase;
+    color: var(--muted); }
+  header .meta { color: var(--muted); font-size: 12px; }
   .controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-left: auto; }
   input, select, button {
     background: var(--input); color: var(--text); border: 1px solid var(--line);
-    border-radius: 6px; padding: 6px 8px; font: inherit; }
-  input[type="search"] { width: 240px; }
+    border-radius: 8px; padding: 7px 10px; font: inherit; }
+  input[type="search"] { width: 260px; }
   input[type="range"] { width: 92px; }
-  button { cursor: pointer; }
-  button:hover, .tab.on { border-color: var(--accent); color: var(--accent); }
-  .icon-btn { width: 32px; height: 32px; padding: 0; display: flex; align-items: center;
+  button { cursor: pointer; transition: border-color .12s, color .12s, background .12s; }
+  button:hover { border-color: var(--accent); color: var(--accent); }
+  .tab.on { border-color: var(--accent); color: var(--accent); }
+  .icon-btn { width: 34px; height: 34px; padding: 0; display: flex; align-items: center;
     justify-content: center; background: var(--elev); }
   .icon-btn svg { width: 16px; height: 16px; fill: none; stroke: currentColor;
     stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
@@ -78,31 +87,35 @@ ${ledgerInspectCss()}
   #splitter { grid-area: split; background: var(--line); cursor: col-resize; }
   #stage.dock-bottom #splitter, #stage.dock-top #splitter { cursor: row-resize; }
   aside { grid-area: panel; min-width: 0; min-height: 0; background: var(--panel);
-    position: relative; display: flex; flex-direction: column; }
+    position: relative; display: flex; flex-direction: column; border-left: 1px solid var(--line); }
+  #stage.dock-left aside { border-left: 0; border-right: 1px solid var(--line); }
+  #stage.dock-top aside, #stage.dock-bottom aside { border-left: 0; }
   canvas { width: 100%; height: 100%; display: block; background:
-    radial-gradient(1200px 800px at 30% 20%, var(--glow) 0%, var(--bg) 60%); }
-  #refocus { position: absolute; top: 12px; right: 12px; z-index: 2;
-    background: var(--elev); border: 1px solid var(--accent); color: var(--text); }
-  #zoom { position: absolute; bottom: 12px; right: 12px; z-index: 2;
-    display: flex; flex-direction: column; gap: 4px; }
-  #zoom button { width: 36px; height: 32px; padding: 0; font-size: 16px; background: var(--elev); }
-  #graphBar { position: absolute; bottom: 12px; left: 12px; z-index: 2;
-    display: flex; align-items: center; gap: 8px; background: var(--elev);
-    border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; }
-  #graphBar label { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; }
-  .who { padding: 12px 76px 8px 14px; border-bottom: 1px solid var(--line); flex: 0 0 auto; }
-  .who h2 { font-size: 16px; margin: 0 0 4px; overflow-wrap: anywhere; }
-  .who .type { color: var(--muted); overflow-wrap: anywhere; }
-  .tabs { display: flex; gap: 0; border-bottom: 1px solid var(--line); flex: 0 0 auto; }
+    radial-gradient(900px 640px at 28% 18%, var(--glow) 0%, var(--bg) 62%); }
+  #refocus { position: absolute; top: 14px; right: 14px; z-index: 2;
+    background: var(--elev); border: 1px solid var(--accent); color: var(--text);
+    border-radius: 8px; padding: 6px 10px; }
+  #zoom { position: absolute; bottom: 14px; right: 14px; z-index: 2;
+    display: flex; flex-direction: column; gap: 6px; }
+  #zoom button { width: 36px; height: 34px; padding: 0; font-size: 16px; background: var(--elev); }
+  #graphBar { position: absolute; bottom: 14px; left: 14px; z-index: 2;
+    display: flex; align-items: center; gap: 10px; background: var(--elev);
+    border: 1px solid var(--line); border-radius: 10px; padding: 6px 10px;
+    box-shadow: 0 8px 24px rgba(0,0,0,.18); }
+  #graphBar label { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12px; }
+  .who { padding: 16px 76px 12px 18px; border-bottom: 1px solid var(--line); flex: 0 0 auto; }
+  .who h2 { font-size: 17px; font-weight: 650; letter-spacing: -0.02em; margin: 0 0 4px; overflow-wrap: anywhere; }
+  .who .type { color: var(--muted); overflow-wrap: anywhere; font-size: 12px; }
+  .tabs { display: flex; gap: 0; border-bottom: 1px solid var(--line); flex: 0 0 auto; padding: 0 8px; }
   .tab { flex: 1; min-width: 0; background: transparent; border: 0;
-    border-bottom: 2px solid transparent; border-radius: 0; padding: 8px 4px;
-    color: var(--muted); font-size: 12px; }
-  .tab.on { border-bottom-color: var(--accent); color: var(--text); }
-  .body { overflow: auto; padding: 12px 14px 24px; flex: 1; min-height: 0; }
-  .fact { padding: 10px 0; border-bottom: 1px solid var(--line); }
+    border-bottom: 2px solid transparent; border-radius: 0; padding: 10px 6px;
+    color: var(--muted); font-size: 12px; letter-spacing: .01em; }
+  .tab.on { border-bottom-color: var(--accent); color: var(--text); font-weight: 600; }
+  .body { overflow: auto; padding: 14px 18px 28px; flex: 1; min-height: 0; }
+  .fact { padding: 12px 0; border-bottom: 1px solid var(--line); }
   .fact.expired, .fact.superseded { opacity: 0.62; }
   .fact.hi { background: var(--elev); margin: 0 -8px; padding-left: 8px; padding-right: 8px;
-    border-radius: 6px; box-shadow: inset 3px 0 0 var(--accent); }
+    border-radius: 8px; box-shadow: inset 3px 0 0 var(--accent); }
   .fact-head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 4px; }
   .fact-left { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; min-width: 0; }
   .fact .when { color: var(--muted); font-size: 12px; white-space: nowrap; margin-left: auto; padding-left: 8px; }
@@ -118,7 +131,7 @@ ${ledgerInspectCss()}
   .empty, .hint, .conv-head { color: var(--muted); font-size: 12px; }
   .conv-head { margin: 14px 0 6px; font-weight: 600; }
   .filterbar { display: flex; justify-content: space-between; gap: 10px; align-items: flex-start;
-    margin-bottom: 10px; padding: 8px 10px; background: var(--elev); border-radius: 6px; }
+    margin-bottom: 10px; padding: 8px 10px; background: var(--elev); border-radius: 8px; }
   .toolbar { display: flex; justify-content: flex-end; gap: 10px; margin-bottom: 8px; }
   #details.on { border-color: var(--accent); color: var(--accent); }
   .meters { display: flex; gap: 10px; margin-top: 6px; }
@@ -129,11 +142,11 @@ ${ledgerInspectCss()}
   .meter.imp i b { background: var(--mention); }
   .meter.quiet { opacity: 0.4; }
   .chip { display: inline-block; padding: 1px 7px; border-radius: 999px; background: var(--chip); font-size: 11px; }
-  #panelTools { position: absolute; top: 8px; right: 10px; z-index: 4; display: flex; gap: 4px; }
+  #panelTools { position: absolute; top: 10px; right: 12px; z-index: 4; display: flex; gap: 4px; }
   #dockWrap { position: relative; }
   #dockBtn { width: 28px; height: 24px; padding: 2px; display: flex; align-items: center; justify-content: center; }
   #dockMenu { display: none; position: absolute; top: 100%; right: 0; margin-top: 4px;
-    background: var(--elev); border: 1px solid var(--line); border-radius: 6px; padding: 6px;
+    background: var(--elev); border: 1px solid var(--line); border-radius: 8px; padding: 6px;
     grid-template-columns: 1fr 1fr; gap: 4px; }
   #dockMenu.open { display: grid; }
   #dockMenu button { width: 36px; height: 28px; padding: 0; display: flex; align-items: center; justify-content: center; }
@@ -145,8 +158,11 @@ ${ledgerInspectCss()}
   .dock-ico.left::after { top: 0; left: 0; bottom: 0; width: 38%; }
   .dock-ico.bottom::after { left: 0; right: 0; bottom: 0; height: 38%; }
   .dock-ico.top::after { left: 0; right: 0; top: 0; height: 38%; }
-  .views { display: flex; gap: 4px; }
-  .view-btn.on { border-color: var(--accent); color: var(--accent); }
+  .views { display: inline-flex; gap: 2px; padding: 3px; background: var(--input);
+    border: 1px solid var(--line); border-radius: 9px; }
+  .view-btn { border: 1px solid transparent; background: transparent; border-radius: 6px;
+    padding: 5px 12px; color: var(--muted); }
+  .view-btn.on { border-color: transparent; background: var(--elev); color: var(--accent); font-weight: 600; }
   html.view-spend #stage,
   html:has(#spend:target) #stage { display: none; }
   html.view-spend #spend,
@@ -164,7 +180,13 @@ ${ledgerInspectCss()}
 <body>
 <div id="app">
   <header>
-    <h1>OpenMemory</h1>
+    <div class="brand">
+      <span class="brand-mark">${LEDGER_MARK_SVG}</span>
+      <div class="brand-copy">
+        <h1>OpenMemory</h1>
+        <p class="brand-sub">Inspect</p>
+      </div>
+    </div>
     <div class="views" role="tablist">
       <button type="button" class="view-btn on" data-view="graph" id="viewGraph">Graph</button>
       <button type="button" class="view-btn" data-view="spend" id="viewSpend">Spend</button>
@@ -239,7 +261,7 @@ const SUBJECT = "subject_of";
 const NEAR_USER = 8;
 const NEAR_RADIUS = 3;
 function hue(s){let h=0;for(let i=0;i<s.length;i++)h=(h*33+s.charCodeAt(i))>>>0;return h%360;}
-function colour(type){return "hsl("+hue(type||"?")+" 62% 62%)";}
+function colour(type){const map={person:"#7eb889",organisation:"#6aa8c9",organization:"#6aa8c9",project:"#c4a35a",place:"#9b8fd4",product:"#d08b6a"};if(map[type])return map[type];return "hsl("+hue(type||"?")+" 28% 48%)";}
 function esc(s){return String(s??"").replace(/[&<>"'']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\\"":"&quot;","'":"&#39;"}[c]));}
 const byId=new Map((DATA.nodes||[]).map(n=>[n.id,n]));
 const factById=new Map((DATA.facts||[]).map(f=>[f.id,f]));
@@ -385,7 +407,7 @@ function render(){syncRefocus();const who=document.getElementById("who"),tabs=do
     who.innerHTML="<h2>Link</h2><div class='type'><a class='link go' data-id='"+esc(a&&a.id)+"'>"+esc(a&&a.name)+"</a> ↔ <a class='link go' data-id='"+esc(b&&b.id)+"'>"+esc(b&&b.name)+"</a></div>";
     tabs.innerHTML="";body.innerHTML=shared.length?shared.map(f=>factCard(f,"names both","k")).join(""):"<p class='empty'>No current fact names both.</p>";bindPanel(body);
     who.querySelectorAll("a.go").forEach(el=>el.onclick=()=>{const t=byId.get(el.getAttribute("data-id"));if(!t)return;selected=t;selectedEdge=null;tab="knowledge";tabFilter=null;markHot(t.id);render();draw();});return;}
-  if(!selected){who.innerHTML="<h2>Nothing selected</h2><div class='type'>Click a node, a line, or search.</div>";tabs.innerHTML="";
+  if(!selected){who.innerHTML="<h2>Nothing selected</h2><div class='type'>Click a node or an edge, or search by name.</div>";tabs.innerHTML="";
     body.innerHTML="<p>The picture is the entity graph. Knowledge lives on the facts. Select something to read it.</p>";return;}
   const n=selected;const fk=factsForEntity(n.id);const dIds=DATA.dByEntity[n.id]||[];const needle=(n.canonical_name||n.name||"").toLowerCase();
   const info=(DATA.info||[]).filter(p=>(p.content||"").toLowerCase().includes(needle));

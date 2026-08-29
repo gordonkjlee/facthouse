@@ -97,6 +97,22 @@ export function ledgerInspectCss(): string {
   }`;
 }
 
+/** Geometric mark: olive tile, gold glasses, a small cap. Favicon-simple. */
+export const LEDGER_MARK_SVG =
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32" aria-hidden="true">' +
+  '<rect width="32" height="32" rx="7" fill="#1e261c"/>' +
+  '<path fill="#556344" d="M10 12c0-3.2 2.6-5.2 6-5.2s6 2 6 5.2c0 1.3-1.2 2.2-3.1 2.4H13.1C11.2 14.2 10 13.3 10 12z"/>' +
+  '<circle cx="11.6" cy="19.4" r="4.3" fill="#556344" stroke="#c4a35a" stroke-width="1.6"/>' +
+  '<circle cx="20.4" cy="19.4" r="4.3" fill="#556344" stroke="#c4a35a" stroke-width="1.6"/>' +
+  '<path d="M15.9 19.4h.2" stroke="#c4a35a" stroke-width="1.5" stroke-linecap="round"/>' +
+  '<circle cx="11.6" cy="19.4" r="1.45" fill="#c4a35a"/>' +
+  '<circle cx="20.4" cy="19.4" r="1.45" fill="#c4a35a"/>' +
+  "</svg>";
+
+export function ledgerFaviconHref(): string {
+  return "data:image/svg+xml," + encodeURIComponent(LEDGER_MARK_SVG);
+}
+
 /** CSS custom properties for the standalone spend HTML (dark only). */
 export function ledgerSpendCss(): string {
   const d = LEDGER.dark;
