@@ -189,6 +189,8 @@ describe("inspect graph HTML", () => {
     expect(html).toContain("hashchange");
     expect(html).toContain("#10130f");
     expect(html).toContain("#c4a35a");
+    expect(html).toContain("rel=\"icon\"");
+    expect(html).toContain("brand-mark");
   });
 
   it("inspect --json includes package_version", async () => {
