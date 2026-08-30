@@ -9,7 +9,9 @@ import {
   evaluateTokenBudget,
   verdictForProvider,
   billedProviderName,
+  billedCapName,
   forBilledProvider,
+  tokenBudgetRemainingLead,
   TOKEN_BUDGET_HOW_TO,
   TOKEN_BUDGET_HOW_TO_SET,
   TokenBudgetError,
@@ -122,6 +124,26 @@ describe("formatTokenCount", () => {
     expect(formatTokenCount(2_000_000)).toBe("2M");
     expect(formatTokenCount(7_976_000)).toBe("7.98M");
     expect(formatTokenCount(500_000)).toBe("500k");
+  });
+
+  it("says remaining on a rolling cap, not leftover from a closed week", () => {
+    expect(billedCapName("cli", "week")).toBe("CLI 7-day cap");
+    expect(
+      tokenBudgetRemainingLead({
+        provider: "cli",
+        scale: "week",
+        remaining: 7_976_000,
+        cap: 10_000_000,
+      }),
+    ).toBe("7.98M remaining of 10M on the CLI 7-day cap.");
+    expect(
+      tokenBudgetRemainingLead({
+        provider: "cli",
+        scale: "week",
+        remaining: 0,
+        cap: 10_000_000,
+      }),
+    ).toBe("The CLI 7-day cap is spent.");
   });
 });
 

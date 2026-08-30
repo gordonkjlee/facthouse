@@ -375,9 +375,9 @@ describe("formatStats", () => {
         },
       }),
     );
-    expect(out).toContain("CLI, last 7 days");
+    expect(out).toContain("CLI 7-day cap");
     expect(out).not.toContain("cli week");
-    expect(out).toContain("9,000,000 left");
+    expect(out).toContain("9,000,000 remaining");
     expect(out).toContain("Edit token_budget in this store's config.json.");
   });
 });

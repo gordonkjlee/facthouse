@@ -29,6 +29,14 @@ export const TOKEN_WINDOW_LABEL: Record<TokenWindow, string> = {
   month: "last 30 days",
 };
 
+/** Name of the cap itself, not the lookback that fills it. */
+export const TOKEN_WINDOW_CAP: Record<TokenWindow, string> = {
+  hour: "hourly cap",
+  day: "24-hour cap",
+  week: "7-day cap",
+  month: "30-day cap",
+};
+
 /** Display name for a billed provider. `cli` is the CLI, not the letters c-l-i. */
 export function billedProviderName(provider: string): string {
   if (provider === "cli") return "CLI";
@@ -42,6 +50,25 @@ export function forBilledProvider(provider: string): string {
     return `for the ${billedProviderName(provider)}`;
   }
   return `for ${provider}`;
+}
+
+/** "CLI 7-day cap" — remaining is room under this rolling cap, not leftover from a closed week. */
+export function billedCapName(provider: string, scale: TokenWindow): string {
+  return `${billedProviderName(provider)} ${TOKEN_WINDOW_CAP[scale]}`;
+}
+
+export function tokenBudgetRemainingLead(opts: {
+  provider: string;
+  scale: TokenWindow;
+  remaining: number;
+  cap: number;
+}): string {
+  const cap = billedCapName(opts.provider, opts.scale);
+  if (opts.remaining <= 0) return `The ${cap} is spent.`;
+  return (
+    `${formatTokenCount(opts.remaining)} remaining of ${formatTokenCount(opts.cap)} ` +
+    `on the ${cap}.`
+  );
 }
 
 const SUFFIX: Record<string, number> = { k: 1_000, m: 1_000_000, g: 1_000_000_000 };

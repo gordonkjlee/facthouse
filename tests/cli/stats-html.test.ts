@@ -198,13 +198,14 @@ describe("renderSpendBoard", () => {
         },
       }),
     );
-    expect(html).toContain("left for the CLI in the last 7 days");
+    expect(html).toContain("8M remaining of 10M on the CLI 7-day cap");
+    expect(html).toContain("last 7 days count toward this cap");
     expect(html).not.toContain("cli week");
+    expect(html).not.toContain("left for the CLI in the last 7 days");
     expect(html).toContain("Edit token_budget");
     expect(html).toContain("config.json");
     expect(html).toContain("spend-caps");
-    expect(html).toContain("CLI, last 7 days");
-    expect(html).toContain("8M of 10M left for the CLI in the last 7 days");
+    expect(html).toContain("CLI 7-day cap");
     expect(html).toContain("2M of 10M");
     expect(html).toContain("width:20.0%");
     expect(html).not.toContain("uses in the last 24 hours");
@@ -242,7 +243,7 @@ describe("renderSpendBoard", () => {
         },
       }),
     );
-    expect(html).toContain("No room left for the CLI in the last 7 days");
+    expect(html).toContain("The CLI 7-day cap is spent");
     expect(html).toContain("Billed extract is paused");
     expect(html).toContain("spend-hero-card warn");
     expect(html).toContain("is-full");

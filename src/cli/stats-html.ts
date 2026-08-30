@@ -19,9 +19,10 @@ import {
 import {
   TOKEN_BUDGET_HOW_TO,
   TOKEN_WINDOW_LABEL,
+  billedCapName,
   billedProviderName,
-  forBilledProvider,
   formatTokenCount,
+  tokenBudgetRemainingLead,
 } from "../intelligence/token-budget.js";
 import { LEDGER, LEDGER_MARK_SVG, ledgerFaviconHref, ledgerSpendCss } from "./inspect-theme.js";
 
@@ -351,16 +352,13 @@ function hero(data: SpendDashboard): string {
     costLeadBudget = "Tokens were not reported, so billed extract is paused.";
     costBody = "";
   } else if (tight) {
-    const window = TOKEN_WINDOW_LABEL[tight.scale];
-    const forWho = forBilledProvider(tight.provider);
+    costLeadBudget = tokenBudgetRemainingLead(tight);
     if (capSpent) {
-      costLeadBudget = `No room left ${forWho} in the ${window}.`;
       costBody =
-        "Billed extract is paused until the window ages, or you raise the cap.";
+        "Billed extract is paused until older usage ages out of the rolling window, or you raise the cap.";
     } else {
-      costLeadBudget =
-        `${compact(tight.remaining)} of ${compact(tight.cap)} left ${forWho} in the ${window}.`;
-      costBody = "";
+      costBody =
+        `Billed tokens in the ${TOKEN_WINDOW_LABEL[tight.scale]} count toward this cap.`;
     }
   }
   const howTo = budget?.how_to ?? TOKEN_BUDGET_HOW_TO;
@@ -403,7 +401,7 @@ function capMeters(data: SpendDashboard): string {
     for (const w of slice.windows) {
       const pct = w.cap > 0 ? Math.min(100, (100 * w.used) / w.cap) : 0;
       const full = w.remaining <= 0;
-      const name = `${billedProviderName(provider)}, ${TOKEN_WINDOW_LABEL[w.scale]}`;
+      const name = billedCapName(provider, w.scale);
       const used = `${compact(w.used)} of ${compact(w.cap)}`;
       rows.push(
         `<div class="spend-cap${full ? " is-full" : ""}" role="img" aria-label="${esc(name)}: ${esc(used)} used">` +

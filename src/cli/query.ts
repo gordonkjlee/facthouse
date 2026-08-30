@@ -21,7 +21,7 @@ import type {
 } from "../intelligence/usage.js";
 import {
   TOKEN_BUDGET_HOW_TO,
-  TOKEN_WINDOW_LABEL,
+  billedCapName,
   billedProviderName,
 } from "../intelligence/token-budget.js";
 import { formatDiskBudget } from "../db/disk-budget.js";
@@ -261,9 +261,9 @@ export function formatStats(stats: KnowledgeStats): string {
           );
         }
         for (const w of slice.windows) {
-          const label = `${billedProviderName(provider)}, ${TOKEN_WINDOW_LABEL[w.scale]}`;
+          const label = billedCapName(provider, w.scale);
           lines.push(
-            `    ${label.padEnd(22)}  ${w.used.toLocaleString("en-GB")} / ${w.cap.toLocaleString("en-GB")}  ${w.remaining.toLocaleString("en-GB")} left`,
+            `    ${label.padEnd(22)}  ${w.used.toLocaleString("en-GB")} used / ${w.cap.toLocaleString("en-GB")}  ${w.remaining.toLocaleString("en-GB")} remaining`,
           );
         }
       }
