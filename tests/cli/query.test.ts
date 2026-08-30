@@ -358,6 +358,7 @@ describe("formatStats", () => {
             used: 1_000_000,
             cap: 10_000_000,
             remaining: 9_000_000,
+            resets_at: "2026-09-05T12:00:00.000Z",
           },
           providers: {
             cli: {
@@ -368,6 +369,7 @@ describe("formatStats", () => {
                   used: 1_000_000,
                   cap: 10_000_000,
                   remaining: 9_000_000,
+                  resets_at: "2026-09-05T12:00:00.000Z",
                 },
               ],
             },
@@ -375,9 +377,10 @@ describe("formatStats", () => {
         },
       }),
     );
-    expect(out).toContain("CLI 7-day cap");
+    expect(out).toContain("CLI weekly cap");
     expect(out).not.toContain("cli week");
-    expect(out).toContain("9,000,000 remaining");
+    expect(out).toContain("1M used · 9M remaining");
+    expect(out).toContain("resets");
     expect(out).toContain("Edit token_budget in this store's config.json.");
   });
 });

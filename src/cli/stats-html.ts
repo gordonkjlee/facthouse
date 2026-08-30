@@ -18,11 +18,11 @@ import {
 } from "./spend-dashboard.js";
 import {
   TOKEN_BUDGET_HOW_TO,
-  TOKEN_WINDOW_LABEL,
   billedCapName,
   billedProviderName,
+  formatResetAt,
   formatTokenCount,
-  tokenBudgetRemainingLead,
+  tokenBudgetUsageLead,
 } from "../intelligence/token-budget.js";
 import { LEDGER, LEDGER_MARK_SVG, ledgerFaviconHref, ledgerSpendCss } from "./inspect-theme.js";
 
@@ -352,14 +352,13 @@ function hero(data: SpendDashboard): string {
     costLeadBudget = "Tokens were not reported, so billed extract is paused.";
     costBody = "";
   } else if (tight) {
-    costLeadBudget = tokenBudgetRemainingLead(tight);
-    if (capSpent) {
-      costBody =
-        "Billed extract is paused until older usage ages out of the rolling window, or you raise the cap.";
-    } else {
-      costBody =
-        `Billed tokens in the ${TOKEN_WINDOW_LABEL[tight.scale]} count toward this cap.`;
-    }
+    const lines = tokenBudgetUsageLead(tight);
+    costLeadBudget = lines.lead;
+    costBody = capSpent
+      ? `Billed extract is paused until it ${
+          tight.resets_at ? `resets ${formatResetAt(tight.resets_at)}` : "ages"
+        }, or you raise the cap.`
+      : lines.detail;
   }
   const howTo = budget?.how_to ?? TOKEN_BUDGET_HOW_TO;
   const reclaim = data.reclaimable_events > 0
@@ -402,9 +401,9 @@ function capMeters(data: SpendDashboard): string {
       const pct = w.cap > 0 ? Math.min(100, (100 * w.used) / w.cap) : 0;
       const full = w.remaining <= 0;
       const name = billedCapName(provider, w.scale);
-      const used = `${compact(w.used)} of ${compact(w.cap)}`;
+      const used = `${compact(w.used)} used · ${compact(w.remaining)} remaining`;
       rows.push(
-        `<div class="spend-cap${full ? " is-full" : ""}" role="img" aria-label="${esc(name)}: ${esc(used)} used">` +
+        `<div class="spend-cap${full ? " is-full" : ""}" role="img" aria-label="${esc(name)}: ${esc(used)}">` +
           `<div class="spend-cap-row"><span>${esc(name)}</span>` +
           `<span class="nm">${esc(used)}</span></div>` +
           `<span class="track"><span class="fill" style="width:${pct.toFixed(1)}%"></span></span></div>`,

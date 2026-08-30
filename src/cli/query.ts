@@ -23,6 +23,8 @@ import {
   TOKEN_BUDGET_HOW_TO,
   billedCapName,
   billedProviderName,
+  formatResetAt,
+  formatTokenCount,
 } from "../intelligence/token-budget.js";
 import { formatDiskBudget } from "../db/disk-budget.js";
 import type { EpisodeSlice, SearchResponse } from "../types/data.js";
@@ -262,8 +264,9 @@ export function formatStats(stats: KnowledgeStats): string {
         }
         for (const w of slice.windows) {
           const label = billedCapName(provider, w.scale);
+          const reset = w.resets_at ? ` · resets ${formatResetAt(w.resets_at)}` : "";
           lines.push(
-            `    ${label.padEnd(22)}  ${w.used.toLocaleString("en-GB")} used / ${w.cap.toLocaleString("en-GB")}  ${w.remaining.toLocaleString("en-GB")} remaining`,
+            `    ${label.padEnd(22)}  ${formatTokenCount(w.used)} used · ${formatTokenCount(w.remaining)} remaining${reset}`,
           );
         }
       }

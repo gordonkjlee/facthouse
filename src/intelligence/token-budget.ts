@@ -32,9 +32,9 @@ export const TOKEN_WINDOW_LABEL: Record<TokenWindow, string> = {
 /** Name of the cap itself, not the lookback that fills it. */
 export const TOKEN_WINDOW_CAP: Record<TokenWindow, string> = {
   hour: "hourly cap",
-  day: "24-hour cap",
-  week: "7-day cap",
-  month: "30-day cap",
+  day: "daily cap",
+  week: "weekly cap",
+  month: "monthly cap",
 };
 
 /** Display name for a billed provider. `cli` is the CLI, not the letters c-l-i. */
@@ -52,23 +52,43 @@ export function forBilledProvider(provider: string): string {
   return `for ${provider}`;
 }
 
-/** "CLI 7-day cap" — remaining is room under this rolling cap, not leftover from a closed week. */
+/** "CLI weekly cap" — remaining is room under this rolling cap. */
 export function billedCapName(provider: string, scale: TokenWindow): string {
   return `${billedProviderName(provider)} ${TOKEN_WINDOW_CAP[scale]}`;
 }
 
-export function tokenBudgetRemainingLead(opts: {
+/** When oldest billed usage in the window ages out (UTC, en-GB). */
+export function formatResetAt(iso: string, now = new Date()): string {
+  const t = new Date(iso);
+  const soon = t.getTime() - now.getTime() < 36 * 60 * 60 * 1000;
+  return t.toLocaleString("en-GB", {
+    timeZone: "UTC",
+    day: "numeric",
+    month: "short",
+    ...(soon
+      ? { hour: "2-digit", minute: "2-digit", hourCycle: "h23" as const }
+      : {}),
+  });
+}
+
+export function tokenBudgetUsageLead(opts: {
   provider: string;
   scale: TokenWindow;
+  used: number;
   remaining: number;
   cap: number;
-}): string {
-  const cap = billedCapName(opts.provider, opts.scale);
-  if (opts.remaining <= 0) return `The ${cap} is spent.`;
-  return (
-    `${formatTokenCount(opts.remaining)} remaining of ${formatTokenCount(opts.cap)} ` +
-    `on the ${cap}.`
-  );
+  resets_at: string | null;
+}): { lead: string; detail: string } {
+  const capName = billedCapName(opts.provider, opts.scale);
+  const lead =
+    `${formatTokenCount(opts.used)} used · ${formatTokenCount(opts.remaining)} remaining`;
+  const reset = opts.resets_at
+    ? ` · resets ${formatResetAt(opts.resets_at)}`
+    : "";
+  return {
+    lead,
+    detail: `${formatTokenCount(opts.cap)} ${capName}${reset}`,
+  };
 }
 
 const SUFFIX: Record<string, number> = { k: 1_000, m: 1_000_000, g: 1_000_000_000 };
@@ -89,6 +109,8 @@ export interface TokenWindowUse {
   used: number;
   cap: number;
   remaining: number;
+  /** When the oldest billed run in this window ages out. Null if nothing used. */
+  resets_at: string | null;
 }
 
 export interface ProviderBudgetReport {
@@ -241,15 +263,22 @@ export function evaluateTokenBudget(
         if (cap == null) continue;
         const cutoff = new Date(nowMs - TOKEN_WINDOW_MS[scale]).toISOString();
         let used = 0;
+        let oldest: string | null = null;
         for (const run of runs) {
           if (run.created_at < cutoff) continue;
           const part = tokensOfProvider(run, provider);
           if (!part.billed) continue;
           if (part.unmetered) unmetered = true;
           used += part.tokens;
+          if (part.tokens > 0 && (!oldest || run.created_at < oldest)) {
+            oldest = run.created_at;
+          }
         }
         const remaining = Math.max(0, cap - used);
-        const row: TokenWindowUse = { scale, used, cap, remaining };
+        const resets_at = oldest
+          ? new Date(Date.parse(oldest) + TOKEN_WINDOW_MS[scale]).toISOString()
+          : null;
+        const row: TokenWindowUse = { scale, used, cap, remaining, resets_at };
         uses.push(row);
         const ratio = cap > 0 ? remaining / cap : 0;
         if (ratio < tightestRatio) {
