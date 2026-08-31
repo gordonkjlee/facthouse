@@ -18,7 +18,7 @@ Needs Node 22.5 or 24+.
 
 <!-- x-release-please-start-version -->
 ```bash
-npm install -g @openmem/mcp@0.22.0
+npm install -g @openmem/mcp@0.23.0
 openmemory init
 ```
 <!-- x-release-please-end -->
@@ -31,7 +31,7 @@ Paste the snippet into the project's `.mcp.json` (Claude Code) or the equivalent
 If `openmemory` is not on your PATH:
 
 ```bash
-npx -y -p @openmem/mcp@0.22.0 -- openmemory init
+npx -y -p @openmem/mcp@0.23.0 -- openmemory init
 ```
 <!-- x-release-please-end -->
 
@@ -51,7 +51,7 @@ To skip the walk-through, paste this. The server creates `~/.openmemory` on firs
   "mcpServers": {
     "openmemory": {
       "command": "npx",
-      "args": ["-y", "@openmem/mcp@0.22.0"]
+      "args": ["-y", "@openmem/mcp@0.23.0"]
     }
   }
 }
@@ -95,7 +95,7 @@ Git Bash / macOS / Linux:
 
 ```bash
 export OPENMEMORY_DATA=/tmp/openmemory-try
-om() { npx -y -p @openmem/mcp@0.22.0 -- openmemory "$@"; }
+om() { npx -y -p @openmem/mcp@0.23.0 -- openmemory "$@"; }
 om init --yes
 ```
 
@@ -103,7 +103,7 @@ PowerShell:
 
 ```powershell
 $env:OPENMEMORY_DATA = Join-Path $env:TEMP "openmemory-try"
-function om { npx -y -p "@openmem/mcp@0.22.0" -- openmemory @args }
+function om { npx -y -p "@openmem/mcp@0.23.0" -- openmemory @args }
 om init --yes
 ```
 <!-- x-release-please-end -->
@@ -302,12 +302,12 @@ A non-default data directory prints a distinct MCP server name so two stores can
   "mcpServers": {
     "openmemory-personal": {
       "command": "npx",
-      "args": ["-y", "@openmem/mcp@0.22.0"],
+      "args": ["-y", "@openmem/mcp@0.23.0"],
       "env": { "OPENMEMORY_DATA": "C:\\Users\\alex\\.openmemory-personal" }
     },
     "openmemory-work": {
       "command": "npx",
-      "args": ["-y", "@openmem/mcp@0.22.0"],
+      "args": ["-y", "@openmem/mcp@0.23.0"],
       "env": { "OPENMEMORY_DATA": "C:\\Users\\alex\\.openmemory-work" }
     }
   }

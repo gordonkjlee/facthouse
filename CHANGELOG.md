@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.23.0](https://github.com/gordonkjlee/openmemory/compare/v0.22.0...v0.23.0) (2026-08-31)
+
+
+### Features
+
+* cap billed extract with a token budget ([#206](https://github.com/gordonkjlee/openmemory/issues/206)) ([a8fc493](https://github.com/gordonkjlee/openmemory/commit/a8fc4933233f507b2f5ac047ac07c8889114c3a3))
+* **cli:** add intelligence spend meter to inspect ([#203](https://github.com/gordonkjlee/openmemory/issues/203)) ([7826db9](https://github.com/gordonkjlee/openmemory/commit/7826db9dc93aec2b91e2948fce28712d416a4a31))
+* **cli:** add openmemory inspect ([#201](https://github.com/gordonkjlee/openmemory/issues/201)) ([2975dc1](https://github.com/gordonkjlee/openmemory/commit/2975dc1d11546abf0ac5ae4357d7bf42a20e565c))
+* **cli:** apply Ledger mascot and colours to inspect and README ([#204](https://github.com/gordonkjlee/openmemory/issues/204)) ([18d1606](https://github.com/gordonkjlee/openmemory/commit/18d16066d4925542ff2e275208f5753a27ad8263))
+* **cli:** restyle inspect chrome and clarify the README ([#207](https://github.com/gordonkjlee/openmemory/issues/207)) ([9647cfe](https://github.com/gordonkjlee/openmemory/commit/9647cfe469d4b97446d76cdcbd8d6d7c412c6adf))
+* **db:** keep extract progress per conversation ([#199](https://github.com/gordonkjlee/openmemory/issues/199)) ([88857c3](https://github.com/gordonkjlee/openmemory/commit/88857c3be64435c8756441ae8fc36cb6885bc972))
+* **graph:** reuse unambiguous type-split entities ([#202](https://github.com/gordonkjlee/openmemory/issues/202)) ([11a47c2](https://github.com/gordonkjlee/openmemory/commit/11a47c242f9fcf12164ddec03913b9c26a1849bb))
+* **graph:** union type-split entities on named lookup ([#200](https://github.com/gordonkjlee/openmemory/issues/200)) ([8ddf0e1](https://github.com/gordonkjlee/openmemory/commit/8ddf0e18ef507a413878fddcecf60766a5806b19))
+* **graph:** walk confirmed same-as entity links ([#205](https://github.com/gordonkjlee/openmemory/issues/205)) ([6683161](https://github.com/gordonkjlee/openmemory/commit/6683161aee32ef2ffda168f214c6e96bb9f4adc7))
+
+
+### Bug Fixes
+
+* **cli:** show pending on search and simplify first-run ([#211](https://github.com/gordonkjlee/openmemory/issues/211)) ([1fc71d3](https://github.com/gordonkjlee/openmemory/commit/1fc71d39ccde3fcb19ed9c106e254ceab1aa6de2))
+* **cli:** show used, remaining, and when the cap refills ([#208](https://github.com/gordonkjlee/openmemory/issues/208)) ([1f55d82](https://github.com/gordonkjlee/openmemory/commit/1f55d82c9371e3d52476a1dfcd1031be780ba66a))
+* **extract:** reuse store vocabulary and stop provenance spray ([#197](https://github.com/gordonkjlee/openmemory/issues/197)) ([f8e8fc8](https://github.com/gordonkjlee/openmemory/commit/f8e8fc821d4ccaf68307171afe3c5c2bf476975f))
+
 ## [0.22.0](https://github.com/gordonkjlee/openmemory/compare/v0.21.0...v0.22.0) (2026-08-28)
 
 
