@@ -1,6 +1,6 @@
 {
   "name": "@factmem/mcp",
-  "version": "0.24.0",
+  "version": "0.24.1",
   "description": "A local memory engine any AI tool can use. You own the SQLite file.",
   "type": "module",
   "license": "MIT",

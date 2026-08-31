@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.24.1](https://github.com/gordonkjlee/factmem/compare/v0.24.0...v0.24.1) (2026-08-31)
+
+
+### Bug Fixes
+
+* **ci:** publish linger @openmem/mcp when FactMem is already live ([#216](https://github.com/gordonkjlee/factmem/issues/216)) ([f808381](https://github.com/gordonkjlee/factmem/commit/f808381d8ccc18b6bd4102b00bda99332ab3fae8))
+
 ## [0.24.0](https://github.com/gordonkjlee/openmemory/compare/v0.23.0...v0.24.0) (2026-08-31)
 
 
