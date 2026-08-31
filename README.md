@@ -18,7 +18,7 @@ Needs Node 22.5 or 24+.
 
 <!-- x-release-please-start-version -->
 ```bash
-npm install -g @factmem/mcp@0.24.1
+npm install -g @factmem/mcp@0.24.2
 factmem init
 ```
 <!-- x-release-please-end -->
@@ -31,7 +31,7 @@ Paste the snippet into the project's `.mcp.json` (Claude Code) or the equivalent
 If `factmem` is not on your PATH (`openmemory` is the same CLI):
 
 ```bash
-npx -y -p @factmem/mcp@0.24.1 -- factmem init
+npx -y -p @factmem/mcp@0.24.2 -- factmem init
 ```
 <!-- x-release-please-end -->
 
@@ -51,7 +51,7 @@ To skip the walk-through, paste this. The server creates `~/.factmem` on first b
   "mcpServers": {
     "factmem": {
       "command": "npx",
-      "args": ["-y", "@factmem/mcp@0.24.1"]
+      "args": ["-y", "@factmem/mcp@0.24.2"]
     }
   }
 }
@@ -95,7 +95,7 @@ Git Bash / macOS / Linux:
 
 ```bash
 export FACTMEM_DATA=/tmp/factmem-try
-om() { npx -y -p @factmem/mcp@0.24.1 -- factmem "$@"; }
+om() { npx -y -p @factmem/mcp@0.24.2 -- factmem "$@"; }
 om init --yes
 ```
 
@@ -103,7 +103,7 @@ PowerShell:
 
 ```powershell
 $env:FACTMEM_DATA = Join-Path $env:TEMP "factmem-try"
-function om { npx -y -p "@factmem/mcp@0.24.1" -- factmem @args }
+function om { npx -y -p "@factmem/mcp@0.24.2" -- factmem @args }
 om init --yes
 ```
 <!-- x-release-please-end -->
@@ -302,12 +302,12 @@ A non-default data directory prints a distinct MCP server name so two stores can
   "mcpServers": {
     "factmem-personal": {
       "command": "npx",
-      "args": ["-y", "@factmem/mcp@0.24.1"],
+      "args": ["-y", "@factmem/mcp@0.24.2"],
       "env": { "FACTMEM_DATA": "C:\\Users\\alex\\.factmem-personal" }
     },
     "factmem-work": {
       "command": "npx",
-      "args": ["-y", "@factmem/mcp@0.24.1"],
+      "args": ["-y", "@factmem/mcp@0.24.2"],
       "env": { "FACTMEM_DATA": "C:\\Users\\alex\\.factmem-work" }
     }
   }
@@ -333,11 +333,11 @@ Example — placeholders only; do not put a real password in a committed file:
   "mcpServers": {
     "factmem": {
       "command": "npx",
-      "args": ["-y", "@factmem/mcp@0.24.1"],
+      "args": ["-y", "@factmem/mcp@0.24.2"],
       "env": {
         "FACTMEM_DATA": "C:\\Users\\alex\\.factmem-work",
         "FACTMEM_STORAGE": "postgres",
-        "FACTMEM_POSTGRES_URL": "postgres://USER:PASSWORD@127.0.0.1:5432/factmem"
+        "FACTMEM_POSTGRES_URL": "postgres://USER:PASSWORD@0.24.2.1:5432/factmem"
       }
     }
   }
@@ -371,7 +371,7 @@ Do not install log-event hooks on this store — both write the same rows. FactM
         "hooks": [
           {
             "type": "command",
-            "command": "npx -y -p @factmem/mcp@0.24.1 -- factmem pull --data /absolute/path/to/the-same-store"
+            "command": "npx -y -p @factmem/mcp@0.24.2 -- factmem pull --data /absolute/path/to/the-same-store"
           }
         ]
       }
@@ -381,7 +381,7 @@ Do not install log-event hooks on this store — both write the same rows. FactM
         "hooks": [
           {
             "type": "command",
-            "command": "npx -y -p @factmem/mcp@0.24.1 -- factmem signal flush --data /absolute/path/to/the-same-store"
+            "command": "npx -y -p @factmem/mcp@0.24.2 -- factmem signal flush --data /absolute/path/to/the-same-store"
           }
         ]
       }
@@ -434,7 +434,7 @@ Throwaway store, not the capture path for a real Claude Code or Cursor home. The
 <!-- x-release-please-start-version -->
 ```bash
 export FACTMEM_DATA=/tmp/factmem-demo
-om() { npx -y -p @factmem/mcp@0.24.1 -- factmem "$@"; }
+om() { npx -y -p @factmem/mcp@0.24.2 -- factmem "$@"; }
 
 om init --yes
 
@@ -447,7 +447,7 @@ om consolidate
 
 ```powershell
 $env:FACTMEM_DATA = Join-Path $env:TEMP "factmem-demo"
-function om { npx -y -p "@factmem/mcp@0.24.1" -- factmem @args }
+function om { npx -y -p "@factmem/mcp@0.24.2" -- factmem @args }
 om init --yes
 om log-event --role user --content "I prefer dark mode in every editor, and I never want telemetry enabled."
 om log-event --role user --content "I am allergic to shellfish, so avoid seafood restaurants when booking anything."

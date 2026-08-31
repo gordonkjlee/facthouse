@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.24.2](https://github.com/gordonkjlee/factmem/compare/v0.24.1...v0.24.2) (2026-08-31)
+
+
+### Bug Fixes
+
+* pin leftover 0.22.0 snippets and add MCP registry metadata ([feabb9f](https://github.com/gordonkjlee/factmem/commit/feabb9f40c871763c1fa888c6fa4202532450d6d))
+
 ## [0.24.1](https://github.com/gordonkjlee/factmem/compare/v0.24.0...v0.24.1) (2026-08-31)
 
 
