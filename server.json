@@ -7,12 +7,12 @@
     "url": "https://github.com/gordonkjlee/factmem",
     "source": "github"
   },
-  "version": "0.24.1",
+  "version": "0.24.2",
   "packages": [
     {
       "registryType": "npm",
       "identifier": "@factmem/mcp",
-      "version": "0.24.1",
+      "version": "0.24.2",
       "transport": {
         "type": "stdio"
       }

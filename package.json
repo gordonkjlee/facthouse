@@ -1,6 +1,6 @@
 {
   "name": "@factmem/mcp",
-  "version": "0.24.1",
+  "version": "0.24.2",
   "mcpName": "io.github.gordonkjlee/factmem",
   "description": "A local memory engine any AI tool can use. You own the SQLite file.",
   "type": "module",
