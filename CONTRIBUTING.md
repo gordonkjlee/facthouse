@@ -5,8 +5,8 @@ Issues and pull requests are welcome. Open an issue first if the change is more 
 ## Build and test
 
 ```bash
-git clone https://github.com/gordonkjlee/openmemory
-cd openmemory
+git clone https://github.com/gordonkjlee/factmem
+cd factmem
 npm install
 npm run build
 npm test
@@ -22,4 +22,4 @@ npm test
 - Public files must not name internal design-doc filenames. Say the concept.
 - Pull requests use the templates under `.github/PULL_REQUEST_TEMPLATE/`. Fill every section; write `N/A` if one does not apply.
 
-Questions belong in [Discussions](https://github.com/gordonkjlee/openmemory/discussions). Security reports belong in [SECURITY.md](SECURITY.md), not a public issue.
+Questions belong in [Discussions](https://github.com/gordonkjlee/factmem/discussions). Security reports belong in [SECURITY.md](SECURITY.md), not a public issue.

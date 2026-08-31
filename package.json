@@ -7,7 +7,7 @@
   "author": "Gordon Lee",
   "repository": {
     "type": "git",
-    "url": "https://github.com/gordonkjlee/openmemory"
+    "url": "https://github.com/gordonkjlee/factmem"
   },
   "bin": {
     "mcp": "dist/index.js",
