@@ -10,7 +10,7 @@ body:
     id: version
     attributes:
       label: Package version
-      placeholder: "@openmem/mcp@x.y.z"
+      placeholder: "@factmem/mcp@x.y.z"
     validations:
       required: true
   - type: input
