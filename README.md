@@ -379,7 +379,7 @@ Set `temporal.mode` to `bitemporal` to record when the system retracted a belief
 
 `openmemory stats` and `get_stats` report billed consolidation calls: tokens, elapsed time, and the provider plus model on each stage (extract, classify, entities, reconcile, supersede, summarise). A run that did not report tokens omits those fields rather than showing zero. Embeddings are a different API and are not this number.
 
-Optional `intelligence.token_budget` caps billed extract per provider on rolling windows. Unset is unlimited. Over the cap, consolidate skips extract, holds the watermark, and does not fall back to the heuristic.
+Optional `intelligence.token_budget` caps billed extract per provider on rolling windows. Unset is unlimited. Over the cap, consolidate skips extract, holds the watermark, and does not fall back to the heuristic. Stats and inspect Spend show used and remaining on each cap, and when oldest usage in that window ages out (`resets`).
 
 ```json
 "intelligence": {

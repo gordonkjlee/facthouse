@@ -18,10 +18,11 @@ import {
 } from "./spend-dashboard.js";
 import {
   TOKEN_BUDGET_HOW_TO,
-  TOKEN_WINDOW_LABEL,
+  billedCapName,
   billedProviderName,
-  forBilledProvider,
+  formatResetAt,
   formatTokenCount,
+  tokenBudgetUsageLead,
 } from "../intelligence/token-budget.js";
 import { LEDGER, LEDGER_MARK_SVG, ledgerFaviconHref, ledgerSpendCss } from "./inspect-theme.js";
 
@@ -351,17 +352,13 @@ function hero(data: SpendDashboard): string {
     costLeadBudget = "Tokens were not reported, so billed extract is paused.";
     costBody = "";
   } else if (tight) {
-    const window = TOKEN_WINDOW_LABEL[tight.scale];
-    const forWho = forBilledProvider(tight.provider);
-    if (capSpent) {
-      costLeadBudget = `No room left ${forWho} in the ${window}.`;
-      costBody =
-        "Billed extract is paused until the window ages, or you raise the cap.";
-    } else {
-      costLeadBudget =
-        `${compact(tight.remaining)} of ${compact(tight.cap)} left ${forWho} in the ${window}.`;
-      costBody = "";
-    }
+    const lines = tokenBudgetUsageLead(tight);
+    costLeadBudget = lines.lead;
+    costBody = capSpent
+      ? `Billed extract is paused until it ${
+          tight.resets_at ? `resets ${formatResetAt(tight.resets_at)}` : "ages"
+        }, or you raise the cap.`
+      : lines.detail;
   }
   const howTo = budget?.how_to ?? TOKEN_BUDGET_HOW_TO;
   const reclaim = data.reclaimable_events > 0
@@ -403,10 +400,10 @@ function capMeters(data: SpendDashboard): string {
     for (const w of slice.windows) {
       const pct = w.cap > 0 ? Math.min(100, (100 * w.used) / w.cap) : 0;
       const full = w.remaining <= 0;
-      const name = `${billedProviderName(provider)}, ${TOKEN_WINDOW_LABEL[w.scale]}`;
-      const used = `${compact(w.used)} of ${compact(w.cap)}`;
+      const name = billedCapName(provider, w.scale);
+      const used = `${compact(w.used)} used · ${compact(w.remaining)} remaining`;
       rows.push(
-        `<div class="spend-cap${full ? " is-full" : ""}" role="img" aria-label="${esc(name)}: ${esc(used)} used">` +
+        `<div class="spend-cap${full ? " is-full" : ""}" role="img" aria-label="${esc(name)}: ${esc(used)}">` +
           `<div class="spend-cap-row"><span>${esc(name)}</span>` +
           `<span class="nm">${esc(used)}</span></div>` +
           `<span class="track"><span class="fill" style="width:${pct.toFixed(1)}%"></span></span></div>`,

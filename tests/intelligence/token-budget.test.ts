@@ -9,7 +9,10 @@ import {
   evaluateTokenBudget,
   verdictForProvider,
   billedProviderName,
+  billedCapName,
   forBilledProvider,
+  formatResetAt,
+  tokenBudgetUsageLead,
   TOKEN_BUDGET_HOW_TO,
   TOKEN_BUDGET_HOW_TO_SET,
   TokenBudgetError,
@@ -122,6 +125,24 @@ describe("formatTokenCount", () => {
     expect(formatTokenCount(2_000_000)).toBe("2M");
     expect(formatTokenCount(7_976_000)).toBe("7.98M");
     expect(formatTokenCount(500_000)).toBe("500k");
+  });
+
+  it("leads with used and remaining, then when the window refills", () => {
+    expect(billedCapName("cli", "week")).toBe("CLI weekly cap");
+    const reset = "2026-09-05T12:00:00.000Z";
+    expect(
+      tokenBudgetUsageLead({
+        provider: "cli",
+        scale: "week",
+        used: 2_024_000,
+        remaining: 7_976_000,
+        cap: 10_000_000,
+        resets_at: reset,
+      }),
+    ).toEqual({
+      lead: "2.02M used · 7.98M remaining",
+      detail: `10M CLI weekly cap · resets ${formatResetAt(reset, NOW)}`,
+    });
   });
 });
 
@@ -241,6 +262,9 @@ describe("evaluateTokenBudget", () => {
       NOW,
     );
     expect(report.providers.cli?.windows[0]?.remaining).toBe(9_000_000);
+    expect(report.providers.cli?.windows[0]?.resets_at).toBe(
+      new Date(NOW.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+    );
     expect(report.how_to).toBe(TOKEN_BUDGET_HOW_TO_SET);
     expect(report.tightest?.provider).toBe("cli");
     expect(report.tightest?.scale).toBe("week");
