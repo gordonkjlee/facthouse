@@ -337,7 +337,7 @@ Example — placeholders only; do not put a real password in a committed file:
       "env": {
         "FACTMEM_DATA": "C:\\Users\\alex\\.factmem-work",
         "FACTMEM_STORAGE": "postgres",
-        "FACTMEM_POSTGRES_URL": "postgres://USER:PASSWORD@0.24.2.1:5432/factmem"
+        "FACTMEM_POSTGRES_URL": "postgres://USER:PASSWORD@localhost:5432/factmem"
       }
     }
   }
