@@ -1,6 +1,6 @@
 {
   "name": "@openmem/mcp",
-  "version": "0.22.0",
+  "version": "0.23.0",
   "description": "A local memory engine any AI tool can use. You own the SQLite file.",
   "type": "module",
   "license": "MIT",
