@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import {
   CLI_NAME,
   DEFAULT_MCP_SERVER_NAME,
+  GITHUB_REPO,
   NPM_PACKAGE,
   NPM_PACKAGE_COMPAT,
   PRODUCT_NAME,
@@ -25,6 +26,7 @@ describe("identity", () => {
     expect(pkg.bin[CLI_NAME]).toBe("dist/cli/index.js");
     expect(pkg.bin.openmemory).toBe("dist/cli/index.js");
     expect(pkg.bin.mcp).toBe("dist/index.js");
+    expect(pkg.repository.url).toBe(`https://github.com/${GITHUB_REPO}`);
   });
 
   it("keeps the linger package name distinct from the canonical one", () => {

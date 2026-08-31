@@ -7,6 +7,7 @@ import {
   storeHasNamedSources,
 } from "../../src/tools/capture-fact-description.js";
 import { DURABLE_FACT } from "../../src/intelligence/extract-prompt.js";
+import { GITHUB_REPO, NPM_PACKAGE } from "../../src/identity.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const src = (rel: string) =>
@@ -79,8 +80,8 @@ const README = readFileSync(
 describe("README instruction layer for capture and identity", () => {
   it("names this package in the opening, not Mem0's hosted MCP", () => {
     const head = README.split(/\r?\n/).slice(0, 8).join("\n");
-    expect(head).toMatch(/gordonkjlee\/openmemory/);
-    expect(head).toMatch(/@factmem\/mcp/);
+    expect(head).toContain(GITHUB_REPO);
+    expect(head).toContain(NPM_PACKAGE);
     expect(head).toMatch(/mcp\.mem0\.ai/);
     expect(head).toMatch(/abolotnov\/factmem/);
   });

@@ -25,7 +25,7 @@ except ImportError as exc:  # pragma: no cover - CI installs markdown
 ROOT = Path(__file__).resolve().parents[2]
 DOMAIN = "factmem.dev"
 SITE_ORIGIN = f"https://{DOMAIN}"
-GITHUB = "https://github.com/gordonkjlee/openmemory"
+GITHUB = "https://github.com/gordonkjlee/factmem"
 NPM = "https://www.npmjs.com/package/@factmem/mcp"
 PITCH = "A local memory engine any AI tool can use."
 MARKDOWN_EXTENSIONS = ("fenced_code", "tables")

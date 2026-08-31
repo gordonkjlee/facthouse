@@ -11,7 +11,7 @@ import build_pages
 ROOT = Path(__file__).resolve().parents[2]
 README_PITCH = (
     "A local memory engine any AI tool can use. "
-    "GitHub [`gordonkjlee/openmemory`](https://github.com/gordonkjlee/openmemory), "
+    "GitHub [`gordonkjlee/factmem`](https://github.com/gordonkjlee/factmem), "
     "npm [`@factmem/mcp`](https://www.npmjs.com/package/@factmem/mcp)."
 )
 
@@ -20,7 +20,7 @@ def test_rewrite_contributing_to_github():
     src = ROOT / "README.md"
     assert (
         build_pages.rewrite_url("CONTRIBUTING.md", src)
-        == "https://github.com/gordonkjlee/openmemory/blob/main/CONTRIBUTING.md"
+        == "https://github.com/gordonkjlee/factmem/blob/main/CONTRIBUTING.md"
     )
 
 
@@ -28,7 +28,7 @@ def test_rewrite_source_file_to_github():
     src = ROOT / "README.md"
     assert (
         build_pages.rewrite_url("src/cli/query.ts", src)
-        == "https://github.com/gordonkjlee/openmemory/blob/main/src/cli/query.ts"
+        == "https://github.com/gordonkjlee/factmem/blob/main/src/cli/query.ts"
     )
 
 
@@ -46,16 +46,16 @@ def test_builds_site_from_readme(tmp_path: Path):
     index = (site / "index.html").read_text(encoding="utf-8")
     assert "<title>FactMem</title>" in index
     assert "A local memory engine any AI tool can use." in index
-    assert "[`gordonkjlee/openmemory`]" not in index
+    assert "[`gordonkjlee/factmem`]" not in index
     assert "npm install -g @factmem/mcp" in index
-    assert "https://github.com/gordonkjlee/openmemory" in index
+    assert "https://github.com/gordonkjlee/factmem" in index
     assert "https://www.npmjs.com/package/@factmem/mcp" in index
     assert "What you get" in index
     assert "You own the SQLite file" in index
     assert "<table>" in index
     assert 'href="CONTRIBUTING.md"' not in index
     assert (
-        "https://github.com/gordonkjlee/openmemory/blob/main/CONTRIBUTING.md"
+        "https://github.com/gordonkjlee/factmem/blob/main/CONTRIBUTING.md"
         in index
     )
     assert 'src="assets/logo.png"' in index
@@ -70,12 +70,12 @@ def test_builds_site_from_readme(tmp_path: Path):
 def test_pitch_helpers_keep_readme_lede():
     assert build_pages.pitch_plain(README_PITCH) == (
         "A local memory engine any AI tool can use. "
-        "GitHub gordonkjlee/openmemory, "
+        "GitHub gordonkjlee/factmem, "
         "npm @factmem/mcp."
     )
     html = build_pages.pitch_html(README_PITCH)
     assert html.startswith("A local memory engine any AI tool can use.")
-    assert 'href="https://github.com/gordonkjlee/openmemory"' in html
+    assert 'href="https://github.com/gordonkjlee/factmem"' in html
     assert 'href="https://www.npmjs.com/package/@factmem/mcp"' in html
 
 

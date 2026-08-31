@@ -2,13 +2,13 @@
 
 <img src="brand/mascot-right.png" width="128" align="right" alt="FactMem mascot">
 
-A local memory engine any AI tool can use. GitHub [`gordonkjlee/openmemory`](https://github.com/gordonkjlee/openmemory), npm [`@factmem/mcp`](https://www.npmjs.com/package/@factmem/mcp).
+A local memory engine any AI tool can use. GitHub [`gordonkjlee/factmem`](https://github.com/gordonkjlee/factmem), npm [`@factmem/mcp`](https://www.npmjs.com/package/@factmem/mcp).
 
 Not a hosted plane. Not a vendor blob. You own the SQLite file. Formerly published as OpenMemory (`@openmem/mcp`); that name is Mem0's hosted "OpenMemory MCP" at [`mcp.mem0.ai`](https://mcp.mem0.ai). Not the code-index MCP [`abolotnov/factmem`](https://github.com/abolotnov/factmem).
 
 [![npm](https://img.shields.io/npm/v/@factmem/mcp.svg)](https://www.npmjs.com/package/@factmem/mcp)
-[![CI](https://github.com/gordonkjlee/openmemory/actions/workflows/ci.yml/badge.svg)](https://github.com/gordonkjlee/openmemory/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/github/license/gordonkjlee/openmemory)](LICENSE)
+[![CI](https://github.com/gordonkjlee/factmem/actions/workflows/ci.yml/badge.svg)](https://github.com/gordonkjlee/factmem/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/github/license/gordonkjlee/factmem)](LICENSE)
 
 It records, stores, and retrieves structured knowledge. Domain routing, entity extraction, deduplication, and supersession run in the server. Exposed as an MCP server.
 
@@ -551,8 +551,8 @@ No fact, entity, embedding or search result is affected. Deleting rows does not 
 ## Development
 
 ```bash
-git clone https://github.com/gordonkjlee/openmemory
-cd openmemory
+git clone https://github.com/gordonkjlee/factmem
+cd factmem
 npm install
 npm run build
 npm test
@@ -576,7 +576,7 @@ stepped over.
 
 Issues and pull requests are welcome. Open an issue first if the change is more than a typo.
 
-- Questions: [GitHub Discussions](https://github.com/gordonkjlee/openmemory/discussions)
+- Questions: [GitHub Discussions](https://github.com/gordonkjlee/factmem/discussions)
 - How to build and test: [CONTRIBUTING.md](CONTRIBUTING.md)
 
 ## License
