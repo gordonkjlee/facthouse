@@ -1,10 +1,12 @@
-<img src="media/mascot-right.png" width="128" align="right" alt="OpenMemory mascot">
-
 # OpenMemory
 
-Local-first AI memory engine exposed as an MCP server. GitHub [`gordonkjlee/openmemory`](https://github.com/gordonkjlee/openmemory), npm [`@openmem/mcp`](https://www.npmjs.com/package/@openmem/mcp). Structured knowledge with server-side intelligence — domain routing, entity extraction, deduplication, and supersession. Any AI tool can query it. You own the SQLite file.
+<img src="brand/mascot-right.png" width="128" align="right" alt="OpenMemory mascot">
 
-This is not Mem0's hosted "OpenMemory MCP" at [`mcp.mem0.ai`](https://mcp.mem0.ai). Same name, different product: this one is local SQLite, not a hosted memory plane.
+A local memory engine any AI tool can use. GitHub [`gordonkjlee/openmemory`](https://github.com/gordonkjlee/openmemory), npm [`@openmem/mcp`](https://www.npmjs.com/package/@openmem/mcp).
+
+Not a hosted plane. Not a vendor blob. You own the SQLite file. This is not Mem0's hosted "OpenMemory MCP" at [`mcp.mem0.ai`](https://mcp.mem0.ai). Same name, different product.
+
+It records, stores, and retrieves structured knowledge. Domain routing, entity extraction, deduplication, and supersession run in the server. Exposed as an MCP server.
 
 ## Quick Start
 

@@ -1,7 +1,7 @@
 {
   "name": "@openmem/mcp",
   "version": "0.22.0",
-  "description": "Local-first AI memory engine exposed as an MCP server. You own the SQLite file.",
+  "description": "A local memory engine any AI tool can use. You own the SQLite file.",
   "type": "module",
   "license": "MIT",
   "author": "Gordon Lee",
