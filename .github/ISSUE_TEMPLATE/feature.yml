@@ -1,0 +1,22 @@
+name: Feature
+description: A concrete change to the engine or public docs
+title: "feat: "
+labels: []
+body:
+  - type: markdown
+    attributes:
+      value: Open an issue before a large pull request. Questions belong in Discussions.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What is missing
+      description: The gap, not a solution. Synthetic examples only.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal
+      description: Optional. What you would change, and what you would not.
+    validations:
+      required: false

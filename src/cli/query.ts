@@ -27,7 +27,7 @@ import {
   formatTokenCount,
 } from "../intelligence/token-budget.js";
 import { formatDiskBudget } from "../db/disk-budget.js";
-import type { EpisodeSlice, SearchResponse } from "../types/data.js";
+import type { EpisodeSlice, PendingFact, SearchResponse } from "../types/data.js";
 import type { InterlocutorConfig } from "../types/config.js";
 
 // ---------------------------------------------------------------------------
@@ -64,77 +64,93 @@ export async function runSearch(
 
 /** Render search results for a terminal. */
 export function formatSearch(response: SearchResponse, query: string): string {
-  if (response.results.length === 0) {
-    const episodes = response.episodes ?? [];
-    if (episodes.length > 0) {
-      return formatEpisodes(
-        query,
-        episodes,
-        response.suggested_refinement,
-        response.system_time_warning,
-      );
-    }
-    const extras = [
-      response.suggested_refinement,
-      response.system_time_warning,
-    ].filter(Boolean);
+  const pending = response.pending ?? [];
+  const episodes = response.episodes ?? [];
+  const extras = [
+    response.suggested_refinement,
+    response.system_time_warning,
+  ].filter((s): s is string => Boolean(s));
+
+  if (
+    response.results.length === 0 &&
+    pending.length === 0 &&
+    episodes.length === 0
+  ) {
     const hint = extras.length > 0 ? `\n\n${extras.join("\n")}` : "";
     return `No knowledge found for "${query}".${hint}`;
   }
 
-  const lines: string[] = [
-    `${response.results.length} result${response.results.length === 1 ? "" : "s"} for "${query}"`,
-    "",
-  ];
+  const lines: string[] = [];
 
-  for (const r of response.results) {
-    const f = r.fact;
-    const scope = f.subdomain ? `${f.domain}/${f.subdomain}` : f.domain;
-    lines.push(`  ${f.content}`);
+  if (response.results.length > 0) {
+    lines.push(
+      `${response.results.length} result${response.results.length === 1 ? "" : "s"} for "${query}"`,
+      "",
+    );
+    for (const r of response.results) {
+      const f = r.fact;
+      const scope = f.subdomain ? `${f.domain}/${f.subdomain}` : f.domain;
+      lines.push(`  ${f.content}`);
 
-    const meta = [
-      scope,
-      `score ${r.score.toFixed(3)}`,
-      `confidence ${f.confidence.toFixed(2)}`,
-    ];
-    if (f.speaker) {
-      meta.push(`speaker ${f.speaker}`);
-    } else if (f.speaker_role) {
-      meta.push(`speaker ${f.speaker_role}`);
+      const meta = [
+        scope,
+        `score ${r.score.toFixed(3)}`,
+        `confidence ${f.confidence.toFixed(2)}`,
+      ];
+      if (f.speaker) {
+        meta.push(`speaker ${f.speaker}`);
+      } else if (f.speaker_role) {
+        meta.push(`speaker ${f.speaker_role}`);
+      }
+      if (r.entities.length) {
+        meta.push(`entities: ${r.entities.map((e) => e.name).join(", ")}`);
+      }
+      lines.push(`    ${meta.join("  ·  ")}`);
+      lines.push("");
     }
-    if (r.entities.length) {
-      meta.push(`entities: ${r.entities.map((e) => e.name).join(", ")}`);
-    }
-    lines.push(`    ${meta.join("  ·  ")}`);
-    lines.push("");
+    // Retrieval-quality signals — the same ones the tool hands an AI, so a thin
+    // result set is visibly thin rather than silently wrong. Graduated only.
+    lines.push(
+      `  coverage ${(response.coverage_estimate * 100).toFixed(0)}%  ·  ` +
+        `confidence ${(response.result_confidence * 100).toFixed(0)}%`,
+    );
+  } else {
+    lines.push(`No graduated facts for "${query}".`);
   }
 
-  // Retrieval-quality signals — the same ones the tool hands an AI, so a thin
-  // result set is visibly thin rather than silently wrong.
-  lines.push(
-    `  coverage ${(response.coverage_estimate * 100).toFixed(0)}%  ·  ` +
-      `confidence ${(response.result_confidence * 100).toFixed(0)}%`,
-  );
-  if (response.suggested_refinement) {
-    lines.push(`  ${response.suggested_refinement}`);
+  if (pending.length > 0) {
+    if (lines.length > 0) lines.push("");
+    lines.push("Pending (not yet consolidated):", "");
+    for (const p of pending) {
+      lines.push(...formatPendingLines(p));
+    }
   }
-  if (response.system_time_warning) {
-    lines.push(`  ${response.system_time_warning}`);
+
+  if (response.results.length === 0 && episodes.length > 0) {
+    if (lines.length > 0) lines.push("");
+    lines.push("Raw log window:", "");
+    lines.push(...formatEpisodeSlices(episodes));
+  }
+
+  for (const extra of extras) {
+    lines.push(`  ${extra}`);
   }
 
   return lines.join("\n");
 }
 
-function formatEpisodes(
-  query: string,
-  episodes: EpisodeSlice[],
-  refinement: string | null,
-  systemTimeWarning?: string | null,
-): string {
-  const lines: string[] = [
-    `No graduated facts for "${query}". Raw log window:`,
-    "",
-  ];
+function formatPendingLines(p: PendingFact): string[] {
+  const lines = [`  ${p.content}`];
+  const meta: string[] = [];
+  if (p.domain_hint) meta.push(p.domain_hint);
+  if (p.confidence != null) meta.push(`confidence ${p.confidence.toFixed(2)}`);
+  if (meta.length > 0) lines.push(`    ${meta.join("  ·  ")}`);
+  lines.push("");
+  return lines;
+}
+
+function formatEpisodeSlices(episodes: EpisodeSlice[]): string[] {
+  const lines: string[] = [];
   for (const slice of episodes) {
     lines.push(`  conversation ${slice.conversation_id}`);
     for (const e of slice.events) {
@@ -144,9 +160,7 @@ function formatEpisodes(
     }
     lines.push("");
   }
-  if (refinement) lines.push(`  ${refinement}`);
-  if (systemTimeWarning) lines.push(`  ${systemTimeWarning}`);
-  return lines.join("\n");
+  return lines;
 }
 
 // ---------------------------------------------------------------------------
