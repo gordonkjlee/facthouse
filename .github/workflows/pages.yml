@@ -1,0 +1,63 @@
+# Rebuild factmem.dev from README.md on every push to main.
+# Source of truth is the repo docs, not a separate marketing page.
+
+name: Pages
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Install
+        run: pip install "markdown>=3.6.0" pytest
+
+      - name: Build site from README
+        run: python .github/scripts/build_pages.py
+
+      - name: Check site output
+        run: |
+          test -f _site/index.html
+          test "$(tr -d '\n' < _site/CNAME)" = "factmem.dev"
+
+      - name: Pages builder tests
+        run: python -m pytest .github/scripts/test_build_pages.py -q
+
+      # configure-pages calls the Pages API and fails while has_pages is false.
+      # PRs only need a green build; publish steps run after merge (or dispatch).
+      - if: github.event_name != 'pull_request'
+        uses: actions/configure-pages@v6
+
+      - if: github.event_name != 'pull_request'
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: _site
+
+  deploy:
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5
