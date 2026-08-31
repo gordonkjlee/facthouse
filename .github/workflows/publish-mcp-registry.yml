@@ -1,0 +1,230 @@
+# Publish server.json to the official MCP Registry after npm is live.
+#
+# Do not trigger on tag push. Tags are created before @factmem/mcp is
+# resolvable, and the registry rejects a publish whose npm package does not
+# exist yet. "Publish to npm" already waits until the tarball is resolvable
+# and smoke-tests it; this workflow runs after that one succeeds.
+#
+# workflow_dispatch exists so a version already on npm (today: 0.24.2) can be
+# listed without cutting a new release. A pull request cannot mint GitHub OIDC
+# for a real publish, so the first listing is that post-merge dispatch.
+#
+# Do not add a second npm publish here. Do not set environment: npm — that
+# environment is the Trusted Publisher binding for publish.yml. Do not add
+# @openmem/mcp as a second registry package; the linger tarball is the same
+# server.
+#
+# Auth is `mcp-publisher login github-oidc` (no PAT, no NPM_TOKEN). The
+# registry grants io.github.{repository_owner}/* from the OIDC
+# repository_owner claim, so io.github.gordonkjlee/factmem is in scope for
+# this repo.
+
+name: Publish to MCP Registry
+
+on:
+  workflow_run:
+    # Must match the `name:` in publish.yml exactly
+    workflows: ["Publish to npm"]
+    types: [completed]
+  workflow_dispatch:
+
+concurrency:
+  group: publish-mcp-registry
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    # Must exceed the npm-resolve wait (20 min) plus publisher install and
+    # the registry publish. A 10-minute job timeout with a 20-minute loop
+    # would kill the wait and look like a missing package.
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Find latest GitHub release
+        id: release
+        run: |
+          # GraphQL, not `gh api repos/.../releases/latest`. Same reason as
+          # publish.yml: the REST call cannot distinguish "no releases exist"
+          # from "could not ask" — both yield an empty string. A failed query
+          # is not an answer, and must stop the workflow rather than be read
+          # as "nothing to do".
+          if ! RESPONSE=$(gh api graphql -f query='
+            query($owner:String!,$name:String!){
+              repository(owner:$owner,name:$name){ latestRelease{ tagName } }
+            }' -F owner="${{ github.repository_owner }}" -F name="${GITHUB_REPOSITORY#*/}" 2>&1); then
+            echo "::error::Could not query the latest release: ${RESPONSE}. Refusing to assume there is nothing to publish."
+            exit 1
+          fi
+          TAG=$(echo "$RESPONSE" | jq -r '.data.repository.latestRelease.tagName // ""')
+          if [ -z "$TAG" ]; then
+            echo "No releases exist yet — nothing to publish."
+            echo "found=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          VERSION="${TAG#v}"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "found=true" >> "$GITHUB_OUTPUT"
+          echo "Latest GitHub release is ${TAG} (${VERSION})"
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      # "Publish to npm" goes green on skip-already-published (Release Please
+      # on nearly every main push). Do not wait for npm, install the
+      # publisher, or mint OIDC when this version is already listed.
+      # Versioned search only — unversioned search paginates oldest-first
+      # and page 1 will miss later releases. Do not use name= (ignored / fuzzy).
+      - if: steps.release.outputs.found == 'true'
+        id: listed
+        name: Already listed on the MCP Registry?
+        run: |
+          SERVER_NAME="io.github.gordonkjlee/factmem"
+          VERSION="${{ steps.release.outputs.version }}"
+          SEARCH_URL="https://registry.modelcontextprotocol.io/v0.1/servers?search=${SERVER_NAME}&version=${VERSION}"
+          BODY=$(curl -fsS "$SEARCH_URL")
+          echo "$BODY"
+          if echo "$BODY" | jq -e --arg n "$SERVER_NAME" --arg v "$VERSION" '
+            [.servers[]? | select(.server.name == $n and .server.version == $v)] | length > 0
+          ' >/dev/null; then
+            echo "listed=true" >> "$GITHUB_OUTPUT"
+            echo "${SERVER_NAME} version ${VERSION} is already listed — nothing to publish."
+            exit 0
+          fi
+          echo "listed=false" >> "$GITHUB_OUTPUT"
+          echo "${SERVER_NAME} version ${VERSION} is not listed yet (empty servers is not listed)."
+
+      # Checkout the release tag, not the workflow_run head or an arbitrary
+      # branch, so server.json matches the npm tarball for that version.
+      # GITHUB_REF stays on the triggering ref even after this step — do not
+      # derive the version from it.
+      - if: steps.release.outputs.found == 'true' && steps.listed.outputs.listed != 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ steps.release.outputs.tag }}
+
+      - if: steps.release.outputs.found == 'true' && steps.listed.outputs.listed != 'true'
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+
+      # Safety net only. release-please already bumps server.json via
+      # extra-files. Set .version and the @factmem/mcp package version from
+      # the tag if they drift. Do not touch name/title or add a package.
+      - if: steps.release.outputs.found == 'true' && steps.listed.outputs.listed != 'true'
+        name: Sync server.json version from the tag
+        run: |
+          VERSION="${{ steps.release.outputs.version }}"
+          jq --arg v "$VERSION" '
+            .version = $v
+            | .packages |= map(if .identifier == "@factmem/mcp" then .version = $v else . end)
+          ' server.json > server.tmp && mv server.tmp server.json
+          echo "server.json versions after sync:"
+          jq '{name, version, factmem: ([.packages[] | select(.identifier == "@factmem/mcp") | .version] | .[0])}' server.json
+
+      - if: steps.release.outputs.found == 'true' && steps.listed.outputs.listed != 'true'
+        name: Wait until @factmem/mcp@${{ steps.release.outputs.version }} is on npm
+        run: |
+          VERSION="${{ steps.release.outputs.version }}"
+          # "Publish to npm" already waits when it just published, but a
+          # dispatch/backfill can run without a fresh npm publish. The
+          # registry's package-existence check will fail if we publish
+          # during npm's scan window. Fail if the version never appears.
+          MAX_WAIT=1200
+          echo "Waiting up to ${MAX_WAIT}s for @factmem/mcp@${VERSION}"
+          DEADLINE=$((SECONDS + MAX_WAIT))
+          ATTEMPT=0
+          while [ "$SECONDS" -lt "$DEADLINE" ]; do
+            ATTEMPT=$((ATTEMPT + 1))
+            if OUT=$(npm view "@factmem/mcp@${VERSION}" version 2>&1); then
+              echo "@factmem/mcp@${VERSION} is live on npm after ${SECONDS}s ($ATTEMPT attempt(s)): ${OUT}"
+              exit 0
+            fi
+            LEFT=$((DEADLINE - SECONDS))
+            echo "attempt ${ATTEMPT}: not resolvable after ${SECONDS}s (${LEFT}s left): ${OUT}"
+            if [ "$LEFT" -le 0 ]; then
+              break
+            fi
+            SLEEP=30
+            if [ "$SLEEP" -gt "$LEFT" ]; then
+              SLEEP=$LEFT
+            fi
+            sleep "$SLEEP"
+          done
+          echo "::error::@factmem/mcp@${VERSION} is not resolvable from npm after ${SECONDS}s. Refusing to publish server.json for a package the registry cannot verify."
+          exit 1
+
+      - if: steps.release.outputs.found == 'true' && steps.listed.outputs.listed != 'true'
+        name: Install mcp-publisher
+        run: |
+          curl -fsSL "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz" | tar xz mcp-publisher
+          ./mcp-publisher --help
+
+      - if: steps.release.outputs.found == 'true' && steps.listed.outputs.listed != 'true'
+        name: Validate server.json
+        run: ./mcp-publisher validate
+
+      - if: steps.release.outputs.found == 'true' && steps.listed.outputs.listed != 'true'
+        name: Authenticate to MCP Registry
+        run: ./mcp-publisher login github-oidc
+
+      - if: steps.release.outputs.found == 'true' && steps.listed.outputs.listed != 'true'
+        name: Publish server.json
+        run: |
+          # A 400 "cannot publish duplicate version" means this tag is already
+          # listed. Treating that as failure would turn a re-run of "Publish
+          # to npm" (or a second dispatch) into a red X for a listing that is
+          # fine.
+          set +e
+          LOG=$(./mcp-publisher publish 2>&1)
+          STATUS=$?
+          set -e
+          echo "$LOG"
+          if [ "$STATUS" -ne 0 ]; then
+            if echo "$LOG" | grep -qi 'duplicate version'; then
+              echo "Registry already has this version — continuing to verify."
+            else
+              exit "$STATUS"
+            fi
+          fi
+
+      - if: steps.release.outputs.found == 'true' && steps.listed.outputs.listed != 'true'
+        name: Verify the server is listed
+        run: |
+          SERVER_NAME="io.github.gordonkjlee/factmem"
+          VERSION="${{ steps.release.outputs.version }}"
+          # Versioned search — unversioned search paginates oldest-first
+          # (page 1 is the oldest 30) and would miss later releases.
+          # Do not use name= (ignored / fuzzy). Empty servers is not listed.
+          SEARCH_URL="https://registry.modelcontextprotocol.io/v0.1/servers?search=${SERVER_NAME}&version=${VERSION}"
+          MAX_WAIT=120
+          DEADLINE=$((SECONDS + MAX_WAIT))
+          ATTEMPT=0
+          while [ "$SECONDS" -lt "$DEADLINE" ]; do
+            ATTEMPT=$((ATTEMPT + 1))
+            BODY=$(curl -fsS "$SEARCH_URL")
+            echo "$BODY"
+            if echo "$BODY" | jq -e --arg n "$SERVER_NAME" --arg v "$VERSION" '
+              [.servers[]? | select(.server.name == $n and .server.version == $v)] | length > 0
+            ' >/dev/null; then
+              echo "Registry lists ${SERVER_NAME} version ${VERSION} after ${SECONDS}s ($ATTEMPT attempt(s))."
+              exit 0
+            fi
+            LEFT=$((DEADLINE - SECONDS))
+            echo "attempt ${ATTEMPT}: ${SERVER_NAME}@${VERSION} not in versioned search after ${SECONDS}s (${LEFT}s left)"
+            if [ "$LEFT" -le 0 ]; then
+              break
+            fi
+            SLEEP=10
+            if [ "$SLEEP" -gt "$LEFT" ]; then
+              SLEEP=$LEFT
+            fi
+            sleep "$SLEEP"
+          done
+          echo "::error::Registry search ${SEARCH_URL} did not return ${SERVER_NAME} version ${VERSION}."
+          exit 1

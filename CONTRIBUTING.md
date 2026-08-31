@@ -16,7 +16,11 @@ npm test
 
 ## Publishing to the MCP Registry
 
-npm publish is automated. The official MCP Registry is not: `mcpName` in `package.json` must equal `name` in `server.json`, and `mcp-publisher login github` is interactive. After a version is live on npm, run `mcp-publisher publish` locally. Do not add CI that publishes to the registry.
+npm publish is automated (`Publish to npm`). After that workflow succeeds, `Publish to MCP Registry` publishes `server.json` to the official MCP Registry as `io.github.gordonkjlee/factmem` via `mcp-publisher login github-oidc` (no PAT, no npm token).
+
+`mcpName` in `package.json` must equal `name` in `server.json`. release-please bumps `server.json` versions through extra-files.
+
+To list a version already on npm without cutting a new release: Actions → "Publish to MCP Registry" → Run workflow. GitHub OIDC publish cannot be dry-run from a pull request; the first listing is that post-merge dispatch.
 
 ## Rules that will reject a PR
 
