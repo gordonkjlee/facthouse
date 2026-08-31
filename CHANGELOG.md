@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.24.0](https://github.com/gordonkjlee/openmemory/compare/v0.23.0...v0.24.0) (2026-08-31)
+
+
+### Features
+
+* rebrand as FactMem with legacy shims ([#214](https://github.com/gordonkjlee/openmemory/issues/214)) ([d65d11c](https://github.com/gordonkjlee/openmemory/commit/d65d11cd55d01898e19fe3a58c2a24db939939a4))
+* rebuild factmem.dev from README via GitHub Pages ([#212](https://github.com/gordonkjlee/openmemory/issues/212)) ([b02b8f3](https://github.com/gordonkjlee/openmemory/commit/b02b8f38f7d60948e7e43dcd46b16c922ed29079))
+
 ## [0.23.0](https://github.com/gordonkjlee/openmemory/compare/v0.22.0...v0.23.0) (2026-08-31)
 
 
