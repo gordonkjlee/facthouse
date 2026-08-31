@@ -1,7 +1,7 @@
 /**
  * Pull named capture sources into session_events.
  *
- * This is the single entry for client-agnostic capture. `openmemory pull`
+ * This is the single entry for client-agnostic capture. `factmem pull`
  * is the documented command; the MCP server calls the same function once
  * when a session starts so a long-lived process with sources configured
  * does not need a separate invocation. Empty `sources` is a successful
@@ -72,7 +72,7 @@ export function shouldFlushAfterSessionStartPull(
  * `tick` is D→I, not I→K: it honours the consolidation threshold so a Stop
  * hook that pulls every turn does not spawn `claude -p` on every reply.
  * A pull with no server listening cannot tick; the CLI then tells the
- * user to run `openmemory consolidate`.
+ * user to run `factmem consolidate`.
  */
 export function shouldTickAfterCliPull(
   eventsInserted: number,

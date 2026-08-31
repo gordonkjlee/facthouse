@@ -88,7 +88,7 @@ export function compilePatterns(
         patterns.push(new RegExp(source, "i"));
       } catch {
         console.error(
-          `[openmemory] ignoring an invalid pattern for domain "${name}": ${source}`,
+          `[factmem] ignoring an invalid pattern for domain "${name}": ${source}`,
         );
       }
     }

@@ -3,7 +3,7 @@
  *
  * Maps the configured provider type to a concrete IntelligenceProvider,
  * honouring an environment kill-switch that overrides the config file
- * (config precedence: CLI/config file < OPENMEMORY_PROVIDER env var — the
+ * (config precedence: CLI/config file < FACTMEM_PROVIDER env var — the
  * server's three-layer config model, applied to provider selection).
  *
  * The heuristic provider is the universal terminal fallback: it has zero
@@ -22,6 +22,7 @@ import { createHeuristicProvider } from "./heuristic.js";
 import { createSamplingProvider } from "./sampling.js";
 import { createCliProvider } from "./cli.js";
 import type { DomainDef } from "../types/config.js";
+import { envName, envValue } from "../identity.js";
 
 const VALID_TYPES: readonly IntelligenceProviderType[] = [
   "heuristic",
@@ -31,18 +32,19 @@ const VALID_TYPES: readonly IntelligenceProviderType[] = [
 ];
 
 /** Environment kill-switch: force a provider regardless of config.json. */
-export const PROVIDER_ENV_VAR = "OPENMEMORY_PROVIDER";
+export const PROVIDER_ENV_VAR = envName("PROVIDER");
 
 /**
- * Resolve the effective provider type. An `OPENMEMORY_PROVIDER` env var (if it
+ * Resolve the effective provider type. A `FACTMEM_PROVIDER` env var (if it
  * names a valid provider) overrides the configured value — a fast, no-edit
  * kill-switch for turning the subprocess `cli` provider off (or on).
+ * `OPENMEMORY_PROVIDER` is still read.
  */
 export function resolveProviderType(
   configured: IntelligenceProviderType,
   env: NodeJS.ProcessEnv = process.env,
 ): IntelligenceProviderType {
-  const override = env[PROVIDER_ENV_VAR]?.trim().toLowerCase();
+  const override = envValue("PROVIDER", env)?.toLowerCase();
   if (override && (VALID_TYPES as readonly string[]).includes(override)) {
     return override as IntelligenceProviderType;
   }

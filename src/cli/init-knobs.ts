@@ -1,5 +1,5 @@
 /**
- * The only knobs `openmemory init` is allowed to ask about.
+ * The only knobs `factmem init` is allowed to ask about.
  *
  * Silent values are expressions of DEFAULT_CONFIG / defaultDataDir(), not
  * copied literals. Prompt copy lives here so the wizard and tests cannot grow
@@ -85,8 +85,8 @@ export const INIT_SYNTHETIC = {
   claudeHome: "~/.claude",
   cursorHome: "~/.cursor",
   cwd: "C:\\dev\\app",
-  personalDir: "C:\\Users\\alex\\.openmemory-personal",
-  workDir: "C:\\Users\\alex\\.openmemory-work",
+  personalDir: "C:\\Users\\alex\\.factmem-personal",
+  workDir: "C:\\Users\\alex\\.factmem-work",
 } as const;
 
 /** Copy — never return DEFAULT_CONFIG.sources by reference. */
@@ -108,7 +108,7 @@ function supportedKindsList(): string {
 
 export const INIT_PROMPTS = {
   intro:
-    "OpenMemory setup. Press Enter to accept the default in [brackets].\n" +
+    "FactMem setup. Press Enter to accept the default in [brackets].\n" +
     "One directory is one memory. Another store is another directory.",
   dataDir: (shown: string) => `Data directory [${shown}]: `,
   capture:

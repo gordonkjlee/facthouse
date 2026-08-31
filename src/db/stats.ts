@@ -1,7 +1,7 @@
 /**
  * Knowledge base statistics.
  *
- * Shared by the `get_stats` MCP tool and the `openmemory stats` CLI so the two
+ * Shared by the `get_stats` MCP tool and the `factmem stats` CLI so the two
  * can never disagree about what the store contains.
  */
 
@@ -52,7 +52,7 @@ export interface KnowledgeStats {
    * everything above it: a store in daily use was measured at 47,000 events and
    * 493 MB against 21 graduated facts, almost all of it logged tool output. The
    * facts were healthy, so no other number in this object hinted at it. See
-   * `openmemory prune`.
+   * `factmem prune`.
    */
   events: {
     count: number;

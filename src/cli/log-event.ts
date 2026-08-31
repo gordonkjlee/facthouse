@@ -1,6 +1,6 @@
 /**
  * log-event CLI command — inserts a SessionEvent directly into the database.
- * Used by AI client hooks to pipe conversation messages to OpenMemory.
+ * Used by AI client hooks to pipe conversation messages to FactMem.
  */
 
 import { mkdirSync } from "node:fs";
@@ -14,6 +14,7 @@ import {
   createSession,
   ensureSession,
 } from "../db/sessions.js";
+import { envValue } from "../identity.js";
 import { sendSchedulerSignal } from "../ipc/scheduler-ipc.js";
 import type { SessionEvent } from "../types/data.js";
 
@@ -38,7 +39,7 @@ export interface LogEventArgs {
  * session, creating one if the store has none.
  *
  * That fallback is load-bearing, not tidiness, and it is **only** for this
- * command. `openmemory pull` writes `client_session_id` from the JSONL and
+ * command. `factmem pull` writes `client_session_id` from the JSONL and
  * never calls `getLatestSession()` — two files in one pull stay two
  * conversations. Consolidation groups extraction by that id; an event with
  * both session columns null is examined and declined, not attached to
@@ -72,7 +73,7 @@ export async function logEvent(args: LogEventArgs): Promise<SessionEvent> {
     // client_session_id. Our fallback resolves a row in `sessions`, so it goes
     // in mcp_session_id, which also keeps last_activity_at current and makes
     // "most recent" mean something on the next call.
-    const project = process.env.OPENMEMORY_PROJECT?.trim() || null;
+    const project = envValue("PROJECT")?.trim() || null;
     const mcpSessionId = args.sessionId
       ? null
       : await resolveOwnSession(db, project);
@@ -113,7 +114,7 @@ export async function logEvent(args: LogEventArgs): Promise<SessionEvent> {
  *
  * `source_tool: "cli"` records how the session came about, so a store seeded
  * from the command line is distinguishable from one an MCP client produced.
- * `project` is OPENMEMORY_PROJECT when set — the same env the MCP session
+ * `project` is FACTMEM_PROJECT when set — the same env the MCP session
  * uses — provenance, not a tenant.
  */
 async function resolveOwnSession(

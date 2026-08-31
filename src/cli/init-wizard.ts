@@ -1,5 +1,5 @@
 /**
- * TTY walk-through for `openmemory init`.
+ * TTY walk-through for `factmem init`.
  *
  * Prompts live in init-knobs.ts. This file only asks them. Silent / --yes
  * never constructs readline and never calls question().

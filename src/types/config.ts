@@ -1,5 +1,5 @@
 /**
- * Server configuration types — how OpenMemory is initialised and configured.
+ * Server configuration types — how FactMem is initialised and configured.
  */
 
 /** Default importance when not specified by the calling LLM or user config. */
@@ -160,7 +160,7 @@ export interface ConsolidationConfig {
  * staging data — was read by nothing, which is worse than absent: a setting
  * that looks like a safeguard and is not stops anyone looking further.
  *
- * What replaced it is not a clock but `openmemory prune`, which removes events
+ * What replaced it is not a clock but `factmem prune`, which removes events
  * nothing can reach — read by extraction, cited by no fact's provenance, and
  * outside the working-memory window. Age is the wrong instrument: an event's
  * value has nothing to do with how old it is, and a store that sits quiet for a
@@ -292,7 +292,7 @@ export interface EmbeddingConfig {
  *
  * Empty `sources` (the default) means pull is off: nothing is discovered, and
  * MCP `log_event` / `capture_fact` keep working as they do today. A source is
- * explicit — `{ kind, home, cwd? }` — and scoped to this store. OpenMemory
+ * explicit — `{ kind, home, cwd? }` — and scoped to this store. FactMem
  * does not auto-glob `~/.claude*` / `~/.cursor*` or honour `CLAUDE_CONFIG_DIR`
  * as implicit discovery; that variable is only useful as an example of what
  * `home` is (the client config dir).
@@ -334,8 +334,8 @@ export interface CaptureSource {
 export interface ServerConfig {
   /**
    * Transactional engine. sqlite is the default and needs no extra software.
-   * postgres is optional: set this (or OPENMEMORY_STORAGE) and put the
-   * connection string in OPENMEMORY_POSTGRES_URL — not here, because a
+   * postgres is optional: set this (or FACTMEM_STORAGE) and put the
+   * connection string in FACTMEM_POSTGRES_URL — not here, because a
    * config file that holds a password is a config file that gets committed.
    * A missing URL or a failed handshake does not open SQLite.
    */
@@ -411,7 +411,7 @@ export const DEFAULT_CONFIG: Omit<ServerConfig, "storage" | "temporal"> = {
     // provider would degrade to regex for them; the CLI provider is the path
     // that actually delivers server-side intelligence on those hosts. Every
     // stage falls back to the heuristic provider on failure (CLI not installed,
-    // rate limit, timeout). Override with the OPENMEMORY_PROVIDER env var
+    // rate limit, timeout). Override with the FACTMEM_PROVIDER env var
     // (e.g. =heuristic) or intelligence.provider in config.json.
     provider: "cli",
     api_key: null,

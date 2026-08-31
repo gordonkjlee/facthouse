@@ -251,7 +251,7 @@ describe.skipIf(!runnable)("cli entry — init output", () => {
     expect(r.status).toBe(0);
     expect(r.stdout).toMatch(/pull is off/i);
     expect(r.stdout).toMatch(/claude-code/);
-    expect(r.stdout).toMatch(/openmemory pull/);
+    expect(r.stdout).toMatch(/factmem pull/);
   });
 
   it("prints an MCP snippet that parses as JSON, with the data dir escaped", async () => {
@@ -269,8 +269,9 @@ describe.skipIf(!runnable)("cli entry — init output", () => {
     const entry = parsed.mcpServers[key];
     expect(entry).toBeDefined();
     expect(entry.command).toBe("npx");
-    expect(entry.env.OPENMEMORY_DATA).toBe(path.resolve(dir));
+    expect(entry.env.FACTMEM_DATA).toBe(path.resolve(dir));
     expect(parsed.mcpServers.openmemory).toBeUndefined();
+    expect(parsed.mcpServers.factmem).toBeUndefined();
   });
 
   it("reports the config as preserved on re-run and reset with --force", () => {
@@ -439,7 +440,7 @@ describe.skipIf(!runnable)("cli entry — search and stats", () => {
     expect(existsSync(dest)).toBe(true);
     expect(r.stdout).toContain(dest);
     const html = readFileSync(dest, "utf8");
-    expect(html).toContain("OpenMemory inspect");
+    expect(html).toContain("FactMem inspect");
     expect(html).toContain('id="q"');
     expect(html).toContain("Acme");
     expect(html).toContain('id="viewSpend"');
@@ -597,7 +598,7 @@ describe.skipIf(!runnable)("cli entry — search and stats", () => {
 
       expect(r.status).toBe(1);
       expect(r.stderr).toContain("No database at");
-      expect(r.stderr).toContain("openmemory init");
+      expect(r.stderr).toContain("factmem init");
       expect(r.stderr).not.toMatch(/SQLITE_|unable to open database/i);
     },
   );
@@ -642,7 +643,7 @@ describe.skipIf(!runnable)("cli entry — pull", () => {
     // No MCP server in this process — a small pull must not look successful
     // and then leave search empty. Tick is attempted; when it cannot land,
     // the CLI names the next command.
-    expect(r.stderr).toMatch(/openmemory consolidate/);
+    expect(r.stderr).toMatch(/factmem consolidate/);
     expect(r.stderr).not.toMatch(/skipping auto-consolidate/);
 
     const again = run(["pull", "--data", dir]);

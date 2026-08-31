@@ -1,5 +1,5 @@
 /**
- * `openmemory inspect` — sample D / I / K and write a local HTML app
+ * `factmem inspect` — sample D / I / K and write a local HTML app
  * (graph + spend). Does not open a browser.
  */
 

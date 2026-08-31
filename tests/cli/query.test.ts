@@ -347,7 +347,7 @@ describe("formatStats", () => {
     );
     expect(out).toContain("Reclaimable");
     expect(out).toContain("8 events");
-    expect(out).toContain("openmemory prune");
+    expect(out).toContain("factmem prune");
   });
 
   it("shows store file against a budget when set", () => {

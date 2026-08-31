@@ -21,6 +21,7 @@ import { mkdtempSync, rmSync, existsSync, readFileSync, writeFileSync } from "no
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { withoutStoreEnv } from "../helpers/cli-env.js";
 
 const SERVER = path.resolve(
   fileURLToPath(new URL("../../dist/index.js", import.meta.url)),
@@ -109,7 +110,17 @@ function manualConsolidationOnly(dataDir: string) {
 beforeEach(() => {
   if (!runnable) return;
   root = mkdtempSync(path.join(tmpdir(), "om-xtool-"));
-  spawnSync(process.execPath, [CLI, "init", root], { encoding: "utf-8" });
+  const env: Record<string, string> = {};
+  for (const [k, v] of Object.entries(withoutStoreEnv())) {
+    if (v !== undefined) env[k] = v;
+  }
+  env.FACTMEM_PROVIDER = "heuristic";
+  env.OPENMEMORY_PROVIDER = "heuristic";
+  spawnSync(process.execPath, [CLI, "init", root, "--yes"], {
+    encoding: "utf-8",
+    timeout: 30_000,
+    env,
+  });
 
   // Every test here consolidates explicitly. Leaving the server's own scheduler
   // running means an automatic run can hold the advisory lock when an explicit
@@ -120,7 +131,7 @@ beforeEach(() => {
   //
   // The scheduler is covered by its own tests; nothing here is testing it.
   manualConsolidationOnly(root);
-});
+}, 30_000);
 
 afterEach(async () => {
   if (!runnable) return;

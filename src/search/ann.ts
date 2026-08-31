@@ -56,7 +56,7 @@ export function sqliteEngineMissingWarning(): string {
 export function postgresMissingVectorWarning(): string {
   return (
     "Meaning-search is still exact. Enable the Postgres vector extension to " +
-    "use an HNSW index at this size. OpenMemory did not try to install it."
+    "use an HNSW index at this size. FactMem did not try to install it."
   );
 }
 
@@ -69,7 +69,7 @@ const warned = new Set<string>();
 export function emitAnnWarningOnce(key: string, message: string): void {
   if (warned.has(key)) return;
   warned.add(key);
-  console.error(`[openmemory] ${message}`);
+  console.error(`[factmem] ${message}`);
 }
 
 /** Test seam so "once" can be asserted without leaking across files. */

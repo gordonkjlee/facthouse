@@ -58,6 +58,6 @@ describe("get_session_context briefing", () => {
       source_type: "conversation",
     });
     expect(await buildBriefing(db)).toContain("Alex prefers dark roast coffee");
-    expect(await buildBriefing(db)).toMatch(/^# OpenMemory Briefing/);
+    expect(await buildBriefing(db)).toMatch(/^# FactMem Briefing/);
   });
 });

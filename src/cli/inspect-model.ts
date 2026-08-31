@@ -1,5 +1,5 @@
 /**
- * Graph view-model for `openmemory inspect`.
+ * Graph view-model for `factmem inspect`.
  *
  * One definition for which nodes are on the canvas. The HTML snapshot uses the
  * same rules (kept in the page script; tests assert this module).

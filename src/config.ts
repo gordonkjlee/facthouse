@@ -8,6 +8,7 @@
 
 import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { envName, envValue } from "./identity.js";
 import { DEFAULT_CONFIG, type ServerConfig } from "./types/config.js";
 
 /** Filename expected in the data dir. */
@@ -36,7 +37,7 @@ export function mergeConfig<T>(base: T, override: unknown): T {
 /**
  * The complete default configuration — every knob the server understands, with
  * its shipped default. `loadConfig` merges the user's config.json over this,
- * and `openmemory init` writes it out verbatim so the knobs are discoverable
+ * and `factmem init` writes it out verbatim so the knobs are discoverable
  * (otherwise defaults are invisible and users can't find what's tunable).
  */
 export function defaultServerConfig(): ServerConfig {
@@ -73,18 +74,18 @@ export const SHIPPED_STORAGE_PROVIDER = "sqlite";
 export const SUPPORTED_STORAGE_PROVIDERS = ["sqlite", "postgres"] as const;
 export type StorageProvider = (typeof SUPPORTED_STORAGE_PROVIDERS)[number];
 
-/** Environment variable holding the Postgres URL. One definition. */
-export const POSTGRES_URL_ENV = "OPENMEMORY_POSTGRES_URL";
+/** Environment variable holding the Postgres URL. Canonical name; compat still read. */
+export const POSTGRES_URL_ENV = envName("POSTGRES_URL");
 
 /**
- * Which engine the store asked for. `OPENMEMORY_STORAGE` wins over
- * `storage.provider`. Missing or empty is sqlite.
+ * Which engine the store asked for. `FACTMEM_STORAGE` (or `OPENMEMORY_STORAGE`)
+ * wins over `storage.provider`. Missing or empty is sqlite.
  */
 export function configuredStorageProvider(
   config: ServerConfig,
   env: NodeJS.ProcessEnv = process.env,
 ): string {
-  const fromEnv = env.OPENMEMORY_STORAGE?.trim();
+  const fromEnv = envValue("STORAGE", env);
   if (fromEnv) return fromEnv.toLowerCase();
   const storage = (config as { storage?: unknown }).storage;
   if (typeof storage === "string" && storage.trim() !== "") {
@@ -119,15 +120,14 @@ export function assertSupportedStorage(
 }
 
 export function postgresUrl(env: NodeJS.ProcessEnv = process.env): string | undefined {
-  const raw = env[POSTGRES_URL_ENV]?.trim();
-  return raw ? raw : undefined;
+  return envValue("POSTGRES_URL", env);
 }
 
 export function postgresMissingUrlMessage(): string {
   return (
     `Storage provider is postgres but ${POSTGRES_URL_ENV} is not set. ` +
     `SQLite was not opened. Set the URL on the MCP entry (the same place as ` +
-    `OPENMEMORY_DATA) or in the environment.`
+    `${envName("DATA")}) or in the environment.`
   );
 }
 
@@ -193,7 +193,7 @@ export function loadConfig(dataDir: string): ServerConfig {
     parsed = JSON.parse(raw);
   } catch (err) {
     console.error(
-      `[openmemory] Ignoring malformed ${CONFIG_FILENAME}: ${(err as Error).message}. Using defaults.`,
+      `[factmem] Ignoring malformed ${CONFIG_FILENAME}: ${(err as Error).message}. Using defaults.`,
     );
     return base;
   }

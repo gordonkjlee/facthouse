@@ -2,7 +2,7 @@
  * init CLI command — prepares a data directory for use.
  *
  * The server creates its data dir and schema on first boot anyway, so init is
- * not required to run OpenMemory. What init adds is:
+ * not required to run FactMem. What init adds is:
  *   1. A config.json written from the shipped defaults. Without it the defaults
  *      are invisible — users have no way to discover what's tunable (which
  *      intelligence provider runs, consolidation triggers, retention, ...).
@@ -36,6 +36,11 @@ import {
 } from "../embedding/ollama.js";
 import { resolveSources } from "../sources/resolve.js";
 import type { IntelligenceProviderType, EmbeddingConfig } from "../types/config.js";
+import {
+  CLI_NAME,
+  DEFAULT_MCP_SERVER_NAME,
+  envName,
+} from "../identity.js";
 import { defaultDataDir } from "../paths.js";
 import { SESSION_START_FLUSH_MAX_INSERTED } from "../sources/pull.js";
 import {
@@ -52,21 +57,21 @@ import {
  * contains backslashes, which must be escaped to produce valid JSON. Emitting
  * the path raw yields a snippet that fails to parse when pasted.
  *
- * @param spec     npm package spec, e.g. "@openmem/mcp@0.3.0"
- * @param dataDir  when set, adds an OPENMEMORY_DATA env override (omit for the
+ * @param spec     npm package spec, e.g. "@factmem/mcp@0.3.0"
+ * @param dataDir  when set, adds a FACTMEM_DATA env override (omit for the
  *                 default location, which needs no env entry)
  * @param indent   spaces to prefix each line with, for console output
  * @param name     MCP server key. A second store needs a second name —
- *                 two entries both called `openmemory` overwrite each other.
+ *                 two entries both called `factmem` overwrite each other.
  */
 export function mcpConfigSnippet(
   spec: string,
   dataDir?: string,
   indent = 2,
-  name = "openmemory",
+  name = DEFAULT_MCP_SERVER_NAME,
 ): string {
   const entry: Record<string, unknown> = { command: "npx", args: ["-y", spec] };
-  if (dataDir) entry.env = { OPENMEMORY_DATA: dataDir };
+  if (dataDir) entry.env = { [envName("DATA")]: dataDir };
   const pad = " ".repeat(indent);
   return JSON.stringify({ mcpServers: { [name]: entry } }, null, 2)
     .split("\n")
@@ -74,13 +79,13 @@ export function mcpConfigSnippet(
     .join("\n");
 }
 
-export const DEFAULT_MCP_SERVER_NAME = "openmemory";
+export { DEFAULT_MCP_SERVER_NAME };
 
 /**
- * MCP server key for a data directory. The default store is `openmemory`.
+ * MCP server key for a data directory. The default store is `factmem`.
  * Any other directory gets a derived name so two snippets can share one
- * mcp.json. A non-default folder whose basename is `openmemory` is
- * `openmemory-store` so it cannot paste over the default key.
+ * mcp.json. A non-default folder whose basename is `factmem` is
+ * `factmem-store` so it cannot paste over the default key.
  */
 export function mcpServerName(
   dataDir: string,
@@ -103,7 +108,7 @@ export function mcpServerName(
 
 /**
  * Env is omitted only for the default directory, never because the name
- * equals "openmemory".
+ * equals "factmem".
  */
 export function mcpSnippetDataDir(
   dataDir: string,
@@ -143,7 +148,7 @@ export function providerStatusLines(
   if (probe().available) {
     return [
       `Consolidation intelligence: the claude CLI (no API key needed) — found and`,
-      `working. Set OPENMEMORY_PROVIDER=heuristic to turn the subprocess off.`,
+      `working. Set ${envName("PROVIDER")}=heuristic to turn the subprocess off.`,
     ];
   }
 
@@ -154,7 +159,7 @@ export function providerStatusLines(
     ``,
     `  To fix:  install the Claude Code CLI, or set intelligence.cli.command in`,
     `           config.json, or point CLAUDE_CLI_PATH at the binary.`,
-    `  To keep: set OPENMEMORY_PROVIDER=heuristic and this notice goes away.`,
+    `  To keep: set ${envName("PROVIDER")}=heuristic and this notice goes away.`,
   ];
 }
 
@@ -265,13 +270,13 @@ export function sourcesStatusLines(sources: unknown): string[] {
       `Capture: pull is off (sources is empty). capture_fact is how facts get in.`,
       `To pull transcripts, add a claude-code or cursor source to config.json —`,
       `kind, home (e.g. ${INIT_SYNTHETIC.claudeHome} or ${INIT_SYNTHETIC.cursorHome}), cwd (e.g. ${INIT_SYNTHETIC.cwd}).`,
-      `Set cwd. Then run openmemory pull. A first pull of more than ${SESSION_START_FLUSH_MAX_INSERTED} events`,
-      `needs openmemory consolidate; a later session start will flush a smaller leftover.`,
+      `Set cwd. Then run ${CLI_NAME} pull. A first pull of more than ${SESSION_START_FLUSH_MAX_INSERTED} events`,
+      `needs ${CLI_NAME} consolidate; a later session start will flush a smaller leftover.`,
     ];
   }
   return [
-    `Capture: ${n} source${n === 1 ? "" : "s"}. Run openmemory pull.`,
-    `A first pull of more than ${SESSION_START_FLUSH_MAX_INSERTED} events needs openmemory consolidate.`,
+    `Capture: ${n} source${n === 1 ? "" : "s"}. Run ${CLI_NAME} pull.`,
+    `A first pull of more than ${SESSION_START_FLUSH_MAX_INSERTED} events needs ${CLI_NAME} consolidate.`,
   ];
 }
 
@@ -322,7 +327,7 @@ export async function initDataDir(args: InitArgs): Promise<InitResult> {
   const seedDomains = effective.domains ?? [];
 
   // Create/migrate the database. applySchema is idempotent and versioned.
-  // Postgres: tables live at OPENMEMORY_POSTGRES_URL; memory.db is not created.
+  // Postgres: tables live at FACTMEM_POSTGRES_URL; memory.db is not created.
   const dbPath = sqliteMemoryPath(dataDir);
   const db = await openStore(dataDir, effective, env);
   let schemaVersion: number;

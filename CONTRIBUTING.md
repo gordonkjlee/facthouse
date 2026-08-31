@@ -18,7 +18,7 @@ npm test
 
 - British English in documentation.
 - Synthetic fixtures only (`Alex`, `Robin`, `Acme`). Never real memory content, store dumps, or machine fingerprints.
-- This checkout is the engine, not a client. Do not run the OpenMemory MCP server from this repo against a live store, and do not add a hook that logs OpenMemory's own tools back into it.
+- This checkout is the engine, not a client. Do not run the FactMem MCP server from this repo against a live store, and do not add a hook that logs FactMem's own tools back into it.
 - Public files must not name internal design-doc filenames. Say the concept.
 - Pull requests use the templates under `.github/PULL_REQUEST_TEMPLATE/`. Fill every section; write `N/A` if one does not apply.
 

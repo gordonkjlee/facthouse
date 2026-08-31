@@ -3,7 +3,7 @@
  *
  * Asks the host LLM (the same model the user is already talking to) to perform
  * classification / entity extraction / reconciliation / supersession detection
- * via MCP sampling (`server.createMessage`). This lets OpenMemory do real LLM
+ * via MCP sampling (`server.createMessage`). This lets FactMem do real LLM
  * intelligence with zero API keys — the client's subscription pays for the calls.
  *
  * Each method is wrapped in a try/catch that falls back to the heuristic

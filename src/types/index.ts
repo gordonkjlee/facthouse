@@ -1,5 +1,5 @@
 /**
- * Barrel re-export for all OpenMemory types.
+ * Barrel re-export for all FactMem types.
  */
 
 export * from "./config.js";
