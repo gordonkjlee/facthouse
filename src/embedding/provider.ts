@@ -13,24 +13,25 @@
 
 import type { EmbeddingProvider } from "./types.js";
 import type { EmbeddingConfig, EmbeddingProviderType } from "../types/config.js";
+import { envName, envValue } from "../identity.js";
 import { createOllamaProvider } from "./ollama.js";
 import { createVoyageProvider } from "./voyage.js";
 
 const VALID_TYPES: readonly EmbeddingProviderType[] = ["voyage", "ollama"];
 
 /** Environment kill-switch: force a provider, or `none` to turn it off. */
-export const EMBEDDING_PROVIDER_ENV = "OPENMEMORY_EMBEDDING_PROVIDER";
+export const EMBEDDING_PROVIDER_ENV = envName("EMBEDDING_PROVIDER");
 
 /**
  * Resolve the effective provider type. `none` is accepted explicitly so a
  * store with semantic search configured can be run without it — the same
- * escape hatch `OPENMEMORY_PROVIDER=heuristic` gives the intelligence layer.
+ * escape hatch `FACTMEM_PROVIDER=heuristic` gives the intelligence layer.
  */
 export function resolveEmbeddingProviderType(
   configured: EmbeddingProviderType | null,
   env: NodeJS.ProcessEnv = process.env,
 ): EmbeddingProviderType | null {
-  const override = env[EMBEDDING_PROVIDER_ENV]?.trim().toLowerCase();
+  const override = envValue("EMBEDDING_PROVIDER", env)?.toLowerCase();
   if (override === "none") return null;
   if (override && (VALID_TYPES as readonly string[]).includes(override)) {
     return override as EmbeddingProviderType;

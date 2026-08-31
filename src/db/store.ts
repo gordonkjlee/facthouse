@@ -2,7 +2,7 @@
  * Open the store this data directory asked for.
  *
  * SQLite is the default and creates `memory.db` in the directory. Postgres
- * is reached only when the store names it, via `OPENMEMORY_POSTGRES_URL`.
+ * is reached only when the store names it, via `FACTMEM_POSTGRES_URL`.
  * A missing URL or a failed handshake does not open SQLite — that would be
  * fail-open.
  */

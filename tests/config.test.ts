@@ -56,6 +56,19 @@ describe("storage provider", () => {
     expect(() => loadShippedStoreConfig(dir, {})).toThrow(postgresMissingUrlMessage());
   });
 
+  it("lets FACTMEM_STORAGE beat OPENMEMORY_STORAGE", () => {
+    writeFileSync(
+      path.join(dir, "config.json"),
+      JSON.stringify({ storage: { provider: "sqlite" } }),
+    );
+    expect(
+      configuredStorageProvider(loadConfig(dir), {
+        FACTMEM_STORAGE: "postgres",
+        OPENMEMORY_STORAGE: "sqlite",
+      }),
+    ).toBe("postgres");
+  });
+
   it("lets OPENMEMORY_STORAGE override config.json", () => {
     writeFileSync(
       path.join(dir, "config.json"),

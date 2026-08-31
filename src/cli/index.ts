@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * OpenMemory CLI entry point.
+ * FactMem CLI entry point.
  * Subcommands: log-event, consolidate, pull
  */
 
@@ -28,7 +28,15 @@ import {
   type InitWizardResult,
 } from "./init-wizard.js";
 import { INIT_PROMPTS } from "./init-knobs.js";
-import { defaultDataDir, resolveUserPath } from "../paths.js";
+import {
+  CLI_NAME,
+  PRODUCT_NAME,
+  envIsSet,
+  envName,
+  envValue,
+  npmPackageSpec,
+} from "../identity.js";
+import { dataDirFromEnvOrDefault, resolveUserPath } from "../paths.js";
 import { runSearch, formatSearch, formatStats, formatPrune, getStats } from "./query.js";
 import { packageVersion } from "./package-version.js";
 import { runInspect } from "./inspect.js";
@@ -105,15 +113,16 @@ async function main() {
   const subcommand = process.argv[2];
 
   // Recursion guard: any subprocess-based intelligence provider that
-  // re-invokes an MCP client should set OPENMEMORY_SUBPROCESS=1 in the
-  // child's env. If a surviving hook then re-enters this CLI, we must not
-  // log events, signal the scheduler, or consolidate — each would feed back
-  // into an extraction loop. Exit silently with success.
+  // re-invokes an MCP client should set FACTMEM_SUBPROCESS=1 (or the
+  // FACTMEM_SUBPROCESS compat alias) in the child's env. If a surviving
+  // hook then re-enters this CLI, we must not log events, signal the
+  // scheduler, or consolidate — each would feed back into an extraction loop.
+  // Exit silently with success.
   //
   // `init` is exempt: it only creates a directory, database, and config, so it
   // cannot recurse. Skipping it here would make an explicit setup command exit
   // 0 having silently done nothing — a confusing failure with no diagnostic.
-  if (process.env.OPENMEMORY_SUBPROCESS === "1" && subcommand !== "init") {
+  if (envIsSet("SUBPROCESS", "1") && subcommand !== "init") {
     process.exit(0);
   }
 
@@ -137,7 +146,7 @@ async function main() {
     await runPull();
   } else {
     console.error(
-      `Usage: openmemory <command>\n\n` +
+      `Usage: ${CLI_NAME} <command>\n\n` +
         `Commands:\n` +
         `  init [dir]    Create the data directory, database, and default config (--yes never prompts)\n` +
         `  search <q>    Search the knowledge base\n` +
@@ -165,13 +174,12 @@ async function runInit() {
     strict: true,
   });
 
-  // Accept `openmemory init ~/.openmemory` (positional) as well as --data, so
+  // Accept `factmem init ~/.factmem` (positional) as well as --data, so
   // the documented form and the flag used by every other subcommand both work.
   const target =
     positionals[0] ??
     (values.data as string | undefined) ??
-    process.env.OPENMEMORY_DATA ??
-    defaultDataDir();
+    dataDirFromEnvOrDefault();
   // Normalise to an absolute, platform-native path so every path we print (and
   // embed in the MCP snippet) is consistent regardless of how it was typed.
   const dataDir = resolveUserPath(target);
@@ -229,7 +237,7 @@ async function runInit() {
   }
 
   const version = packageVersion();
-  const spec = version ? `@openmem/mcp@${version}` : "@openmem/mcp";
+  const spec = npmPackageSpec(version);
 
   const snippet = mcpConfigSnippet(
     spec,
@@ -246,7 +254,7 @@ async function runInit() {
 
   const lines = [
     ``,
-    `OpenMemory initialised.`,
+    `${PRODUCT_NAME} initialised.`,
     ``,
     `  Data directory  ${result.dataDir}${result.createdDataDir ? " (created)" : ""}`,
     `  Database        ${
@@ -265,7 +273,7 @@ async function runInit() {
     snippet,
     ``,
     `One data directory is one memory. Another store is another directory`,
-    `with its own MCP server name and OPENMEMORY_DATA — not a tenant column`,
+    `with its own MCP server name and ${envName("DATA")} — not a tenant column`,
     `inside this file.`,
     ``,
     ...providerStatusLines(
@@ -296,7 +304,7 @@ async function withDb<T>(
     !existsSync(sqliteMemoryPath(dataDir))
   ) {
     console.error(
-      `No database at ${dataDir}. Run 'openmemory init ${dataDir}' first, ` +
+      `No database at ${dataDir}. Run 'factmem init ${dataDir}' first, ` +
         `or point at another directory with --data.`,
     );
     process.exit(1);
@@ -324,7 +332,7 @@ async function runSearchCmd() {
   const { values, positionals } = parseArgs({
     args: process.argv.slice(3),
     options: {
-      data: { type: "string", default: process.env.OPENMEMORY_DATA ?? defaultDataDir() },
+      data: { type: "string", default: dataDirFromEnvOrDefault() },
       domain: { type: "string" },
       limit: { type: "string" },
       "as-of-system": { type: "string" },
@@ -337,7 +345,7 @@ async function runSearchCmd() {
   const query = positionals.join(" ").trim();
   if (!query) {
     console.error(
-      `Usage: openmemory search <query> [--domain <d>] [--limit <n>] [--as-of-system <t>] [--json]`,
+      `Usage: factmem search <query> [--domain <d>] [--limit <n>] [--as-of-system <t>] [--json]`,
     );
     process.exit(1);
   }
@@ -371,7 +379,7 @@ async function runSearchCmd() {
   // unusable, rather than silently searching keyword-only — from the command
   // line there is a person to tell.
   const embedding = createEmbeddingProvider(config.embedding, {
-    onUnavailable: (reason) => console.error(`[openmemory] ${reason}`),
+    onUnavailable: (reason) => console.error(`[factmem] ${reason}`),
   });
   const response = await withDbAsync(dataDir, (db) =>
     runSearch(
@@ -408,7 +416,7 @@ async function runStatsCmd() {
   const { values } = parseArgs({
     args: process.argv.slice(3),
     options: {
-      data: { type: "string", default: process.env.OPENMEMORY_DATA ?? defaultDataDir() },
+      data: { type: "string", default: dataDirFromEnvOrDefault() },
       json: { type: "boolean", default: false },
     },
     strict: true,
@@ -426,7 +434,7 @@ async function runInspectCmd() {
   const { values } = parseArgs({
     args: process.argv.slice(3),
     options: {
-      data: { type: "string", default: process.env.OPENMEMORY_DATA ?? defaultDataDir() },
+      data: { type: "string", default: dataDirFromEnvOrDefault() },
       layer: { type: "string" },
       limit: { type: "string" },
       json: { type: "boolean", default: false },
@@ -476,7 +484,7 @@ async function runPruneCmd() {
   const { values } = parseArgs({
     args: process.argv.slice(3),
     options: {
-      data: { type: "string", default: process.env.OPENMEMORY_DATA ?? defaultDataDir() },
+      data: { type: "string", default: dataDirFromEnvOrDefault() },
       apply: { type: "boolean", default: false },
       vacuum: { type: "boolean", default: false },
       json: { type: "boolean", default: false },
@@ -525,7 +533,7 @@ async function runPull() {
   const { values } = parseArgs({
     args: process.argv.slice(3),
     options: {
-      data: { type: "string", default: process.env.OPENMEMORY_DATA ?? defaultDataDir() },
+      data: { type: "string", default: dataDirFromEnvOrDefault() },
     },
     strict: true,
   });
@@ -538,24 +546,24 @@ async function runPull() {
     const provider = resolveProviderType(config.intelligence.provider);
     if (result.events_inserted > 0 && provider === "heuristic") {
       console.error(
-        "[openmemory] intelligence.provider is heuristic — it does not extract " +
+        "[factmem] intelligence.provider is heuristic — it does not extract " +
           "facts from transcripts. capture_fact still works. Use the claude CLI " +
-          "(the default provider) and run openmemory consolidate.",
+          "(the default provider) and run factmem consolidate.",
       );
     }
     if (shouldTickAfterCliPull(result.events_inserted)) {
       const delivered = await sendSchedulerSignal(dataDir, "tick");
       if (!delivered) {
         console.error(
-          "[openmemory] No MCP server listening — run openmemory consolidate " +
+          "[factmem] No MCP server listening — run factmem consolidate " +
             "to graduate these events.",
         );
       }
     } else if (result.events_inserted > 0) {
       console.error(
-        `[openmemory] Pulled ${result.events_inserted} event(s) — skipping auto-consolidate ` +
+        `[factmem] Pulled ${result.events_inserted} event(s) — skipping auto-consolidate ` +
           `so a first-run backfill does not spawn claude -p on the lot. ` +
-          `Run openmemory consolidate when ready.`,
+          `Run factmem consolidate when ready.`,
       );
     }
     console.log(JSON.stringify(result));
@@ -570,7 +578,7 @@ async function runSignal() {
   const { values } = parseArgs({
     args: process.argv.slice(4),
     options: {
-      data: { type: "string", default: process.env.OPENMEMORY_DATA ?? defaultDataDir() },
+      data: { type: "string", default: dataDirFromEnvOrDefault() },
     },
     strict: true,
   });
@@ -599,9 +607,9 @@ async function runSignal() {
   // dependency-free — heuristic-era facts can be reprocessed later.
   if (kind === "flush") {
     console.error(
-      "[openmemory] Server unreachable; running heuristic I→K in-process as fallback. " +
+      "[factmem] Server unreachable; running heuristic I→K in-process as fallback. " +
         "Extract already ran on pull/Stop, or events stay events. " +
-        "Start the MCP server (cli provider) or run openmemory consolidate with the claude CLI.",
+        "Start the MCP server (cli provider) or run factmem consolidate with the claude CLI.",
     );
     await consolidateInProcess(
       dataDir,
@@ -621,21 +629,21 @@ async function runConsolidate() {
   const { values } = parseArgs({
     args: process.argv.slice(3),
     options: {
-      data: { type: "string", default: process.env.OPENMEMORY_DATA ?? defaultDataDir() },
+      data: { type: "string", default: dataDirFromEnvOrDefault() },
     },
     strict: true,
   });
   const dataDir = resolveUserPath(values.data as string);
 
-  // Manual `openmemory consolidate` honours the configured provider (default
+  // Manual `factmem consolidate` honours the configured provider (default
   // cli — real LLM quality). There's no MCP server here, so a `sampling`
   // selection degrades to heuristic; `cli` spawns `claude -p` directly. The
-  // OPENMEMORY_SUBPROCESS guard at the top of main() prevents recursion when
+  // FACTMEM_SUBPROCESS guard at the top of main() prevents recursion when
   // this runs inside a provider subprocess.
   const config = ensureBitemporalSince(dataDir, loadConfig(dataDir));
   if (resolveProviderType(config.intelligence.provider) === "heuristic") {
     console.error(
-      "[openmemory] intelligence.provider is heuristic — it does not extract " +
+      "[factmem] intelligence.provider is heuristic — it does not extract " +
         "facts from transcripts. capture_fact still works.",
     );
   }
@@ -645,18 +653,18 @@ async function runConsolidate() {
   const provider = createIntelligenceProvider(config.intelligence, {
     vocabulary,
   });
-  // Embeddings are written here too, not only by the server. `openmemory
+  // Embeddings are written here too, not only by the server. `factmem
   // consolidate` is the documented way to process a store by hand, and a store
   // consolidated that way would otherwise never gain a vector.
   const embedding = createEmbeddingProvider(config.embedding, {
-    onUnavailable: (reason) => console.error(`[openmemory] ${reason}`),
+    onUnavailable: (reason) => console.error(`[factmem] ${reason}`),
   });
   await consolidateInProcess(dataDir, provider, config, embedding);
 }
 
 /**
  * Open the DB at dataDir, run consolidate() with the given provider, print the
- * JSON result, then close. Used by both `openmemory consolidate` (configured
+ * JSON result, then close. Used by both `factmem consolidate` (configured
  * provider) and the `signal flush` fallback (heuristic, for fast survival).
  *
  * Taking dataDir + provider as parameters (rather than re-parsing process.argv
@@ -678,19 +686,19 @@ export async function consolidateInProcess(
     await applySchema(db);
     const result = await consolidate(db, provider, config, embedding, phase, {
       trigger: "cli",
-      project: process.env.OPENMEMORY_PROJECT ?? null,
+      project: envValue("PROJECT") ?? null,
     });
     if (result.skipped && result.skipReason) {
-      console.error(`[openmemory] ${result.skipReason}`);
+      console.error(`[factmem] ${result.skipReason}`);
     }
     if (result.extractionDegraded) {
       if (result.prefixCommitted) {
         console.error(
-          `[openmemory] Extraction stopped after a failed call. Facts from earlier examined events were kept and the watermark advanced to ${result.examinedThrough}. Remaining events are still eligible. Re-run openmemory consolidate to continue.`,
+          `[factmem] Extraction stopped after a failed call. Facts from earlier examined events were kept and the watermark advanced to ${result.examinedThrough}. Remaining events are still eligible. Re-run factmem consolidate to continue.`,
         );
       } else {
         console.error(
-          "[openmemory] Extraction could not run — events were not examined and the watermark was held. A zero factsGraduated here is not a successful empty extract. Re-run openmemory consolidate when the CLI provider can run.",
+          "[factmem] Extraction could not run — events were not examined and the watermark was held. A zero factsGraduated here is not a successful empty extract. Re-run factmem consolidate when the CLI provider can run.",
         );
       }
     }
@@ -713,7 +721,7 @@ async function runLogEvent() {
       content: { type: "string" },
       "session-id": { type: "string" },
       speaker: { type: "string" },
-      data: { type: "string", default: process.env.OPENMEMORY_DATA ?? defaultDataDir() },
+      data: { type: "string", default: dataDirFromEnvOrDefault() },
     },
     strict: true,
   });

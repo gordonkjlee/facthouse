@@ -1,5 +1,5 @@
 {
-  "name": "@openmem/mcp",
+  "name": "@factmem/mcp",
   "version": "0.23.0",
   "description": "A local memory engine any AI tool can use. You own the SQLite file.",
   "type": "module",
@@ -11,8 +11,10 @@
   },
   "bin": {
     "mcp": "dist/index.js",
-    "mcp-server-openmemory": "dist/index.js",
-    "openmemory": "dist/cli/index.js"
+    "factmem": "dist/cli/index.js",
+    "openmemory": "dist/cli/index.js",
+    "mcp-server-factmem": "dist/index.js",
+    "mcp-server-openmemory": "dist/index.js"
   },
   "files": [
     "dist"

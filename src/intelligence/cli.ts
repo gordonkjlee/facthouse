@@ -20,7 +20,7 @@
  * Recursion prevention (three layers):
  *   1. --setting-sources user     → skip project-level hook settings
  *   2. cwd outside project        → don't auto-discover project settings
- *   3. OPENMEMORY_SUBPROCESS=1 env → our own hook CLI early-exits if set
+ *   3. FACTMEM_SUBPROCESS=1 env → our own hook CLI early-exits if set
  *
  * Probes verified the first two layers independently prevent recursion
  * (baseline logged 2 events, each guard alone logged 0). The env var is
@@ -28,6 +28,7 @@
  */
 
 import { spawn, spawnSync } from "node:child_process";
+import { subprocessGuardEnv } from "../identity.js";
 import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -135,7 +136,7 @@ function formatStageFailure(
   extra?: { retrying?: boolean; timeoutMs?: number },
 ): string {
   const bits: string[] = [
-    "[openmemory cli-provider]",
+    "[factmem cli-provider]",
     phase === "retry"
       ? `${stageName} retry failed (${result.error})`
       : `${stageName} failed (${result.error})`,
@@ -198,7 +199,7 @@ async function invokeClaude(
         stdio: ["pipe", "pipe", "pipe"],
         windowsHide: true,
         detached: false,
-        env: { ...process.env, OPENMEMORY_SUBPROCESS: "1" },
+        env: subprocessGuardEnv(),
       });
     } catch (err) {
       return finish({ error: "spawn-error", detail: (err as Error).message });
@@ -340,7 +341,7 @@ function findWrapperViaNpmRoot(): string | null {
   try {
     // One command string rather than (command, args) — with `shell: true` an
     // args array triggers Node's DEP0190 deprecation warning, which lands in
-    // the user's terminal during `openmemory init`. The shell is needed on
+    // the user's terminal during `factmem init`. The shell is needed on
     // Windows, where `npm` is a `.cmd` shim that cannot be spawned directly.
     const r = spawnSync("npm root -g", {
       encoding: "utf-8",
@@ -434,7 +435,7 @@ function defaultProbeRun(cmd: string, args: string[]): ProbeRun {
       encoding: "utf-8",
       timeout: 10_000,
       windowsHide: true,
-      env: { ...process.env, OPENMEMORY_SUBPROCESS: "1" },
+      env: subprocessGuardEnv(),
     });
     return { status: r.status };
   } catch {
@@ -651,7 +652,7 @@ export function createCliProvider(
   };
 
   const log = (...args: unknown[]) => {
-    if (opts.debug) console.error("[openmemory cli-provider]", ...args);
+    if (opts.debug) console.error("[factmem cli-provider]", ...args);
   };
 
   const usageAcc = new UsageAccumulator({

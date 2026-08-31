@@ -26,7 +26,7 @@ ROOT = Path(__file__).resolve().parents[2]
 DOMAIN = "factmem.dev"
 SITE_ORIGIN = f"https://{DOMAIN}"
 GITHUB = "https://github.com/gordonkjlee/openmemory"
-NPM = "https://www.npmjs.com/package/@openmem/mcp"
+NPM = "https://www.npmjs.com/package/@factmem/mcp"
 PITCH = "A local memory engine any AI tool can use."
 MARKDOWN_EXTENSIONS = ("fenced_code", "tables")
 
@@ -36,7 +36,7 @@ PAGES = (
     {
         "source": "README.md",
         "output": "index.html",
-        "title": "Factmem",
+        "title": "FactMem",
         "canonical": "/",
         "description": PITCH,
     },
@@ -152,7 +152,7 @@ def wrap_html(
     description: str,
     canonical: str,
     body: str,
-    heading: str | None = "Factmem",
+    heading: str | None = "FactMem",
     pitch: str = PITCH,
 ) -> str:
     canon = SITE_ORIGIN if canonical == "/" else f"{SITE_ORIGIN}{canonical}"
@@ -161,7 +161,7 @@ def wrap_html(
     landing = (
         f'<section class="landing">\n'
         f"      {title_html}<p class=\"pitch\">{pitch_html(pitch)}</p>\n"
-        f"      <pre class=\"install\"><code>npm install -g @openmem/mcp</code></pre>\n"
+        f"      <pre class=\"install\"><code>npm install -g @factmem/mcp</code></pre>\n"
         f"    </section>"
     )
     return f"""<!DOCTYPE html>
@@ -247,7 +247,7 @@ def wrap_html(
     <header>
       <a class="brand" href="./">
         <img src="assets/logo.png" alt="">
-        Factmem
+        FactMem
       </a>
       <nav>
         <a href="{GITHUB}">GitHub</a>
@@ -303,7 +303,7 @@ def build(dest: Path | None = None) -> Path:
         description = page["description"]
         if page["source"] == "README.md":
             text = readme_rest
-            heading = "Factmem"
+            heading = "FactMem"
             description = pitch_plain(pitch)
         body = rewrite_html(render_markdown(text), source)
         html = wrap_html(

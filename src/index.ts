@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * OpenMemory MCP Server
+ * FactMem MCP Server
  *
  * AI memory engine exposed as an MCP server.
  * Structured knowledge with server-side intelligence. Any AI tool can query it via MCP.
@@ -9,7 +9,12 @@
 
 import { parseArgs } from "node:util";
 import { mkdirSync, readFileSync } from "node:fs";
-import { defaultDataDir, resolveUserPath } from "./paths.js";
+import {
+  CLI_NAME,
+  DEFAULT_MCP_SERVER_NAME,
+  envValue,
+} from "./identity.js";
+import { dataDirFromEnvOrDefault, resolveUserPath } from "./paths.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { closeDatabase, type Db } from "./db/connection.js";
@@ -38,7 +43,7 @@ const { values } = parseArgs({
   options: {
     data: {
       type: "string",
-      default: process.env.OPENMEMORY_DATA ?? defaultDataDir(),
+      default: dataDirFromEnvOrDefault(),
     },
   },
   strict: false, // Allow unknown flags (MCP clients may pass extras).
@@ -97,7 +102,7 @@ async function main() {
   }
   db = database;
   await applySchema(database);
-  // Also here, not only in `openmemory init` — init is optional, and a store the
+  // Also here, not only in `factmem init` — init is optional, and a store the
   // server created on first boot needs the anchor just as much as one that was
   // set up ahead of time. Idempotent.
   await ensureSelfEntity(database);
@@ -112,7 +117,7 @@ async function main() {
   // when the briefing changes.
   const server = new McpServer(
     {
-      name: "openmemory",
+      name: DEFAULT_MCP_SERVER_NAME,
       version: pkg.version,
     },
     {
@@ -123,7 +128,7 @@ async function main() {
     },
   );
 
-  const clientSessionId = process.env.OPENMEMORY_CLIENT_SESSION ?? null;
+  const clientSessionId = envValue("CLIENT_SESSION") ?? null;
 
   const sessionManager = createSessionManager(database, clientSessionId);
   sessionManager.registerTools(server);
@@ -137,8 +142,8 @@ async function main() {
 
   // Provider selector — heuristic is always the terminal fallback. Defaults to
   // the CLI provider: subprocess `claude -p` for real LLM consolidation
-  // via the user's own subscription. The OPENMEMORY_PROVIDER env var overrides
-  // the config.json choice (kill-switch, e.g. OPENMEMORY_PROVIDER=heuristic).
+  // via the user's own subscription. The FACTMEM_PROVIDER env var overrides
+  // the config.json choice (kill-switch, e.g. FACTMEM_PROVIDER=heuristic).
   const storeVocabulary = await loadStoreVocabulary(
     database,
     config.domains ?? [],
@@ -155,7 +160,7 @@ async function main() {
   // Built once at boot: resolution reads config and the environment, neither of
   // which changes mid-process.
   const embeddingProvider = createEmbeddingProvider(config.embedding, {
-    onUnavailable: (reason) => console.error(`[openmemory] ${reason}`),
+    onUnavailable: (reason) => console.error(`[factmem] ${reason}`),
   });
 
   // Resources are automatically-loaded context (memory://briefing, memory://profile).
@@ -205,7 +210,7 @@ async function main() {
     runConsolidate: (phase) =>
       factManager.runConsolidate(phase, {
         trigger: "scheduler",
-        project: process.env.OPENMEMORY_PROJECT ?? null,
+        project: envValue("PROJECT") ?? null,
       }),
     threshold: config.consolidation.threshold,
   });
@@ -218,7 +223,7 @@ async function main() {
     const clientInfo = server.server.getClientVersion();
     sessionManager.startSession(
       clientInfo?.name ?? null,
-      process.env.OPENMEMORY_PROJECT ?? null,
+      envValue("PROJECT") ?? null,
     );
 
     // IPC listener for threshold + compaction signals.
@@ -230,12 +235,12 @@ async function main() {
         });
         if (!ipcListener.bound) {
           console.error(
-            "[openmemory] Another MCP server is handling scheduler signals for this data dir.",
+            "[factmem] Another MCP server is handling scheduler signals for this data dir.",
           );
         }
       } catch (err) {
         console.error(
-          `[openmemory] Could not start IPC listener: ${(err as Error).message}. ` +
+          `[factmem] Could not start IPC listener: ${(err as Error).message}. ` +
             `Threshold / compaction triggers will not fire.`,
         );
       }
@@ -251,11 +256,11 @@ async function main() {
       eventsInserted = pulled.events_inserted;
       if (pulled.events_inserted > 0) {
         console.error(
-          `[openmemory] Pulled ${pulled.events_inserted} event(s) from ${pulled.files} source file(s).`,
+          `[factmem] Pulled ${pulled.events_inserted} event(s) from ${pulled.files} source file(s).`,
         );
       }
     } catch (err) {
-      console.error(`[openmemory] Source pull failed: ${(err as Error).message}`);
+      console.error(`[factmem] Source pull failed: ${(err as Error).message}`);
     }
 
     // session_start: leftovers when nothing new was pulled, or a handful of
@@ -266,9 +271,9 @@ async function main() {
         void sched.full();
       } else {
         console.error(
-          `[openmemory] Pulled ${eventsInserted} event(s) — skipping session_start ` +
+          `[factmem] Pulled ${eventsInserted} event(s) — skipping session_start ` +
             `consolidation so a first-run backfill does not spawn claude -p on the lot. ` +
-            `Run openmemory consolidate when ready, or wait for a later incremental pull.`,
+            `Run ${CLI_NAME} consolidate when ready, or wait for a later incremental pull.`,
         );
       }
     }

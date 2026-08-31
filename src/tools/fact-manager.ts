@@ -12,6 +12,7 @@ import { type CaptureConfig, type ServerConfig } from "../types/config.js";
 import type { SessionManager } from "./session-manager.js";
 import type { IntelligenceProvider } from "../intelligence/types.js";
 import type { EmbeddingProvider } from "../embedding/types.js";
+import { envValue } from "../identity.js";
 import {
   insertSessionFact,
   getUnconsolidatedSessionFacts,
@@ -226,7 +227,7 @@ export function createFactManager(
           sourceTool: caller.sourceTool ?? session?.source_tool ?? null,
           project:
             caller.project ??
-            process.env.OPENMEMORY_PROJECT ??
+            envValue("PROJECT") ??
             session?.project ??
             null,
         },

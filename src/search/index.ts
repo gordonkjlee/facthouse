@@ -267,7 +267,7 @@ export function computeRetrievalQuality(
  * **A failed embedding degrades to keyword search rather than failing the
  * search.** Retrieval is a read path: returning fewer results is recoverable,
  * returning an error to an assistant mid-answer is not. The failure is silent
- * here by design — `openmemory init` is where a broken provider is reported,
+ * here by design — `factmem init` is where a broken provider is reported,
  * because that is a moment someone is watching.
  */
 export async function searchWithProvider(

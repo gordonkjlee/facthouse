@@ -400,35 +400,35 @@ describe.skipIf(!runnable)("the README names tools that exist", () => {
   });
 
   it("hook and CLI examples invoke the CLI, not the MCP server", () => {
-    // bin.mcp is first and is dist/index.js. `npx -y @openmem/mcp` therefore
+    // bin.mcp is first and is dist/index.js. `npx -y @factmem/mcp` therefore
     // starts the stdio server and hangs a hook. The CLI is
-    // `npx -y -p @openmem/mcp openmemory …`. MCP config uses command "npx"
+    // `npx -y -p @factmem/mcp factmem …`. MCP config uses command "npx"
     // with args; that is the server, on purpose.
     const md = readFileSync(README, "utf-8");
     const hookCmds = [...md.matchAll(/"command":\s*"([^"]+)"/g)].map((m) => m[1]);
     for (const cmd of hookCmds) {
       if (cmd === "npx") continue;
-      expect(cmd).toMatch(/openmemory/);
-      expect(cmd).not.toMatch(/^npx -y @openmem\/mcp(?:@[\w.-]+)?$/);
-      expect(cmd).not.toMatch(/^npx -y @openmem\/mcp(?:@[\w.-]+)? /);
+      expect(cmd).toMatch(/\bfactmem\b/);
+      expect(cmd).not.toMatch(/^npx -y @factmem\/mcp(?:@[\w.-]+)?$/);
+      expect(cmd).not.toMatch(/^npx -y @factmem\/mcp(?:@[\w.-]+)? /);
     }
     for (const line of md.split("\n")) {
       const trimmed = line.trim();
       if (!trimmed.startsWith("npx ")) continue;
-      expect(trimmed).toMatch(/-p @openmem\/mcp/);
-      expect(trimmed).toMatch(/\bopenmemory\b/);
+      expect(trimmed).toMatch(/-p @factmem\/mcp/);
+      expect(trimmed).toMatch(/\bfactmem\b/);
     }
   });
 
   it("PowerShell examples quote the scoped package so @ is not splat", () => {
-    // `@openmem/mcp` unquoted is PowerShell splatting $openmem. A tester
+    // `@factmem/mcp` unquoted is PowerShell splatting $factmem. A tester
     // pasting Quick Start then gets a bind error, not a memory store.
     const md = readFileSync(README, "utf-8");
     const blocks = [...md.matchAll(/```powershell\r?\n([\s\S]*?)```/gi)].map((m) => m[1]);
     expect(blocks.length).toBeGreaterThan(0);
     for (const block of blocks) {
-      expect(block).not.toMatch(/-p @openmem\//);
-      expect(block).toMatch(/-p "@openmem\/mcp/);
+      expect(block).not.toMatch(/-p @factmem\//);
+      expect(block).toMatch(/-p "@factmem\/mcp/);
     }
   });
 

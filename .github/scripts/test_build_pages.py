@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[2]
 README_PITCH = (
     "A local memory engine any AI tool can use. "
     "GitHub [`gordonkjlee/openmemory`](https://github.com/gordonkjlee/openmemory), "
-    "npm [`@openmem/mcp`](https://www.npmjs.com/package/@openmem/mcp)."
+    "npm [`@factmem/mcp`](https://www.npmjs.com/package/@factmem/mcp)."
 )
 
 
@@ -35,8 +35,8 @@ def test_rewrite_source_file_to_github():
 def test_rewrite_leaves_external_and_anchors():
     src = ROOT / "README.md"
     assert build_pages.rewrite_url(
-        "https://www.npmjs.com/package/@openmem/mcp", src
-    ) == ("https://www.npmjs.com/package/@openmem/mcp")
+        "https://www.npmjs.com/package/@factmem/mcp", src
+    ) == ("https://www.npmjs.com/package/@factmem/mcp")
     assert build_pages.rewrite_url("#quick-start", src) == "#quick-start"
 
 
@@ -44,12 +44,12 @@ def test_builds_site_from_readme(tmp_path: Path):
     site = build_pages.build(tmp_path)
 
     index = (site / "index.html").read_text(encoding="utf-8")
-    assert "<title>Factmem</title>" in index
+    assert "<title>FactMem</title>" in index
     assert "A local memory engine any AI tool can use." in index
     assert "[`gordonkjlee/openmemory`]" not in index
-    assert "npm install -g @openmem/mcp" in index
+    assert "npm install -g @factmem/mcp" in index
     assert "https://github.com/gordonkjlee/openmemory" in index
-    assert "https://www.npmjs.com/package/@openmem/mcp" in index
+    assert "https://www.npmjs.com/package/@factmem/mcp" in index
     assert "What you get" in index
     assert "You own the SQLite file" in index
     assert "<table>" in index
@@ -71,18 +71,19 @@ def test_pitch_helpers_keep_readme_lede():
     assert build_pages.pitch_plain(README_PITCH) == (
         "A local memory engine any AI tool can use. "
         "GitHub gordonkjlee/openmemory, "
-        "npm @openmem/mcp."
+        "npm @factmem/mcp."
     )
     html = build_pages.pitch_html(README_PITCH)
     assert html.startswith("A local memory engine any AI tool can use.")
     assert 'href="https://github.com/gordonkjlee/openmemory"' in html
-    assert 'href="https://www.npmjs.com/package/@openmem/mcp"' in html
+    assert 'href="https://www.npmjs.com/package/@factmem/mcp"' in html
 
 
 def test_split_readme_uses_lede_and_keeps_image():
     pitch, rest = build_pages.split_readme((ROOT / "README.md").read_text(encoding="utf-8"))
     assert pitch == README_PITCH
     assert rest.startswith("<img ")
+    assert "# FactMem" not in rest.splitlines()[0]
     assert "# OpenMemory" not in rest.splitlines()[0]
     assert "## Quick Start" in rest
     assert "## What you get" in rest

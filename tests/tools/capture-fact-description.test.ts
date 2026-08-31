@@ -80,8 +80,9 @@ describe("README instruction layer for capture and identity", () => {
   it("names this package in the opening, not Mem0's hosted MCP", () => {
     const head = README.split(/\r?\n/).slice(0, 8).join("\n");
     expect(head).toMatch(/gordonkjlee\/openmemory/);
-    expect(head).toMatch(/@openmem\/mcp/);
+    expect(head).toMatch(/@factmem\/mcp/);
     expect(head).toMatch(/mcp\.mem0\.ai/);
+    expect(head).toMatch(/abolotnov\/factmem/);
   });
 
   it("does not describe the prune spare as a pronoun dictionary", () => {

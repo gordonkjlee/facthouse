@@ -42,7 +42,7 @@ export function renderInspectHtml(
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>OpenMemory inspect</title>
+<title>FactMem inspect</title>
 <link rel="icon" href="${ledgerFaviconHref()}"/>
 <style>
 ${ledgerInspectCss()}
@@ -183,7 +183,7 @@ ${ledgerInspectCss()}
     <div class="brand">
       <span class="brand-mark">${LEDGER_MARK_SVG}</span>
       <div class="brand-copy">
-        <h1>OpenMemory</h1>
+        <h1>FactMem</h1>
         <p class="brand-sub">Inspect</p>
       </div>
     </div>

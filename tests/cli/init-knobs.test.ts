@@ -91,10 +91,10 @@ describe("init knobs — one definition", () => {
   it("CLI and MCP entry use defaultDataDir / resolveUserPath, not path.join(homedir()", () => {
     const cli = readFileSync(path.join(ROOT, "src/cli/index.ts"), "utf-8");
     const server = readFileSync(path.join(ROOT, "src/index.ts"), "utf-8");
-    expect(cli).toMatch(/defaultDataDir/);
+    expect(cli).toMatch(/dataDirFromEnvOrDefault/);
     expect(cli).toMatch(/resolveUserPath/);
     expect(cli).not.toMatch(/path\.join\(homedir\(/);
-    expect(server).toMatch(/defaultDataDir/);
+    expect(server).toMatch(/dataDirFromEnvOrDefault/);
     expect(server).toMatch(/resolveUserPath/);
     expect(server).not.toMatch(/path\.join\(homedir\(/);
   });
@@ -163,7 +163,7 @@ describe("init knobs — one definition", () => {
 
   it("scripted README init uses --yes, except a lone walk-through fence", () => {
     const readme = readmeText();
-    const initCall = /\b(?:om|openmemory) init\b([^`\n]*)/g;
+    const initCall = /\b(?:om|factmem) init\b([^`\n]*)/g;
     const fenceRe = /```(?:bash|powershell)\n([\s\S]*?)```/g;
     const fences: Array<{ start: number; end: number; body: string }> = [];
     for (const fence of readme.matchAll(fenceRe)) {
@@ -182,13 +182,13 @@ describe("init knobs — one definition", () => {
       const commands = liveLines(body);
       if (
         commands.length === 1 &&
-        /^(?:om|openmemory) init\s*$/.test(commands[0] ?? "")
+        /^(?:om|factmem) init\s*$/.test(commands[0] ?? "")
       ) {
         return true;
       }
       if (
         commands.length === 1 &&
-        /^npx -y -p @openmem\/mcp@\d+\.\d+\.\d+ -- openmemory init\s*$/.test(
+        /^npx -y -p @factmem\/mcp@\d+\.\d+\.\d+ -- factmem init\s*$/.test(
           commands[0] ?? "",
         )
       ) {
@@ -196,8 +196,8 @@ describe("init knobs — one definition", () => {
       }
       return (
         commands.length === 2 &&
-        /^npm install -g @openmem\/mcp@\d+\.\d+\.\d+$/.test(commands[0] ?? "") &&
-        /^(?:om|openmemory) init\s*$/.test(commands[1] ?? "")
+        /^npm install -g @factmem\/mcp@\d+\.\d+\.\d+$/.test(commands[0] ?? "") &&
+        /^(?:om|factmem) init\s*$/.test(commands[1] ?? "")
       );
     };
 
@@ -210,8 +210,8 @@ describe("init knobs — one definition", () => {
     const firstBash = readme.match(/```bash\n([\s\S]*?)```/);
     expect(firstBash).not.toBeNull();
     expect(liveLines(firstBash?.[1] ?? "")).toEqual([
-      expect.stringMatching(/^npm install -g @openmem\/mcp@\d+\.\d+\.\d+$/),
-      "openmemory init",
+      expect.stringMatching(/^npm install -g @factmem\/mcp@\d+\.\d+\.\d+$/),
+      "factmem init",
     ]);
 
     const quickStartAt = readme.indexOf("## Quick Start");
@@ -229,7 +229,7 @@ describe("init knobs — one definition", () => {
       expect(rest).not.toMatch(/^-y\b/);
     }
 
-    for (const m of readme.matchAll(/npx[^\n]*openmemory init([^\n`]*)/g)) {
+    for (const m of readme.matchAll(/npx[^\n]*factmem init([^\n`]*)/g)) {
       const at = m.index ?? 0;
       const inQuick = at >= quickStartAt && (quickStartEnd === -1 || at < quickStartEnd);
       if (inQuick) {
@@ -250,6 +250,7 @@ describe("init knobs — one definition", () => {
     expect(quick).not.toMatch(/"hooks"/);
     expect(quick).not.toMatch(/embedding\.provider/);
     expect(quick).not.toMatch(/openmemory-personal/);
+    expect(quick).not.toMatch(/factmem-personal/);
     for (const fence of quick.matchAll(/```bash\n([\s\S]*?)```/g)) {
       expect(fence[1]).not.toMatch(/\bpull\b/);
     }

@@ -26,6 +26,7 @@ import { createConnection, createServer, type Server, type Socket } from "node:n
 import { unlinkSync } from "node:fs";
 import { createHash } from "node:crypto";
 import path from "node:path";
+import { WINDOWS_PIPE_PREFIX } from "../identity.js";
 
 // Probed on Windows and verified: ENOENT = no listener, EADDRINUSE = live listener.
 // Unix socket stale handling is test-then-bind below.
@@ -48,7 +49,7 @@ export function schedulerIpcPath(dataDir: string): string {
       .update(path.resolve(dataDir))
       .digest("hex")
       .slice(0, 16);
-    return String.raw`\\.\pipe\openmemory-${hash}`;
+    return `\\\\.\\pipe\\${WINDOWS_PIPE_PREFIX}-${hash}`;
   }
   return path.join(dataDir, ".scheduler.sock");
 }

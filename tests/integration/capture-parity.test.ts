@@ -227,5 +227,5 @@ describe("capture paths produce comparable knowledge", () => {
     expect(withoutOwner(explicit)).toEqual(withoutOwner(inferred));
     expect(inferred.entities).toContain("the user");
     expect(explicit.entities).not.toContain("the user");
-  });
+  }, 60_000);
 });

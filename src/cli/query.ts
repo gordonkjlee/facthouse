@@ -169,7 +169,7 @@ function formatEpisodeSlices(episodes: EpisodeSlice[]): string[] {
 
 /** Render knowledge base statistics for a terminal. */
 export function formatStats(stats: KnowledgeStats): string {
-  const lines: string[] = ["", "OpenMemory statistics", ""];
+  const lines: string[] = ["", "FactMem statistics", ""];
 
   lines.push(`  Facts           ${stats.facts.active_latest} current`);
   // Superseded facts are kept deliberately — history is never deleted — so the
@@ -229,7 +229,7 @@ export function formatStats(stats: KnowledgeStats): string {
       lines.push(
         `    Reclaimable    ${reclaim.events} events  (${formatDiskBudget(reclaim.bytes)} of content)`,
       );
-      lines.push(`    Reclaim what nothing can reach:  openmemory prune`);
+      lines.push(`    Reclaim what nothing can reach:  factmem prune`);
     }
   }
 
@@ -360,11 +360,11 @@ export function formatPrune(
 
   if (applied && !vacuumed) {
     lines.push("  The file will not shrink until the database is rebuilt:");
-    lines.push("    openmemory prune --apply --vacuum");
+    lines.push("    factmem prune --apply --vacuum");
     lines.push("  (VACUUM rewrites the whole database and needs comparable free disk.)");
   } else if (!applied) {
     lines.push("  Nothing has been deleted. To do it:");
-    lines.push("    openmemory prune --apply --vacuum");
+    lines.push("    factmem prune --apply --vacuum");
   }
   lines.push("");
   return lines.join("\n");

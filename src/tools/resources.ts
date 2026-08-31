@@ -97,7 +97,7 @@ async function emptyStoreNextStep(db: Db): Promise<string> {
         : " A pull of more than 50 events is never auto-flushed.";
     return (
       "Nothing captured yet. Conversation events are waiting — call the " +
-      "`consolidate` tool, or run `openmemory consolidate` from the CLI." +
+      "`consolidate` tool, or run `factmem consolidate` from the CLI." +
       flushNote
     );
   }
@@ -105,12 +105,12 @@ async function emptyStoreNextStep(db: Db): Promise<string> {
     return (
       "Nothing captured yet. Events were processed but produced no facts — " +
       "heuristic extraction does not read transcripts. Use the claude CLI, then " +
-      "call `consolidate` (or `openmemory consolidate`)."
+      "call `consolidate` (or `factmem consolidate`)."
     );
   }
   return (
     "Nothing captured yet. If this store has a named source, run " +
-    "`openmemory pull`, then call `consolidate`."
+    "`factmem pull`, then call `consolidate`."
   );
 }
 
@@ -129,7 +129,7 @@ export async function buildProfile(db: Db): Promise<string> {
  * read at the start of a session.
  */
 export async function buildBriefing(db: Db): Promise<string> {
-  const parts: string[] = ["# OpenMemory Briefing"];
+  const parts: string[] = ["# FactMem Briefing"];
 
   const key = await keyFacts(db, KEY_FACTS_LIMIT);
   parts.push(
@@ -177,7 +177,7 @@ export async function buildBriefing(db: Db): Promise<string> {
   const reclaim = (await getStats(db)).events.reclaimable;
   if (reclaim.events > 0) {
     parts.push(
-      `\n${reclaim.events} raw events (${formatDiskBudget(reclaim.bytes)} of content) can be reclaimed with \`openmemory prune\`.`,
+      `\n${reclaim.events} raw events (${formatDiskBudget(reclaim.bytes)} of content) can be reclaimed with \`factmem prune\`.`,
     );
   }
 
