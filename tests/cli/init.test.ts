@@ -329,8 +329,13 @@ describe("providerStatusLines", () => {
 });
 
 describe("sourcesStatusLines", () => {
-  it("tells a fresh store how to turn pull on", () => {
+  it("tells a fresh store capture_fact is how facts get in, then how to turn pull on", () => {
     const text = sourcesStatusLines([]).join("\n");
+    expect(text).toMatch(/capture_fact is how facts get in/);
+    const captureAt = text.indexOf("capture_fact is how facts get in");
+    const pullAt = text.search(/To pull transcripts/i);
+    expect(captureAt).toBeGreaterThanOrEqual(0);
+    expect(pullAt).toBeGreaterThan(captureAt);
     expect(text).toMatch(/pull is off/i);
     expect(text).toMatch(/claude-code/);
     expect(text).toMatch(/cursor/);

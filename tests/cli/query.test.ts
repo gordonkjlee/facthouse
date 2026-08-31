@@ -143,6 +143,97 @@ describe("formatSearch", () => {
     const out = formatSearch(response({ results: [r] as any }), "robin");
     expect(out).toContain("entities: Robin");
   });
+
+  it("renders pending when nothing has graduated yet", () => {
+    const out = formatSearch(
+      response({
+        pending: [
+          {
+            id: "p1",
+            content: "The user prefers dark roast coffee",
+            source_origin: "explicit",
+            domain_hint: "preferences",
+            confidence: 0.7,
+            created_at: "2026-08-31T12:00:00.000Z",
+            session_id: "s1",
+          },
+        ],
+      }),
+      "coffee",
+    );
+    expect(out).toContain("No graduated facts for \"coffee\"");
+    expect(out).toContain("Pending (not yet consolidated)");
+    expect(out).toContain("The user prefers dark roast coffee");
+    expect(out).toContain("preferences");
+    expect(out).toContain("confidence 0.70");
+    expect(out).not.toContain("No knowledge found");
+  });
+
+  it("renders pending after graduated results", () => {
+    const out = formatSearch(
+      response({
+        results: [result("Prefers tea")] as any,
+        pending: [
+          {
+            id: "p1",
+            content: "The user prefers dark roast coffee",
+            source_origin: "explicit",
+            domain_hint: null,
+            confidence: null,
+            created_at: "2026-08-31T12:00:00.000Z",
+            session_id: "s1",
+          },
+        ],
+      }),
+      "prefer",
+    );
+    const tea = out.indexOf("Prefers tea");
+    const pending = out.indexOf("Pending (not yet consolidated)");
+    const coffee = out.indexOf("The user prefers dark roast coffee");
+    expect(tea).toBeGreaterThanOrEqual(0);
+    expect(pending).toBeGreaterThan(tea);
+    expect(coffee).toBeGreaterThan(pending);
+    expect(out).toContain("coverage");
+  });
+
+  it("shows pending before episodes when K is empty", () => {
+    const out = formatSearch(
+      response({
+        pending: [
+          {
+            id: "p1",
+            content: "The user prefers dark roast coffee",
+            source_origin: "explicit",
+            domain_hint: null,
+            confidence: null,
+            created_at: "2026-08-31T12:00:00.000Z",
+            session_id: "s1",
+          },
+        ],
+        episodes: [
+          {
+            conversation_id: "sess-aaa",
+            events: [
+              {
+                id: "e1",
+                sequence: 1,
+                role: "user",
+                event_type: "message",
+                content: "coffee at the Acme kitchen",
+                matched: true,
+              },
+            ],
+          },
+        ],
+      }),
+      "coffee",
+    );
+    const pending = out.indexOf("Pending (not yet consolidated)");
+    const raw = out.indexOf("Raw log window");
+    expect(pending).toBeGreaterThanOrEqual(0);
+    expect(raw).toBeGreaterThan(pending);
+    expect(out).not.toContain("No knowledge found");
+  });
 });
 
 describe("formatStats", () => {

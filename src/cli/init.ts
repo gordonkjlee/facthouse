@@ -248,9 +248,9 @@ export function appendCaptureRecipe(
  * Report whether this store will pull Claude Code transcripts.
  *
  * Empty `sources` is the shipped default and means pull is off. Init writes
- * that empty list so the knob is visible; this is the sentence that says
- * what to do with it, otherwise a tester initialises a store, never names a
- * source, and wonders why `search` is empty.
+ * that empty list so the knob is visible. Facts still get in via
+ * `capture_fact` until a source is named — that is the sentence a silent
+ * `--yes` run must print, or it reads like pull is required.
  */
 export function sourcesStatusLines(sources: unknown): string[] {
   let n: number;
@@ -262,8 +262,9 @@ export function sourcesStatusLines(sources: unknown): string[] {
   }
   if (n === 0) {
     return [
-      `Capture: pull is off (sources is empty). Add a claude-code or cursor source to`,
-      `config.json — kind, home (e.g. ${INIT_SYNTHETIC.claudeHome} or ${INIT_SYNTHETIC.cursorHome}), cwd (e.g. ${INIT_SYNTHETIC.cwd}).`,
+      `Capture: pull is off (sources is empty). capture_fact is how facts get in.`,
+      `To pull transcripts, add a claude-code or cursor source to config.json —`,
+      `kind, home (e.g. ${INIT_SYNTHETIC.claudeHome} or ${INIT_SYNTHETIC.cursorHome}), cwd (e.g. ${INIT_SYNTHETIC.cwd}).`,
       `Set cwd. Then run openmemory pull. A first pull of more than ${SESSION_START_FLUSH_MAX_INSERTED} events`,
       `needs openmemory consolidate; a later session start will flush a smaller leftover.`,
     ];

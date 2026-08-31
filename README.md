@@ -6,15 +6,42 @@ A local memory engine any AI tool can use. GitHub [`gordonkjlee/openmemory`](htt
 
 Not a hosted plane. Not a vendor blob. You own the SQLite file. This is not Mem0's hosted "OpenMemory MCP" at [`mcp.mem0.ai`](https://mcp.mem0.ai). Same name, different product.
 
+[![npm](https://img.shields.io/npm/v/@openmem/mcp.svg)](https://www.npmjs.com/package/@openmem/mcp)
+[![CI](https://github.com/gordonkjlee/openmemory/actions/workflows/ci.yml/badge.svg)](https://github.com/gordonkjlee/openmemory/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/github/license/gordonkjlee/openmemory)](LICENSE)
+
 It records, stores, and retrieves structured knowledge. Domain routing, entity extraction, deduplication, and supersession run in the server. Exposed as an MCP server.
 
 ## Quick Start
 
+Needs Node 22.5 or 24+.
+
+<!-- x-release-please-start-version -->
 ```bash
+npm install -g @openmem/mcp@0.22.0
 openmemory init
 ```
+<!-- x-release-please-end -->
 
-Press Enter to accept each default (pull off, keyword search, extra knobs at shipped defaults). That writes `~/.openmemory/config.json` and prints an MCP snippet to paste.
+Press Enter to accept each default (pull off, keyword search, extra knobs at shipped defaults). That writes `~/.openmemory/config.json` and prints an MCP snippet.
+
+Paste the snippet into the project's `.mcp.json` (Claude Code) or the equivalent MCP config in any MCP-compatible tool. Restart the client.
+
+<!-- x-release-please-start-version -->
+If `openmemory` is not on your PATH:
+
+```bash
+npx -y -p @openmem/mcp@0.22.0 -- openmemory init
+```
+<!-- x-release-please-end -->
+
+Then:
+
+```bash
+openmemory stats
+```
+
+That is the file you own. In the client, state a durable fact in ordinary conversation — there is no special remember command. `openmemory search` lists it as pending until consolidate.
 
 To skip the walk-through, paste this. The server creates `~/.openmemory` on first boot; you are not asked those questions, and the defaults stay invisible until you write a config.
 
@@ -31,12 +58,11 @@ To skip the walk-through, paste this. The server creates `~/.openmemory` on firs
 ```
 <!-- x-release-please-end -->
 
-Works with Claude Code, Claude Desktop, and any MCP-compatible tool. Cursor consumes tools but not resources until a later adapter exists — `search_knowledge` and `get_entity` still work there; call `get_session_context` at session start. Data is stored at `~/.openmemory` by default. That one directory is the whole install. To use a different path, add `"env": { "OPENMEMORY_DATA": "/absolute/path" }` to the config above.
-
 ## What you get
 
 - **One file you own.** SQLite by default. Optional Postgres. Isolation is the directory, not a column.
-- **Pull, then consolidate.** Claude Code and Cursor Agent JSONL land in `session_events`. Extract on pull/Stop; graduate on PreCompact flush (or a manual `consolidate`). `capture_fact` is an optional correction on that path.
+- **The assistant captures.** Default `sources` is empty: `capture_fact` is how facts get in. Name a transcript source only if you want pull.
+- **Optional pull.** Claude Code and Cursor Agent JSONL land in `session_events`. Extract on pull/Stop; graduate on PreCompact flush (or a manual `consolidate`). On a pull store, `capture_fact` is a correction for something extraction missed.
 - **Entity graph.** People, organisations, projects, places, products — extracted, typed and linked. Relationship strength tracks corroboration.
 - **Hybrid search.** BM25 + structured domain + entity-graph paths, merged via Reciprocal Rank Fusion. An embedding provider adds meaning as a fourth list; it ranks, it does not gate. When no graduated fact matches, a short raw-log window is returned separately as `episodes`.
 - **In-session memory.** `get_session_context` returns the working briefing (same markdown as `memory://briefing`) plus facts captured this session. Tools-only clients are told to call it at session start.
@@ -107,6 +133,10 @@ om search "<a word you already said to Claude Code in this project>"
 That search is the proof: a fact you did not re-type. A first pull of more than 50 events does **not** auto-consolidate — run `om consolidate`. Do not install hooks yet. Incremental `pull` is small; the first one is not.
 
 ## MCP
+
+Works with Claude Code, Claude Desktop, and any MCP-compatible tool. Data is stored at `~/.openmemory` by default. That one directory is the whole install. To use a different path, add `"env": { "OPENMEMORY_DATA": "/absolute/path" }` to the MCP snippet.
+
+Cursor consumes tools but not resources until a later adapter exists — `search_knowledge` and `get_entity` still work there; call `get_session_context` at session start.
 
 Resources are context the client loads **automatically** — no tool call. Tools only help if the assistant remembers to reach for them; resources are simply present.
 
@@ -541,6 +571,13 @@ model:
 Each of those scripts fails rather than skips when its dependency is missing,
 so a green run means the claim was actually verified rather than quietly
 stepped over.
+
+## Contribute
+
+Issues and pull requests are welcome. Open an issue first if the change is more than a typo.
+
+- Questions: [GitHub Discussions](https://github.com/gordonkjlee/openmemory/discussions)
+- How to build and test: [CONTRIBUTING.md](CONTRIBUTING.md)
 
 ## License
 

@@ -1,0 +1,45 @@
+name: Bug
+description: Something does not work as documented
+title: "fix: "
+labels: []
+body:
+  - type: markdown
+    attributes:
+      value: Do not paste memory content, store rows, consolidation output, or search dumps.
+  - type: input
+    id: version
+    attributes:
+      label: Package version
+      placeholder: "@openmem/mcp@x.y.z"
+    validations:
+      required: true
+  - type: input
+    id: node
+    attributes:
+      label: Node version
+      placeholder: "22.x or 24.x"
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: OS
+      options:
+        - Windows
+        - macOS
+        - Linux
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: Steps and the result. Use synthetic names only (Alex, Robin, Acme).
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true

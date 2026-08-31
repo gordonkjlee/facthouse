@@ -178,22 +178,44 @@ describe("init knobs — one definition", () => {
         .map((l) => l.trim())
         .filter((l) => l.length > 0 && !l.startsWith("#"));
 
-    const loneInitFence = (body: string) => {
+    const walkThroughFence = (body: string) => {
       const commands = liveLines(body);
+      if (
+        commands.length === 1 &&
+        /^(?:om|openmemory) init\s*$/.test(commands[0] ?? "")
+      ) {
+        return true;
+      }
+      if (
+        commands.length === 1 &&
+        /^npx -y -p @openmem\/mcp@\d+\.\d+\.\d+ -- openmemory init\s*$/.test(
+          commands[0] ?? "",
+        )
+      ) {
+        return true;
+      }
       return (
-        commands.length === 1 && /^(?:om|openmemory) init\s*$/.test(commands[0] ?? "")
+        commands.length === 2 &&
+        /^npm install -g @openmem\/mcp@\d+\.\d+\.\d+$/.test(commands[0] ?? "") &&
+        /^(?:om|openmemory) init\s*$/.test(commands[1] ?? "")
       );
     };
 
     let recipeB = 0;
     for (const fence of fences) {
-      if (loneInitFence(fence.body)) recipeB += 1;
+      if (walkThroughFence(fence.body)) recipeB += 1;
     }
     expect(recipeB).toBeGreaterThanOrEqual(1);
 
     const firstBash = readme.match(/```bash\n([\s\S]*?)```/);
     expect(firstBash).not.toBeNull();
-    expect(liveLines(firstBash?.[1] ?? "")).toEqual(["openmemory init"]);
+    expect(liveLines(firstBash?.[1] ?? "")).toEqual([
+      expect.stringMatching(/^npm install -g @openmem\/mcp@\d+\.\d+\.\d+$/),
+      "openmemory init",
+    ]);
+
+    const quickStartAt = readme.indexOf("## Quick Start");
+    const quickStartEnd = readme.indexOf("\n## ", quickStartAt + 1);
 
     for (const m of readme.matchAll(initCall)) {
       const at = m.index ?? 0;
@@ -201,13 +223,19 @@ describe("init knobs — one definition", () => {
       const line = readme.slice(lineStart, readme.indexOf("\n", at));
       if (/^#{1,6}\s/.test(line.trim())) continue;
       const fence = fences.find((f) => at >= f.start && at < f.end);
-      if (fence && loneInitFence(fence.body)) continue;
+      if (fence && walkThroughFence(fence.body)) continue;
       const rest = m[1] ?? "";
       expect(rest).toMatch(/(?:--yes|-y)\b/);
       expect(rest).not.toMatch(/^-y\b/);
     }
 
     for (const m of readme.matchAll(/npx[^\n]*openmemory init([^\n`]*)/g)) {
+      const at = m.index ?? 0;
+      const inQuick = at >= quickStartAt && (quickStartEnd === -1 || at < quickStartEnd);
+      if (inQuick) {
+        expect(m[1] ?? "").not.toMatch(/(?:--yes|-y)\b/);
+        continue;
+      }
       expect(m[1]).toMatch(/--yes\b/);
     }
   });
