@@ -14,6 +14,10 @@ npm test
 
 `npm test` is hermetic. Live evals that need a model are separate scripts (`npm run test:first-fact`, `npm run test:coding-store`, `npm run test:semantic`) and fail rather than skip when their dependency is missing.
 
+## Publishing to the MCP Registry
+
+npm publish is automated. The official MCP Registry is not: `mcpName` in `package.json` must equal `name` in `server.json`, and `mcp-publisher login github` is interactive. After a version is live on npm, run `mcp-publisher publish` locally. Do not add CI that publishes to the registry.
+
 ## Rules that will reject a PR
 
 - British English in documentation.

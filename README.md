@@ -327,12 +327,13 @@ Init does not ask which engine to use. `factmem init --yes` still writes sqlite.
 
 Example — placeholders only; do not put a real password in a committed file:
 
+<!-- x-release-please-start-version -->
 ```json
 {
   "mcpServers": {
     "factmem": {
       "command": "npx",
-      "args": ["-y", "@factmem/mcp@0.22.0"],
+      "args": ["-y", "@factmem/mcp@0.24.1"],
       "env": {
         "FACTMEM_DATA": "C:\\Users\\alex\\.factmem-work",
         "FACTMEM_STORAGE": "postgres",
@@ -342,6 +343,7 @@ Example — placeholders only; do not put a real password in a committed file:
   }
 }
 ```
+<!-- x-release-please-end -->
 
 ### Pull versus log-event
 
@@ -360,6 +362,7 @@ Do not install log-event hooks on this store — both write the same rows. FactM
 <details>
 <summary>Stop / PreCompact hook JSON</summary>
 
+<!-- x-release-please-start-version -->
 ```json
 {
   "hooks": {
@@ -368,7 +371,7 @@ Do not install log-event hooks on this store — both write the same rows. FactM
         "hooks": [
           {
             "type": "command",
-            "command": "npx -y -p @factmem/mcp@0.22.0 -- factmem pull --data /absolute/path/to/the-same-store"
+            "command": "npx -y -p @factmem/mcp@0.24.1 -- factmem pull --data /absolute/path/to/the-same-store"
           }
         ]
       }
@@ -378,7 +381,7 @@ Do not install log-event hooks on this store — both write the same rows. FactM
         "hooks": [
           {
             "type": "command",
-            "command": "npx -y -p @factmem/mcp@0.22.0 -- factmem signal flush --data /absolute/path/to/the-same-store"
+            "command": "npx -y -p @factmem/mcp@0.24.1 -- factmem signal flush --data /absolute/path/to/the-same-store"
           }
         ]
       }
@@ -386,6 +389,7 @@ Do not install log-event hooks on this store — both write the same rows. FactM
   }
 }
 ```
+<!-- x-release-please-end -->
 
 </details>
 
@@ -427,9 +431,10 @@ Optional `intelligence.token_budget` caps billed extract per provider on rolling
 
 Throwaway store, not the capture path for a real Claude Code or Cursor home. These three lines are typed in.
 
+<!-- x-release-please-start-version -->
 ```bash
 export FACTMEM_DATA=/tmp/factmem-demo
-om() { npx -y -p @factmem/mcp@0.22.0 -- factmem "$@"; }
+om() { npx -y -p @factmem/mcp@0.24.1 -- factmem "$@"; }
 
 om init --yes
 
@@ -442,13 +447,14 @@ om consolidate
 
 ```powershell
 $env:FACTMEM_DATA = Join-Path $env:TEMP "factmem-demo"
-function om { npx -y -p "@factmem/mcp@0.22.0" -- factmem @args }
+function om { npx -y -p "@factmem/mcp@0.24.1" -- factmem @args }
 om init --yes
 om log-event --role user --content "I prefer dark mode in every editor, and I never want telemetry enabled."
 om log-event --role user --content "I am allergic to shellfish, so avoid seafood restaurants when booking anything."
 om log-event --role user --content "My colleague Robin at Acme is leading the Atlas migration project this quarter."
 om consolidate
 ```
+<!-- x-release-please-end -->
 
 ```bash
 om search "Atlas"
