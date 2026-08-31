@@ -67,16 +67,31 @@ jobs:
           # accepted — a second run that treats the 404 as "publish me" will
           # 403 over the in-flight version. dist-tag continues to work while
           # scanning; if it already names this version, do not republish.
-          if npm view "@factmem/mcp@${VERSION}" version >/dev/null 2>&1; then
-            echo "$TAG already on npm as @factmem/mcp"
+          #
+          # Canonical and linger are independent. A local first publish of
+          # @factmem/mcp must not skip @openmem/mcp at the same version.
+          accepted() {
+            local pkg="$1"
+            npm view "${pkg}@${VERSION}" version >/dev/null 2>&1 && return 0
+            npm dist-tag ls "$pkg" 2>/dev/null | grep -qE ": ${VERSION}$"
+          }
+          resolvable() {
+            npm view "$1@${VERSION}" version >/dev/null 2>&1
+          }
+          FM_OK=false
+          OM_OK=false
+          accepted "@factmem/mcp" && FM_OK=true
+          accepted "@openmem/mcp" && OM_OK=true
+          if [ "$FM_OK" = "true" ] && [ "$OM_OK" = "true" ]; then
+            echo "$TAG already on npm as @factmem/mcp and @openmem/mcp"
             echo "found=false" >> "$GITHUB_OUTPUT"
-            echo "processing=false" >> "$GITHUB_OUTPUT"
-          elif npm dist-tag ls @factmem/mcp 2>/dev/null | grep -qE ": ${VERSION}$"; then
-            echo "$TAG accepted by npm (dist-tag) but not yet resolvable — still processing. Will not republish."
-            echo "found=false" >> "$GITHUB_OUTPUT"
-            echo "processing=true" >> "$GITHUB_OUTPUT"
+            if resolvable "@factmem/mcp" && resolvable "@openmem/mcp"; then
+              echo "processing=false" >> "$GITHUB_OUTPUT"
+            else
+              echo "processing=true" >> "$GITHUB_OUTPUT"
+            fi
           else
-            echo "$TAG not on npm — publishing"
+            echo "$TAG missing on npm (factmem accepted=${FM_OK} openmem accepted=${OM_OK}) — publishing"
             echo "found=true" >> "$GITHUB_OUTPUT"
             echo "processing=false" >> "$GITHUB_OUTPUT"
           fi
