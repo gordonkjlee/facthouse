@@ -18,7 +18,7 @@ Needs Node 22.5 or 24+.
 
 <!-- x-release-please-start-version -->
 ```bash
-npm install -g @factmem/mcp@0.24.0
+npm install -g @factmem/mcp@0.24.1
 factmem init
 ```
 <!-- x-release-please-end -->
@@ -31,7 +31,7 @@ Paste the snippet into the project's `.mcp.json` (Claude Code) or the equivalent
 If `factmem` is not on your PATH (`openmemory` is the same CLI):
 
 ```bash
-npx -y -p @factmem/mcp@0.24.0 -- factmem init
+npx -y -p @factmem/mcp@0.24.1 -- factmem init
 ```
 <!-- x-release-please-end -->
 
@@ -51,7 +51,7 @@ To skip the walk-through, paste this. The server creates `~/.factmem` on first b
   "mcpServers": {
     "factmem": {
       "command": "npx",
-      "args": ["-y", "@factmem/mcp@0.24.0"]
+      "args": ["-y", "@factmem/mcp@0.24.1"]
     }
   }
 }
@@ -95,7 +95,7 @@ Git Bash / macOS / Linux:
 
 ```bash
 export FACTMEM_DATA=/tmp/factmem-try
-om() { npx -y -p @factmem/mcp@0.24.0 -- factmem "$@"; }
+om() { npx -y -p @factmem/mcp@0.24.1 -- factmem "$@"; }
 om init --yes
 ```
 
@@ -103,7 +103,7 @@ PowerShell:
 
 ```powershell
 $env:FACTMEM_DATA = Join-Path $env:TEMP "factmem-try"
-function om { npx -y -p "@factmem/mcp@0.24.0" -- factmem @args }
+function om { npx -y -p "@factmem/mcp@0.24.1" -- factmem @args }
 om init --yes
 ```
 <!-- x-release-please-end -->
@@ -302,12 +302,12 @@ A non-default data directory prints a distinct MCP server name so two stores can
   "mcpServers": {
     "factmem-personal": {
       "command": "npx",
-      "args": ["-y", "@factmem/mcp@0.24.0"],
+      "args": ["-y", "@factmem/mcp@0.24.1"],
       "env": { "FACTMEM_DATA": "C:\\Users\\alex\\.factmem-personal" }
     },
     "factmem-work": {
       "command": "npx",
-      "args": ["-y", "@factmem/mcp@0.24.0"],
+      "args": ["-y", "@factmem/mcp@0.24.1"],
       "env": { "FACTMEM_DATA": "C:\\Users\\alex\\.factmem-work" }
     }
   }
