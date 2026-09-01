@@ -194,6 +194,7 @@ export function registerSessionReadTools(
   server: McpServer,
   manager: SessionManager,
   db: Db,
+  beforeRead?: () => Promise<void>,
 ): void {
   server.tool(
     "get_events",
@@ -220,6 +221,7 @@ export function registerSessionReadTools(
         .describe("Maximum events to return (default 50)."),
     },
     async (args) => {
+      await beforeRead?.();
       const sessionId = args.session_id ?? manager.getActiveSession()?.id;
       if (!sessionId) {
         return {

@@ -33,7 +33,10 @@ import { registerResources, SESSION_BOOTSTRAP_INSTRUCTIONS } from "./tools/resou
 import { startScheduler, type Scheduler } from "./scheduler.js";
 import { loadShippedStoreConfig, ensureBitemporalSince } from "./config.js";
 import { startSchedulerListener, type SchedulerListener } from "./ipc/scheduler-ipc.js";
-import { pullSources, shouldFlushAfterSessionStartPull } from "./sources/pull.js";
+import {
+  createPullHeartbeat,
+  shouldFlushAfterSessionStartPull,
+} from "./sources/pull.js";
 
 // ---------------------------------------------------------------------------
 // Parse arguments
@@ -132,7 +135,6 @@ async function main() {
 
   const sessionManager = createSessionManager(database, clientSessionId);
   sessionManager.registerTools(server);
-  registerSessionReadTools(server, sessionManager, database);
 
   // A store that has just switched to bi-temporal mode gets `bitemporal_since`
   // stamped here — historical supersessions cannot be backfilled.
@@ -163,10 +165,32 @@ async function main() {
     onUnavailable: (reason) => console.error(`[factmem] ${reason}`),
   });
 
+  // Named sources: tail JSONL when a tool or resource is read if the files
+  // grew. Empty sources never walks a client home. Does not extract.
+  const heartbeat = createPullHeartbeat({
+    db: database,
+    sources: config.sources,
+    onPulled: (pulled) => {
+      console.error(
+        `[factmem] Pulled ${pulled.events_inserted} event(s) from ${pulled.files} source file(s).`,
+      );
+    },
+    onError: (err) => {
+      console.error(`[factmem] Source pull failed: ${err.message}`);
+    },
+  });
+  const beforeRead = async () => {
+    try {
+      await heartbeat.pullIfGrown();
+    } catch {
+      // pullIfGrown already swallows; a throwing hook must not fail search.
+    }
+  };
+
   // Resources are automatically-loaded context (memory://briefing, memory://profile).
   // Registered before connect(), because registering one registers the resources
   // capability and capabilities are frozen once the transport attaches.
-  const resources = registerResources(server, database);
+  const resources = registerResources(server, database, beforeRead);
 
   const factManager = createFactManager(database, sessionManager, {
     intelligence,
@@ -181,10 +205,12 @@ async function main() {
     captureConfig: config.capture,
     autoLinkEvents: config.consolidation.auto_link_events,
     sources: config.sources,
+    beforeRead,
     // Consolidation is the only thing that changes graduated knowledge, so it's
     // the only thing that can change what these resources render.
     onConsolidated: () => resources.notifyUpdated(),
   });
+  registerSessionReadTools(server, sessionManager, database, beforeRead);
   factManager.registerTools(server);
   if (config.inferences.enabled) {
     registerInferenceTools(server, database, {
@@ -203,6 +229,7 @@ async function main() {
     },
     config.temporal,
     config.interlocutor,
+    beforeRead,
   );
 
   const sched = startScheduler({
@@ -246,22 +273,11 @@ async function main() {
       }
     }
 
-    // Pull named sources before session_start full() so a small incremental
-    // ingest can extract then graduate in the same pass. Empty sources is a
-    // no-op. Errors are logged rather than fatal — a bad source must not take
-    // down log_event.
-    let eventsInserted = 0;
-    try {
-      const pulled = await pullSources(database, config.sources);
-      eventsInserted = pulled.events_inserted;
-      if (pulled.events_inserted > 0) {
-        console.error(
-          `[factmem] Pulled ${pulled.events_inserted} event(s) from ${pulled.files} source file(s).`,
-        );
-      }
-    } catch (err) {
-      console.error(`[factmem] Source pull failed: ${(err as Error).message}`);
-    }
+    // Same helper as tool/resource reads so a first get_session_context
+    // cannot race a second walk of the same JSONL. Empty sources is a
+    // no-op. Errors are logged on the heartbeat, not fatal.
+    const pulled = await heartbeat.pullIfGrown();
+    const eventsInserted = pulled.events_inserted;
 
     // session_start: leftovers when nothing new was pulled, or a handful of
     // new lines. Full pipeline (extract then graduate). A large first-backfill

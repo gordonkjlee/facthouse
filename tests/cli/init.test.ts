@@ -16,6 +16,7 @@ const {
 } = await import("../../src/cli/init.js");
 const { CONFIG_FILENAME, loadConfig, defaultServerConfig } = await import("../../src/config.js");
 const { defaultDataDir } = await import("../../src/paths.js");
+const { INIT_PROMPTS } = await import("../../src/cli/init-knobs.js");
 
 let root: string;
 
@@ -332,18 +333,11 @@ describe("sourcesStatusLines", () => {
   it("tells a fresh store capture_fact is how facts get in, then how to turn pull on", () => {
     const text = sourcesStatusLines([]).join("\n");
     expect(text).toMatch(/capture_fact is how facts get in/);
-    const captureAt = text.indexOf("capture_fact is how facts get in");
-    const pullAt = text.search(/To pull transcripts/i);
-    expect(captureAt).toBeGreaterThanOrEqual(0);
-    expect(pullAt).toBeGreaterThan(captureAt);
     expect(text).toMatch(/pull is off/i);
-    expect(text).toMatch(/claude-code/);
-    expect(text).toMatch(/cursor/);
+    expect(text).toMatch(/pick copy/);
     expect(text).toMatch(/cwd/);
-    expect(text).toContain("C:\\dev\\app");
     expect(text).toMatch(/factmem pull/);
-    expect(text).toMatch(/more than 50/);
-    expect(text).toMatch(/factmem consolidate/);
+    expect(text).not.toMatch(/more than 50/);
   });
 
   it("names an already-configured source", () => {
@@ -353,6 +347,7 @@ describe("sourcesStatusLines", () => {
     expect(text).toMatch(/1 source/);
     expect(text).toMatch(/factmem pull/);
     expect(text).toMatch(/more than 50/);
+    expect(text).toContain(INIT_PROMPTS.copyStorewide);
     expect(text).not.toMatch(/pull is off/i);
   });
 
@@ -366,7 +361,7 @@ describe("sourcesStatusLines", () => {
 describe("appendCaptureRecipe", () => {
   it("uses declined copy instead of the empty-sources tutorial", () => {
     const lines = appendCaptureRecipe([], { captureAskedAndEmpty: true });
-    expect(lines.join("\n")).toMatch(/you said no/i);
+    expect(lines.join("\n")).toMatch(/record/i);
     expect(lines.join("\n")).not.toMatch(/Add a claude-code/);
   });
 

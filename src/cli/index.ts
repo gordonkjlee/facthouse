@@ -29,12 +29,16 @@ import {
   type InitWizardResult,
 } from "./init-wizard.js";
 import { INIT_PROMPTS } from "./init-knobs.js";
+import {
+  offerInitBackfill,
+  shouldOfferInitBackfill,
+} from "./init-backfill.js";
 import { runSettings } from "./settings.js";
+import { collectInitWebAnswers } from "./web.js";
 import {
   CLI_NAME,
   PRODUCT_NAME,
   envIsSet,
-  envName,
   envValue,
   npmPackageSpec,
 } from "../identity.js";
@@ -74,7 +78,8 @@ import {
   isSchedulerListening,
   type SignalKind,
 } from "../ipc/scheduler-ipc.js";
-import { pullSources, shouldTickAfterCliPull } from "../sources/pull.js";
+import { pullFollowUp, pullSources } from "../sources/pull.js";
+import { unexaminedEventCount } from "../db/extract-watermarks.js";
 
 const SESSION_ROLES = ["user", "assistant", "system", "tool"] as const;
 const SESSION_EVENT_TYPES = ["message", "tool_call", "tool_result", "artifact"] as const;
@@ -153,13 +158,13 @@ async function main() {
     console.error(
       `Usage: ${CLI_NAME} <command>\n\n` +
         `Commands:\n` +
-        `  init [dir]    Create the data directory, database, and default config (--yes never prompts)\n` +
-        `  settings      Change extra knobs on an existing store (TTY; --json prints)\n` +
+        `  init [dir]    Create the data directory, database, and default config (--yes never prompts; --web is a local page)\n` +
+        `  settings      Change extra knobs on an existing store (TTY; --json prints; --web is a local page)\n` +
         `  search <q>    Search the knowledge base\n` +
         `  stats         Show knowledge base statistics\n` +
         `  inspect       Sample D / I / K and write a local HTML graph + spend\n` +
         `  prune         Reclaim raw events nothing can reach (dry run by default)\n` +
-        `  pull          Ingest new events from named capture sources\n` +
+        `  pull          Ingest new events from named capture sources (--flush, --no-tick)\n` +
         `  log-event     Log a session event (used by hooks)\n` +
         `  signal        Signal the running MCP server to tick or flush\n` +
         `  consolidate   Run consolidation in-process with the configured provider`,
@@ -175,6 +180,7 @@ async function runInit() {
       data: { type: "string" },
       force: { type: "boolean", default: false },
       yes: { type: "boolean", default: false, short: "y" },
+      web: { type: "boolean", default: false },
     },
     allowPositionals: true,
     strict: true,
@@ -203,36 +209,44 @@ async function runInit() {
     seed,
     configExists: seedHasConfig,
   });
+  const web = Boolean(values.web);
+  const yes = Boolean(values.yes);
 
   let reportDir = seed.dataDir;
   let result;
   let wizard: InitWizardResult;
+  let rl: ReturnType<typeof createInterface> | undefined;
+  const onSigint = () => {
+    rl?.close();
+    process.exit(130);
+  };
   try {
     // Always — env postgres refuses before prompts, even with no config.json.
     loadShippedStoreConfig(seed.dataDir);
 
-    if (!ask) {
+    if (web && yes) {
+      console.error(INIT_PROMPTS.webYesRefuse);
+      process.exit(1);
+    }
+
+    if (web) {
+      wizard = await collectInitWebAnswers(seed, {
+        stdout: process.stderr,
+        processCwd: process.cwd(),
+      });
+    } else if (!ask) {
       wizard = await collectInitAnswers(silentInitIo(), seed);
     } else {
-      const rl = createInterface({
+      rl = createInterface({
         input: process.stdin,
         output: process.stdout,
         terminal: true,
       });
-      const onSigint = () => {
-        rl.close();
-        process.exit(130);
-      };
       rl.on("SIGINT", onSigint);
-      try {
-        wizard = await collectInitAnswers(bindInitIo(rl), seed, {
+      wizard = await collectInitAnswers(bindInitIo(rl), seed, {
         ...defaultInitWizardDeps,
         probeHttp: (baseUrl) => probeHttpModels(baseUrl),
       });
-      } finally {
-        rl.removeListener("SIGINT", onSigint);
-        rl.close();
-      }
     }
     reportDir = wizard.dataDir;
     result = await initDataDir({
@@ -241,6 +255,7 @@ async function runInit() {
       overlay: wizard.overlay,
     });
   } catch (err: unknown) {
+    rl?.close();
     console.error(`Failed to initialise ${reportDir}: ${errorMessage(err)}`);
     process.exit(1);
   }
@@ -281,9 +296,9 @@ async function runInit() {
     ``,
     snippet,
     ``,
-    `One data directory is one memory. Another store is another directory`,
-    `with its own MCP server name and ${envName("DATA")} — not a tenant column`,
-    `inside this file.`,
+    INIT_PROMPTS.mcpVsCli,
+    ``,
+    `One data directory is one memory.`,
     ``,
     ...providerStatusLines(
       resolveProviderType(written.intelligence.provider),
@@ -302,6 +317,32 @@ async function runInit() {
     lines.push(later, ``);
   }
   console.log(lines.join("\n"));
+
+  if (rl) {
+    try {
+      if (
+        shouldOfferInitBackfill({
+          ttyWalk: true,
+          wroteConfig: result.wroteConfig,
+          sources: written.sources,
+        })
+      ) {
+        const provider = resolveProviderType(written.intelligence.provider);
+        await offerInitBackfill(bindInitIo(rl), result.dataDir, {
+          providerIsHeuristic: provider === "heuristic",
+          pull: async (dir) => {
+            const cfg = loadConfig(dir);
+            return withDb(dir, (db) => pullSources(db, cfg.sources));
+          },
+          unextracted: (dir) => withDb(dir, (db) => unexaminedEventCount(db)),
+          consolidate: (dir) => configuredConsolidate(dir, { print: false }),
+        });
+      }
+    } finally {
+      rl.removeListener("SIGINT", onSigint);
+      rl.close();
+    }
+  }
 }
 
 async function runSettingsCmd() {
@@ -310,7 +351,7 @@ async function runSettingsCmd() {
     options: {
       data: { type: "string" },
       json: { type: "boolean", default: false },
-      yes: { type: "boolean", default: false, short: "y" },
+      web: { type: "boolean", default: false },
     },
     allowPositionals: true,
     strict: true,
@@ -322,8 +363,8 @@ async function runSettingsCmd() {
     dataDirFromEnvOrDefault();
   const dataDir = resolveUserPath(target);
   const json = Boolean(values.json);
-  const yes = Boolean(values.yes);
-  const ask = Boolean(process.stdin.isTTY) && !json && !yes;
+  const web = Boolean(values.web);
+  const ask = Boolean(process.stdin.isTTY) && !json && !web;
 
   try {
     let code: number;
@@ -331,7 +372,7 @@ async function runSettingsCmd() {
       code = await runSettings({
         dataDir,
         json,
-        yes,
+        web,
         stdinIsTTY: Boolean(process.stdin.isTTY),
         probeHttp: (baseUrl) => probeHttpModels(baseUrl),
       });
@@ -350,7 +391,7 @@ async function runSettingsCmd() {
         code = await runSettings({
           dataDir,
           json,
-          yes,
+          web: false,
           stdinIsTTY: true,
           io: bindInitIo(rl),
           probeHttp: (baseUrl) => probeHttpModels(baseUrl),
@@ -605,20 +646,24 @@ async function runPruneCmd() {
 /**
  * Primary entry for client-agnostic capture: read `config.sources` and tail
  * each named home into session_events. Empty sources is a successful no-op.
- * The MCP server runs this same function once at session start; do not add
- * a third path.
+ * The MCP server runs this same function at session start and on tool reads;
+ * do not add a third ingest path.
  */
 async function runPull() {
   const { values } = parseArgs({
     args: process.argv.slice(3),
     options: {
       data: { type: "string", default: dataDirFromEnvOrDefault() },
+      flush: { type: "boolean", default: false },
+      "no-tick": { type: "boolean", default: false },
     },
     strict: true,
   });
 
   const dataDir = resolveUserPath(values.data as string);
   const config = loadConfig(dataDir);
+  const flush = Boolean(values.flush);
+  const noTick = Boolean(values["no-tick"]);
 
   try {
     const result = await withDb(dataDir, async (db) => await pullSources(db, config.sources));
@@ -630,7 +675,14 @@ async function runPull() {
           "(the default provider) and run factmem consolidate.",
       );
     }
-    if (shouldTickAfterCliPull(result.events_inserted)) {
+    const follow = pullFollowUp({
+      flush,
+      noTick,
+      eventsInserted: result.events_inserted,
+    });
+    if (follow === "flush") {
+      await flushPendingOrHeuristic(dataDir, { print: false });
+    } else if (follow === "tick") {
       const delivered = await sendSchedulerSignal(dataDir, "tick");
       if (!delivered) {
         console.error(
@@ -638,7 +690,7 @@ async function runPull() {
             "to graduate these events.",
         );
       }
-    } else if (result.events_inserted > 0) {
+    } else if (result.events_inserted > 0 && !noTick && !flush) {
       console.error(
         `[factmem] Pulled ${result.events_inserted} event(s) — skipping auto-consolidate ` +
           `so a first-run backfill does not spawn claude -p on the lot. ` +
@@ -650,6 +702,28 @@ async function runPull() {
     console.error(errorMessage(err));
     process.exit(1);
   }
+}
+
+/** I→K only. Compact wake-up; does not extract. */
+async function flushPendingOrHeuristic(
+  dataDir: string,
+  opts: { print?: boolean } = {},
+): Promise<void> {
+  const delivered = await sendSchedulerSignal(dataDir, "flush");
+  if (delivered) return;
+  console.error(
+    "[factmem] Server unreachable; running heuristic I→K in-process as fallback. " +
+      "Extract already ran on pull, or events stay events. " +
+      "Start the MCP server (cli provider) or run factmem consolidate with the claude CLI.",
+  );
+  await consolidateInProcess(
+    dataDir,
+    createHeuristicProvider(),
+    loadConfig(dataDir),
+    null,
+    "graduate",
+    { print: opts.print ?? true },
+  );
 }
 
 async function runSignal() {
@@ -685,18 +759,7 @@ async function runSignal() {
   // ~35-50s during a time-critical compaction. Lower quality, but fast and
   // dependency-free — heuristic-era facts can be reprocessed later.
   if (kind === "flush") {
-    console.error(
-      "[factmem] Server unreachable; running heuristic I→K in-process as fallback. " +
-        "Extract already ran on pull/Stop, or events stay events. " +
-        "Start the MCP server (cli provider) or run factmem consolidate with the claude CLI.",
-    );
-    await consolidateInProcess(
-      dataDir,
-      createHeuristicProvider(),
-      loadConfig(dataDir),
-      null,
-      "graduate",
-    );
+    await flushPendingOrHeuristic(dataDir);
     return;
   }
 
@@ -713,7 +776,13 @@ async function runConsolidate() {
     strict: true,
   });
   const dataDir = resolveUserPath(values.data as string);
+  await configuredConsolidate(dataDir);
+}
 
+async function configuredConsolidate(
+  dataDir: string,
+  opts: { print?: boolean } = {},
+): Promise<void> {
   // Manual `factmem consolidate` honours the configured provider (default
   // cli — real LLM quality). There's no MCP server here, so a `sampling`
   // selection degrades to heuristic; `cli` spawns `claude -p` directly. The
@@ -738,7 +807,9 @@ async function runConsolidate() {
   const embedding = createEmbeddingProvider(config.embedding, {
     onUnavailable: (reason) => console.error(`[factmem] ${reason}`),
   });
-  await consolidateInProcess(dataDir, provider, config, embedding);
+  await consolidateInProcess(dataDir, provider, config, embedding, "full", {
+    print: opts.print,
+  });
 }
 
 /**
@@ -757,6 +828,7 @@ export async function consolidateInProcess(
   config: Partial<ServerConfig> = DEFAULT_CONFIG,
   embedding: EmbeddingProvider | null = null,
   phase: ConsolidatePhase = "full",
+  opts: { print?: boolean } = {},
 ): Promise<void> {
   const storeConfig = loadShippedStoreConfig(dataDir);
   const db = await openStore(dataDir, storeConfig);
@@ -781,7 +853,7 @@ export async function consolidateInProcess(
         );
       }
     }
-    console.log(JSON.stringify(result));
+    if (opts.print !== false) console.log(JSON.stringify(result));
   } catch (err: unknown) {
     console.error(errorMessage(err));
     process.exit(1);

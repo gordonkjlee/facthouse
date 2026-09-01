@@ -1,7 +1,7 @@
 /**
  * Consolidation pipeline — the core intelligence engine.
  * Two DIKW arrows, independently timed:
- *   D → I: Extract facts from raw events (tick / pull / Stop)
+ *   D → I: Extract facts from raw events (tick / pull)
  *   I → K: Graduate session_facts through classify, entities, reconcile,
  *          supersede (flush / PreCompact / shutdown)
  *   Both:  MCP `consolidate` tool, CLI, session-start leftovers (`full`)
@@ -124,7 +124,7 @@ import {
 /**
  * Which arrows of consolidate() to run.
  *
- * `full` is the tester path and the MCP tool. `extract` is D→I on pull/Stop
+ * `full` is the tester path and the MCP tool. `extract` is D→I on pull/tick
  * (tick). `graduate` is I→K on PreCompact flush / shutdown — skip extract so
  * compaction is not four `claude -p` stages when D was already examined.
  */

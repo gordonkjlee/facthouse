@@ -7,6 +7,7 @@ import {
   resolveSources,
   resolveUserPath,
 } from "../../src/sources/resolve.js";
+import { expandTilde } from "../../src/paths.js";
 
 describe("encodeProjectDir", () => {
   it("encodes a Windows cwd the way Claude Code does on disk", () => {
@@ -109,5 +110,12 @@ describe("resolveSources", () => {
 describe("resolveUserPath", () => {
   it("expands a tilde home", () => {
     expect(resolveUserPath("~/.claude")).toBe(path.join(homedir(), ".claude"));
+  });
+
+  it("expands a backslash tilde the same way as a slash tilde", () => {
+    expect(expandTilde("~\\claude")).toBe(path.join(homedir(), "claude"));
+    expect(expandTilde("~/claude")).toBe(path.join(homedir(), "claude"));
+    expect(expandTilde("~")).toBe(homedir());
+    expect(expandTilde("/abs")).toBe("/abs");
   });
 });

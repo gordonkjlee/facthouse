@@ -208,7 +208,11 @@ export interface ResourceNotifier {
  * says so. `resources/list_changed` would be wrong — the list of resources
  * never changes, only what they contain.
  */
-export function registerResources(server: McpServer, db: Db): ResourceNotifier {
+export function registerResources(
+  server: McpServer,
+  db: Db,
+  beforeRead?: () => Promise<void>,
+): ResourceNotifier {
   const subscribed = new Set<string>();
 
   server.registerResource(
@@ -220,11 +224,14 @@ export function registerResources(server: McpServer, db: Db): ResourceNotifier {
         "The most important facts this store holds, ranked by importance — the fastest cue-less way to see what matters here. Loaded automatically; no tool call needed.",
       mimeType: "text/markdown",
     },
-    async (uri) => ({
-      contents: [
-        { uri: uri.href, mimeType: "text/markdown", text: await buildProfile(db) },
-      ],
-    }),
+    async (uri) => {
+      await beforeRead?.();
+      return {
+        contents: [
+          { uri: uri.href, mimeType: "text/markdown", text: await buildProfile(db) },
+        ],
+      };
+    },
   );
 
   server.registerResource(
@@ -236,11 +243,14 @@ export function registerResources(server: McpServer, db: Db): ResourceNotifier {
         "The most important things this store knows right now: its key facts, what was learned in the last consolidation, open threads, and recent knowledge. Read this first — it is the fastest way to load context at the start of a session.",
       mimeType: "text/markdown",
     },
-    async (uri) => ({
-      contents: [
-        { uri: uri.href, mimeType: "text/markdown", text: await buildBriefing(db) },
-      ],
-    }),
+    async (uri) => {
+      await beforeRead?.();
+      return {
+        contents: [
+          { uri: uri.href, mimeType: "text/markdown", text: await buildBriefing(db) },
+        ],
+      };
+    },
   );
 
   server.server.setRequestHandler(SubscribeRequestSchema, async (req) => {

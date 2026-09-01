@@ -48,6 +48,68 @@ describe("init knobs — one definition", () => {
     expect(silentEmbeddingProvider()).toBeNull();
   });
 
+  it("README repeats INIT_PROMPTS.mcpVsCli so global vs npx is one definition", () => {
+    const readme = readmeText();
+    expect(readme).toContain(INIT_PROMPTS.mcpVsCli);
+    const start = readme.indexOf("## Quick Start");
+    const next = readme.indexOf("\n## ", start + 1);
+    const quick = readme.slice(start, next === -1 ? undefined : next);
+    expect(quick).not.toContain(INIT_PROMPTS.mcpVsCli);
+    expect(readme).toContain(INIT_PROMPTS.shellNote);
+    expect(quick).not.toContain(INIT_PROMPTS.shellNote);
+    expect(quick).not.toMatch(/npm install -g/);
+    expect(readme).toContain(INIT_PROMPTS.copyStorewide);
+    expect(INIT_PROMPTS.shellNote).toMatch(/C:\/\.\.\./);
+    expect(INIT_PROMPTS.shellNote).toMatch(/~\/ is expanded/);
+    expect(readme).not.toMatch(/\$FACTMEM_DATA\b/);
+  });
+
+  it("Unix-only path or env recipes have a following PowerShell fence", () => {
+    const readme = readmeText();
+    const fenceRe = /```(bash|powershell)\n([\s\S]*?)```/g;
+    const fences: Array<{ lang: string; body: string }> = [];
+    for (const m of readme.matchAll(fenceRe)) {
+      fences.push({ lang: m[1] ?? "", body: m[2] ?? "" });
+    }
+    const live = (body: string) =>
+      body
+        .split("\n")
+        .map((l) => l.trim())
+        .filter((l) => l.length > 0 && !l.startsWith("#"));
+    const needsPair = (line: string) =>
+      line.startsWith("export ") ||
+      /(?:^|\s)\/tmp\//.test(line) ||
+      line.startsWith("rm -rf ");
+    let paired = 0;
+    for (let i = 0; i < fences.length; i++) {
+      const fence = fences[i];
+      if (fence.lang !== "bash") continue;
+      if (!live(fence.body).some(needsPair)) continue;
+      expect(fences[i + 1]?.lang).toBe("powershell");
+      paired += 1;
+    }
+    expect(paired).toBeGreaterThan(0);
+  });
+
+  it("capture prompt is copy versus record", () => {
+    expect(INIT_PROMPTS.capture).toMatch(/\[copy\]/);
+    expect(INIT_PROMPTS.capture).toMatch(/\bcopy\b/);
+    expect(INIT_PROMPTS.capture).toMatch(/\brecord\b/);
+    expect(INIT_PROMPTS.capture).toMatch(/Grok Build/);
+    expect(INIT_PROMPTS.capture).toMatch(/\[copy\]: $/);
+    expect(INIT_PROMPTS.kind).toMatch(/\[claude-code\]: $/);
+    expect(INIT_PROMPTS.embedding).toMatch(/\[off\]: $/);
+    expect(INIT_PROMPTS.more).toMatch(/\[N\]: $/);
+    expect(INIT_PROMPTS.moreCliModel("haiku")).toBe(
+      "Model to extract facts from messages  [haiku]: ",
+    );
+    expect(INIT_PROMPTS.moreCliGraduateModel("haiku")).toBe(
+      "Model to update long-term knowledge  [haiku]: ",
+    );
+    expect(INIT_PROMPTS.copyNow).toMatch(/\[Y\]: $/);
+    expect(INIT_PROMPTS.extractNow).toMatch(/\[Y\]: $/);
+  });
+
   it("kind prompt names every shipped kind and not grok", () => {
     for (const kind of CAPTURE_SOURCE_KINDS) {
       expect(INIT_PROMPTS.kind).toContain(kind);
@@ -64,10 +126,15 @@ describe("init knobs — one definition", () => {
       [
         "capture",
         "captureDeclined",
+        "copyNow",
+        "copyStorewide",
+        "copiedEvents",
         "cwd",
         "cwdSkip",
         "dataDir",
         "embedding",
+        "extractNow",
+        "extractSkippedHeuristic",
         "existingConfig",
         "forceHelp",
         "gitBashCwdHint",
@@ -75,9 +142,16 @@ describe("init knobs — one definition", () => {
         "homeMissing",
         "intro",
         "kind",
+        "mcpVsCli",
         "mixPullLogEvent",
+        "shellNote",
         "more",
+        "webExisting",
+        "webListening",
+        "webSaved",
+        "webYesRefuse",
         "moreCliModel",
+        "moreCliGraduateModel",
         "moreCliTimeout",
         "moreCliTimeoutInvalid",
         "moreHttpBaseUrl",
@@ -108,6 +182,7 @@ describe("init knobs — one definition", () => {
     expect(INIT_KNOB_IDS).toEqual(["dataDir", "sources", "embedding", "more"]);
     expect(MORE_SETTING_IDS).toEqual([
       "cliModel",
+      "cliGraduateModel",
       "cliTimeoutMs",
       "httpExtract",
       "httpBaseUrl",
@@ -158,7 +233,20 @@ describe("init knobs — one definition", () => {
     });
     expect(next.intelligence.cli?.model).toBe("sonnet");
     expect(next.intelligence.cli?.timeout_ms).toBe(180_000);
+    expect(next.intelligence.cli?.graduate_model).toBeUndefined();
     expect(next.intelligence.provider).toBe("cli");
+    const split = applyInitOverlay(defaultServerConfig(), {
+      cliModel: "haiku",
+      cliGraduateModel: "sonnet",
+    });
+    expect(split.intelligence.cli?.model).toBe("haiku");
+    expect(split.intelligence.cli?.graduate_model).toBe("sonnet");
+    const same = applyInitOverlay(defaultServerConfig(), {
+      cliModel: "sonnet",
+      cliGraduateModel: "sonnet",
+    });
+    expect(same.intelligence.cli?.model).toBe("sonnet");
+    expect(same.intelligence.cli?.graduate_model).toBeUndefined();
     const withHttp = applyInitOverlay(defaultServerConfig(), {
       httpExtract: true,
       httpBaseUrl: "http://localhost:1234/v1",
@@ -235,7 +323,7 @@ describe("init knobs — one definition", () => {
       }
       if (
         commands.length === 1 &&
-        /^npx -y -p @factmem\/mcp@\d+\.\d+\.\d+ -- factmem init\s*$/.test(
+        /^npx -y -p "?@factmem\/mcp@\d+\.\d+\.\d+"? -- factmem init\s*$/.test(
           commands[0] ?? "",
         )
       ) {
@@ -254,11 +342,13 @@ describe("init knobs — one definition", () => {
     }
     expect(recipeB).toBeGreaterThanOrEqual(1);
 
-    const firstBash = readme.match(/```bash\n([\s\S]*?)```/);
-    expect(firstBash).not.toBeNull();
-    expect(liveLines(firstBash?.[1] ?? "")).toEqual([
+    const installFence = fences.find((f) =>
+      liveLines(f.body).some((l) => /^npm install -g @factmem\/mcp@\d+\.\d+\.\d+$/.test(l)),
+    );
+    expect(installFence).toBeDefined();
+    expect(liveLines(installFence?.body ?? "")).toEqual([
       expect.stringMatching(/^npm install -g @factmem\/mcp@\d+\.\d+\.\d+$/),
-      "factmem init",
+      "factmem init --yes",
     ]);
 
     const quickStartAt = readme.indexOf("## Quick Start");
@@ -277,12 +367,6 @@ describe("init knobs — one definition", () => {
     }
 
     for (const m of readme.matchAll(/npx[^\n]*factmem init([^\n`]*)/g)) {
-      const at = m.index ?? 0;
-      const inQuick = at >= quickStartAt && (quickStartEnd === -1 || at < quickStartEnd);
-      if (inQuick) {
-        expect(m[1] ?? "").not.toMatch(/(?:--yes|-y)\b/);
-        continue;
-      }
       expect(m[1]).toMatch(/--yes\b/);
     }
   });
@@ -300,11 +384,21 @@ describe("init knobs — one definition", () => {
     expect(quick).not.toMatch(/11434/);
     expect(quick).not.toMatch(/ollama pull/);
     expect(quick).not.toMatch(/factmem settings/);
+    expect(quick).not.toMatch(/factmem pull/);
+    expect(quick).not.toMatch(/--web/);
+    expect(quick).not.toMatch(/\bStop\b/);
     expect(quick).not.toMatch(/openmemory-personal/);
     expect(quick).not.toMatch(/factmem-personal/);
-    for (const fence of quick.matchAll(/```bash\n([\s\S]*?)```/g)) {
+    for (const fence of quick.matchAll(/```(?:bash|powershell|text|json)\n([\s\S]*?)```/g)) {
       expect(fence[1]).not.toMatch(/\bpull\b/);
     }
+  });
+
+  it("does not recommend a Stop hook as the pull path", () => {
+    const readme = readmeText();
+    expect(readme).not.toMatch(/"Stop"\s*:/);
+    expect(readme).not.toMatch(/Stop tails new lines/);
+    expect(readme).not.toMatch(/Stop-hook pull/);
   });
 
   it("later-editor copy names factmem settings, not TTY init as the later path", () => {

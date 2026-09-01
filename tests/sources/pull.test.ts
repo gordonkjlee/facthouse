@@ -11,7 +11,10 @@ import path from "node:path";
 import { closeDatabase, openDatabase, type Db } from "../../src/db/connection.js";
 import { applySchema } from "../../src/db/schema.js";
 import {
+  PULL_HEARTBEAT_DEBOUNCE_MS,
   SESSION_START_FLUSH_MAX_INSERTED,
+  createPullHeartbeat,
+  pullFollowUp,
   pullSources,
   shouldFlushAfterSessionStartPull,
   shouldTickAfterCliPull,
@@ -428,7 +431,7 @@ describe("shouldTickAfterCliPull", () => {
     expect(shouldTickAfterCliPull(0)).toBe(false);
   });
 
-  it("ticks a handful of new lines so a Stop pull can graduate", () => {
+  it("ticks a handful of new lines so an incremental pull can extract", () => {
     expect(shouldTickAfterCliPull(1)).toBe(true);
     expect(shouldTickAfterCliPull(SESSION_START_FLUSH_MAX_INSERTED)).toBe(true);
   });
@@ -456,5 +459,161 @@ describe("shouldFlushAfterSessionStartPull", () => {
       false,
     );
     expect(shouldFlushAfterSessionStartPull(5000)).toBe(false);
+  });
+});
+
+describe("pullFollowUp", () => {
+  it("flush wins over tick and no-tick", () => {
+    expect(pullFollowUp({ flush: true, noTick: true, eventsInserted: 3 })).toBe(
+      "flush",
+    );
+    expect(pullFollowUp({ flush: true, noTick: false, eventsInserted: 0 })).toBe(
+      "flush",
+    );
+  });
+
+  it("no-tick copies only", () => {
+    expect(pullFollowUp({ flush: false, noTick: true, eventsInserted: 3 })).toBe(
+      "none",
+    );
+  });
+
+  it("default ticks a handful and skips a backfill", () => {
+    expect(pullFollowUp({ flush: false, noTick: false, eventsInserted: 3 })).toBe(
+      "tick",
+    );
+    expect(
+      pullFollowUp({
+        flush: false,
+        noTick: false,
+        eventsInserted: SESSION_START_FLUSH_MAX_INSERTED + 1,
+      }),
+    ).toBe("none");
+  });
+});
+
+describe("createPullHeartbeat", () => {
+  it("never calls pull when sources is empty", async () => {
+    let called = 0;
+    const hb = createPullHeartbeat({
+      db,
+      sources: [],
+      pull: async () => {
+        called += 1;
+        throw new Error("must not pull on an empty sources list");
+      },
+    });
+    const result = await hb.pullIfGrown();
+    expect(called).toBe(0);
+    expect(result.events_inserted).toBe(0);
+    expect(result.sources).toBe(0);
+  });
+
+  it("inserts new lines on growth and is a no-op when watermarks match", async () => {
+    const home = path.join(root, "claude-home");
+    const file = path.join(
+      home,
+      "projects",
+      encodeProjectDir("C:\\dev\\app"),
+      "sess-hb.jsonl",
+    );
+    writeJsonl(file, fixtureLines("sess-hb"));
+    const sources = [{ kind: "claude-code" as const, home }];
+    let t = 10_000;
+    const hb = createPullHeartbeat({
+      db,
+      sources,
+      now: () => t,
+      debounceMs: PULL_HEARTBEAT_DEBOUNCE_MS,
+    });
+
+    const first = await hb.pullIfGrown();
+    expect(first.events_inserted).toBe(4);
+    t += PULL_HEARTBEAT_DEBOUNCE_MS;
+    const second = await hb.pullIfGrown();
+    expect(second.events_inserted).toBe(0);
+    expect(await events(db)).toHaveLength(4);
+
+    appendFileSync(
+      file,
+      JSON.stringify({
+        type: "assistant",
+        sessionId: "sess-hb",
+        message: { role: "assistant", content: "Noted the extra preference." },
+      }) + "\n",
+    );
+    t += PULL_HEARTBEAT_DEBOUNCE_MS;
+    const third = await hb.pullIfGrown();
+    expect(third.events_inserted).toBe(1);
+    expect(await events(db)).toHaveLength(5);
+  });
+
+  it("coalesces overlapping walks onto one in-flight pull", async () => {
+    let walks = 0;
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const hb = createPullHeartbeat({
+      db,
+      sources: [{ kind: "claude-code", home: "/tmp/unused" }],
+      pull: async () => {
+        walks += 1;
+        await gate;
+        return { sources: 1, files: 1, events_inserted: 2, events_skipped: 0 };
+      },
+    });
+    const first = hb.pullIfGrown();
+    const second = hb.pullIfGrown();
+    expect(walks).toBe(1);
+    release();
+    expect(await first).toEqual(await second);
+    expect((await first).events_inserted).toBe(2);
+    expect(walks).toBe(1);
+  });
+
+  it("debounces from walk completion, not walk start", async () => {
+    let t = 0;
+    let walks = 0;
+    const hb = createPullHeartbeat({
+      db,
+      sources: [{ kind: "claude-code", home: "/tmp/unused" }],
+      now: () => t,
+      debounceMs: 2000,
+      pull: async () => {
+        walks += 1;
+        t = 3000;
+        return { sources: 1, files: 1, events_inserted: 0, events_skipped: 0 };
+      },
+    });
+    await hb.pullIfGrown();
+    t = 4000;
+    await hb.pullIfGrown();
+    expect(walks).toBe(1);
+    t = 5000;
+    await hb.pullIfGrown();
+    expect(walks).toBe(2);
+  });
+
+  it("debounces two walks inside the window into one", async () => {
+    let walks = 0;
+    let t = 0;
+    const hb = createPullHeartbeat({
+      db,
+      sources: [{ kind: "claude-code", home: "/tmp/unused" }],
+      now: () => t,
+      debounceMs: 2000,
+      pull: async () => {
+        walks += 1;
+        return { sources: 1, files: 1, events_inserted: 0, events_skipped: 0 };
+      },
+    });
+    await hb.pullIfGrown();
+    t = 500;
+    await hb.pullIfGrown();
+    expect(walks).toBe(1);
+    t = 2000;
+    await hb.pullIfGrown();
+    expect(walks).toBe(2);
   });
 });

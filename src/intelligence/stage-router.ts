@@ -7,6 +7,7 @@
 
 import { LOG_PREFIX } from "../identity.js";
 import {
+  CLI_DEFAULT_MODEL,
   CLI_DEFAULT_TIMEOUT_MS,
   isStageOnFail,
   type IntelligenceConfig,
@@ -52,13 +53,20 @@ export function httpIsConfigured(config: IntelligenceConfig): boolean {
  * Whether this config builds the per-stage router. Kill-switch heuristic /
  * sampling / api never mix with HTTP — that would bill the wrong pot.
  */
+function cliGraduateModelDiffers(config: IntelligenceConfig): boolean {
+  const graduate = config.cli?.graduate_model?.trim();
+  if (!graduate) return false;
+  const extract = (config.cli?.model ?? CLI_DEFAULT_MODEL).trim();
+  return graduate !== extract;
+}
+
 export function usesStageRouter(
   config: IntelligenceConfig,
   env: NodeJS.ProcessEnv = process.env,
 ): boolean {
   const type = resolveProviderType(config.provider, env);
   if (type === "heuristic" || type === "sampling" || type === "api") return false;
-  return httpIsOptedIn(config) || type === "http";
+  return httpIsOptedIn(config) || type === "http" || cliGraduateModelDiffers(config);
 }
 
 export function resolveStageProviderType(
@@ -237,7 +245,17 @@ export function createStageRouter(
       if (!model) return heuristic;
       return httpFor(model);
     }
-    if (type === "cli") return cliFor(modelOverride || config.cli?.model);
+    if (type === "cli") {
+      const graduate =
+        stage === "summarise" ||
+        stage === "reconcile" ||
+        stage === "supersede";
+      return cliFor(
+        modelOverride ||
+          (graduate ? config.cli?.graduate_model?.trim() : undefined) ||
+          config.cli?.model,
+      );
+    }
     return heuristic;
   };
 

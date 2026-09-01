@@ -1,8 +1,8 @@
 """Build the GitHub Pages site from project markdown.
 
-README.md is the source of truth. This script wraps it in a small HTML
-shell. Do not add a second hand-written marketing page — change the
-README instead.
+README.md is the source of truth for the landing page. The demo replay
+is a taped HTML page (not a live engine). Do not add a second marketing
+story — change the README instead.
 """
 
 from __future__ import annotations
@@ -47,6 +47,10 @@ PAGES = (
 
 ASSETS = (
     ("brand/mascot-right.png", "assets/logo.png"),
+)
+
+STATIC = (
+    ("site/demo.html", "demo.html"),
 )
 
 _ATTR = re.compile(
@@ -287,6 +291,7 @@ def wrap_html(
         FactMem
       </a>
       <nav>
+        <a href="demo.html">Demo</a>
         <a href="{GITHUB}">GitHub</a>
         <a href="{NPM}">npm</a>
       </nav>
@@ -343,6 +348,13 @@ def build(dest: Path | None = None) -> Path:
 
     copy_assets(dest)
     copy_root_files(dest)
+    for src, out in STATIC:
+        source = ROOT / src
+        if not source.is_file():
+            raise SystemExit(f"missing static page: {src}")
+        target = dest / out
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, target)
     write_cname(dest)
     (dest / ".nojekyll").write_text("", encoding="utf-8")
 
