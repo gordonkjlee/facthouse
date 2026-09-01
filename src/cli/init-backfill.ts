@@ -37,7 +37,7 @@ export async function offerInitBackfill(
   }
   if (copy !== "yes") return;
 
-  let inserted = 0;
+  let inserted: number;
   try {
     inserted = (await deps.pull(dataDir)).events_inserted;
   } catch (err: unknown) {
