@@ -10,6 +10,18 @@
     "type": "git",
     "url": "https://github.com/gordonkjlee/factmem"
   },
+  "homepage": "https://factmem.dev",
+  "keywords": [
+    "factmem",
+    "mcp",
+    "mcp-server",
+    "model-context-protocol",
+    "ai-memory",
+    "local-memory",
+    "sqlite",
+    "knowledge-engine",
+    "entity-graph"
+  ],
   "bin": {
     "mcp": "dist/index.js",
     "factmem": "dist/cli/index.js",
