@@ -24,7 +24,7 @@ Paste this. Restart the client. The server creates `~/.factmem` on first boot.
   "mcpServers": {
     "factmem": {
       "command": "npx",
-      "args": ["-y", "@factmem/mcp@0.24.2"]
+      "args": ["-y", "@factmem/mcp@0.25.0"]
     }
   }
 }
@@ -125,15 +125,15 @@ These CLI commands work in bash, zsh, and PowerShell. Quote @factmem/mcp in Powe
 
 <!-- x-release-please-start-version -->
 ```bash
-npm install -g @factmem/mcp@0.24.2
+npm install -g @factmem/mcp@0.25.0
 factmem init --yes
 ```
 
 ```bash
-npx -y -p "@factmem/mcp@0.24.2" -- factmem init --yes
-npx -y -p "@factmem/mcp@0.24.2" -- factmem settings --json
-npx -y -p "@factmem/mcp@0.24.2" -- factmem stats
-npx -y -p "@factmem/mcp@0.24.2" -- factmem inspect
+npx -y -p "@factmem/mcp@0.25.0" -- factmem init --yes
+npx -y -p "@factmem/mcp@0.25.0" -- factmem settings --json
+npx -y -p "@factmem/mcp@0.25.0" -- factmem stats
+npx -y -p "@factmem/mcp@0.25.0" -- factmem inspect
 ```
 <!-- x-release-please-end -->
 
@@ -290,12 +290,12 @@ A non-default data directory prints a distinct MCP server name so two stores can
   "mcpServers": {
     "factmem-personal": {
       "command": "npx",
-      "args": ["-y", "@factmem/mcp@0.24.2"],
+      "args": ["-y", "@factmem/mcp@0.25.0"],
       "env": { "FACTMEM_DATA": "C:\\Users\\alex\\.factmem-personal" }
     },
     "factmem-work": {
       "command": "npx",
-      "args": ["-y", "@factmem/mcp@0.24.2"],
+      "args": ["-y", "@factmem/mcp@0.25.0"],
       "env": { "FACTMEM_DATA": "C:\\Users\\alex\\.factmem-work" }
     }
   }
@@ -321,7 +321,7 @@ Example — placeholders only; do not put a real password in a committed file:
   "mcpServers": {
     "factmem": {
       "command": "npx",
-      "args": ["-y", "@factmem/mcp@0.24.2"],
+      "args": ["-y", "@factmem/mcp@0.25.0"],
       "env": {
         "FACTMEM_DATA": "C:\\Users\\alex\\.factmem-work",
         "FACTMEM_STORAGE": "postgres",
@@ -373,7 +373,7 @@ Do not install log-event hooks on this store — both write the same rows. FactM
         "hooks": [
           {
             "type": "command",
-            "command": "npx -y -p @factmem/mcp@0.24.2 -- factmem pull --flush --data /absolute/path/to/the-same-store"
+            "command": "npx -y -p @factmem/mcp@0.25.0 -- factmem pull --flush --data /absolute/path/to/the-same-store"
           }
         ]
       }
@@ -456,7 +456,7 @@ Throwaway store, not the capture path for a real Claude Code or Cursor home. The
 <!-- x-release-please-start-version -->
 ```bash
 export FACTMEM_DATA=/tmp/factmem-demo
-om() { npx -y -p "@factmem/mcp@0.24.2" -- factmem "$@"; }
+om() { npx -y -p "@factmem/mcp@0.25.0" -- factmem "$@"; }
 
 om init --yes
 
@@ -471,7 +471,7 @@ om stats
 
 ```powershell
 $env:FACTMEM_DATA = Join-Path $env:TEMP "factmem-demo"
-function om { npx -y -p "@factmem/mcp@0.24.2" -- factmem @args }
+function om { npx -y -p "@factmem/mcp@0.25.0" -- factmem @args }
 om init --yes
 om log-event --role user --content "I prefer dark mode in every editor, and I never want telemetry enabled."
 om log-event --role user --content "I am allergic to shellfish, so avoid seafood restaurants when booking anything."

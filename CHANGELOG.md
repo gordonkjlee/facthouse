@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.25.0](https://github.com/gordonkjlee/factmem/compare/v0.24.2...v0.25.0) (2026-09-01)
+
+
+### Features
+
+* add JSON-LD and IndexNow to factmem.dev ([f105638](https://github.com/gordonkjlee/factmem/commit/f10563887b9c7d21b9ffec809cfcf1f40999fd87))
+* **cli:** add HTTP extract and factmem settings ([#223](https://github.com/gordonkjlee/factmem/issues/223)) ([f1a37f7](https://github.com/gordonkjlee/factmem/commit/f1a37f7f435cc1ea34aec4acfb3dcb8d665e8a3e))
+* **cli:** ship stranger-first onboarding ([#228](https://github.com/gordonkjlee/factmem/issues/228)) ([ddf03c6](https://github.com/gordonkjlee/factmem/commit/ddf03c65d69f685747df0ab5afac12d2e979af52))
+
+
+### Bug Fixes
+
+* **cli:** drop unused onboarding lint leftovers ([#230](https://github.com/gordonkjlee/factmem/issues/230)) ([bde8053](https://github.com/gordonkjlee/factmem/commit/bde8053f35120b0914d7d9266282c69d6ba5d4f3))
+
 ## [0.24.2](https://github.com/gordonkjlee/factmem/compare/v0.24.1...v0.24.2) (2026-08-31)
 
 
