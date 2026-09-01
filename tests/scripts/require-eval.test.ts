@@ -29,6 +29,7 @@ describe("require-eval wrapper", () => {
     expect(r.stderr).toMatch(/first-fact/);
     expect(r.stderr).toMatch(/semantic/);
     expect(r.stderr).toMatch(/coding-store/);
+    expect(r.stderr).toMatch(/http-intelligence/);
   });
 
   it("exits non-zero with usage when the eval name is unknown", () => {

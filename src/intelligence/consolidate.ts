@@ -102,7 +102,12 @@ import {
   takeProviderUsage,
   type IntelligenceUsage,
 } from "./usage.js";
-import { resolveProviderType } from "./provider.js";
+import {
+  GRADUATE_STAGE_NAMES,
+  resolveStageProviderType,
+  setHttpExtractCliFallback,
+} from "./stage-router.js";
+import type { IntelligenceConfig, IntelligenceStageName } from "../types/config.js";
 import {
   getBoundTokenBudget,
   isBilledProvider,
@@ -250,46 +255,81 @@ export async function consolidate(
     return result;
   };
 
-  const billedType = resolveProviderType(
-    config?.intelligence?.provider ?? "cli",
-  );
-  if (isBilledProvider(billedType) && (doExtract || doGraduate)) {
-    const parsed =
-      getBoundTokenBudget(db) ??
-      parseIntelligenceTokenBudget(config?.intelligence);
-    if (parsed) {
-      const runs = await loadRunsForBudget(
-        (since) => listIntelligenceRunsSince(db, since),
-        parsed,
-      );
-      const report = evaluateTokenBudget(runs, parsed);
-      const verdict = verdictForProvider(report, billedType);
-      if (verdict.skip) {
-        await releaseLock(db, consolidationId);
-        return {
-          consolidationId,
-          factsIn: 0,
-          factsGraduated: 0,
-          factsRejected: 0,
-          entitiesCreated: 0,
-          entitiesLinked: 0,
-          supersessions: 0,
-          summary: null,
-          openThreads: [],
-          skipped: true,
-          skipReason: verdict.reason,
-          examinedThrough: prevWatermark,
-        };
+  const intel: IntelligenceConfig = config?.intelligence ?? {
+    provider: "cli",
+    api_key: null,
+  };
+  let skipExtract = false;
+  let skipGraduate = false;
+  let budgetReason: string | undefined;
+  let allowHttpCliFallback = true;
+  const parsedBudget =
+    getBoundTokenBudget(db) ?? parseIntelligenceTokenBudget(intel);
+  if (parsedBudget && (doExtract || doGraduate)) {
+    const runs = await loadRunsForBudget(
+      (since) => listIntelligenceRunsSince(db, since),
+      parsedBudget,
+    );
+    const report = evaluateTokenBudget(runs, parsedBudget);
+    if (doExtract) {
+      const extractType = resolveStageProviderType(intel, "extract");
+      if (isBilledProvider(extractType)) {
+        const verdict = verdictForProvider(report, extractType);
+        if (verdict.skip) {
+          skipExtract = true;
+          budgetReason = verdict.reason;
+        }
+      }
+      if (extractType === "http") {
+        allowHttpCliFallback = !verdictForProvider(report, "cli").skip;
       }
     }
+    if (doGraduate) {
+      for (const stage of GRADUATE_STAGE_NAMES) {
+        const stageType = resolveStageProviderType(
+          intel,
+          stage as IntelligenceStageName,
+        );
+        if (!isBilledProvider(stageType)) continue;
+        const verdict = verdictForProvider(report, stageType);
+        if (verdict.skip) {
+          skipGraduate = true;
+          budgetReason = verdict.reason;
+          break;
+        }
+      }
+    }
+    const extractWillRun = doExtract && !skipExtract;
+    const graduateWillRun = doGraduate && !skipGraduate;
+    if (!extractWillRun && !graduateWillRun && (skipExtract || skipGraduate)) {
+      await releaseLock(db, consolidationId);
+      return {
+        consolidationId,
+        factsIn: 0,
+        factsGraduated: 0,
+        factsRejected: 0,
+        entitiesCreated: 0,
+        entitiesLinked: 0,
+        supersessions: 0,
+        summary: null,
+        openThreads: [],
+        skipped: true,
+        skipReason: budgetReason,
+        examinedThrough: prevWatermark,
+      };
+    }
   }
+
+  const extractNow = doExtract && !skipExtract;
+  const graduateNow = doGraduate && !skipGraduate;
+  setHttpExtractCliFallback(intelligence, allowHttpCliFallback);
 
   try {
     // Phase B: D→I event extraction (if this run examines events).
     // Session facts land unclaimed so a later graduate-only flush can pick
     // them up — extract on tick, graduate on PreCompact, not four LLM stages
     // in the compaction hook.
-    if (doExtract && extractionEnabled) {
+    if (extractNow && extractionEnabled) {
       const extracted = await extractFactsFromEvents(
         db,
         intelligence,
@@ -298,7 +338,7 @@ export async function consolidate(
       extractionDegraded = extracted.degraded;
       extractPending = extracted.pending;
       prefixCommitted = extracted.prefixCommitted;
-    } else if (doExtract && !extractionEnabled) {
+    } else if (extractNow && !extractionEnabled) {
       // Policy decline, not provider-down: every conversation is examined
       // as empty through its current max sequence.
       await advanceExtractMarksToCurrentMax(db);
@@ -308,10 +348,10 @@ export async function consolidate(
     // marks as it goes; the run row audits the global MIN through.
     const effectiveWatermark = await extractWatermark(db);
 
-    if (doGraduate) {
+    if (graduateNow) {
       await claimForConsolidation(db, consolidationId);
     }
-    const sessionFacts = doGraduate
+    const sessionFacts = graduateNow
       ? await getClaimedFacts(db, consolidationId)
       : [];
 
@@ -319,7 +359,7 @@ export async function consolidate(
       // Only record an empty run when this run examined events and the
       // watermark actually advances. Graduate-only with nothing pending is
       // a PreCompact no-op — do not spam rows or pretend D was read.
-      if (doExtract && effectiveWatermark > prevWatermark) {
+      if (extractNow && effectiveWatermark > prevWatermark) {
         const onlyId =
           extractPending.length === 1 ? extractPending[0].group.ref.id : null;
         await db.prepare(
@@ -348,7 +388,7 @@ export async function consolidate(
       // previous run whose provider was down. Returning here without embedding
       // would mean the backlog only ever drains on runs that happen to have new
       // facts, which for a quiet store is never.
-      if (doGraduate) {
+      if (graduateNow) {
         await embedGraduatedFacts(db, embeddingProvider, config);
       }
 
@@ -369,6 +409,7 @@ export async function consolidate(
         summary: null,
         openThreads: [],
         skipped: false,
+        ...(budgetReason ? { skipReason: budgetReason } : {}),
         examinedThrough: effectiveWatermark,
         prefixCommitted,
       });
@@ -929,6 +970,7 @@ export async function consolidate(
       summary: summaryText,
       openThreads: threads,
       skipped: false,
+      ...(budgetReason ? { skipReason: budgetReason } : {}),
       examinedThrough: effectiveWatermark,
       prefixCommitted,
     });

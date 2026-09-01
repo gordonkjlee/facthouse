@@ -16,6 +16,8 @@ import {
   type InspectLayerRows,
 } from "./inspect-payload.js";
 import { loadSpendDashboard } from "./spend-dashboard.js";
+import { loadConfig } from "../config.js";
+import { intelligenceRoutingView } from "../intelligence/routing-view.js";
 
 export const INSPECT_LAYERS = [
   "health",
@@ -180,10 +182,12 @@ export async function runInspect(db: Db, opts: InspectOpts): Promise<InspectResu
       : path.join(opts.dataDir, "inspect.html");
     mkdirSync(path.dirname(dest), { recursive: true });
     const spend = await loadSpendDashboard(db);
+    const routing = intelligenceRoutingView(loadConfig(opts.dataDir).intelligence);
     const html = renderInspectHtml({
       ...graph,
       health,
       spend,
+      routing,
       package_version: version,
     });
     writeFileSync(dest, html, "utf8");

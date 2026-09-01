@@ -7,8 +7,9 @@
  * evals exist to prevent. Node sets the variable identically everywhere, so no
  * cross-platform env dependency is needed for one line.
  *
- * One file, three names (`first-fact`, `semantic`, `coding-store`). The three
- * package.json scripts stay so callers do not grow a second verb.
+ * One file, four names (`first-fact`, `semantic`, `coding-store`,
+ * `http-intelligence`). The package.json scripts stay so callers do not grow
+ * a second verb.
  */
 
 import { spawn } from "node:child_process";
@@ -25,6 +26,10 @@ const EVALS = {
   "coding-store": {
     env: "OPENMEMORY_REQUIRE_CODING_STORE_EVAL",
     file: "tests/integration/coding-store.test.ts",
+  },
+  "http-intelligence": {
+    env: "OPENMEMORY_REQUIRE_HTTP_INTEL_EVAL",
+    file: "tests/integration/http-intelligence.test.ts",
   },
 };
 

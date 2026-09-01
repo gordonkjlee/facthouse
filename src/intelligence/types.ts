@@ -10,6 +10,7 @@ import type {
   Fact,
   Referent,
   TopicSegment,
+  SourceQuality,
 } from "../types/data.js";
 import type { IntelligenceUsage } from "./usage.js";
 
@@ -118,7 +119,7 @@ export interface ExtractedFact {
   entities?: ExtractedEntity[];
   /** Which provider produced this extraction. Consolidate uses this to
    *  propagate source_quality through to graduated facts. */
-  source_quality?: "heuristic" | "cli" | "sampling";
+  source_quality?: SourceQuality;
 }
 
 /** A candidate for superseding an existing fact. */
@@ -144,7 +145,8 @@ export interface SessionSummary {
 
 /**
  * Intelligence provider — pluggable backend for consolidation intelligence.
- * Implementations: heuristic (keyword/regex), sampling (MCP client LLM), api (direct LLM call).
+ * Implementations: heuristic (keyword/regex), sampling (MCP client LLM),
+ * cli (subprocess), http (OpenAI-compat chat), api (stub).
  */
 export interface IntelligenceProvider {
   /** Classify facts into domains/subdomains.

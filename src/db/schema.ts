@@ -90,6 +90,9 @@ export async function applySchema(db: Db): Promise<void> {
   if (version < 22) {
     await applyV22(db);
   }
+  if (version < 23) {
+    await applyV23(db);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -865,4 +868,157 @@ async function applyV22(db: Db): Promise<void> {
     await db.exec(`ALTER TABLE intelligence_runs ADD COLUMN project TEXT;`);
   }
   await pragmaWrite(db, "user_version = 22");
+}
+
+// ---------------------------------------------------------------------------
+// Schema version 23 — HTTP intelligence on source_quality
+//
+// SQLite cannot ALTER a CHECK. Rebuild facts and session_facts, then recreate
+// their FTS indexes from the new rowids.
+// ---------------------------------------------------------------------------
+async function applyV23(db: Db): Promise<void> {
+  const quality =
+    "CHECK (source_quality IN ('heuristic', 'cli', 'sampling', 'explicit', 'http'))";
+  const tables = (await db
+    .prepare(`SELECT name FROM sqlite_master WHERE type = 'table'`)
+    .all()) as Array<{ name: string }>;
+  const names = new Set(tables.map((t) => t.name));
+  await pragmaWrite(db, "foreign_keys = OFF");
+  if (names.has("facts")) {
+    await db.exec(`
+    DROP TRIGGER IF EXISTS facts_ai;
+    DROP TRIGGER IF EXISTS facts_ad;
+    DROP TABLE IF EXISTS facts_fts;
+
+    CREATE TABLE facts_v23 (
+      id TEXT PRIMARY KEY,
+      content TEXT NOT NULL,
+      domain TEXT NOT NULL,
+      subdomain TEXT,
+      confidence REAL NOT NULL DEFAULT 0.7,
+      importance REAL NOT NULL DEFAULT 0.5,
+      source_type TEXT NOT NULL,
+      source_tool TEXT,
+      source_id TEXT,
+      status TEXT NOT NULL DEFAULT 'active'
+        CHECK (status IN ('active', 'superseded', 'rejected')),
+      superseded_by TEXT,
+      is_latest INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL,
+      valid_from TEXT,
+      valid_until TEXT,
+      system_retired_at TEXT,
+      session_id TEXT,
+      capture_context TEXT,
+      access_count INTEGER NOT NULL DEFAULT 0,
+      source_quality TEXT NOT NULL DEFAULT 'heuristic' ${quality},
+      speaker_role TEXT
+        CHECK (speaker_role IS NULL OR speaker_role IN ('user', 'assistant', 'system', 'tool')),
+      speaker TEXT
+    );
+    INSERT INTO facts_v23 (
+      id, content, domain, subdomain, confidence, importance,
+      source_type, source_tool, source_id, status, superseded_by, is_latest,
+      created_at, valid_from, valid_until, system_retired_at, session_id,
+      capture_context, access_count, source_quality, speaker_role, speaker
+    )
+    SELECT
+      id, content, domain, subdomain, confidence, importance,
+      source_type, source_tool, source_id, status, superseded_by, is_latest,
+      created_at, valid_from, valid_until, system_retired_at, session_id,
+      capture_context, access_count, source_quality, speaker_role, speaker
+    FROM facts;
+    DROP TABLE facts;
+    ALTER TABLE facts_v23 RENAME TO facts;
+    CREATE INDEX IF NOT EXISTS idx_facts_domain ON facts(domain, subdomain);
+    CREATE INDEX IF NOT EXISTS idx_facts_status ON facts(status, is_latest);
+    CREATE INDEX IF NOT EXISTS idx_facts_session ON facts(session_id);
+
+    CREATE VIRTUAL TABLE facts_fts USING fts5(
+      content, domain, subdomain,
+      content=facts, content_rowid=rowid
+    );
+    CREATE TRIGGER facts_ai AFTER INSERT ON facts BEGIN
+      INSERT INTO facts_fts(rowid, content, domain, subdomain)
+      VALUES (new.rowid, new.content, new.domain, new.subdomain);
+    END;
+    CREATE TRIGGER facts_ad AFTER DELETE ON facts BEGIN
+      INSERT INTO facts_fts(facts_fts, rowid, content, domain, subdomain)
+      VALUES ('delete', old.rowid, old.content, old.domain, old.subdomain);
+    END;
+    INSERT INTO facts_fts(rowid, content, domain, subdomain)
+    SELECT rowid, content, domain, subdomain FROM facts;
+  `);
+  }
+  if (names.has("session_facts")) {
+    await db.exec(`
+    DROP TRIGGER IF EXISTS session_facts_ai;
+    DROP TRIGGER IF EXISTS session_facts_ad;
+    DROP TABLE IF EXISTS session_facts_fts;
+
+    CREATE TABLE session_facts_v23 (
+      id TEXT PRIMARY KEY,
+      session_id TEXT NOT NULL,
+      content TEXT NOT NULL,
+      content_hash TEXT NOT NULL,
+      source_origin TEXT NOT NULL DEFAULT 'explicit'
+        CHECK (source_origin IN ('explicit', 'inferred')),
+      source_event_id TEXT,
+      domain_hint TEXT,
+      subdomain_hint TEXT,
+      confidence REAL,
+      importance REAL,
+      confidence_signal REAL,
+      importance_signal REAL,
+      valid_from_hint TEXT,
+      valid_until_hint TEXT,
+      entities_json TEXT,
+      source_quality TEXT NOT NULL DEFAULT 'heuristic' ${quality},
+      source_tool TEXT,
+      capture_context TEXT,
+      consolidation_id TEXT,
+      created_at TEXT NOT NULL,
+      speaker_role TEXT
+        CHECK (speaker_role IS NULL OR speaker_role IN ('user', 'assistant', 'system', 'tool')),
+      speaker TEXT
+    );
+    INSERT INTO session_facts_v23 (
+      id, session_id, content, content_hash, source_origin, source_event_id,
+      domain_hint, subdomain_hint, confidence, importance, confidence_signal,
+      importance_signal, valid_from_hint, valid_until_hint, entities_json,
+      source_quality, source_tool, capture_context, consolidation_id, created_at,
+      speaker_role, speaker
+    )
+    SELECT
+      id, session_id, content, content_hash, source_origin, source_event_id,
+      domain_hint, subdomain_hint, confidence, importance, confidence_signal,
+      importance_signal, valid_from_hint, valid_until_hint, entities_json,
+      source_quality, source_tool, capture_context, consolidation_id, created_at,
+      speaker_role, speaker
+    FROM session_facts;
+    DROP TABLE session_facts;
+    ALTER TABLE session_facts_v23 RENAME TO session_facts;
+    CREATE INDEX IF NOT EXISTS idx_session_facts_session ON session_facts(session_id);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_session_facts_hash
+      ON session_facts(session_id, content_hash);
+    CREATE INDEX IF NOT EXISTS idx_session_facts_unclaimed
+      ON session_facts(created_at) WHERE consolidation_id IS NULL;
+
+    CREATE VIRTUAL TABLE session_facts_fts USING fts5(
+      content,
+      content=session_facts, content_rowid=rowid
+    );
+    CREATE TRIGGER session_facts_ai AFTER INSERT ON session_facts BEGIN
+      INSERT INTO session_facts_fts(rowid, content) VALUES (new.rowid, new.content);
+    END;
+    CREATE TRIGGER session_facts_ad AFTER DELETE ON session_facts BEGIN
+      INSERT INTO session_facts_fts(session_facts_fts, rowid, content)
+      VALUES ('delete', old.rowid, old.content);
+    END;
+    INSERT INTO session_facts_fts(rowid, content)
+    SELECT rowid, content FROM session_facts;
+  `);
+  }
+  await pragmaWrite(db, "foreign_keys = ON");
+  await pragmaWrite(db, "user_version = 23");
 }

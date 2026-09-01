@@ -47,6 +47,16 @@ export interface TopicSegment {
   referents: Referent[];
 }
 
+/** Which intelligence path produced a fact. One CHECK list in the schema. */
+export const SOURCE_QUALITY_VALUES = [
+  "heuristic",
+  "cli",
+  "sampling",
+  "explicit",
+  "http",
+] as const;
+export type SourceQuality = (typeof SOURCE_QUALITY_VALUES)[number];
+
 /** A consolidation run over session facts. Can happen multiple times per session. */
 export interface Consolidation {
   id: string;
@@ -135,7 +145,7 @@ export interface SessionFact {
   /** JSON-serialised entities attached to this fact by holistic extraction. */
   entities_json: string | null;
   /** Which provider produced this fact. */
-  source_quality: "heuristic" | "cli" | "sampling" | "explicit";
+  source_quality: SourceQuality;
   source_tool: string | null;
   capture_context: string | null;
   /** UUID of the consolidation run that claimed this fact (null = unclaimed). */
@@ -207,7 +217,7 @@ export interface Fact {
   access_count: number;
   /** Which intelligence provider produced this fact. Enables provenance
    *  tracking and future reprocess passes that upgrade heuristic-era facts. */
-  source_quality: "heuristic" | "cli" | "sampling" | "explicit";
+  source_quality: SourceQuality;
   /**
    * Role of the primary event, copied from session_facts at graduation.
    * Null when unknown. Distinct from source_origin (how it entered I) and

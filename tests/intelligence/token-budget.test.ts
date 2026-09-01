@@ -96,7 +96,7 @@ describe("parseTokenBudget", () => {
     );
   });
 
-  it("ignores http until local intelligence exists", () => {
+  it("ignores http — local intelligence is not billed", () => {
     expect(parseTokenBudget({ http: { week: "10M" } })).toBeNull();
     expect(
       parseTokenBudget({ http: { week: "10M" }, cli: { week: "10M" } }),

@@ -30,6 +30,7 @@
     "test:semantic": "node scripts/require-eval.mjs semantic",
     "test:first-fact": "node scripts/require-eval.mjs first-fact",
     "test:coding-store": "node scripts/require-eval.mjs coding-store",
+    "test:http-intelligence": "node scripts/require-eval.mjs http-intelligence",
     "test:watch": "vitest",
     "lint": "eslint src/",
     "prepare": "npm run build"

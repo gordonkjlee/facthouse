@@ -8,7 +8,6 @@ import type { IntelligenceConfig } from "../../src/types/config.js";
 
 const baseConfig: IntelligenceConfig = {
   provider: "cli",
-  fallback: "heuristic",
   api_key: null,
 };
 
@@ -74,6 +73,26 @@ describe("createIntelligenceProvider — selection", () => {
       { heuristic },
     );
     expect(selected).toBe(heuristic);
+  });
+
+  it("warns that the api stub is not implemented", () => {
+    const lines: string[] = [];
+    const orig = console.error;
+    console.error = (msg: unknown, ...rest: unknown[]) => {
+      lines.push([msg, ...rest].map(String).join(" "));
+    };
+    try {
+      createIntelligenceProvider({ ...baseConfig, provider: "api" });
+    } finally {
+      console.error = orig;
+    }
+    expect(lines.join("\n")).toMatch(/"api" is not implemented/);
+  });
+
+  it("accepts http as an env kill-switch value", () => {
+    expect(resolveProviderType("cli", { [PROVIDER_ENV_VAR]: "http" })).toBe(
+      "http",
+    );
   });
 
   it("honours the env kill-switch — cli config + env=heuristic returns heuristic", () => {

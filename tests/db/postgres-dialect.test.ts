@@ -61,6 +61,16 @@ describe("postgres dialect (PGlite)", () => {
     expect(quoted.map((h) => h.fact.id)).toContain(fact.id);
   });
 
+  it("accepts source_quality http", async () => {
+    const fact = await insertFact(db, {
+      content: "Alex prefers tea.",
+      domain: "preferences",
+      source_type: "conversation",
+      source_quality: "http",
+    });
+    expect(fact.source_quality).toBe("http");
+  });
+
   it("stores a named speaker on an event", async () => {
     const session = await createSession(db, { source_tool: "test", project: "atlas" });
     const event = await insertEvent(db, {

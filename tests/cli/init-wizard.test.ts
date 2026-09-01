@@ -205,7 +205,7 @@ describe("collectInitAnswers", () => {
   });
 
   it("writes one source with cwd and ollama, then extra knobs", async () => {
-    const io = fakeIo(["y", "", "", "", "ollama", "y", "sonnet", "180000"]);
+    const io = fakeIo(["y", "", "", "", "ollama", "y", "sonnet", "180000", "n"]);
     const result = await collectInitAnswers(io, seed, deps());
     expect(result.overlay.sources).toEqual([
       {
@@ -220,8 +220,27 @@ describe("collectInitAnswers", () => {
     expect(result.captureAskedAndEmpty).toBe(false);
   });
 
+  it("More local extract writes URL, model, and on_fail", async () => {
+    const io = fakeIo([
+      "n",
+      "off",
+      "y",
+      "",
+      "",
+      "y",
+      "http://localhost:1234/v1",
+      "qwen2.5vl:7b",
+      "none",
+    ]);
+    const result = await collectInitAnswers(io, seed, deps());
+    expect(result.overlay.httpExtract).toBe(true);
+    expect(result.overlay.httpBaseUrl).toBe("http://localhost:1234/v1");
+    expect(result.overlay.httpModel).toBe("qwen2.5vl:7b");
+    expect(result.overlay.httpExtractOnFail).toBe("none");
+  });
+
   it("omits extra knobs when More is Y but answers are empty", async () => {
-    const io = fakeIo(["n", "off", "y", "", ""]);
+    const io = fakeIo(["n", "off", "y", "", "", "n"]);
     const result = await collectInitAnswers(io, seed, deps());
     expect(result.overlay.cliModel).toBeUndefined();
     expect(result.overlay.cliTimeoutMs).toBeUndefined();
@@ -297,7 +316,7 @@ describe("collectInitAnswers", () => {
   });
 
   it("re-prompts an invalid timeout", async () => {
-    const io = fakeIo(["n", "off", "y", "haiku", "nope", "45000"]);
+    const io = fakeIo(["n", "off", "y", "haiku", "nope", "45000", "n"]);
     const result = await collectInitAnswers(io, seed, deps());
     expect(result.overlay.cliModel).toBe("haiku");
     expect(result.overlay.cliTimeoutMs).toBe(45_000);
@@ -331,6 +350,13 @@ describe("init-wizard file-scan", () => {
       expect(body).not.toMatch(new RegExp(`\\b${word}\\b`));
     }
     expect(body).toContain("MORE_SETTING_IDS");
-    expect(MORE_SETTING_IDS).toEqual(["cliModel", "cliTimeoutMs"]);
+    expect(MORE_SETTING_IDS).toEqual([
+      "cliModel",
+      "cliTimeoutMs",
+      "httpExtract",
+      "httpBaseUrl",
+      "httpModel",
+      "httpExtractOnFail",
+    ]);
   });
 });

@@ -12,6 +12,7 @@ import type {
   SpeakerRole,
   ExtractionType,
   BackingType,
+  SourceQuality,
 } from "../types/data.js";
 import { BACKING_TYPES } from "../types/data.js";
 
@@ -84,7 +85,7 @@ export interface NewSessionFact {
    *  intelligence.extractEntities() again. */
   entities_json?: string | null;
   /** Provenance of this session fact's extraction quality. */
-  source_quality?: "heuristic" | "cli" | "sampling" | "explicit";
+  source_quality?: SourceQuality;
   source_tool?: string | null;
   capture_context?: string | null;
   consolidation_id?: string | null;
