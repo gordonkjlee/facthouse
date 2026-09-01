@@ -62,7 +62,11 @@ def test_builds_site_from_readme(tmp_path: Path):
     )
     assert 'src="assets/logo.png"' in index
     assert "brand/mascot-right.png" not in index
-    assert list(site.glob("*.html")) == [site / "index.html"]
+    assert sorted(p.name for p in site.glob("*.html")) == ["demo.html", "index.html"]
+    demo = (site / "demo.html").read_text(encoding="utf-8")
+    assert "Alex" in demo
+    assert "capture_fact" in demo
+    assert "node:sqlite" not in demo
 
     assert (site / "CNAME").read_text(encoding="utf-8") == "factmem.dev\n"
     assert (site / ".nojekyll").is_file()
@@ -76,8 +80,9 @@ def test_builds_site_from_readme(tmp_path: Path):
 
     sitemap = (site / "sitemap.xml").read_text(encoding="utf-8")
     assert "<loc>https://factmem.dev</loc>" in sitemap
+    assert "<loc>https://factmem.dev/demo.html</loc>" in sitemap
     assert "www.factmem.dev" not in sitemap
-    assert sitemap.count("<loc>") == 1
+    assert sitemap.count("<loc>") == 2
 
     key_name = f"{build_pages.INDEXNOW_KEY}.txt"
     assert (site / key_name).read_text(encoding="utf-8") == f"{build_pages.INDEXNOW_KEY}\n"

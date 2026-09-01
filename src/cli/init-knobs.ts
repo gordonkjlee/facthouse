@@ -45,6 +45,8 @@ export type InitKnobId = (typeof INIT_KNOB_IDS)[number];
  */
 export interface MoreOverlay {
   cliModel?: string;
+  /** CLI model for summarise / reconcile / supersede. Omit to use cliModel. */
+  cliGraduateModel?: string;
   cliTimeoutMs?: number;
   /** Y on local OpenAI-compat extract. */
   httpExtract?: boolean;
@@ -55,6 +57,7 @@ export interface MoreOverlay {
 
 export const MORE_SETTING_IDS = [
   "cliModel",
+  "cliGraduateModel",
   "cliTimeoutMs",
   "httpExtract",
   "httpBaseUrl",
@@ -83,6 +86,7 @@ export type OverlayWriteMode = "defaults" | "patch";
 /** JSON paths actually written, for settingsWrote and tests. */
 export type OverlayWrittenPath =
   | "intelligence.cli.model"
+  | "intelligence.cli.graduate_model"
   | "intelligence.cli.timeout_ms"
   | "intelligence.http.base_url"
   | "intelligence.http.model"
@@ -94,6 +98,7 @@ export type OverlayWrittenPath =
 
 export interface MoreShown {
   cliModel: string;
+  cliGraduateModel: string;
   cliTimeoutMs: number;
   httpExtract: boolean;
   httpBaseUrl: string;
@@ -104,6 +109,7 @@ export interface MoreShown {
 /** Init More walk only. Enable-default on_fail is cli, not resolved CLI none. */
 export const SHIPPED_MORE_SHOWN: MoreShown = {
   cliModel: CLI_DEFAULT_MODEL,
+  cliGraduateModel: CLI_DEFAULT_MODEL,
   cliTimeoutMs: CLI_DEFAULT_TIMEOUT_MS,
   httpExtract: false,
   httpBaseUrl: HTTP_DEFAULT_BASE_URL,
@@ -252,11 +258,32 @@ export function applyMoreOverlayToIntelligence(
     resolveStageProviderType(merged, "extract", {}) === "http";
   const omittedMap = Object.keys(asRecord(intel?.stages) ?? {}).length === 0;
 
-  if (overlay.cliModel !== undefined || overlay.cliTimeoutMs !== undefined) {
+  if (
+    overlay.cliModel !== undefined ||
+    overlay.cliGraduateModel !== undefined ||
+    overlay.cliTimeoutMs !== undefined
+  ) {
     const cli = ensureObj(working, "cli");
     if (overlay.cliModel !== undefined) {
       cli.model = overlay.cliModel;
       written.push("intelligence.cli.model");
+    }
+    if (overlay.cliGraduateModel !== undefined) {
+      const extract =
+        (
+          overlay.cliModel ??
+          (typeof cli.model === "string" ? cli.model : undefined) ??
+          CLI_DEFAULT_MODEL
+        ).trim() || CLI_DEFAULT_MODEL;
+      if (overlay.cliGraduateModel.trim() === extract) {
+        if (cli.graduate_model !== undefined) {
+          delete cli.graduate_model;
+          written.push("intelligence.cli.graduate_model");
+        }
+      } else {
+        cli.graduate_model = overlay.cliGraduateModel;
+        written.push("intelligence.cli.graduate_model");
+      }
     }
     if (overlay.cliTimeoutMs !== undefined) {
       cli.timeout_ms = overlay.cliTimeoutMs;
@@ -316,6 +343,9 @@ export function patchConfigDocument(
 ): { next: Record<string, unknown>; written: OverlayWrittenPath[] } {
   const more: MoreOverlay = {};
   if (overlay.cliModel !== undefined) more.cliModel = overlay.cliModel;
+  if (overlay.cliGraduateModel !== undefined) {
+    more.cliGraduateModel = overlay.cliGraduateModel;
+  }
   if (overlay.cliTimeoutMs !== undefined) more.cliTimeoutMs = overlay.cliTimeoutMs;
   if (overlay.httpExtract !== undefined) more.httpExtract = overlay.httpExtract;
   if (overlay.httpBaseUrl !== undefined) more.httpBaseUrl = overlay.httpBaseUrl;
@@ -370,6 +400,10 @@ export function moreShownFromConfig(
 ): MoreShown {
   const shown: MoreShown = {
     cliModel: config.intelligence.cli?.model ?? CLI_DEFAULT_MODEL,
+    cliGraduateModel:
+      config.intelligence.cli?.graduate_model ??
+      config.intelligence.cli?.model ??
+      CLI_DEFAULT_MODEL,
     cliTimeoutMs: config.intelligence.cli?.timeout_ms ?? CLI_DEFAULT_TIMEOUT_MS,
     httpExtract:
       resolveStageProviderType(config.intelligence, "extract", env) === "http",
@@ -412,13 +446,17 @@ export const INIT_PROMPTS = {
     "One directory is one memory. Another store is another directory.",
   dataDir: (shown: string) => `Data directory [${shown}]: `,
   capture:
-    "Capture from a transcript source?  [N]\n" +
-    "  N  no — pull stays off; capture_fact is how facts get in\n" +
-    "  Y  yes — add one named source (claude-code or cursor)\n",
+    "How should this store get conversations?  [copy]\n" +
+    "  copy    recommended if Claude Code or Cursor writes a transcript here\n" +
+    "          — FactMem copies new lines into your file\n" +
+    "  record  any MCP client — the assistant calls capture_fact\n" +
+    "          (Grok Build, Desktop, and anyone without a transcript file)\n" +
+    "  [copy]: ",
   kind:
     "Source kind  [claude-code]\n" +
     "  claude-code  Claude Code session JSONL\n" +
-    "  cursor       Cursor Agent JSONL\n",
+    "  cursor       Cursor Agent JSONL\n" +
+    "  [claude-code]: ",
   unknownKind: () => `This version supports ${supportedKindsList()}.`,
   home: (shown: string) => `Client config dir (home)  [${shown}]: `,
   cwd: (shown: string) =>
@@ -430,34 +468,49 @@ export const INIT_PROMPTS = {
     "Semantic search  [off]\n" +
     '  off     keyword only — "shellfish" finds a shellfish fact, "food" does not\n' +
     "  ollama  local, no API key (needs Ollama running)\n" +
-    "  voyage  hosted (needs VOYAGE_API_KEY)\n",
+    "  voyage  hosted (needs VOYAGE_API_KEY)\n" +
+    "  [off]: ",
   more:
     "More settings?  [N]\n" +
     "  N  recommended — leave extra knobs at shipped defaults\n" +
-    "  Y  set extra knobs (CLI model, timeout, optional local extract)\n",
-  moreCliModel: (shown: string) => `Extraction model  [${shown}]: `,
+    "  Y  set extra knobs (CLI model, timeout, optional local extract)\n" +
+    "  [N]: ",
+  moreCliModel: (shown: string) =>
+    `Model to extract facts from messages  [${shown}]: `,
+  moreCliGraduateModel: (shown: string) =>
+    `Model to update long-term knowledge  [${shown}]: `,
   moreCliTimeout: (shown: string) => `Per-stage timeout in ms  [${shown}]: `,
   moreCliTimeoutInvalid:
     "Timeout must be a whole number of milliseconds greater than 0.",
   moreHttpExtract: (shownYn: "Y" | "N") =>
     `Local extract on an OpenAI-compatible host?  [${shownYn}]\n` +
     "  N  no — extract stays on the Claude CLI\n" +
-    "  Y  yes — Ollama / LM Studio / vLLM / llama.cpp (not embeddings)\n",
+    "  Y  yes — Ollama / LM Studio / vLLM / llama.cpp (not embeddings)\n" +
+    `  [${shownYn}]: `,
   moreHttpBaseUrl: (shown: string) =>
     `Host URL  [${shown}]\n` +
     HTTP_WELL_KNOWN_BASE_URLS.map((row) => `  ${row.host}  ${row.base_url}`).join(
       "\n",
     ) +
-    "\n",
-  moreHttpModel: (shown: string, listed: string[]) =>
-    listed.length > 0
-      ? `Chat model  [${shown || listed[0]}]\n  Host lists: ${listed.join(", ")}\n`
-      : `Chat model  [${shown || "leave blank to use a unique chat model on the host"}]: `,
+    `\n  [${shown}]: `,
+  moreHttpModel: (shown: string, listed: string[]) => {
+    if (listed.length > 1) {
+      const fallback = shown || "name one";
+      return (
+        `Local chat model  [${fallback}]\n` +
+        `  Host lists: ${listed.join(", ")}\n` +
+        `  [${fallback}]: `
+      );
+    }
+    const fallback = shown || listed[0] || "blank if the host serves only one";
+    return `Local chat model  [${fallback}]: `;
+  },
   moreHttpOnFail: (shown: string) =>
     `If local extract cannot run?  [${shown}]\n` +
     "  cli   retry on the Claude CLI (counts against the CLI token budget)\n" +
     "  none  hold the watermark; do not guess\n" +
-    "  http  retry on HTTP (only useful when extract is the CLI)\n",
+    "  http  retry on HTTP (only useful when extract is the CLI)\n" +
+    `  [${shown}]: `,
   moreHttpOnFailInvalid: "Use cli, none, or http.",
   mixPullLogEvent:
     "Do not install log-event hooks on this store — both write the same rows.",
@@ -471,8 +524,34 @@ export const INIT_PROMPTS = {
     `Note: no project group for cwd ${cwd} under ${home} (looked for ${encoded}).`,
   gitBashCwdHint: (cwd: string, encoded: string) =>
     `A POSIX-looking cwd ${cwd} on Windows is not the path Claude Code encodes (${encoded} vs ${INIT_SYNTHETIC.cwd} → C--dev-app). Store what the client used.`,
+  copyNow: "Copy transcripts now?  [Y]: ",
+  extractNow: "Extract and graduate now?  [Y]: ",
+  copiedEvents: (n: number) =>
+    n === 0 ? "No new transcript lines." : `Copied ${n} event(s).`,
+  extractSkippedHeuristic:
+    "Skipped extract — the heuristic does not read transcripts.",
   captureDeclined:
-    "Capture: pull is off (you said no). capture_fact is how facts get in.",
+    "Capture: pull is off (record). capture_fact is how facts get in.",
+  copyStorewide:
+    "On a copy store, capture_fact is a correction for every MCP client, not only the one that writes JSONL.",
+  webExisting:
+    "config.json already exists — left unchanged; --web does not start a page. Run factmem settings --web for extra knobs, or --force to reset.",
+  mcpVsCli:
+    "The MCP JSON starts the server via npx and does not need a global install. " +
+    `npm install -g puts ${CLI_NAME} on PATH for init, settings, stats, and inspect. ` +
+    `The same CLI without PATH is npx -y -p "@factmem/mcp" -- ${CLI_NAME} — pin the version; ` +
+    "quote the package so PowerShell does not splat. " +
+    "-p and -- stop an older global binary winning. " +
+    `npx -y @factmem/mcp with no -p / ${CLI_NAME} is the server; do not run it as a shell command for init, settings, or stats.`,
+  shellNote:
+    "These CLI commands work in bash, zsh, and PowerShell. Quote @factmem/mcp in PowerShell. " +
+    "Git Bash /c/... paths are not PowerShell; use C:/... and pass --data instead of cd or export. " +
+    "~/ is expanded on every platform. WSL uses /mnt/c/....",
+  webYesRefuse:
+    "--yes does not start a local page. Re-run without --yes, or skip --web.",
+  webListening: (url: string) =>
+    `Open ${url}  (bound to 127.0.0.1; this process does not open a browser). Ctrl+C to cancel.`,
+  webSaved: "Wrote config. Reload the MCP server for routing to change.",
 } as const;
 
 export const SETTINGS_PROMPTS = {

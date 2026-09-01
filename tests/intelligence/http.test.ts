@@ -166,6 +166,15 @@ describe("engine-default stage routing", () => {
     expect(resolveStageProviderType(cfg, "supersede")).toBe("cli");
   });
 
+  it("routes when the CLI graduate model differs with no HTTP", () => {
+    const split: IntelligenceConfig = {
+      ...base,
+      cli: { model: "haiku", graduate_model: "sonnet" },
+    };
+    expect(usesStageRouter(split)).toBe(true);
+    expect(usesStageRouter({ ...base, cli: { model: "haiku" } })).toBe(false);
+  });
+
   it("does not mix HTTP routing under a heuristic kill-switch", () => {
     expect(
       usesStageRouter(httpOn, { [PROVIDER_ENV_VAR]: "heuristic" }),

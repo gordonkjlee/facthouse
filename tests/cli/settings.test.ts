@@ -71,7 +71,7 @@ describe("SETTINGS_PROMPTS", () => {
 
 describe("askMoreSettings settings walk", () => {
   it("skips the More gate and shows [Y] when extract is already HTTP", async () => {
-    const io = fakeIo(["", "", "", "", "", ""]);
+    const io = fakeIo(["", "", "", "", "", "", ""]);
     const overlay = {};
     const shown = {
       ...SHIPPED_MORE_SHOWN,
@@ -93,7 +93,7 @@ describe("askMoreSettings settings walk", () => {
   });
 
   it("first enable prompts [cli] for on_fail and omits the key on Enter", async () => {
-    const io = fakeIo(["", "", "y", "", "", ""]);
+    const io = fakeIo(["", "", "", "y", "", "", ""]);
     const overlay = {};
     await askMoreSettings(io, overlay, { cwd: () => "", exists: () => false, platform: () => "win32" }, {
       gate: false,
@@ -106,7 +106,7 @@ describe("askMoreSettings settings walk", () => {
 
   it("probes overlay URL, else shown URL, not the shipped Ollama default", async () => {
     const probed: string[] = [];
-    const io = fakeIo(["", "", "", "", "", ""]);
+    const io = fakeIo(["", "", "", "", "", "", ""]);
     const overlay = {};
     await askMoreSettings(
       io,
@@ -136,7 +136,7 @@ describe("askMoreSettings settings walk", () => {
   });
 
   it("init empty still writes URL and on_fail cli", async () => {
-    const io = fakeIo(["y", "", "", "y", "", "", ""]);
+    const io = fakeIo(["y", "", "", "", "y", "", "", ""]);
     const overlay = {};
     await askMoreSettings(io, overlay, { cwd: () => "", exists: () => false, platform: () => "win32" }, {
       gate: true,
@@ -155,7 +155,7 @@ describe("runSettings", () => {
     const code = await runSettings({
       dataDir: "/tmp/factmem-no-such-store",
       json: false,
-      yes: false,
+
       stdinIsTTY: true,
       stdout: collect(stdout),
       stderr: collect(stderr),
@@ -173,7 +173,7 @@ describe("runSettings", () => {
     const malformed = await runSettings({
       dataDir: "/tmp/x",
       json: true,
-      yes: false,
+
       stdinIsTTY: false,
       stderr: collect(stderr),
       stdout: collect({ chunks: [] }),
@@ -188,7 +188,7 @@ describe("runSettings", () => {
     const notObj = await runSettings({
       dataDir: "/tmp/x",
       json: true,
-      yes: false,
+
       stdinIsTTY: false,
       stderr: collect(stderr2),
       stdout: collect({ chunks: [] }),
@@ -207,7 +207,7 @@ describe("runSettings", () => {
     const code = await runSettings({
       dataDir: "/tmp/alex-store",
       json: true,
-      yes: false,
+
       stdinIsTTY: true,
       stdout: collect(stdout),
       stderr: collect({ chunks: [] }),
@@ -236,7 +236,7 @@ describe("runSettings", () => {
     const code = await runSettings({
       dataDir: "/tmp/alex-store",
       json: false,
-      yes: false,
+
       stdinIsTTY: false,
       stdout: collect(stdout),
       stderr: collect({ chunks: [] }),
@@ -261,33 +261,15 @@ describe("runSettings", () => {
     expect(text).toMatch(/Extract on-fail: none/);
   });
 
-  it("--yes dumps and does not write", async () => {
-    let wrote = false;
-    const code = await runSettings({
-      dataDir: "/tmp/alex-store",
-      json: false,
-      yes: true,
-      stdinIsTTY: true,
-      stdout: collect({ chunks: [] }),
-      stderr: collect({ chunks: [] }),
-      readDocument: () => defaultServerConfig() as unknown as Record<string, unknown>,
-      writeDocument: () => {
-        wrote = true;
-      },
-    });
-    expect(code).toBe(0);
-    expect(wrote).toBe(false);
-  });
-
   it("Enter-through on a default store writes nothing", async () => {
     let wrote = false;
     const stdout = { chunks: [] as string[] };
-    const io = fakeIo(["", "", "n"]);
+    const io = fakeIo(["", "", "", "n"]);
     const doc = defaultServerConfig() as unknown as Record<string, unknown>;
     const code = await runSettings({
       dataDir: "/tmp/alex-store",
       json: false,
-      yes: false,
+
       stdinIsTTY: true,
       io,
       stdout: collect(stdout),
@@ -304,13 +286,13 @@ describe("runSettings", () => {
 
   it("writes timeout and reports JSON paths", async () => {
     const stdout = { chunks: [] as string[] };
-    const io = fakeIo(["", "60000", "n"]);
+    const io = fakeIo(["", "", "60000", "n"]);
     const doc: Record<string, unknown> = { consolidation: { threshold: 99 } };
     let saved: Record<string, unknown> | undefined;
     const code = await runSettings({
       dataDir: "/tmp/alex-store",
       json: false,
-      yes: false,
+
       stdinIsTTY: true,
       io,
       stdout: collect(stdout),
@@ -331,13 +313,13 @@ describe("runSettings", () => {
 
   it("EACCES is exit 1 with the eacces prompt", async () => {
     const stderr = { chunks: [] as string[] };
-    const io = fakeIo(["", "60000", "n"]);
+    const io = fakeIo(["", "", "60000", "n"]);
     const err = new Error("denied") as NodeJS.ErrnoException;
     err.code = "EACCES";
     const code = await runSettings({
       dataDir: "/tmp/alex-store",
       json: false,
-      yes: false,
+
       stdinIsTTY: true,
       io,
       stdout: collect({ chunks: [] }),
@@ -353,12 +335,12 @@ describe("runSettings", () => {
 
   it("patches timeout on a postgres file without connecting", async () => {
     const stdout = { chunks: [] as string[] };
-    const io = fakeIo(["", "60000", "n"]);
+    const io = fakeIo(["", "", "60000", "n"]);
     let saved: Record<string, unknown> | undefined;
     const code = await runSettings({
       dataDir: "/tmp/alex-pg",
       json: false,
-      yes: false,
+
       stdinIsTTY: true,
       io,
       stdout: collect(stdout),
@@ -393,7 +375,7 @@ describe("runSettings", () => {
     await runSettings({
       dataDir: "/tmp/alex-store",
       json: true,
-      yes: false,
+
       stdinIsTTY: false,
       stdout: collect(stdout),
       stderr: collect({ chunks: [] }),

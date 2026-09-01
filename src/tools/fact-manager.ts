@@ -88,6 +88,11 @@ export interface FactManagerOpts {
    * description is the one instruction layer every client reads.
    */
   sources?: unknown;
+  /**
+   * Called at the start of MCP capture_fact / get_session_context /
+   * consolidate. Used to tail JSONL on a pull store. Must not throw.
+   */
+  beforeRead?: () => Promise<void>;
 }
 
 export function createFactManager(
@@ -288,6 +293,7 @@ export function createFactManager(
         },
         async (args) => {
           try {
+            await opts?.beforeRead?.();
             // Normalise domain_hint to prevent silent domain proliferation from
             // case/whitespace typos ("medicaL " → three silent sibling domains).
             const normalisedHint = args.domain_hint?.toLowerCase().trim() || undefined;
@@ -351,6 +357,7 @@ export function createFactManager(
             ),
         },
         async (args) => {
+          await opts?.beforeRead?.();
           const facts = await manager.getSessionContext(args.session_id);
 
           return {
@@ -395,6 +402,7 @@ export function createFactManager(
           {},
           async () => {
             try {
+              await opts?.beforeRead?.();
               const result = await manager.runConsolidate();
 
               return {

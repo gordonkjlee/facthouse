@@ -32,6 +32,8 @@ export function registerReadTools(
    */
   temporal?: TemporalConfig,
   interlocutor?: InterlocutorConfig,
+  /** Tail JSONL on a pull store. Must not throw. */
+  beforeRead?: () => Promise<void>,
 ): void {
   const bitemporal = temporal?.mode === "bitemporal";
   // -----------------------------------------------------------------
@@ -106,6 +108,7 @@ export function registerReadTools(
     searchDescription,
     searchSchema,
     async (args) => {
+      await beforeRead?.();
       const rawAsOf =
         bitemporal &&
         "as_of_system_time" in args &&
@@ -192,6 +195,7 @@ export function registerReadTools(
         ),
     },
     async (args) => {
+      await beforeRead?.();
       // Type omitted matches any entity type. The engine ships no entity
       // vocabulary either — a corporate store's subjects are systems and
       // suppliers, not people — so defaulting to a fixed type would make most
@@ -238,6 +242,7 @@ export function registerReadTools(
         .describe("Topic, person, project, or domain to explore"),
     },
     async (args) => {
+      await beforeRead?.();
       // Union type-split nodes. First-match would hide edges attached to a
       // sibling type (stg_orders as model vs table).
       const ctx = await getTopicContext(db, args.topic, interlocutor);

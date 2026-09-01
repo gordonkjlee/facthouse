@@ -45,7 +45,6 @@ import { defaultDataDir } from "../paths.js";
 import { SESSION_START_FLUSH_MAX_INSERTED } from "../sources/pull.js";
 import {
   INIT_PROMPTS,
-  INIT_SYNTHETIC,
   applyInitOverlay,
   type InitOverlay,
 } from "./init-knobs.js";
@@ -267,15 +266,13 @@ export function sourcesStatusLines(sources: unknown): string[] {
   }
   if (n === 0) {
     return [
-      `Capture: pull is off (sources is empty). capture_fact is how facts get in.`,
-      `To pull transcripts, add a claude-code or cursor source to config.json —`,
-      `kind, home (e.g. ${INIT_SYNTHETIC.claudeHome} or ${INIT_SYNTHETIC.cursorHome}), cwd (e.g. ${INIT_SYNTHETIC.cwd}).`,
-      `Set cwd. Then run ${CLI_NAME} pull. A first pull of more than ${SESSION_START_FLUSH_MAX_INSERTED} events`,
-      `needs ${CLI_NAME} consolidate; a later session start will flush a smaller leftover.`,
+      `Capture: pull is off. capture_fact is how facts get in.`,
+      `Transcripts: ${CLI_NAME} init on a terminal, pick copy, set cwd, then ${CLI_NAME} pull.`,
     ];
   }
   return [
     `Capture: ${n} source${n === 1 ? "" : "s"}. Run ${CLI_NAME} pull.`,
+    INIT_PROMPTS.copyStorewide,
     `A first pull of more than ${SESSION_START_FLUSH_MAX_INSERTED} events needs ${CLI_NAME} consolidate.`,
   ];
 }

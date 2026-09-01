@@ -220,6 +220,12 @@ describe.skipIf(!runnable)("cli entry — init reports the intelligence it will 
 });
 
 describe.skipIf(!runnable)("cli entry — init output", () => {
+  it("refuses --yes with --web", () => {
+    const r = run(["init", path.join(root, "no-web"), "--yes", "--web"]);
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).toMatch(/does not start a local page/);
+  });
+
   it("honours --yes without printing prompt copy", () => {
     const dir = path.join(root, "yes-flag");
     const r = run(["init", dir, "--yes"]);
@@ -228,6 +234,19 @@ describe.skipIf(!runnable)("cli entry — init output", () => {
     expect(r.stdout).not.toContain(INIT_PROMPTS.capture);
     expect(r.stdout).not.toContain(INIT_PROMPTS.embedding);
     expect(r.stdout).not.toContain(INIT_PROMPTS.more);
+    expect(r.stdout).not.toContain(INIT_PROMPTS.copyNow);
+    expect(r.stdout).not.toContain(INIT_PROMPTS.extractNow);
+  });
+
+  it("prints global vs npx advice after the MCP snippet", () => {
+    const dir = path.join(root, "npx-advice");
+    const r = run(["init", dir, "--yes"]);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain(INIT_PROMPTS.mcpVsCli);
+    const snippetAt = r.stdout.indexOf('"mcpServers"');
+    const adviceAt = r.stdout.indexOf(INIT_PROMPTS.mcpVsCli);
+    expect(snippetAt).toBeGreaterThanOrEqual(0);
+    expect(adviceAt).toBeGreaterThan(snippetAt);
   });
 
   it("rejects --pull rather than hanging init on a first ingest", () => {
@@ -240,7 +259,6 @@ describe.skipIf(!runnable)("cli entry — init output", () => {
     const r = run(["init", dir]);
     expect(r.status).toBe(0);
     expect(r.stdout).toMatch(/one data directory is one memory/i);
-    expect(r.stdout).toMatch(/another store is another directory/i);
     expect(r.stdout).not.toContain(INIT_PROMPTS.intro);
     expect(r.stdout).not.toContain(INIT_PROMPTS.capture);
   });
@@ -250,7 +268,7 @@ describe.skipIf(!runnable)("cli entry — init output", () => {
     const r = run(["init", dir]);
     expect(r.status).toBe(0);
     expect(r.stdout).toMatch(/pull is off/i);
-    expect(r.stdout).toMatch(/claude-code/);
+    expect(r.stdout).toMatch(/capture_fact is how facts get in/);
     expect(r.stdout).toMatch(/factmem pull/);
   });
 
@@ -330,6 +348,13 @@ describe.skipIf(!runnable)("cli entry — settings", () => {
     const dir = path.join(root, "settings-force");
     run(["init", "--yes", dir]);
     const r = run(["settings", "--force", "--data", dir]);
+    expect(r.status).not.toBe(0);
+  });
+
+  it("rejects --yes (that flag is init-only)", () => {
+    const dir = path.join(root, "settings-yes");
+    run(["init", "--yes", dir]);
+    const r = run(["settings", "--yes", "--data", dir]);
     expect(r.status).not.toBe(0);
   });
 
@@ -698,6 +723,36 @@ describe.skipIf(!runnable)("cli entry — pull", () => {
     const again = run(["pull", "--data", dir]);
     expect(again.status).toBe(0);
     expect(JSON.parse(again.stdout).events_inserted).toBe(0);
+  });
+
+  it("pull --no-tick copies without asking the server to extract", () => {
+    const dir = path.join(root, "pull-no-tick");
+    run(["init", dir]);
+
+    const home = path.join(root, "claude-home-notick");
+    const file = path.join(home, "projects", "C--dev-app", "sess-nt.jsonl");
+    mkdirSync(path.dirname(file), { recursive: true });
+    writeFileSync(
+      file,
+      JSON.stringify({
+        type: "user",
+        sessionId: "sess-nt",
+        message: { role: "user", content: "The demo store prefers dark mode." },
+      }) + "\n",
+      "utf-8",
+    );
+
+    const configPath = path.join(dir, "config.json");
+    const config = JSON.parse(readFileSync(configPath, "utf-8"));
+    config.sources = [{ kind: "claude-code", home, cwd: "C:\\dev\\app" }];
+    writeFileSync(configPath, JSON.stringify(config, null, 2), "utf-8");
+
+    const r = run(["pull", "--no-tick", "--data", dir]);
+    expect(r.status).toBe(0);
+    expect(JSON.parse(r.stdout).events_inserted).toBe(1);
+    expect(r.stderr).not.toMatch(/No MCP server listening/);
+    expect(r.stderr).not.toMatch(/skipping auto-consolidate/);
+    expect(r.stderr).not.toMatch(/heuristic I→K/);
   });
 
   it("exits non-zero on an unknown source kind", () => {

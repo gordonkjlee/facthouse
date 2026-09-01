@@ -16,34 +16,7 @@ It records, stores, and retrieves structured knowledge. Domain routing, entity e
 
 Needs Node 22.5 or 24+.
 
-<!-- x-release-please-start-version -->
-```bash
-npm install -g @factmem/mcp@0.24.2
-factmem init
-```
-<!-- x-release-please-end -->
-
-Press Enter to accept each default (pull off, keyword search, extra knobs at shipped defaults). That writes `~/.factmem/config.json` and prints an MCP snippet.
-
-Paste the snippet into the project's `.mcp.json` (Claude Code) or the equivalent MCP config in any MCP-compatible tool. Restart the client.
-
-<!-- x-release-please-start-version -->
-If `factmem` is not on your PATH (`openmemory` is the same CLI):
-
-```bash
-npx -y -p @factmem/mcp@0.24.2 -- factmem init
-```
-<!-- x-release-please-end -->
-
-Then:
-
-```bash
-factmem stats
-```
-
-That is the file you own. In the client, state a durable fact in ordinary conversation — there is no special remember command. `factmem search` lists it as pending until consolidate.
-
-To skip the walk-through, paste this. The server creates `~/.factmem` on first boot; you are not asked those questions, and the defaults stay invisible until you write a config.
+Paste this. Restart the client. The server creates `~/.factmem` on first boot.
 
 <!-- x-release-please-start-version -->
 ```json
@@ -58,14 +31,38 @@ To skip the walk-through, paste this. The server creates `~/.factmem` on first b
 ```
 <!-- x-release-please-end -->
 
+In the client, state something durable in ordinary conversation — there is no remember command.
+
+That is the file you own. Transcript file (Claude Code or Cursor): next section. CLI: [below](#cli).
+
+## How conversations get in
+
+Two ways. Pick one per store.
+
+| | Copy from transcripts | The assistant records |
+|---|---|---|
+| Who | Claude Code or Cursor, when that client writes a JSONL file here | Any MCP client (Grok Build, Desktop, …) |
+| How | Name a source; FactMem copies new lines into your file | Empty `sources`; the assistant calls `capture_fact` |
+| First run | TTY walk-through, pick **copy**, set cwd, then pull | The paste above (already record) |
+
+On a copy store, capture_fact is a correction for every MCP client, not only the one that writes JSONL. Grok has no transcript adapter — do not put Claude Code on copy and Grok on the same store expecting Grok to record.
+
+```bash
+factmem init
+```
+
+Pick copy, set cwd, then `factmem pull` once. More than 50 new events: `factmem consolidate`. After that, the server copies new lines when it handles a call.
+
+Compact (optional): `factmem pull --flush` — not a turn-end Stop hook.
+
+Replay: [factmem.dev/demo.html](https://factmem.dev/demo.html).
+
 ## What you get
 
 - **One file you own.** SQLite by default. Optional Postgres. Isolation is the directory, not a column.
-- **The assistant captures.** Default `sources` is empty: `capture_fact` is how facts get in. Name a transcript source only if you want pull.
-- **Optional pull.** Claude Code and Cursor Agent JSONL land in `session_events`. Extract on pull/Stop; graduate on PreCompact flush (or a manual `consolidate`). On a pull store, `capture_fact` is a correction for something extraction missed.
-- **Entity graph.** People, organisations, projects, places, products — extracted, typed and linked. Relationship strength tracks corroboration.
-- **Hybrid search.** BM25 + structured domain + entity-graph paths, merged via Reciprocal Rank Fusion. An embedding provider adds meaning as a fourth list; it ranks, it does not gate. When no graduated fact matches, a short raw-log window is returned separately as `episodes`.
-- **In-session memory.** `get_session_context` returns the working briefing (same markdown as `memory://briefing`) plus facts captured this session. Tools-only clients are told to call it at session start.
+- **Entity graph.** People, organisations, projects, places, products — extracted, typed and linked.
+- **Hybrid search.** BM25 + structured domain + entity-graph paths, merged via Reciprocal Rank Fusion. An embedding provider adds meaning as a fourth list; off by default.
+- **In-session memory.** `get_session_context` is the same briefing as `memory://briefing`. Tools-only clients should call it at session start.
 - **Immutable history.** Facts are never deleted, only superseded.
 
 ## How it works
@@ -78,63 +75,13 @@ One SQLite file you own. Three tables in that file, not three databases:
 
 FTS5 (words) and optional embeddings (meaning) are indexes of **K**. They are not a second store. Semantic search is off unless you turn it on: `search "shellfish"` finds a shellfish fact, `search "food"` does not, until you choose an embedding model — a model is an opinion about what “similar” means.
 
-Two speeds. Pull and Stop **extract** self-contained facts from new transcript lines when the threshold is due. PreCompact flush (and shutdown) **graduates** those pending facts: domains, entities, duplicates, contradictions, the graph. `factmem consolidate` and the MCP `consolidate` tool still run both. Consolidation does not invent a sentence nobody said. Gated inferences exist and are off by default.
+Two speeds. **Extract** turns new transcript lines into self-contained facts (session start leftover, `factmem pull` with a listening server, or `consolidate`). **Flush** (`pull --flush`, shutdown) graduates those pending facts. The MCP server copies the raw log on a call; it does not extract then. Consolidation does not invent a sentence nobody said.
 
-`capture_fact` is a correction on a pull store, and the write path when `sources` is empty. The model does not have to call it for a Claude Code or Cursor conversation to be remembered — you name a source and pull.
-
-Put the same MCP snippet in a second AI tool and give it no rules. There is nothing to sync: both talk to one file. SQLite is the default. Optional Postgres is documented under Advanced.
-
-Storage needs Node. Intelligence — extraction, routing, contradiction — needs a language model. By default that is the [Claude Code CLI](https://github.com/anthropics/claude-code) on your existing subscription. Without it, consolidation falls back to a built-in heuristic that **does not extract facts from transcripts**. `capture_fact` still stores facts, with no entities and no domain routing.
-
-## Remember a conversation
-
-Optional: pull transcripts. On a terminal, the init walk-through can add one named source. If you are pasting a recipe, use `--yes` and then edit `config.json`. Set `cwd`; a bare `home` walks every project group.
-
-<!-- x-release-please-start-version -->
-Git Bash / macOS / Linux:
-
-```bash
-export FACTMEM_DATA=/tmp/factmem-try
-om() { npx -y -p @factmem/mcp@0.24.2 -- factmem "$@"; }
-om init --yes
-```
-
-PowerShell:
-
-```powershell
-$env:FACTMEM_DATA = Join-Path $env:TEMP "factmem-try"
-function om { npx -y -p "@factmem/mcp@0.24.2" -- factmem @args }
-om init --yes
-```
-<!-- x-release-please-end -->
-
-Add **one** source. `home` is the client config dir (`~/.claude` for Claude Code, `~/.cursor` for Cursor — examples of the path, not extra discovery):
-
-```json
-{
-  "sources": [
-    {
-      "kind": "claude-code",
-      "home": "~/.claude",
-      "cwd": "C:\\dev\\app"
-    }
-  ]
-}
-```
-
-Cursor Agent JSONL is the same knob with `"kind": "cursor"`. It reads `home/projects/*/agent-transcripts/**/*.jsonl` only — not Composer SQLite, not `state.vscdb`. Cursor encodes `C:\\dev\\app` as `c-dev-app` (Claude Code uses `C--dev-app`).
-
-```bash
-om pull
-om consolidate
-om search "<a word you already said to Claude Code in this project>"
-```
-
-That search is the proof: a fact you did not re-type. A first pull of more than 50 events does **not** auto-consolidate — run `om consolidate`. Do not install hooks yet. Incremental `pull` is small; the first one is not.
+Storage needs Node. Intelligence needs a language model. By default that is the [Claude Code CLI](https://github.com/anthropics/claude-code) on your existing subscription. Without it, consolidation falls back to a built-in heuristic that **does not extract facts from transcripts**. `capture_fact` still stores facts, with no entities and no domain routing.
 
 ## MCP
 
-Works with Claude Code, Claude Desktop, and any MCP-compatible tool. Data is stored at `~/.factmem` by default. If that folder does not exist and `~/.openmemory` already does, that existing store is used — it is not copied. That one directory is the whole install. To use a different path, add `"env": { "FACTMEM_DATA": "/absolute/path" }` to the MCP snippet. `OPENMEMORY_DATA` is still read.
+Works with Claude Code, Claude Desktop, and any MCP-compatible tool. Data is stored at `~/.factmem` by default. If that folder does not exist and `~/.openmemory` already does, that existing store is used — it is not copied. That one directory is the whole install. To use a different path, add `"env": { "FACTMEM_DATA": "/absolute/path" }` to the MCP snippet. JSON accepts forward slashes on Windows. `OPENMEMORY_DATA` is still read.
 
 Cursor consumes tools but not resources until a later adapter exists — `search_knowledge` and `get_entity` still work there; call `get_session_context` at session start.
 
@@ -172,11 +119,36 @@ Both are read-only views over the same database the tools query. Clients that ne
 
 ## CLI
 
+The MCP JSON starts the server via npx and does not need a global install. npm install -g puts factmem on PATH for init, settings, stats, and inspect. The same CLI without PATH is npx -y -p "@factmem/mcp" -- factmem — pin the version; quote the package so PowerShell does not splat. -p and -- stop an older global binary winning. npx -y @factmem/mcp with no -p / factmem is the server; do not run it as a shell command for init, settings, or stats.
+
+These CLI commands work in bash, zsh, and PowerShell. Quote @factmem/mcp in PowerShell. Git Bash /c/... paths are not PowerShell; use C:/... and pass --data instead of cd or export. ~/ is expanded on every platform. WSL uses /mnt/c/....
+
+<!-- x-release-please-start-version -->
+```bash
+npm install -g @factmem/mcp@0.24.2
+factmem init --yes
+```
+
+```bash
+npx -y -p "@factmem/mcp@0.24.2" -- factmem init --yes
+npx -y -p "@factmem/mcp@0.24.2" -- factmem settings --json
+npx -y -p "@factmem/mcp@0.24.2" -- factmem stats
+npx -y -p "@factmem/mcp@0.24.2" -- factmem inspect
+```
+<!-- x-release-please-end -->
+
+| Job | Use |
+|-----|-----|
+| MCP server (what the client starts) | The JSON snippet: `npx` with args `-y` and a **pinned** `@factmem/mcp@…`. No global install. |
+| `factmem` on PATH | `npm install -g @factmem/mcp@…` (same pin). Update it when you bump the snippet. |
+| Change extra knobs later | `factmem settings` (or `settings --data <dir>`). Does not reset the file. |
+| One CLI command, no PATH | `npx -y -p "@factmem/mcp@…" -- factmem …` |
+
 #### `factmem init [dir]`
 
 The walk-through is how a human first-run writes `config.json`. Skip it and the server still creates the directory on first MCP boot.
 
-On a terminal, init asks data directory, optional transcript capture, semantic search, and More settings (extraction model and timeout today; extra knobs later). `--yes` never prompts. On a terminal, `--force` still asks those questions, then replaces the whole file; `--yes --force` is the silent reset. `--force` does not merge with the previous file.
+On a terminal, init asks data directory, **copy transcripts vs assistant records** (default copy), semantic search, and More settings. `--yes` never prompts and leaves `sources` empty. `--web` prints a `127.0.0.1` URL and does not open a browser; `--yes` refuses `--web`. On a terminal, `--force` still asks those questions, then replaces the whole file; `--yes --force` is the silent reset. `--force` does not merge with the previous file.
 
 ```bash
 factmem init --yes
@@ -194,7 +166,7 @@ The generated `config.json` is where you change consolidation behaviour — most
 
 #### `factmem settings`
 
-Change extra knobs on an existing `config.json` (CLI model, timeout, optional local extract). Does not reset the rest of the file. Refuses if there is no `config.json` (this command does not create a store). `--yes` / not a terminal prints the current knobs and does not write.
+Change extra knobs on an existing `config.json` (CLI model, timeout, optional local extract). Does not reset the rest of the file. Refuses if there is no `config.json` (this command does not create a store). `--json` / not a terminal prints the current knobs and does not write. `--web` is the same knobs on a local page (print URL, no auto-open).
 
 ```bash
 factmem settings
@@ -222,7 +194,7 @@ factmem log-event --role user --event-type message --content "hello world"
 #   --content       Event content (or pipe via stdin)
 #   --speaker       Named participant when the transcript has one
 #   --session-id    Target session (default: most recent)
-#   --data          Data directory (default: ~/.factmem or $FACTMEM_DATA)
+#   --data          Data directory (default: ~/.factmem or FACTMEM_DATA)
 ```
 
 #### `factmem pull`
@@ -231,9 +203,13 @@ Ingest new session events from `config.sources`. Empty `sources` is a successful
 
 ```bash
 factmem pull
+factmem pull --no-tick
+factmem pull --flush
 
 # Options:
-#   --data     Data directory (default: ~/.factmem or $FACTMEM_DATA)
+#   --data     Data directory (default: ~/.factmem or FACTMEM_DATA)
+#   --no-tick  Copy only; do not ask the MCP server to extract
+#   --flush    Copy, then graduate pending facts (compact wake-up; does not extract)
 ```
 
 Set `cwd` on the source unless you intend to ingest every project group. Do not also run `log-event` hooks on this store.
@@ -244,7 +220,7 @@ Set `cwd` on the source unless you intend to ingest every project group. Do not 
 factmem consolidate
 
 # Options:
-#   --data     Data directory (default: ~/.factmem or $FACTMEM_DATA)
+#   --data     Data directory (default: ~/.factmem or FACTMEM_DATA)
 ```
 
 Honours the configured provider (by default `claude -p`). Prints JSON — facts graduated, entities extracted, duplicates and contradictions resolved.
@@ -252,14 +228,14 @@ Honours the configured provider (by default `claude -p`). Prints JSON — facts 
 #### `factmem signal [tick|flush]`
 
 ```bash
-factmem signal tick    # extract if the event threshold is due — pull / Stop
-factmem signal flush   # graduate pending facts — for PreCompact hooks
+factmem signal tick    # extract if the event threshold is due
+factmem signal flush   # graduate pending facts — PreCompact / shutdown
 
 # Options:
-#   --data     Data directory (default: ~/.factmem or $FACTMEM_DATA)
+#   --data     Data directory (default: ~/.factmem or FACTMEM_DATA)
 ```
 
-`flush` is what a PreCompact hook calls so pending facts survive a context collapse. If no server is listening, `flush` falls back to an in-process **heuristic** graduate — deliberately, because compaction is time-critical. A `tick` that finds no server simply exits.
+`pull --flush` is what a PreCompact hook calls so new lines are copied and pending facts survive a context collapse. If no server is listening, flush falls back to an in-process **heuristic** graduate — deliberately, because compaction is time-critical. A `tick` that finds no server simply exits.
 
 #### `factmem search <query>`
 
@@ -272,7 +248,7 @@ factmem search "coffee" --json
 #   --domain   Prioritise a domain. Biases ranking; does not filter
 #   --limit    Maximum results (default: 20)
 #   --json     Emit the raw search payload
-#   --data     Data directory (default: ~/.factmem or $FACTMEM_DATA)
+#   --data     Data directory (default: ~/.factmem or FACTMEM_DATA)
 ```
 
 `--domain` **biases ranking rather than filtering.** A hard filter would hide a fact filed under a near-synonym.
@@ -295,7 +271,7 @@ factmem inspect
 factmem inspect --graph
 factmem inspect --layer k
 factmem inspect --json
-factmem inspect --entity Helios --limit 20 --output /tmp/inspect.html
+factmem inspect --entity Helios --limit 20 --output ~/inspect.html
 ```
 
 `--layer health|d|i|k|entities|graph|all` prints terminal tables (newest-first, capped). `--graph` (the default when no `--layer` / `--json`) writes `inspect.html`. `--limit` is 10 for tables and 50 for the canvas. `--all` draws every node — a hairball, explicit. Search and type filter in the page can still reach a node that was outside the cap.
@@ -361,39 +337,43 @@ Example — placeholders only; do not put a real password in a committed file:
 
 Choose one mechanism per store.
 
-**Recommended — pull.** Name a `claude-code` or `cursor` source (set `cwd`) and run `factmem pull` from the CLI first. The MCP server also pulls once at session start. Grok and Codex are later adapters. Unknown `kind` values are rejected.
+**Recommended — pull.** Name a `claude-code` or `cursor` source (set `cwd`) and run `factmem pull` from the CLI first. The MCP server also copies at session start and when it handles a call. Grok and Codex are later adapters. Unknown `kind` values are rejected.
 
-**Alternative — `log-event` hooks, no sources.** Leave `sources` empty. Pipe UserPromptSubmit / Stop / PostToolUse into `factmem log-event`. MCP `log_event` / `capture_fact` keep working.
+```json
+{
+  "sources": [
+    {
+      "kind": "claude-code",
+      "home": "~/.claude",
+      "cwd": "C:\\dev\\app"
+    }
+  ]
+}
+```
+
+`home` is the client config dir (`~/.claude` or `~/.cursor` — path examples, not extra discovery). Cursor is `"kind": "cursor"` and `home/projects/*/agent-transcripts/**/*.jsonl` only — not Composer SQLite. Cursor encodes `C:\\dev\\app` as `c-dev-app` (Claude Code uses `C--dev-app`). A first pull of more than 50 events needs `factmem consolidate`.
+
+**Alternative — `log-event`, no sources.** Leave `sources` empty. Pipe a client hook payload into `factmem log-event` if you have one. MCP `log_event` / `capture_fact` keep working.
 
 Do not install log-event hooks on this store — both write the same rows. FactMem does not detect or rewrite existing hook configs.
 
 ### Hooks (after the first CLI pull)
 
-`mcp.json` `env` is **not** visible to hooks. Pass the same `--data` (or export `FACTMEM_DATA` in the environment the client itself inherits). The command must invoke the CLI (`factmem` or the `openmemory` shim), never the server binary. `npx -y @factmem/mcp` with no `-p` / `factmem` starts the MCP **server** and hangs a hook. Pin the package version and put `--` before `factmem` so a globally installed older binary on PATH cannot win. Existing hooks that call `openmemory` keep working.
+`mcp.json` `env` is **not** visible to hooks. Pass the same `--data` (or set `FACTMEM_DATA` in the environment the client itself inherits). The command must invoke the CLI (`factmem` or the `openmemory` shim), never the server binary. `npx -y @factmem/mcp` with no `-p` / `factmem` starts the MCP **server** and hangs a hook. Pin the package version, quote it if the hook runs PowerShell, and put `--` before `factmem` so a globally installed older binary on PATH cannot win. Existing hooks that call `openmemory` keep working.
 
 <details>
-<summary>Stop / PreCompact hook JSON</summary>
+<summary>PreCompact hook JSON</summary>
 
 <!-- x-release-please-start-version -->
 ```json
 {
   "hooks": {
-    "Stop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "npx -y -p @factmem/mcp@0.24.2 -- factmem pull --data /absolute/path/to/the-same-store"
-          }
-        ]
-      }
-    ],
     "PreCompact": [
       {
         "hooks": [
           {
             "type": "command",
-            "command": "npx -y -p @factmem/mcp@0.24.2 -- factmem signal flush --data /absolute/path/to/the-same-store"
+            "command": "npx -y -p @factmem/mcp@0.24.2 -- factmem pull --flush --data /absolute/path/to/the-same-store"
           }
         ]
       }
@@ -405,9 +385,9 @@ Do not install log-event hooks on this store — both write the same rows. FactM
 
 </details>
 
-Stop tails new lines (pull then ticks the server to extract when the threshold is due). PreCompact `signal flush` graduates pending facts without re-reading the transcript. It does not insert `session_events`. On Windows the `--data` path is the same absolute directory you put in `FACTMEM_DATA` (for example `C:\\Users\\alex\\AppData\\Local\\Temp\\factmem-try`).
+PreCompact `pull --flush` copies new JSONL lines, then graduates pending facts already in the database. It does not extract. We do not install a turn-end Stop hook. On Windows the `--data` path is the same absolute directory you put in `FACTMEM_DATA` (for example `C:\\Users\\alex\\AppData\\Local\\Temp\\factmem-try`).
 
-Stop-hook pull interleaves conversations on the global sequence: a long chat kept open is sliced between other chats. Extract progress is per conversation, so a timeout in one chat does not discard another. Shrinking `extraction.batch_size` means more extract calls (more chances of a timeout), not a store-wide hold-all. `factmem stats` reports unextracted events against that extract watermark.
+Frequent incremental pull interleaves conversations on the global sequence: a long chat kept open is sliced between other chats. Extract progress is per conversation, so a timeout in one chat does not discard another. Shrinking `extraction.batch_size` means more extract calls (more chances of a timeout), not a store-wide hold-all. `factmem stats` reports unextracted events against that extract watermark.
 
 If the MCP server does not start, or lists no tools, check the package version the client actually spawned. A global `factmem` or `openmemory` on PATH can be years behind the pin in this README. Diagnose with `factmem stats --data <dir>` (the CLI prints whether the scheduler is listening) and by inspecting `serverInfo.version` from `initialize` plus `tools/list` over stdio. `0.2.x` answers `initialize` then throws on `tools/list`.
 
@@ -476,7 +456,7 @@ Throwaway store, not the capture path for a real Claude Code or Cursor home. The
 <!-- x-release-please-start-version -->
 ```bash
 export FACTMEM_DATA=/tmp/factmem-demo
-om() { npx -y -p @factmem/mcp@0.24.2 -- factmem "$@"; }
+om() { npx -y -p "@factmem/mcp@0.24.2" -- factmem "$@"; }
 
 om init --yes
 
@@ -485,6 +465,8 @@ om log-event --role user --content "I am allergic to shellfish, so avoid seafood
 om log-event --role user --content "My colleague Robin at Acme is leading the Atlas migration project this quarter."
 
 om consolidate
+om search "Atlas"
+om stats
 ```
 
 ```powershell
@@ -495,15 +477,12 @@ om log-event --role user --content "I prefer dark mode in every editor, and I ne
 om log-event --role user --content "I am allergic to shellfish, so avoid seafood restaurants when booking anything."
 om log-event --role user --content "My colleague Robin at Acme is leading the Atlas migration project this quarter."
 om consolidate
-```
-<!-- x-release-please-end -->
-
-```bash
 om search "Atlas"
 om stats
 ```
+<!-- x-release-please-end -->
 
-`allergies` is not a domain FactMem ships. The engine has no built-in vocabulary — it read the conversation and decided that fact needed a home. A domain **biases ranking rather than filtering**. Clean up with `rm -rf /tmp/factmem-demo`.
+`allergies` is not a domain FactMem ships. The engine has no built-in vocabulary — it read the conversation and decided that fact needed a home. A domain **biases ranking rather than filtering**. Clean up: `rm -rf /tmp/factmem-demo` (Git Bash / macOS / Linux) or `Remove-Item -Recurse -Force $env:TEMP\factmem-demo` (PowerShell).
 
 ## Integration
 
@@ -522,10 +501,10 @@ Clients with no pull adapter still rely on `log_event` / `capture_fact` until th
 | Session start | Conversation begins | `memory://profile` (automatic), `search_knowledge` | The assistant knows who you are from message one |
 | Correction | A durable fact is missing from the store | `capture_fact` | Optional; Claude Code conversations are already in `session_events` via pull |
 | Pre-response search | Before generating a reply | `search_knowledge`, `get_context` | Responses informed by stored knowledge |
-| Pre-compaction | Before context window compression | `consolidate` or `factmem signal flush` | Graduates pending facts before context is wiped |
+| Pre-compaction | Before context window compression | `factmem pull --flush` | Copies new lines, then graduates pending facts |
 | Natural breakpoints | Topic change, task completion | `consolidate` (optional) | Keeps the knowledge graph current |
 
-**On pre-compaction:** `factmem signal flush` graduates what extract already wrote; it does not re-read the transcript. It is not a `log-event` hook and does not duplicate `session_events`.
+**On pre-compaction:** `factmem pull --flush` copies new transcript lines, then graduates what extract already wrote. It does not extract. It is not a `log-event` hook.
 
 ### Claude Code
 
@@ -539,7 +518,7 @@ Create `.claude/rules/factmem.md` in your project (or `~/.claude/rules/factmem.m
 - Identity context loads automatically from the `memory://profile` resource — no tool call needed
 - Before answering questions this store might already know, call `search_knowledge`
 - Call `capture_fact` only to correct or add something that is not in the transcript
-- When the conversation is getting long, call `consolidate` (or rely on PreCompact `factmem signal flush`)
+- When the conversation is getting long, call `consolidate` (or rely on PreCompact `factmem pull --flush`)
 - At natural breakpoints (topic change, task completion), call `consolidate` to keep the knowledge graph current
 ```
 

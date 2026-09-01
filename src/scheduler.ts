@@ -35,7 +35,7 @@ export interface SchedulerOpts {
 }
 
 export interface Scheduler {
-  /** D→I when the event threshold is due. Pull/Stop. */
+  /** D→I when the event threshold is due. After pull. */
   tick(): Promise<ConsolidationResult | null>;
   /** I→K regardless of threshold. PreCompact / shutdown — skip extract. */
   flush(): Promise<ConsolidationResult | null>;

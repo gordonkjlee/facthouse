@@ -36,6 +36,7 @@ jobs:
           INDEXNOW_KEY: a88a795220f4450e97a5f2486a4426f8
         run: |
           test -f _site/index.html
+          test -f _site/demo.html
           test -f _site/robots.txt
           test -f _site/sitemap.xml
           test -f "_site/${INDEXNOW_KEY}.txt"
@@ -80,7 +81,7 @@ jobs:
           status=$(curl -sS -o /tmp/indexnow-body -w "%{http_code}" \
             -X POST "https://api.indexnow.org/indexnow" \
             -H "Content-Type: application/json" \
-            -d "{\"host\":\"factmem.dev\",\"key\":\"${INDEXNOW_KEY}\",\"keyLocation\":\"https://factmem.dev/${INDEXNOW_KEY}.txt\",\"urlList\":[\"https://factmem.dev/\"]}") || status="curl-failed"
+            -d "{\"host\":\"factmem.dev\",\"key\":\"${INDEXNOW_KEY}\",\"keyLocation\":\"https://factmem.dev/${INDEXNOW_KEY}.txt\",\"urlList\":[\"https://factmem.dev/\",\"https://factmem.dev/demo.html\"]}") || status="curl-failed"
           echo "IndexNow HTTP status: ${status}"
           cat /tmp/indexnow-body 2>/dev/null || true
           echo

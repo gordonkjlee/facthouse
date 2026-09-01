@@ -57,7 +57,9 @@ export function dataDirFromEnvOrDefault(
 /** Expand a leading `~` without resolving against the local cwd. */
 export function expandTilde(p: string): string {
   if (p === "~") return homedir();
-  if (p.startsWith("~/")) return path.join(homedir(), p.slice(2));
+  if (p.startsWith("~/") || p.startsWith("~\\")) {
+    return path.join(homedir(), p.slice(2));
+  }
   return p;
 }
 

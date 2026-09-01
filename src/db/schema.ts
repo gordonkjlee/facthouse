@@ -795,7 +795,7 @@ async function applyV18(db: Db): Promise<void> {
 //
 // Consolidation already has last_event_sequence on the run row; that is an
 // audit of a global through, not how far each conversation has been read.
-// Stop-hook pull interleaves sequences, so a MAX over run rows would skip a
+// Frequent incremental pull interleaves sequences, so a MAX over run rows would skip a
 // neighbour. Same split as source_watermarks (how far a file has been
 // consumed) vs extract (how far D→I has read).
 // ---------------------------------------------------------------------------

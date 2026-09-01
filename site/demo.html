@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>FactMem — one-minute replay</title>
+  <meta name="description" content="A scripted replay of how FactMem stores a fact and finds it again. Synthetic names only.">
+  <link rel="canonical" href="https://factmem.dev/demo.html">
+  <link rel="icon" href="assets/logo.png" type="image/png">
+  <style>
+    :root {
+      --ink: #1C1917;
+      --ink-soft: #44403C;
+      --paper: #F4EFE6;
+      --snow: #FFFCF7;
+      --slate: #5C6B73;
+      --ochre: #C4841D;
+      --line: #E6DCCF;
+      font-family: ui-sans-serif, system-ui, sans-serif;
+      color: var(--ink);
+      line-height: 1.55;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; background: var(--paper); }
+    .wrap { max-width: 44rem; margin: 0 auto; padding: 1.25rem 1.15rem 3rem; }
+    header {
+      display: flex; flex-wrap: wrap; gap: 0.75rem 1.25rem;
+      align-items: center; justify-content: space-between;
+      padding-bottom: 1rem; border-bottom: 1px solid var(--line);
+      margin-bottom: 1.25rem;
+    }
+    .brand {
+      display: flex; align-items: center; gap: 0.5rem;
+      color: var(--ink); text-decoration: none; font-weight: 700;
+    }
+    .brand img { width: 1.75rem; height: 1.75rem; display: block; }
+    nav { display: flex; gap: 1rem; }
+    nav a { color: var(--slate); }
+    h1 { font-size: 1.85rem; margin: 0 0 0.5rem; }
+    .lede { color: var(--ink-soft); margin: 0 0 1.25rem; }
+    .stage {
+      background: var(--snow); border: 1px solid var(--line);
+      border-radius: 0.4rem; padding: 1rem 1.1rem; min-height: 12rem;
+    }
+    .who { font-size: 0.8rem; letter-spacing: 0.04em; text-transform: uppercase; color: var(--slate); }
+    .bubble { margin: 0.4rem 0 0; }
+    .callout {
+      margin-top: 1rem; padding: 0.65rem 0.85rem;
+      border-left: 3px solid var(--ochre); color: var(--ink-soft);
+    }
+    .result { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 0.88rem; }
+    menu { display: flex; gap: 0.75rem; padding: 0; margin: 1.25rem 0 0; list-style: none; }
+    button {
+      background: var(--ochre); color: var(--snow); border: 0;
+      padding: 0.5rem 0.95rem; border-radius: 0.3rem; font-weight: 600; cursor: pointer;
+    }
+    button.ghost { background: transparent; color: var(--slate); border: 1px solid var(--line); }
+    .progress { color: var(--slate); font-size: 0.85rem; margin-top: 0.75rem; }
+    footer { margin-top: 2.5rem; padding-top: 1rem; border-top: 1px solid var(--line); color: var(--slate); font-size: 0.85rem; }
+    footer a { color: var(--slate); }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <a class="brand" href="./">
+        <img src="assets/logo.png" alt="">
+        FactMem
+      </a>
+      <nav>
+        <a href="./">Home</a>
+        <a href="https://github.com/gordonkjlee/factmem">GitHub</a>
+        <a href="https://www.npmjs.com/package/@factmem/mcp">npm</a>
+      </nav>
+    </header>
+    <h1>One minute, no install</h1>
+    <p class="lede">A taped session. Names are invented. Nothing here is a live store.</p>
+    <div class="stage" id="stage"></div>
+    <menu>
+      <li><button type="button" class="ghost" id="back">Back</button></li>
+      <li><button type="button" id="next">Next</button></li>
+    </menu>
+    <p class="progress" id="progress"></p>
+    <footer>
+      <a href="./">factmem.dev</a> · MIT
+    </footer>
+  </div>
+  <script>
+    var STEPS = [
+      {
+        who: "Alex, in chat",
+        body: "I prefer dark mode in every editor.",
+        callout: "Two ways in. Copy: Claude Code or Cursor writes a transcript file; FactMem copies new lines. Record: any MCP client — the assistant calls capture_fact. This tape shows record."
+      },
+      {
+        who: "The assistant",
+        body: "Stored. There is no remember command — a durable sentence in ordinary conversation is enough.",
+        callout: "On a record store, capture_fact is how knowledge gets in. On a copy store it is a correction, not a second write of the chat."
+      },
+      {
+        who: "Later, Alex",
+        body: "What editor theme do I prefer?",
+        callout: "Search looks at graduated facts first. Pending captures are listed separately until consolidate runs."
+      },
+      {
+        who: "Search",
+        body: "<span class=\"result\">results: “Alex prefers dark mode in every editor.”</span>",
+        callout: "Copy extracts what was said, then flush graduates it: domains, entities, duplicates, contradictions. The file you own is still one SQLite database."
+      }
+    ];
+    var i = 0;
+    var stage = document.getElementById("stage");
+    var progress = document.getElementById("progress");
+    var next = document.getElementById("next");
+    var back = document.getElementById("back");
+    function show() {
+      var s = STEPS[i];
+      stage.innerHTML = "<div class=\"who\">" + s.who + "</div><p class=\"bubble\">" + s.body + "</p><p class=\"callout\">" + s.callout + "</p>";
+      progress.textContent = (i + 1) + " / " + STEPS.length;
+      back.disabled = i === 0;
+      next.textContent = i === STEPS.length - 1 ? "Replay" : "Next";
+    }
+    next.addEventListener("click", function () {
+      i = i === STEPS.length - 1 ? 0 : i + 1;
+      show();
+    });
+    back.addEventListener("click", function () {
+      if (i > 0) i -= 1;
+      show();
+    });
+    show();
+  </script>
+</body>
+</html>

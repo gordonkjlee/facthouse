@@ -2,7 +2,8 @@
  * `factmem settings` — merge More knobs into an existing config.json.
  *
  * Does not create a store, open a database, or reset the file. Missing or
- * malformed JSON is refused. --yes / non-TTY dump and do not write.
+ * malformed JSON is refused. `--json` / non-TTY dump and do not write.
+ * `--web` serves a loopback page. Init `--yes` is not a settings flag.
  */
 
 import path from "node:path";
@@ -31,12 +32,13 @@ import {
   type InitIo,
   type InitWizardDeps,
 } from "./init-wizard.js";
+import { collectSettingsWebAnswers } from "./web.js";
 
 export interface RunSettingsOpts {
   dataDir: string;
   json: boolean;
-  yes: boolean;
   stdinIsTTY: boolean;
+  web?: boolean;
   io?: InitIo;
   probeHttp?: InitWizardDeps["probeHttp"];
   readDocument?: (dir: string) => Record<string, unknown>;
@@ -51,6 +53,9 @@ function moreDumpJson(shown: MoreShown): Record<string, unknown> {
     switch (id) {
       case "cliModel":
         out.cliModel = shown.cliModel;
+        break;
+      case "cliGraduateModel":
+        out.cliGraduateModel = shown.cliGraduateModel;
         break;
       case "cliTimeoutMs":
         out.cliTimeoutMs = shown.cliTimeoutMs;
@@ -81,7 +86,10 @@ function moreDumpLines(shown: MoreShown): string[] {
   for (const id of MORE_SETTING_IDS) {
     switch (id) {
       case "cliModel":
-        lines.push(`Extraction model: ${shown.cliModel}`);
+        lines.push(`Model to extract facts from messages: ${shown.cliModel}`);
+        break;
+      case "cliGraduateModel":
+        lines.push(`Model to update long-term knowledge: ${shown.cliGraduateModel}`);
         break;
       case "cliTimeoutMs":
         lines.push(`Per-stage timeout in ms: ${shown.cliTimeoutMs}`);
@@ -93,7 +101,7 @@ function moreDumpLines(shown: MoreShown): string[] {
         lines.push(`Host URL: ${shown.httpBaseUrl}`);
         break;
       case "httpModel":
-        lines.push(`Chat model: ${shown.httpModel || "(unset)"}`);
+        lines.push(`Local chat model: ${shown.httpModel || "(unset)"}`);
         break;
       case "httpExtractOnFail":
         lines.push(`Extract on-fail: ${shown.httpExtractOnFail}`);
@@ -141,7 +149,11 @@ export async function runSettings(opts: RunSettingsOpts): Promise<number> {
   }
 
   const shown = shownFromDocument(doc);
-  const dumpOnly = opts.json || opts.yes || !opts.stdinIsTTY;
+  if (opts.web) {
+    const overlay = await collectSettingsWebAnswers({ shown, stdout });
+    return writeOverlay(opts, doc, overlay, stdout, stderr, configPath);
+  }
+  const dumpOnly = opts.json || !opts.stdinIsTTY;
 
   if (dumpOnly) {
     if (opts.json) {
@@ -164,6 +176,18 @@ export async function runSettings(opts: RunSettingsOpts): Promise<number> {
     probeHttp: opts.probeHttp,
   }, { gate: false, shown });
 
+  return writeOverlay(opts, doc, overlay, stdout, stderr, configPath);
+}
+
+async function writeOverlay(
+  opts: RunSettingsOpts,
+  doc: Record<string, unknown>,
+  overlay: MoreOverlay,
+  stdout: { write(chunk: string): void },
+  stderr: { write(chunk: string): void },
+  configPath: string,
+): Promise<number> {
+  const writeDocument = opts.writeDocument ?? writeConfigDocument;
   const { next, written } = patchConfigDocument(doc, overlay);
   const same =
     JSON.stringify(next, null, 2) + "\n" ===

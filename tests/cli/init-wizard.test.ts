@@ -5,6 +5,7 @@ import path from "node:path";
 import {
   MAX_INIT_QUESTIONS,
   collectInitAnswers,
+  copyOrRecord,
   isInteractiveInit,
   silentInitIo,
   storeCwdAnswer,
@@ -116,6 +117,19 @@ describe("isInteractiveInit", () => {
   });
 });
 
+describe("copyOrRecord", () => {
+  it("treats Enter and copy as copy, record as record, junk as retry", () => {
+    expect(copyOrRecord("")).toBe("copy");
+    expect(copyOrRecord("copy")).toBe("copy");
+    expect(copyOrRecord("C")).toBe("copy");
+    expect(copyOrRecord("record")).toBe("record");
+    expect(copyOrRecord("r")).toBe("record");
+    expect(copyOrRecord("n")).toBe("retry");
+    expect(copyOrRecord("y")).toBe("retry");
+    expect(copyOrRecord("maybe")).toBe("retry");
+  });
+});
+
 describe("storeCwdAnswer", () => {
   it("stores Enter as process cwd, skip as skip, and POSIX as typed", () => {
     expect(storeCwdAnswer("", "C:\\dev\\app")).toBe("C:\\dev\\app");
@@ -125,6 +139,7 @@ describe("storeCwdAnswer", () => {
     expect(storeCwdAnswer("C:\\dev\\app", "C:\\other")).toBe("C:\\dev\\app");
     expect(storeCwdAnswer("app", "C:\\dev")).toBe(path.resolve("C:\\dev", "app"));
     expect(storeCwdAnswer("~/proj", "C:\\dev")).toBe(expandTilde("~/proj"));
+    expect(storeCwdAnswer("~\\proj", "C:\\dev")).toBe(expandTilde("~\\proj"));
   });
 });
 
@@ -145,8 +160,8 @@ describe("collectInitAnswers", () => {
     expect(result.captureAskedAndEmpty).toBe(false);
   });
 
-  it("recommended path omits sources, search, and extra knobs", async () => {
-    const io = fakeIo(["n", "off", "n"]);
+  it("record path omits sources, search, and extra knobs", async () => {
+    const io = fakeIo(["record", "off", "n"]);
     const result = await collectInitAnswers(io, seed, deps());
     expect(result.overlay.sources).toBeUndefined();
     expect(result.overlay.embeddingProvider).toBeUndefined();
@@ -156,17 +171,24 @@ describe("collectInitAnswers", () => {
     expect(io.writes).toContain(INIT_PROMPTS.intro);
   });
 
-  it("Enter through capture, search, and More leaves the overlay empty", async () => {
-    const io = fakeIo(["", "", ""]);
+  it("Enter through copy writes a source with cwd, then search and More defaults", async () => {
+    const io = fakeIo(["", "", "", "", "", ""]);
     const result = await collectInitAnswers(io, seed, deps());
-    expect(result.overlay).toEqual({});
+    expect(result.overlay.sources).toEqual([
+      {
+        kind: "claude-code",
+        home: "~/.claude",
+        cwd: "C:\\dev\\app",
+      },
+    ]);
+    expect(result.overlay.embeddingProvider).toBeUndefined();
     expect(result.writeConfig).toBe(true);
-    expect(result.captureAskedAndEmpty).toBe(true);
+    expect(result.captureAskedAndEmpty).toBe(false);
   });
 
-  it("unlocked data dir confirm then recommended answers", async () => {
+  it("unlocked data dir confirm then record answers", async () => {
     const unlocked: InitWizardSeed = { ...seed, dataDirLocked: false };
-    const io = fakeIo(["", "n", "off", "n"]);
+    const io = fakeIo(["", "record", "off", "n"]);
     const result = await collectInitAnswers(io, unlocked, deps());
     expect(result.dataDir).toBe(unlocked.dataDir);
     expect(result.overlay).toEqual({});
@@ -192,7 +214,7 @@ describe("collectInitAnswers", () => {
 
   it("--force on an existing config skips data dir and still asks the knobs", async () => {
     const exists = new Set([path.join(seed.dataDir, CONFIG_FILENAME)]);
-    const io = fakeIo(["n", "off", "n"]);
+    const io = fakeIo(["record", "off", "n"]);
     const result = await collectInitAnswers(
       io,
       { ...seed, force: true },
@@ -205,7 +227,7 @@ describe("collectInitAnswers", () => {
   });
 
   it("writes one source with cwd and ollama, then extra knobs", async () => {
-    const io = fakeIo(["y", "", "", "", "ollama", "y", "sonnet", "180000", "n"]);
+    const io = fakeIo(["copy", "", "", "", "ollama", "y", "sonnet", "", "180000", "n"]);
     const result = await collectInitAnswers(io, seed, deps());
     expect(result.overlay.sources).toEqual([
       {
@@ -216,15 +238,17 @@ describe("collectInitAnswers", () => {
     ]);
     expect(result.overlay.embeddingProvider).toBe("ollama");
     expect(result.overlay.cliModel).toBe("sonnet");
+    expect(result.overlay.cliGraduateModel).toBeUndefined();
     expect(result.overlay.cliTimeoutMs).toBe(180_000);
     expect(result.captureAskedAndEmpty).toBe(false);
   });
 
   it("More local extract writes URL, model, and on_fail", async () => {
     const io = fakeIo([
-      "n",
+      "record",
       "off",
       "y",
+      "",
       "",
       "",
       "y",
@@ -239,15 +263,22 @@ describe("collectInitAnswers", () => {
     expect(result.overlay.httpExtractOnFail).toBe("none");
   });
 
+  it("More can set a heavier model for long-term knowledge", async () => {
+    const io = fakeIo(["record", "off", "y", "", "sonnet", "", "n"]);
+    const result = await collectInitAnswers(io, seed, deps());
+    expect(result.overlay.cliModel).toBeUndefined();
+    expect(result.overlay.cliGraduateModel).toBe("sonnet");
+  });
+
   it("omits extra knobs when More is Y but answers are empty", async () => {
-    const io = fakeIo(["n", "off", "y", "", "", "n"]);
+    const io = fakeIo(["record", "off", "y", "", "", "", "n"]);
     const result = await collectInitAnswers(io, seed, deps());
     expect(result.overlay.cliModel).toBeUndefined();
     expect(result.overlay.cliTimeoutMs).toBeUndefined();
   });
 
   it("writes a source, warns on a missing home, then asks search and More", async () => {
-    const io = fakeIo(["y", "", "", "", "off", "n"]);
+    const io = fakeIo(["copy", "", "", "", "off", "n"]);
     const result = await collectInitAnswers(io, seed, deps());
     expect(result.overlay.sources).toEqual([
       { kind: "claude-code", home: "~/.claude", cwd: "C:\\dev\\app" },
@@ -258,13 +289,13 @@ describe("collectInitAnswers", () => {
 
   it("does not warn when the default home exists", async () => {
     const homeAbs = resolveUserPath("~/.claude");
-    const io = fakeIo(["y", "", "", "", "off", "n"]);
+    const io = fakeIo(["copy", "", "", "", "off", "n"]);
     await collectInitAnswers(io, seed, deps(new Set([homeAbs])));
     expect(io.writes.join("\n")).not.toMatch(/does not exist yet/);
   });
 
   it("skips the source on cwd skip and still asks search and More", async () => {
-    const io = fakeIo(["y", "", "", "skip", "off", "n"]);
+    const io = fakeIo(["copy", "", "", "skip", "off", "n"]);
     const result = await collectInitAnswers(io, seed, deps());
     expect(result.overlay.sources).toBeUndefined();
     expect(result.captureAskedAndEmpty).toBe(true);
@@ -274,35 +305,35 @@ describe("collectInitAnswers", () => {
   });
 
   it("re-prompts an unknown kind and does not write grok", async () => {
-    const io = fakeIo(["y", "grok", "claude-code", "", "", "off", "n"]);
+    const io = fakeIo(["copy", "grok", "claude-code", "", "", "off", "n"]);
     const result = await collectInitAnswers(io, seed, deps());
     expect(io.writes).toContain(INIT_PROMPTS.unknownKind());
     expect(result.overlay.sources?.[0]?.kind).toBe("claude-code");
   });
 
   it("hints a POSIX cwd on Windows", async () => {
-    const io = fakeIo(["y", "", "", "/c/dev/app", "off", "n"]);
+    const io = fakeIo(["copy", "", "", "/c/dev/app", "off", "n"]);
     const result = await collectInitAnswers(io, seed, deps());
     expect(result.overlay.sources?.[0]?.cwd).toBe("/c/dev/app");
     expect(io.writes.join("\n")).toMatch(/POSIX-looking cwd/);
   });
 
-  it("re-prompts capture on a junk yes/no and then accepts N", async () => {
-    const io = fakeIo(["maybe", "n", "off", "n"]);
+  it("re-prompts capture on junk and then accepts record", async () => {
+    const io = fakeIo(["maybe", "record", "off", "n"]);
     const result = await collectInitAnswers(io, seed, deps());
     expect(io.prompts.filter((p) => p === INIT_PROMPTS.capture)).toHaveLength(2);
     expect(result.overlay.sources).toBeUndefined();
   });
 
   it("re-prompts embedding when Y is not a provider", async () => {
-    const io = fakeIo(["n", "y", "off", "n"]);
+    const io = fakeIo(["record", "y", "off", "n"]);
     const result = await collectInitAnswers(io, seed, deps());
     expect(io.prompts.filter((p) => p === INIT_PROMPTS.embedding)).toHaveLength(2);
     expect(result.overlay.embeddingProvider).toBeUndefined();
   });
 
   it("sets voyage without extra knobs", async () => {
-    const io = fakeIo(["n", "voyage", "n"]);
+    const io = fakeIo(["record", "voyage", "n"]);
     const result = await collectInitAnswers(io, seed, deps());
     expect(result.overlay.embeddingProvider).toBe("voyage");
     expect(result.overlay.cliModel).toBeUndefined();
@@ -316,7 +347,7 @@ describe("collectInitAnswers", () => {
   });
 
   it("re-prompts an invalid timeout", async () => {
-    const io = fakeIo(["n", "off", "y", "haiku", "nope", "45000", "n"]);
+    const io = fakeIo(["record", "off", "y", "haiku", "", "nope", "45000", "n"]);
     const result = await collectInitAnswers(io, seed, deps());
     expect(result.overlay.cliModel).toBe("haiku");
     expect(result.overlay.cliTimeoutMs).toBe(45_000);
@@ -352,6 +383,7 @@ describe("init-wizard file-scan", () => {
     expect(body).toContain("MORE_SETTING_IDS");
     expect(MORE_SETTING_IDS).toEqual([
       "cliModel",
+      "cliGraduateModel",
       "cliTimeoutMs",
       "httpExtract",
       "httpBaseUrl",

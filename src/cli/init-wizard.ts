@@ -110,7 +110,8 @@ export function isCrossPlatformAbsolute(p: string): boolean {
 export function storeCwdAnswer(trimmed: string, processCwd: string): string | "skip" {
   if (trimmed === "-" || trimmed.toLowerCase() === "skip") return "skip";
   if (trimmed === "") return processCwd;
-  if (trimmed === "~" || trimmed.startsWith("~/")) return expandTilde(trimmed);
+  const expanded = expandTilde(trimmed);
+  if (expanded !== trimmed) return expanded;
   if (isCrossPlatformAbsolute(trimmed)) return trimmed;
   return path.resolve(processCwd, trimmed);
 }
@@ -133,6 +134,14 @@ export function yesNo(
   return "retry";
 }
 
+/** TTY first question. Empty is copy — the recommended path when JSONL exists. */
+export function copyOrRecord(raw: string): "copy" | "record" | "retry" {
+  const t = raw.trim().toLowerCase();
+  if (t === "" || t === "copy" || t === "c") return "copy";
+  if (t === "record" || t === "r") return "record";
+  return "retry";
+}
+
 function parseTimeoutMs(raw: string): number | "empty" | "invalid" {
   const t = raw.trim();
   if (t === "") return "empty";
@@ -148,9 +157,9 @@ async function askCapture(
   overlay: InitOverlay,
 ): Promise<boolean> {
   for (;;) {
-    const yn = yesNo(await io.question(INIT_PROMPTS.capture));
-    if (yn === "retry") continue;
-    if (yn === "no") return true;
+    const choice = copyOrRecord(await io.question(INIT_PROMPTS.capture));
+    if (choice === "retry") continue;
+    if (choice === "record") return true;
     break;
   }
 
@@ -241,6 +250,16 @@ export async function askMoreSettings(
           await io.question(INIT_PROMPTS.moreCliModel(shown.cliModel))
         ).trim();
         if (modelRaw !== "") overlay.cliModel = modelRaw;
+        break;
+      }
+      case "cliGraduateModel": {
+        const shownGrad = opts.gate
+          ? (overlay.cliModel ?? shown.cliGraduateModel)
+          : shown.cliGraduateModel;
+        const raw = (
+          await io.question(INIT_PROMPTS.moreCliGraduateModel(shownGrad))
+        ).trim();
+        if (raw !== "") overlay.cliGraduateModel = raw;
         break;
       }
       case "cliTimeoutMs": {

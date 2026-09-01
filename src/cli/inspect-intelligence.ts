@@ -74,7 +74,7 @@ export function renderIntelligenceRoutingCard(
     <label for="intel-url">Host URL</label>
     <input id="intel-url" data-k="url" value="${esc(view.http_base_url || HTTP_DEFAULT_BASE_URL)}" spellcheck="false"/>
     <select id="intel-host" aria-label="Typical host">${hostOpts}<option value="">Custom</option></select>
-    <label for="intel-model">Chat model</label>
+    <label for="intel-model">Local chat model</label>
     <input id="intel-model" data-k="model" value="${esc(view.http_model ?? "")}" spellcheck="false" placeholder="from GET /v1/models"/>
     <span></span>
     <span class="do">Stage</span><span class="do">Provider</span><span class="do">If it fails</span>

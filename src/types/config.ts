@@ -174,6 +174,11 @@ export interface CliProviderConfig {
   command?: string[];
   /** Model alias passed via --model. Default: CLI_DEFAULT_MODEL. */
   model?: string;
+  /**
+   * CLI model for I→K (summarise, reconcile, supersede). Omit to use `model`.
+   * Extract / classify / entities still use `model`.
+   */
+  graduate_model?: string;
   /** Per-stage subprocess timeout in ms. Default: CLI_DEFAULT_TIMEOUT_MS. */
   timeout_ms?: number;
   /** Emit provider debug logging to stderr. Default: false. */
