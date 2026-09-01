@@ -66,6 +66,17 @@ def test_builds_site_from_readme(tmp_path: Path):
     assert (site / ".nojekyll").is_file()
     assert (site / "assets" / "logo.png").is_file()
 
+    robots = (site / "robots.txt").read_text(encoding="utf-8")
+    assert "User-agent: *" in robots
+    assert "Allow: /" in robots
+    assert "Disallow:" not in robots
+    assert "Sitemap: https://factmem.dev/sitemap.xml" in robots
+
+    sitemap = (site / "sitemap.xml").read_text(encoding="utf-8")
+    assert "<loc>https://factmem.dev</loc>" in sitemap
+    assert "www.factmem.dev" not in sitemap
+    assert sitemap.count("<loc>") == 1
+
 
 def test_pitch_helpers_keep_readme_lede():
     assert build_pages.pitch_plain(README_PITCH) == (
@@ -96,3 +107,16 @@ def test_cname_must_match_domain(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     dest.mkdir()
     with pytest.raises(SystemExit, match="CNAME must be"):
         build_pages.write_cname(dest)
+
+
+def test_copy_root_files_requires_robots_and_sitemap(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setattr(build_pages, "ROOT", tmp_path)
+    dest = tmp_path / "out"
+    dest.mkdir()
+    with pytest.raises(SystemExit, match="missing robots.txt"):
+        build_pages.copy_root_files(dest)
+    (tmp_path / "robots.txt").write_text("User-agent: *\nAllow: /\n", encoding="utf-8")
+    with pytest.raises(SystemExit, match="missing sitemap.xml"):
+        build_pages.copy_root_files(dest)
