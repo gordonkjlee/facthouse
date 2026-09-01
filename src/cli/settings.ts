@@ -128,7 +128,6 @@ export async function runSettings(opts: RunSettingsOpts): Promise<number> {
   const stdout = opts.stdout ?? process.stdout;
   const stderr = opts.stderr ?? process.stderr;
   const readDocument = opts.readDocument ?? readConfigDocument;
-  const writeDocument = opts.writeDocument ?? writeConfigDocument;
   const configPath = path.join(opts.dataDir, CONFIG_FILENAME);
 
   let doc: Record<string, unknown>;
