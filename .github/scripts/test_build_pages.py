@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+import re
 from pathlib import Path
 
 import pytest
@@ -77,6 +79,12 @@ def test_builds_site_from_readme(tmp_path: Path):
     assert "www.factmem.dev" not in sitemap
     assert sitemap.count("<loc>") == 1
 
+    key_name = f"{build_pages.INDEXNOW_KEY}.txt"
+    assert (site / key_name).read_text(encoding="utf-8") == f"{build_pages.INDEXNOW_KEY}\n"
+
+    assert ">gordonkjlee/openmemory<" not in index
+    assert ">gordonkjlee/factmem<" in index
+
 
 def test_pitch_helpers_keep_readme_lede():
     assert build_pages.pitch_plain(README_PITCH) == (
@@ -120,3 +128,42 @@ def test_copy_root_files_requires_robots_and_sitemap(
     (tmp_path / "robots.txt").write_text("User-agent: *\nAllow: /\n", encoding="utf-8")
     with pytest.raises(SystemExit, match="missing sitemap.xml"):
         build_pages.copy_root_files(dest)
+
+
+def test_index_has_software_application_json_ld(tmp_path: Path):
+    site = build_pages.build(tmp_path)
+    index = (site / "index.html").read_text(encoding="utf-8")
+    match = re.search(
+        r'<script type="application/ld\+json">\s*(.*?)\s*</script>',
+        index,
+        re.DOTALL,
+    )
+    assert match, "missing JSON-LD script"
+    body = match.group(1)
+    data = json.loads(body)
+    assert data["name"] == "FactMem"
+    assert data["url"] == "https://factmem.dev"
+    assert data["sameAs"] == [
+        "https://github.com/gordonkjlee/factmem",
+        "https://www.npmjs.com/package/@factmem/mcp",
+    ]
+    assert data["description"] == (
+        "A local memory engine any AI tool can use. You own the SQLite file."
+    )
+    assert "www.factmem.dev" not in body
+    assert "openmemory" not in body.lower()
+    assert "mem0" not in body.lower()
+
+
+def test_footer_no_longer_says_openmemory(tmp_path: Path):
+    site = build_pages.build(tmp_path)
+    index = (site / "index.html").read_text(encoding="utf-8")
+    assert "gordonkjlee/openmemory" not in index
+
+
+def test_indexnow_key_is_public_hex_file():
+    key = build_pages.INDEXNOW_KEY
+    assert re.fullmatch(r"[0-9a-f]{32}", key)
+    committed = (ROOT / f"{key}.txt").read_text(encoding="utf-8")
+    assert committed == f"{key}\n"
+    assert f"{key}.txt" in build_pages.ROOT_FILES
