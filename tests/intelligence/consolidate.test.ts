@@ -17,6 +17,8 @@ const { ensureDomain } = await import("../../src/db/domains.js");
 const { getFactsMissingEmbeddings, countEmbeddings } = await import("../../src/db/embeddings.js");
 const { consolidate } = await import("../../src/intelligence/consolidate.js");
 const { createHeuristicProvider } = await import("../../src/intelligence/heuristic.js");
+const { createHttpProvider } = await import("../../src/intelligence/http.js");
+const { createStageRouter } = await import("../../src/intelligence/stage-router.js");
 const { insertIntelligenceRun, listIntelligenceRuns } = await import(
   "../../src/db/intelligence-runs.js"
 );
@@ -1674,6 +1676,140 @@ describe("token budget gate", () => {
     const rows = await listIntelligenceRuns(db);
     expect(rows.some((r) => r.trigger === "mcp")).toBe(true);
     expect(rows.some((r) => r.trigger === "cli")).toBe(true);
+  });
+
+  it("retries HTTP extract on the CLI when the host is down", async () => {
+    await seedEvent();
+    let cliCalls = 0;
+    const cli = {
+      ...createHeuristicProvider(PERSONAL_VOCABULARY),
+      async extractFactsFromEvents() {
+        cliCalls += 1;
+        return {
+          facts: [
+            {
+              content: "The user prefers dark roast coffee",
+              domain_hint: "preferences",
+              source_quality: "cli" as const,
+            },
+          ],
+          degraded: false,
+        };
+      },
+    };
+    const provider = createStageRouter(
+      {
+        provider: "cli",
+        api_key: null,
+        http: { model: "qwen2.5:7b" },
+      },
+      {
+        fetch: async () => {
+          throw new Error("ECONNREFUSED");
+        },
+        cli,
+      },
+    );
+    const result = await consolidate(db, provider as never, {
+      extraction: { enabled: true } as never,
+      intelligence: {
+        provider: "cli",
+        api_key: null,
+        http: { model: "qwen2.5:7b" },
+      },
+    });
+    expect(cliCalls).toBe(1);
+    expect(result.extractionDegraded).toBeFalsy();
+    expect(result.factsIn).toBeGreaterThan(0);
+  });
+
+  it("does not steal CLI extract when HTTP is down and the CLI is at cap", async () => {
+    await seedEvent();
+    await seedCliRun({ tokens: 100 });
+    let cliCalls = 0;
+    const mark = await extractWatermark(db);
+    const cli = {
+      ...createHeuristicProvider(PERSONAL_VOCABULARY),
+      async extractFactsFromEvents() {
+        cliCalls += 1;
+        return { facts: [], degraded: false };
+      },
+    };
+    const provider = createStageRouter(
+      {
+        provider: "cli",
+        api_key: null,
+        http: { model: "qwen2.5:7b" },
+        token_budget: { cli: { week: "100" } },
+      },
+      {
+        fetch: async () => {
+          throw new Error("ECONNREFUSED");
+        },
+        cli,
+      },
+    );
+    const result = await consolidate(db, provider as never, {
+      extraction: { enabled: true } as never,
+      intelligence: {
+        provider: "cli",
+        api_key: null,
+        http: { model: "qwen2.5:7b" },
+        token_budget: { cli: { week: "100" } },
+      },
+    });
+    expect(cliCalls).toBe(0);
+    expect(result.extractionDegraded).toBe(true);
+    expect(await extractWatermark(db)).toBe(mark);
+  });
+
+  it("holds the watermark when HTTP extract cannot run", async () => {
+    await seedEvent();
+    const mark = await extractWatermark(db);
+    const provider = createHttpProvider({
+      model: "qwen2.5:7b",
+      fetch: async () => {
+        throw new Error("ECONNREFUSED");
+      },
+    });
+    const result = await consolidate(db, provider as never, {
+      extraction: { enabled: true } as never,
+      intelligence: {
+        provider: "cli",
+        api_key: null,
+        http: { model: "qwen2.5:7b" },
+      },
+    });
+    expect(result.extractionDegraded).toBe(true);
+    expect(await extractWatermark(db)).toBe(mark);
+    const staged = (await db
+      .prepare(`SELECT COUNT(*) AS n FROM session_facts`)
+      .get()) as { n: number };
+    expect(staged.n).toBe(0);
+  });
+
+  it("still extracts on HTTP when only the CLI is at cap", async () => {
+    await seedEvent();
+    await seedCliRun({ tokens: 100 });
+    const spy = extractingSpy();
+    const result = await consolidate(db, spy.provider as never, {
+      extraction: { enabled: true } as never,
+      intelligence: {
+        provider: "cli",
+        api_key: null,
+        http: { model: "qwen2.5:7b" },
+        token_budget: { cli: { week: "100" } },
+      },
+    });
+    expect(result.skipped).toBe(false);
+    expect(spy.calls).toBe(1);
+    expect(result.skipReason).toMatch(/CLI/);
+    const pending = (await db
+      .prepare(
+        `SELECT COUNT(*) AS n FROM session_facts WHERE consolidation_id IS NULL`,
+      )
+      .get()) as { n: number };
+    expect(pending.n).toBeGreaterThan(0);
   });
 });
 

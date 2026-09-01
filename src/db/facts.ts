@@ -5,7 +5,7 @@
 import { randomUUID } from "node:crypto";
 import { withTransaction } from "./connection.js";
 import type { Db, SqlParam } from "./connection.js";
-import type { Fact, EntityFact, SpeakerRole } from "../types/data.js";
+import type { Fact, EntityFact, SpeakerRole, SourceQuality } from "../types/data.js";
 // The one reserved relationship value. Imported rather than repeated, because a
 // second copy of a magic string is a second definition with its own future.
 import { SUBJECT_OF } from "./entities.js";
@@ -28,7 +28,7 @@ export interface NewFact {
   session_id?: string | null;
   capture_context?: string | null;
   /** Which intelligence provider produced this fact. Defaults to 'heuristic'. */
-  source_quality?: "heuristic" | "cli" | "sampling" | "explicit";
+  source_quality?: SourceQuality;
   speaker_role?: SpeakerRole | null;
   speaker?: string | null;
 }

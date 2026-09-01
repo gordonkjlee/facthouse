@@ -2,14 +2,21 @@ import { readFileSync } from "node:fs";
 import { describe, it, expect } from "vitest";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
-import { CAPTURE_SOURCE_KINDS, DEFAULT_CONFIG } from "../../src/types/config.js";
+import {
+  CAPTURE_SOURCE_KINDS,
+  DEFAULT_CONFIG,
+  HTTP_WELL_KNOWN_BASE_URLS,
+} from "../../src/types/config.js";
 import { defaultServerConfig } from "../../src/config.js";
 import {
   INIT_KNOB_IDS,
   MORE_SETTING_IDS,
   INIT_PROMPTS,
   INIT_SYNTHETIC,
+  SETTINGS_PROMPTS,
+  SHIPPED_MORE_SHOWN,
   applyInitOverlay,
+  moreShownFromConfig,
   silentEmbeddingProvider,
   silentSources,
 } from "../../src/cli/init-knobs.js";
@@ -73,12 +80,40 @@ describe("init knobs — one definition", () => {
         "moreCliModel",
         "moreCliTimeout",
         "moreCliTimeoutInvalid",
+        "moreHttpBaseUrl",
+        "moreHttpExtract",
+        "moreHttpModel",
+        "moreHttpOnFail",
+        "moreHttpOnFailInvalid",
         "projectGroupMissing",
         "unknownKind",
       ].sort(),
     );
+    expect(Object.keys(SETTINGS_PROMPTS).sort()).toEqual(
+      [
+        "eacces",
+        "intro",
+        "malformed",
+        "missing",
+        "needTty",
+        "noChanges",
+        "notObject",
+        "wrote",
+      ].sort(),
+    );
+    expect(SHIPPED_MORE_SHOWN.httpExtractOnFail).toBe("cli");
+    expect(moreShownFromConfig(defaultServerConfig(), {}).httpExtractOnFail).toBe(
+      "none",
+    );
     expect(INIT_KNOB_IDS).toEqual(["dataDir", "sources", "embedding", "more"]);
-    expect(MORE_SETTING_IDS).toEqual(["cliModel", "cliTimeoutMs"]);
+    expect(MORE_SETTING_IDS).toEqual([
+      "cliModel",
+      "cliTimeoutMs",
+      "httpExtract",
+      "httpBaseUrl",
+      "httpModel",
+      "httpExtractOnFail",
+    ]);
     expect(INIT_PROMPTS.intro).toMatch(/Another store is another directory/);
     expect(INIT_PROMPTS.intro).not.toMatch(/two brains/i);
     expect(INIT_PROMPTS.intro).not.toMatch(/work and personal/i);
@@ -124,6 +159,18 @@ describe("init knobs — one definition", () => {
     expect(next.intelligence.cli?.model).toBe("sonnet");
     expect(next.intelligence.cli?.timeout_ms).toBe(180_000);
     expect(next.intelligence.provider).toBe("cli");
+    const withHttp = applyInitOverlay(defaultServerConfig(), {
+      httpExtract: true,
+      httpBaseUrl: "http://localhost:1234/v1",
+      httpModel: "qwen2.5vl:7b",
+      httpExtractOnFail: "none",
+    });
+    expect(withHttp.intelligence.http?.base_url).toBe("http://localhost:1234/v1");
+    expect(withHttp.intelligence.http?.model).toBe("qwen2.5vl:7b");
+    expect(withHttp.intelligence.stages?.extract).toEqual({
+      provider: "http",
+      on_fail: "none",
+    });
     const recommended = applyInitOverlay(defaultServerConfig(), {});
     expect(recommended.intelligence.cli?.model).toBeUndefined();
     expect(recommended.intelligence.cli?.timeout_ms).toBeUndefined();
@@ -249,10 +296,40 @@ describe("init knobs — one definition", () => {
     expect(quick).not.toMatch(/log-event/);
     expect(quick).not.toMatch(/"hooks"/);
     expect(quick).not.toMatch(/embedding\.provider/);
+    expect(quick).not.toMatch(/intelligence\.http/);
+    expect(quick).not.toMatch(/11434/);
+    expect(quick).not.toMatch(/ollama pull/);
+    expect(quick).not.toMatch(/factmem settings/);
     expect(quick).not.toMatch(/openmemory-personal/);
     expect(quick).not.toMatch(/factmem-personal/);
     for (const fence of quick.matchAll(/```bash\n([\s\S]*?)```/g)) {
       expect(fence[1]).not.toMatch(/\bpull\b/);
+    }
+  });
+
+  it("later-editor copy names factmem settings, not TTY init as the later path", () => {
+    const readme = readmeText();
+    expect(readme).toMatch(/#### `factmem settings`/);
+    expect(readme).toMatch(/later, `factmem settings`/i);
+    const start = readme.indexOf("## Quick Start");
+    const next = readme.indexOf("\n## ", start + 1);
+    const quick = readme.slice(start, next === -1 ? undefined : next);
+    expect(quick).not.toMatch(/factmem settings/);
+  });
+
+  it("does not tell anyone to ollama pull", () => {
+    expect(readmeText()).not.toMatch(/ollama pull/);
+  });
+
+  it("names well-known OpenAI-compat roots only after Quick Start", () => {
+    const readme = readmeText();
+    const start = readme.indexOf("## Quick Start");
+    const next = readme.indexOf("\n## ", start + 1);
+    const quick = readme.slice(start, next === -1 ? undefined : next);
+    expect(HTTP_WELL_KNOWN_BASE_URLS.length).toBeGreaterThan(1);
+    for (const row of HTTP_WELL_KNOWN_BASE_URLS) {
+      expect(readme).toContain(row.base_url);
+      expect(quick).not.toContain(row.base_url);
     }
   });
 

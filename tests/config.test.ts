@@ -256,6 +256,26 @@ describe("config loader", () => {
     expect(cfg.intelligence.token_budget).toEqual({ cli: { week: "10M" } });
     expect(cfg.intelligence.provider).toBe("cli");
   });
+
+  it("merges intelligence.http and stages onto cli defaults", () => {
+    expect(loadConfig(dir).intelligence.http).toBeUndefined();
+    expect(loadConfig(dir).intelligence.stages).toBeUndefined();
+    writeFileSync(
+      path.join(dir, "config.json"),
+      JSON.stringify({
+        intelligence: {
+          http: { model: "qwen2.5:7b" },
+          stages: { extract: { provider: "http" } },
+        },
+      }),
+    );
+    const cfg = loadConfig(dir);
+    expect(cfg.intelligence.provider).toBe("cli");
+    expect(cfg.intelligence.http).toEqual({ model: "qwen2.5:7b" });
+    expect(cfg.intelligence.stages).toEqual({
+      extract: { provider: "http" },
+    });
+  });
 });
 
 describe("ensureBitemporalSince", () => {

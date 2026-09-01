@@ -68,7 +68,7 @@ describe.skipIf(!runnable)("cli entry — dispatch and usage", () => {
   it("prints usage listing every command and exits non-zero with no subcommand", () => {
     const r = run([]);
     expect(r.status).toBe(1);
-    for (const cmd of ["init", "log-event", "signal", "consolidate", "pull", "inspect", "stats"]) {
+    for (const cmd of ["init", "settings", "log-event", "signal", "consolidate", "pull", "inspect", "stats"]) {
       expect(r.stderr).toContain(cmd);
     }
   });
@@ -286,6 +286,7 @@ describe.skipIf(!runnable)("cli entry — init output", () => {
     const second = run(["init", dir]);
     expect(second.status).toBe(0);
     expect(second.stdout).toMatch(/already exists/i);
+    expect(second.stdout).toMatch(/factmem settings/);
     // The user's edit survived.
     expect(JSON.parse(readFileSync(configPath, "utf-8")).consolidation.threshold).toBe(99);
 
@@ -300,6 +301,44 @@ describe.skipIf(!runnable)("cli entry — init output", () => {
     expect(yesForce.status).toBe(0);
     expect(yesForce.stdout).not.toContain(INIT_PROMPTS.intro);
     expect(JSON.parse(readFileSync(configPath, "utf-8")).consolidation.threshold).toBe(10);
+  });
+});
+
+describe.skipIf(!runnable)("cli entry — settings", () => {
+  it("refuses a missing config.json and does not create a store", () => {
+    const dir = path.join(root, "settings-missing");
+    const r = run(["settings", "--json", "--data", dir]);
+    expect(r.status).toBe(1);
+    expect(r.stderr).toMatch(/Run factmem init first/);
+    expect(existsSync(dir)).toBe(false);
+  });
+
+  it("dumps More knobs with --json and does not write", () => {
+    const dir = path.join(root, "settings-json");
+    expect(run(["init", "--yes", dir]).status).toBe(0);
+    const before = readFileSync(path.join(dir, "config.json"), "utf-8");
+    const r = run(["settings", "--json", "--data", dir]);
+    expect(r.status).toBe(0);
+    const parsed = JSON.parse(r.stdout);
+    expect(parsed.more.httpExtract).toBe(false);
+    expect(parsed.more.httpExtractOnFail).toBe("none");
+    expect(JSON.stringify(parsed)).not.toMatch(/api_key/);
+    expect(readFileSync(path.join(dir, "config.json"), "utf-8")).toBe(before);
+  });
+
+  it("rejects --force", () => {
+    const dir = path.join(root, "settings-force");
+    run(["init", "--yes", dir]);
+    const r = run(["settings", "--force", "--data", dir]);
+    expect(r.status).not.toBe(0);
+  });
+
+  it("first-write init names settings as the later editor", () => {
+    const dir = path.join(root, "settings-outro");
+    const r = run(["init", "--yes", dir]);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toMatch(/Later: factmem settings --data /);
+    expect(r.stdout).toContain(dir);
   });
 });
 
@@ -322,6 +361,16 @@ describe.skipIf(!runnable)("cli entry — subprocess recursion guard", () => {
     );
     expect(r.status).toBe(0);
     expect(existsSync(path.join(dir, "memory.db"))).toBe(false);
+  });
+
+  it("skips settings under OPENMEMORY_SUBPROCESS=1", () => {
+    const dir = path.join(root, "guarded-settings");
+    run(["init", dir]);
+    const r = run(["settings", "--json", "--data", dir], {
+      OPENMEMORY_SUBPROCESS: "1",
+    });
+    expect(r.status).toBe(0);
+    expect(r.stdout.trim()).toBe("");
   });
 
   it("skips consolidate under OPENMEMORY_SUBPROCESS=1", () => {

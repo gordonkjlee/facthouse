@@ -14,42 +14,17 @@
 
 import type { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import type { IntelligenceProvider } from "./types.js";
-import type {
-  IntelligenceConfig,
-  IntelligenceProviderType,
-} from "../types/config.js";
+import type { IntelligenceConfig } from "../types/config.js";
 import { createHeuristicProvider } from "./heuristic.js";
 import { createSamplingProvider } from "./sampling.js";
 import { createCliProvider } from "./cli.js";
 import type { DomainDef } from "../types/config.js";
-import { envName, envValue } from "../identity.js";
+import { LOG_PREFIX } from "../identity.js";
+import { resolveProviderType } from "./provider-type.js";
+import { createStageRouter, usesStageRouter } from "./stage-router.js";
+import type { HttpFetcher } from "./http.js";
 
-const VALID_TYPES: readonly IntelligenceProviderType[] = [
-  "heuristic",
-  "sampling",
-  "cli",
-  "api",
-];
-
-/** Environment kill-switch: force a provider regardless of config.json. */
-export const PROVIDER_ENV_VAR = envName("PROVIDER");
-
-/**
- * Resolve the effective provider type. A `FACTMEM_PROVIDER` env var (if it
- * names a valid provider) overrides the configured value — a fast, no-edit
- * kill-switch for turning the subprocess `cli` provider off (or on).
- * `OPENMEMORY_PROVIDER` is still read.
- */
-export function resolveProviderType(
-  configured: IntelligenceProviderType,
-  env: NodeJS.ProcessEnv = process.env,
-): IntelligenceProviderType {
-  const override = envValue("PROVIDER", env)?.toLowerCase();
-  if (override && (VALID_TYPES as readonly string[]).includes(override)) {
-    return override as IntelligenceProviderType;
-  }
-  return configured;
-}
+export { PROVIDER_ENV_VAR, resolveProviderType } from "./provider-type.js";
 
 export interface ProviderContext {
   /** MCP server — required for the sampling provider. Absent in CLI contexts,
@@ -69,6 +44,10 @@ export interface ProviderContext {
   vocabulary?: DomainDef[];
   /** Override the env used for the kill-switch (tests). Defaults to process.env. */
   env?: NodeJS.ProcessEnv;
+  /** Injected HTTP client for tests. */
+  fetch?: HttpFetcher;
+  /** Injected CLI provider (tests). Production constructs one per model. */
+  cli?: IntelligenceProvider;
 }
 
 /**
@@ -84,33 +63,30 @@ export function createIntelligenceProvider(
   const heuristic = ctx.heuristic ?? createHeuristicProvider(vocabulary);
   const type = resolveProviderType(config.provider, ctx.env);
 
-  switch (type) {
-    case "heuristic":
-      return heuristic;
-    case "cli": {
-      const c = config.cli ?? {};
-      return createCliProvider(
-        {
-          command: c.command,
-          model: c.model,
-          timeoutMs: c.timeout_ms,
-          debug: c.debug,
-        },
-        heuristic,
-        vocabulary,
-      );
-    }
-    case "sampling":
-      // Sampling needs an MCP client to sample from. When there's no server
-      // (CLI contexts) it can't work — fall back to heuristic.
-      return ctx.server
-        ? createSamplingProvider(ctx.server, heuristic, vocabulary)
-        : heuristic;
-    case "api":
-      // The 'api' provider (direct Anthropic SDK) is not implemented yet —
-      // fall back to heuristic rather than failing to boot.
-      return heuristic;
-    default:
-      return heuristic;
+  if (usesStageRouter(config, ctx.env)) {
+    return createStageRouter(config, { ...ctx, heuristic, vocabulary });
   }
+  if (type === "heuristic") return heuristic;
+  if (type === "sampling") {
+    return ctx.server
+      ? createSamplingProvider(ctx.server, heuristic, vocabulary)
+      : heuristic;
+  }
+  if (type === "api") {
+    console.error(
+      `${LOG_PREFIX} intelligence.provider "api" is not implemented — using the heuristic`,
+    );
+    return heuristic;
+  }
+  const c = config.cli ?? {};
+  return createCliProvider(
+    {
+      command: c.command,
+      model: c.model,
+      timeoutMs: c.timeout_ms,
+      debug: c.debug,
+    },
+    heuristic,
+    vocabulary,
+  );
 }

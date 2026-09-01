@@ -6,7 +6,7 @@
  * warning (non-fatal — we'd rather run with sane defaults than fail to boot).
  */
 
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { envName, envValue } from "./identity.js";
 import { DEFAULT_CONFIG, type ServerConfig } from "./types/config.js";
@@ -176,6 +176,75 @@ export function loadShippedStoreConfig(
 }
 
 /** Load server config. Always returns a valid ServerConfig. */
+export type ConfigDocumentErrorCode = "missing" | "malformed" | "not-object";
+
+/** Fail-closed reader for a settings-style writer. Does not swallow. */
+export class ConfigDocumentError extends Error {
+  readonly code: ConfigDocumentErrorCode;
+  constructor(code: ConfigDocumentErrorCode, message: string) {
+    super(message);
+    this.name = "ConfigDocumentError";
+    this.code = code;
+  }
+}
+
+/**
+ * Raw on-disk `config.json`. Throws on missing, malformed, or non-object.
+ * Does not merge defaults. Does not mkdir. Must not be used as MCP boot.
+ */
+export function readConfigDocument(dataDir: string): Record<string, unknown> {
+  const configPath = path.join(dataDir, CONFIG_FILENAME);
+  let raw: string;
+  try {
+    raw = readFileSync(configPath, "utf-8");
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code === "ENOENT") {
+      throw new ConfigDocumentError(
+        "missing",
+        `No ${CONFIG_FILENAME} at ${configPath}`,
+      );
+    }
+    throw err;
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new ConfigDocumentError(
+      "malformed",
+      `${CONFIG_FILENAME} is malformed`,
+    );
+  }
+
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new ConfigDocumentError(
+      "not-object",
+      `${CONFIG_FILENAME} must be a JSON object`,
+    );
+  }
+  return parsed as Record<string, unknown>;
+}
+
+/**
+ * Pretty-print `config.json`. The file must already exist. Caller decides
+ * whether the serialised text changed.
+ */
+export function writeConfigDocument(
+  dataDir: string,
+  doc: Record<string, unknown>,
+): void {
+  const configPath = path.join(dataDir, CONFIG_FILENAME);
+  if (!existsSync(configPath)) {
+    throw new ConfigDocumentError(
+      "missing",
+      `No ${CONFIG_FILENAME} at ${configPath}`,
+    );
+  }
+  writeFileSync(configPath, JSON.stringify(doc, null, 2) + "\n", "utf-8");
+}
+
 export function loadConfig(dataDir: string): ServerConfig {
   const base = defaultServerConfig();
 

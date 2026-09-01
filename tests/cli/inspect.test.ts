@@ -193,6 +193,36 @@ describe("inspect graph HTML", () => {
     expect(html).toContain("brand-mark");
   });
 
+  it("Spend includes a routing card that copies JSON and does not save", async () => {
+    const { intelligenceRoutingView } = await import(
+      "../../src/intelligence/routing-view.js"
+    );
+    const html = renderInspectHtml({
+      nodes: [],
+      edges: [],
+      facts: [],
+      links: [],
+      info: [],
+      events: [],
+      sources: [],
+      iToD: [],
+      dByEntity: {},
+      eventCount: 0,
+      eventShown: 0,
+      dCap: 36,
+      selectedId: null,
+      cap: 50,
+      routing: intelligenceRoutingView({ provider: "cli", api_key: null }),
+    });
+    expect(html).toContain("Local extract");
+    expect(html).toContain("Copy JSON");
+    expect(html).toContain("Inspect does not save");
+    expect(html).toContain("factmem settings");
+    expect(html).not.toMatch(/TTY init/);
+    expect(html).toContain("http://localhost:1234/v1");
+    expect(html).not.toMatch(/writeFile|save config/i);
+  });
+
   it("inspect --json includes package_version", async () => {
     const result = await runInspect(db, {
       dataDir,

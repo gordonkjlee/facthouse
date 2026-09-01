@@ -192,6 +192,18 @@ factmem init --yes --force
 
 The generated `config.json` is where you change consolidation behaviour — most notably `intelligence.provider` (`cli` by default; `heuristic` for a zero-dependency regex fallback, or `FACTMEM_PROVIDER=heuristic` at runtime). Init does not ask that field.
 
+#### `factmem settings`
+
+Change extra knobs on an existing `config.json` (CLI model, timeout, optional local extract). Does not reset the rest of the file. Refuses if there is no `config.json` (this command does not create a store). `--yes` / not a terminal prints the current knobs and does not write.
+
+```bash
+factmem settings
+```
+
+```bash
+factmem settings --data ~/my-memory
+```
+
 #### `factmem log-event`
 
 Inserts events directly into the database (no running server needed). Supported for demos and for stores that have no named source. Not the Claude Code or Cursor default — that is `sources` plus `factmem pull`.
@@ -405,7 +417,7 @@ Set `embedding.provider` in `config.json` to `"ollama"` (local, no API key) or `
 
 Meaning-search is an exact scan of stored vectors when the set is small. When that set is large (default 32 MiB of the current model), an HNSW index of those vectors is used instead: in-process on SQLite, or a Postgres `vector` sidecar when the extension is enabled. Small stores stay exact. A missing engine keeps exact search and prints a warning; FactMem does not install a native addon. `embedding.ann` is `null` (auto), `false` (never), or `true` (force when the engine allows). This does not turn embeddings on.
 
-`intelligence.cli.model` and `intelligence.cli.timeout_ms` are the extra knobs More settings can write. Init does not ask `intelligence.provider`; `FACTMEM_PROVIDER=heuristic` is the kill-switch. The heuristic fallback **does not extract facts from transcripts**.
+`intelligence.cli.model` and `intelligence.cli.timeout_ms` are extra knobs. First-run More settings (Y) can write them; later, `factmem settings`. Init does not ask `intelligence.provider`; `FACTMEM_PROVIDER=heuristic` is the kill-switch. The heuristic fallback **does not extract facts from transcripts**.
 
 Unnamed user-channel speech is attributed to the store's owner; a display name still does not create a person. Extra backing (assent, a tool observation, a different speaker restating) is recorded, not scored, unless the store sets `interlocutor` ranking weights in `config.json`. The engine ships none. Weight keys match the speaker string as stored, so two people with the same name share a key.
 
@@ -426,6 +438,36 @@ Optional `intelligence.token_budget` caps billed extract per provider on rolling
 ```
 
 `hour`, `day`, `week`, and `month` are rolling. Omit a scale to leave it unlimited. Remaining room is on `factmem stats`, `get_stats`, and inspect Spend. Set the cap in this store's `config.json` — there is no budget command.
+
+Optional local intelligence is a different switch from embeddings. Add `intelligence.http` on an OpenAI-compatible host. The protocol is `POST /v1/chat/completions`; only the port changes:
+
+| Host | Typical URL |
+|------|-------------|
+| Ollama | `http://localhost:11434/v1` (the default if you omit the URL) |
+| LM Studio | `http://localhost:1234/v1` |
+| vLLM | `http://localhost:8000/v1` |
+| llama.cpp | `http://localhost:8080/v1` |
+
+The model string is whatever that host lists. `GET {base_url}/models` prints the names. `nomic-embed-text` is embed-only and will not extract. If the host is up and serves exactly one chat model, FactMem uses it for this run and tells you to pin `intelligence.http.model`. If several chat models are listed, set that field; extract will not guess.
+
+Extract and summarise then use that host; reconcile and supersede stay on the CLI unless you list `intelligence.stages`. Each stage can set on-fail to cli, http, or none (see the JSON below). HTTP extract defaults to retrying on the CLI (counts against the CLI token budget). Contradiction defaults to none — no provider switch. none holds the extract watermark — it does not fall through to the heuristic. First-run More settings (Y, after the recommended path) can set the host, model, and extract on-fail. Later, `factmem settings` merges those knobs into an existing file without resetting it. `factmem inspect` Spend shows the same knobs and copies JSON; it does not save `config.json`.
+
+The live script `npm run test:http-intelligence` has passed on `qwen2.5vl:7b`.
+
+```json
+"intelligence": {
+  "http": {
+    "base_url": "http://localhost:11434/v1",
+    "model": "qwen2.5vl:7b"
+  },
+  "stages": {
+    "extract": { "provider": "http", "on_fail": "cli" },
+    "summarise": { "provider": "http", "on_fail": "cli" },
+    "reconcile": { "provider": "cli", "on_fail": "none" },
+    "supersede": { "provider": "cli", "on_fail": "none" }
+  }
+}
+```
 
 ### CLI demo (no transcript source)
 
@@ -573,6 +615,9 @@ model:
 - The live first-fact eval needs the `claude` CLI. Run `npm run test:first-fact`.
 - The live coding-store eval (warehouse-shaped Cursor transcripts) also
   needs the `claude` CLI. Run `npm run test:coding-store`.
+- Local HTTP extract needs a chat model on an OpenAI-compatible host and
+  `FACTMEM_HTTP_MODEL` (verified on `qwen2.5vl:7b`). Run
+  `npm run test:http-intelligence`.
 
 Each of those scripts fails rather than skips when its dependency is missing,
 so a green run means the claim was actually verified rather than quietly

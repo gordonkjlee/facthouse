@@ -2,7 +2,7 @@
 
 /**
  * FactMem CLI entry point.
- * Subcommands: log-event, consolidate, pull
+ * Subcommands: init, settings, log-event, consolidate, pull
  */
 
 import { parseArgs } from "node:util";
@@ -24,10 +24,12 @@ import {
   isInteractiveInit,
   bindInitIo,
   silentInitIo,
+  defaultInitWizardDeps,
   type InitWizardSeed,
   type InitWizardResult,
 } from "./init-wizard.js";
 import { INIT_PROMPTS } from "./init-knobs.js";
+import { runSettings } from "./settings.js";
 import {
   CLI_NAME,
   PRODUCT_NAME,
@@ -36,7 +38,7 @@ import {
   envValue,
   npmPackageSpec,
 } from "../identity.js";
-import { dataDirFromEnvOrDefault, resolveUserPath } from "../paths.js";
+import { dataDirFromEnvOrDefault, defaultDataDir, resolveUserPath } from "../paths.js";
 import { runSearch, formatSearch, formatStats, formatPrune, getStats } from "./query.js";
 import { packageVersion } from "./package-version.js";
 import { runInspect } from "./inspect.js";
@@ -51,6 +53,7 @@ import {
 } from "../intelligence/consolidate.js";
 import { createHeuristicProvider } from "../intelligence/heuristic.js";
 import { createIntelligenceProvider, resolveProviderType } from "../intelligence/provider.js";
+import { probeHttpModels } from "../intelligence/http.js";
 import { loadStoreVocabulary } from "../db/domains.js";
 import { createEmbeddingProvider } from "../embedding/provider.js";
 import type { IntelligenceProvider } from "../intelligence/types.js";
@@ -128,6 +131,8 @@ async function main() {
 
   if (subcommand === "init") {
     await runInit();
+  } else if (subcommand === "settings") {
+    await runSettingsCmd();
   } else if (subcommand === "log-event") {
     await runLogEvent();
   } else if (subcommand === "consolidate") {
@@ -149,6 +154,7 @@ async function main() {
       `Usage: ${CLI_NAME} <command>\n\n` +
         `Commands:\n` +
         `  init [dir]    Create the data directory, database, and default config (--yes never prompts)\n` +
+        `  settings      Change extra knobs on an existing store (TTY; --json prints)\n` +
         `  search <q>    Search the knowledge base\n` +
         `  stats         Show knowledge base statistics\n` +
         `  inspect       Sample D / I / K and write a local HTML graph + spend\n` +
@@ -219,7 +225,10 @@ async function runInit() {
       };
       rl.on("SIGINT", onSigint);
       try {
-        wizard = await collectInitAnswers(bindInitIo(rl), seed);
+        wizard = await collectInitAnswers(bindInitIo(rl), seed, {
+        ...defaultInitWizardDeps,
+        probeHttp: (baseUrl) => probeHttpModels(baseUrl),
+      });
       } finally {
         rl.removeListener("SIGINT", onSigint);
         rl.close();
@@ -285,7 +294,77 @@ async function runInit() {
     ...captureLines,
     ``,
   ];
+  if (result.wroteConfig) {
+    const later =
+      result.dataDir === defaultDataDir()
+        ? `Later: ${CLI_NAME} settings  (extra knobs; does not reset this file)`
+        : `Later: ${CLI_NAME} settings --data ${result.dataDir}  (extra knobs; does not reset this file)`;
+    lines.push(later, ``);
+  }
   console.log(lines.join("\n"));
+}
+
+async function runSettingsCmd() {
+  const { values, positionals } = parseArgs({
+    args: process.argv.slice(3),
+    options: {
+      data: { type: "string" },
+      json: { type: "boolean", default: false },
+      yes: { type: "boolean", default: false, short: "y" },
+    },
+    allowPositionals: true,
+    strict: true,
+  });
+
+  const target =
+    positionals[0] ??
+    (values.data as string | undefined) ??
+    dataDirFromEnvOrDefault();
+  const dataDir = resolveUserPath(target);
+  const json = Boolean(values.json);
+  const yes = Boolean(values.yes);
+  const ask = Boolean(process.stdin.isTTY) && !json && !yes;
+
+  try {
+    let code: number;
+    if (!ask) {
+      code = await runSettings({
+        dataDir,
+        json,
+        yes,
+        stdinIsTTY: Boolean(process.stdin.isTTY),
+        probeHttp: (baseUrl) => probeHttpModels(baseUrl),
+      });
+    } else {
+      const rl = createInterface({
+        input: process.stdin,
+        output: process.stdout,
+        terminal: true,
+      });
+      const onSigint = () => {
+        rl.close();
+        process.exit(130);
+      };
+      rl.on("SIGINT", onSigint);
+      try {
+        code = await runSettings({
+          dataDir,
+          json,
+          yes,
+          stdinIsTTY: true,
+          io: bindInitIo(rl),
+          probeHttp: (baseUrl) => probeHttpModels(baseUrl),
+        });
+      } finally {
+        rl.removeListener("SIGINT", onSigint);
+        rl.close();
+      }
+    }
+    process.exit(code);
+  } catch (err: unknown) {
+    console.error(`Failed to change settings in ${dataDir}: ${errorMessage(err)}`);
+    process.exit(1);
+  }
 }
 
 /**

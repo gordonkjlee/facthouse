@@ -18,13 +18,14 @@ import {
   encodeProjectDir,
 } from "../sources/resolve.js";
 import {
-  CLI_DEFAULT_MODEL,
-  CLI_DEFAULT_TIMEOUT_MS,
   INIT_PROMPTS,
   MORE_SETTING_IDS,
+  SHIPPED_MORE_SHOWN,
   defaultHomeForKind,
   type InitOverlay,
+  type MoreShown,
 } from "./init-knobs.js";
+import { isStageOnFail } from "../types/config.js";
 
 export const MAX_INIT_QUESTIONS = 20;
 
@@ -62,6 +63,10 @@ export interface InitWizardDeps {
   cwd: () => string;
   exists: (absPath: string) => boolean;
   platform: () => NodeJS.Platform;
+  /** OpenAI-compat GET /v1/models. Omit in tests. */
+  probeHttp?: (
+    baseUrl: string,
+  ) => Promise<{ ok: boolean; ids: string[] }>;
 }
 
 export const defaultInitWizardDeps: InitWizardDeps = {
@@ -117,9 +122,13 @@ export function shouldHintGitBashCwd(
   return platform === "win32" && stored.startsWith("/");
 }
 
-function yesNo(raw: string): "yes" | "no" | "retry" {
+export function yesNo(
+  raw: string,
+  emptyDefault: "yes" | "no" = "no",
+): "yes" | "no" | "retry" {
   const t = raw.trim().toLowerCase();
-  if (t === "" || t === "n" || t === "no") return "no";
+  if (t === "") return emptyDefault;
+  if (t === "n" || t === "no") return "no";
   if (t === "y" || t === "yes") return "yes";
   return "retry";
 }
@@ -203,23 +212,33 @@ async function askSearch(io: InitIo, overlay: InitOverlay): Promise<void> {
 }
 
 /**
- * Extra knobs after More settings? Y.
+ * Extra knobs after More settings? Y, or the whole `factmem settings` walk.
  * Walk MORE_SETTING_IDS — add a case here, not a question in index.ts.
- * Enter on a knob omits it and continues; it must not skip later extras.
+ * Empty table: init writes URL/on_fail on empty; settings omits.
  */
-async function askMoreSettings(io: InitIo, overlay: InitOverlay): Promise<void> {
-  for (;;) {
-    const yn = yesNo(await io.question(INIT_PROMPTS.more));
-    if (yn === "retry") continue;
-    if (yn === "no") return;
-    break;
+export async function askMoreSettings(
+  io: InitIo,
+  overlay: InitOverlay,
+  deps: InitWizardDeps,
+  opts: { gate: boolean; shown: MoreShown },
+): Promise<void> {
+  if (opts.gate) {
+    for (;;) {
+      const yn = yesNo(await io.question(INIT_PROMPTS.more));
+      if (yn === "retry") continue;
+      if (yn === "no") return;
+      break;
+    }
   }
+
+  const shown = opts.shown;
+  const initEmpty = opts.gate;
 
   for (const id of MORE_SETTING_IDS) {
     switch (id) {
       case "cliModel": {
         const modelRaw = (
-          await io.question(INIT_PROMPTS.moreCliModel(CLI_DEFAULT_MODEL))
+          await io.question(INIT_PROMPTS.moreCliModel(shown.cliModel))
         ).trim();
         if (modelRaw !== "") overlay.cliModel = modelRaw;
         break;
@@ -228,7 +247,7 @@ async function askMoreSettings(io: InitIo, overlay: InitOverlay): Promise<void> 
         for (;;) {
           const parsed = parseTimeoutMs(
             await io.question(
-              INIT_PROMPTS.moreCliTimeout(String(CLI_DEFAULT_TIMEOUT_MS)),
+              INIT_PROMPTS.moreCliTimeout(String(shown.cliTimeoutMs)),
             ),
           );
           if (parsed === "empty") break;
@@ -238,6 +257,69 @@ async function askMoreSettings(io: InitIo, overlay: InitOverlay): Promise<void> 
           }
           overlay.cliTimeoutMs = parsed;
           break;
+        }
+        break;
+      }
+      case "httpExtract": {
+        const emptyDefault = shown.httpExtract ? "yes" : "no";
+        const bracket = shown.httpExtract ? "Y" : "N";
+        for (;;) {
+          const yn = yesNo(
+            await io.question(INIT_PROMPTS.moreHttpExtract(bracket)),
+            emptyDefault,
+          );
+          if (yn === "retry") continue;
+          overlay.httpExtract = yn === "yes";
+          break;
+        }
+        break;
+      }
+      case "httpBaseUrl": {
+        if (!overlay.httpExtract) break;
+        const raw = (
+          await io.question(INIT_PROMPTS.moreHttpBaseUrl(shown.httpBaseUrl))
+        ).trim();
+        if (raw !== "") overlay.httpBaseUrl = raw;
+        else if (initEmpty) overlay.httpBaseUrl = shown.httpBaseUrl;
+        break;
+      }
+      case "httpModel": {
+        if (!overlay.httpExtract) break;
+        const probeBase = overlay.httpBaseUrl ?? shown.httpBaseUrl;
+        let listed: string[] = [];
+        if (deps.probeHttp) {
+          const probed = await deps.probeHttp(probeBase);
+          listed = probed.ok
+            ? probed.ids.filter((id) => !/embed/i.test(id))
+            : [];
+        }
+        const raw = (
+          await io.question(INIT_PROMPTS.moreHttpModel(shown.httpModel, listed))
+        ).trim();
+        if (raw !== "") overlay.httpModel = raw;
+        else if (!shown.httpExtract && listed.length === 1) {
+          overlay.httpModel = listed[0];
+        }
+        break;
+      }
+      case "httpExtractOnFail": {
+        if (!overlay.httpExtract) break;
+        const onFailShown = !shown.httpExtract ? "cli" : shown.httpExtractOnFail;
+        for (;;) {
+          const raw = (
+            await io.question(INIT_PROMPTS.moreHttpOnFail(onFailShown))
+          )
+            .trim()
+            .toLowerCase();
+          if (raw === "") {
+            if (initEmpty) overlay.httpExtractOnFail = "cli";
+            break;
+          }
+          if (isStageOnFail(raw)) {
+            overlay.httpExtractOnFail = raw;
+            break;
+          }
+          io.write(INIT_PROMPTS.moreHttpOnFailInvalid);
         }
         break;
       }
@@ -287,7 +369,10 @@ export async function collectInitAnswers(
   const overlay: InitOverlay = {};
   const captureEmpty = await askCapture(io, deps, overlay);
   await askSearch(io, overlay);
-  await askMoreSettings(io, overlay);
+  await askMoreSettings(io, overlay, deps, {
+    gate: true,
+    shown: SHIPPED_MORE_SHOWN,
+  });
 
   return {
     dataDir,

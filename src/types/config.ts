@@ -51,7 +51,65 @@ export interface TemporalConfig {
 }
 
 /** Intelligence provider type. */
-export type IntelligenceProviderType = "heuristic" | "sampling" | "cli" | "api";
+export type IntelligenceProviderType =
+  | "heuristic"
+  | "sampling"
+  | "cli"
+  | "api"
+  | "http";
+
+/**
+ * Well-known OpenAI-compat roots. The path `/v1` is shared; the port is not.
+ * Default is Ollama because that is what we verified. Other hosts set
+ * `intelligence.http.base_url`.
+ */
+export const HTTP_WELL_KNOWN_BASE_URLS = [
+  { host: "Ollama", base_url: "http://localhost:11434/v1" },
+  { host: "LM Studio", base_url: "http://localhost:1234/v1" },
+  { host: "vLLM", base_url: "http://localhost:8000/v1" },
+  { host: "llama.cpp", base_url: "http://localhost:8080/v1" },
+] as const;
+
+/** OpenAI-compatible chat host. Ollama's default /v1 port. */
+export const HTTP_DEFAULT_BASE_URL = HTTP_WELL_KNOWN_BASE_URLS[0].base_url;
+
+export type IntelligenceStageName =
+  | "extract"
+  | "summarise"
+  | "reconcile"
+  | "supersede";
+
+/** What to do when a stage's primary provider cannot run. */
+export const STAGE_ON_FAIL_VALUES = ["cli", "http", "none"] as const;
+export type StageOnFail = (typeof STAGE_ON_FAIL_VALUES)[number];
+
+export function isStageOnFail(value: unknown): value is StageOnFail {
+  return (
+    typeof value === "string" &&
+    (STAGE_ON_FAIL_VALUES as readonly string[]).includes(value)
+  );
+}
+
+export interface IntelligenceStageOverride {
+  provider?: IntelligenceProviderType;
+  model?: string;
+  /** Omit to use the engine default for that stage's primary. */
+  on_fail?: StageOnFail;
+}
+
+/** Options for the HTTP intelligence provider (OpenAI-compat chat). */
+export interface HttpProviderConfig {
+  /** Chat completions root, no trailing slash required. */
+  base_url?: string;
+  /**
+   * Chat model id as the host lists it (GET /v1/models). Required to pin a
+   * host that serves more than one chat model. A host with exactly one chat
+   * model can be used for this run without pinning.
+   */
+  model?: string;
+  /** Per-stage timeout in ms. Falls back to CLI_DEFAULT_TIMEOUT_MS. */
+  timeout_ms?: number;
+}
 
 /**
  * Optional ranking priors by channel or by display name. Absent means no
@@ -135,6 +193,13 @@ export interface IntelligenceConfig {
   api_key: string | null;
   /** Options for the 'cli' provider. */
   cli?: CliProviderConfig;
+  /** Options for the HTTP chat provider. Opt-in; model is required. */
+  http?: HttpProviderConfig;
+  /**
+   * Per-stage provider/model overrides. Omitted when HTTP is configured
+   * applies the engine default (extract+summarise HTTP, reconcile+supersede CLI).
+   */
+  stages?: Partial<Record<IntelligenceStageName, IntelligenceStageOverride>>;
   /**
    * Optional per-provider token caps. Omit / null = unlimited. Object keyed
    * by billed provider then rolling window (`hour` / `day` / `week` / `month`).

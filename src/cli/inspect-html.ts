@@ -9,6 +9,11 @@ import type { InspectGraphPayload } from "./inspect-payload.js";
 import { spendDashboardFromStats, type SpendDashboard } from "./spend-dashboard.js";
 import { LEDGER_MARK_SVG, ledgerFaviconHref, ledgerInspectCss } from "./inspect-theme.js";
 import { renderSpendBoard, SPEND_BOARD_CSS } from "./stats-html.js";
+import {
+  INTELLIGENCE_ROUTING_CSS,
+  renderIntelligenceRoutingCard,
+} from "./inspect-intelligence.js";
+import type { IntelligenceRoutingView } from "../intelligence/routing-view.js";
 
 function emptyHealth(): KnowledgeStats {
   return {
@@ -30,13 +35,15 @@ export function renderInspectHtml(
     package_version?: string | null;
     health?: KnowledgeStats;
     spend?: SpendDashboard;
+    routing?: IntelligenceRoutingView;
   },
 ): string {
-  const { health, spend, ...graph } = payload;
+  const { health, spend, routing, ...graph } = payload;
   const json = JSON.stringify(graph).replace(/</g, "\\u003c");
   const spendHtml = renderSpendBoard(
     spend ?? spendDashboardFromStats(health ?? emptyHealth()),
   );
+  const routingHtml = routing ? renderIntelligenceRoutingCard(routing) : "";
   return `<!DOCTYPE html>
 <html lang="en-GB" data-theme="system">
 <head>
@@ -175,6 +182,7 @@ ${ledgerInspectCss()}
     --card: var(--elev); --ink: var(--text); --gold: var(--mention);
   }
   ${SPEND_BOARD_CSS}
+  ${INTELLIGENCE_ROUTING_CSS}
 </style>
 </head>
 <body>
@@ -238,7 +246,7 @@ ${ledgerInspectCss()}
       <div class="body" id="body"></div>
     </aside>
   </div>
-  <div id="spend">${spendHtml}</div>
+  <div id="spend">${spendHtml}${routingHtml}</div>
 </div>
 <script>
 const DATA = ${json};
