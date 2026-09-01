@@ -31,10 +31,15 @@ jobs:
         run: python .github/scripts/build_pages.py
 
       - name: Check site output
+        env:
+          # Public IndexNow host-verification key, not a credential.
+          INDEXNOW_KEY: a88a795220f4450e97a5f2486a4426f8
         run: |
           test -f _site/index.html
           test -f _site/robots.txt
           test -f _site/sitemap.xml
+          test -f "_site/${INDEXNOW_KEY}.txt"
+          test "$(tr -d '\n' < "_site/${INDEXNOW_KEY}.txt")" = "${INDEXNOW_KEY}"
           test "$(tr -d '\n' < _site/CNAME)" = "factmem.dev"
 
       - name: Pages builder tests
@@ -60,6 +65,26 @@ jobs:
     concurrency:
       group: pages
       cancel-in-progress: false
+    env:
+      # Public IndexNow host-verification key, not a credential.
+      # Served at https://factmem.dev/{key}.txt after deploy-pages.
+      INDEXNOW_KEY: a88a795220f4450e97a5f2486a4426f8
     steps:
       - id: deployment
         uses: actions/deploy-pages@v5
+
+      - name: Ping IndexNow
+        # IndexNow is Bing/Yandex only. A failed ping must not fail the Pages deploy.
+        continue-on-error: true
+        run: |
+          status=$(curl -sS -o /tmp/indexnow-body -w "%{http_code}" \
+            -X POST "https://api.indexnow.org/indexnow" \
+            -H "Content-Type: application/json" \
+            -d "{\"host\":\"factmem.dev\",\"key\":\"${INDEXNOW_KEY}\",\"keyLocation\":\"https://factmem.dev/${INDEXNOW_KEY}.txt\",\"urlList\":[\"https://factmem.dev/\"]}") || status="curl-failed"
+          echo "IndexNow HTTP status: ${status}"
+          cat /tmp/indexnow-body 2>/dev/null || true
+          echo
+          case "${status}" in
+            2*) exit 0 ;;
+            *) echo "IndexNow ping was not 2xx (site is already live); continuing." >&2; exit 0 ;;
+          esac

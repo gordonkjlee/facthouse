@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import html
+import json
 import re
 import shutil
 import sys
@@ -28,6 +29,8 @@ SITE_ORIGIN = f"https://{DOMAIN}"
 GITHUB = "https://github.com/gordonkjlee/factmem"
 NPM = "https://www.npmjs.com/package/@factmem/mcp"
 PITCH = "A local memory engine any AI tool can use."
+# Public IndexNow host-verification key (not a credential). Served at /{key}.txt.
+INDEXNOW_KEY = "a88a795220f4450e97a5f2486a4426f8"
 MARKDOWN_EXTENSIONS = ("fenced_code", "tables")
 
 # Repo-relative source → published path. Anything else that exists in the
@@ -146,6 +149,38 @@ def split_readme(text: str) -> tuple[str, str]:
     return pitch, "\n".join(kept).strip() + "\n"
 
 
+def package_metadata() -> dict:
+    return json.loads((ROOT / "package.json").read_text(encoding="utf-8"))
+
+
+def software_application_ld() -> dict:
+    """Schema.org SoftwareApplication from repo-backed fields only."""
+    pkg = package_metadata()
+    data: dict = {
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "FactMem",
+        "applicationCategory": "DeveloperApplication",
+        "url": SITE_ORIGIN,
+        "description": pkg["description"],
+        "sameAs": [GITHUB, NPM],
+        "codeRepository": GITHUB,
+        "license": "MIT",
+        "author": {"@type": "Person", "name": "Gordon Lee"},
+        "operatingSystem": "Linux, macOS, Windows",
+        "installUrl": NPM,
+    }
+    version = pkg.get("version")
+    if version:
+        data["softwareVersion"] = version
+    return data
+
+
+def json_ld_script() -> str:
+    payload = json.dumps(software_application_ld(), ensure_ascii=True, indent=2)
+    return f'<script type="application/ld+json">\n{payload}\n</script>'
+
+
 def wrap_html(
     *,
     title: str,
@@ -158,6 +193,7 @@ def wrap_html(
     canon = SITE_ORIGIN if canonical == "/" else f"{SITE_ORIGIN}{canonical}"
     title_html = f"<h1>{heading}</h1>\n      " if heading else ""
     desc = html.escape(description, quote=True)
+    json_ld = json_ld_script()
     landing = (
         f'<section class="landing">\n'
         f"      {title_html}<p class=\"pitch\">{pitch_html(pitch)}</p>\n"
@@ -179,6 +215,7 @@ def wrap_html(
   <meta property="og:url" content="{canon}">
   <meta property="og:image" content="{SITE_ORIGIN}/assets/logo.png">
   <meta name="twitter:card" content="summary_large_image">
+  {json_ld}
   <style>
     :root {{
       --ink: #1C1917;
@@ -259,7 +296,7 @@ def wrap_html(
 {body}
     </main>
     <footer>
-      <a href="{GITHUB}">gordonkjlee/openmemory</a> · MIT
+      <a href="{GITHUB}">gordonkjlee/factmem</a> · MIT
     </footer>
   </div>
 </body>
@@ -279,6 +316,7 @@ def copy_assets(dest: Path) -> None:
 ROOT_FILES = (
     "robots.txt",
     "sitemap.xml",
+    f"{INDEXNOW_KEY}.txt",
 )
 
 
