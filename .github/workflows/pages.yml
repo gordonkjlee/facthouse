@@ -33,6 +33,8 @@ jobs:
       - name: Check site output
         run: |
           test -f _site/index.html
+          test -f _site/robots.txt
+          test -f _site/sitemap.xml
           test "$(tr -d '\n' < _site/CNAME)" = "factmem.dev"
 
       - name: Pages builder tests

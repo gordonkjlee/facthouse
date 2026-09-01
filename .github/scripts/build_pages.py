@@ -274,6 +274,22 @@ def copy_assets(dest: Path) -> None:
         shutil.copy2(ROOT / src, target)
 
 
+# Published at the site root. GitHub Pages here deploys _site only, so these
+# are not live unless the builder copies them.
+ROOT_FILES = (
+    "robots.txt",
+    "sitemap.xml",
+)
+
+
+def copy_root_files(dest: Path) -> None:
+    for name in ROOT_FILES:
+        src = ROOT / name
+        if not src.is_file():
+            raise SystemExit(f"missing {name}")
+        shutil.copy2(src, dest / name)
+
+
 def write_cname(dest: Path) -> None:
     committed = (ROOT / "CNAME").read_text(encoding="utf-8").strip()
     if committed != DOMAIN:
@@ -288,6 +304,7 @@ def build(dest: Path | None = None) -> Path:
     dest.mkdir(parents=True)
 
     copy_assets(dest)
+    copy_root_files(dest)
     write_cname(dest)
     (dest / ".nojekyll").write_text("", encoding="utf-8")
 
