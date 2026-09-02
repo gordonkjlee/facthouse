@@ -176,6 +176,8 @@ function formatEpisodeSlices(episodes: EpisodeSlice[]): string[] {
 export function formatConsolidate(r: ConsolidationResult): string {
   const lines: string[] = ["", "FactMem consolidate", ""];
   if (r.skipped) {
+    // Copy runs before the lock, so a skipped run may still have copied.
+    lines.push(`  Events copied      ${r.eventsCopied}`);
     lines.push(`  Skipped            ${r.skipReason ?? "nothing to do"}`);
     lines.push(`  Events remaining   ${r.eventsRemaining}`);
     return lines.join("\n");

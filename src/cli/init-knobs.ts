@@ -259,6 +259,17 @@ export function applyMoreOverlayToIntelligence(
     resolveStageProviderType(merged, "extract", {}) === "http";
   const omittedMap = Object.keys(asRecord(intel?.stages) ?? {}).length === 0;
 
+  // The pre-vocabulary key is read for compatibility but never kept: any
+  // write through this path migrates it, even an Enter-through settings walk.
+  const legacyCli = asRecord(working.cli);
+  if (legacyCli && legacyCli.graduate_model !== undefined) {
+    if (legacyCli.integrate_model === undefined) {
+      legacyCli.integrate_model = legacyCli.graduate_model;
+    }
+    delete legacyCli.graduate_model;
+    written.push("intelligence.cli.integrate_model");
+  }
+
   if (
     overlay.cliModel !== undefined ||
     overlay.cliIntegrateModel !== undefined ||
@@ -276,12 +287,6 @@ export function applyMoreOverlayToIntelligence(
           (typeof cli.model === "string" ? cli.model : undefined) ??
           CLI_DEFAULT_MODEL
         ).trim() || CLI_DEFAULT_MODEL;
-      // The pre-vocabulary spelling is read for compatibility but never kept:
-      // a settings write is the moment the document catches up.
-      if (cli.graduate_model !== undefined) {
-        delete cli.graduate_model;
-        written.push("intelligence.cli.integrate_model");
-      }
       if (overlay.cliIntegrateModel.trim() === extract) {
         if (cli.integrate_model !== undefined) {
           delete cli.integrate_model;

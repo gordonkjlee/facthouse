@@ -204,7 +204,7 @@ async function main() {
     sources: config.sources,
     beforeRead,
     // The copy step of consolidate is this same heartbeat.
-    copy: () => heartbeat.copyIfGrown(),
+    copy: () => heartbeat.copyIfGrown({ force: true }),
     // Consolidation is the only thing that changes integrated knowledge, so it's
     // the only thing that can change what these resources render.
     onConsolidated: () => resources.notifyUpdated(),
@@ -256,8 +256,11 @@ async function main() {
     // The moment → steps policy is MOMENT_POLICY; the listener only relays.
     if (triggerSet.has("threshold") || triggerSet.has("compaction")) {
       try {
+        // A delivered moment is an explicit request from another process
+        // (a hook, `factmem notify`); `triggers` decides whether this server
+        // listens at all, not whether it honours what it was told.
         ipcListener = await startNotifyListener(dataDir, (moment) => {
-          if (triggerSet.has(moment)) void sched.run(moment);
+          void sched.run(moment);
         });
         if (!ipcListener.bound) {
           console.error(
@@ -279,7 +282,14 @@ async function main() {
     // reported once.
     if (triggerSet.has("session_start")) {
       void sched.run("session_start").then((result) => {
-        if (result && result.eventsRemaining > 0) {
+        // Only the cap earns this line: a skipped or degraded run has its own
+        // reason, and pointing at --all there would spawn the model on the lot.
+        if (
+          result &&
+          !result.skipped &&
+          !result.extractionDegraded &&
+          result.eventsRemaining > 0
+        ) {
           console.error(
             `[factmem] ${result.eventsRemaining} event(s) still waiting to be extracted ` +
               `after this run's cap. Run ${CLI_NAME} consolidate --all, or let the ` +

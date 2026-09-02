@@ -850,7 +850,9 @@ describe.skipIf(!runnable)("cli entry — hidden aliases for the 0.25 verbs", ()
     expect(r.status).toBe(0);
     expect(r.stderr).toMatch(/"factmem pull" is deprecated/);
     expect(r.stderr).toMatch(/factmem consolidate --copy/);
-    expect(JSON.parse(r.stdout).eventsCopied).toBe(1);
+    // The 0.25 shape, so a hook that parsed it keeps working.
+    expect(JSON.parse(r.stdout).events_inserted).toBe(1);
+    expect(r.stderr).toMatch(/No MCP server listening/);
   });
 
   it("pull --no-tick still parses and copies", () => {
@@ -868,7 +870,13 @@ describe.skipIf(!runnable)("cli entry — hidden aliases for the 0.25 verbs", ()
     expect(r.status).toBe(0);
     expect(r.stderr).toMatch(/pull --flush" is deprecated/);
     expect(r.stderr).toMatch(/factmem notify compaction/);
-    expect(JSON.parse(r.stdout)).toEqual({ delivered: false, moment: "compaction" });
+    expect(JSON.parse(r.stdout)).toEqual({
+      sources: 0,
+      files: 0,
+      events_inserted: 0,
+      events_skipped: 0,
+    });
+    expect(r.stderr).toMatch(/No MCP server listening/);
   });
 
   it("signal flush maps to notify compaction", () => {

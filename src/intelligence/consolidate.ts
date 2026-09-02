@@ -356,9 +356,8 @@ export async function consolidate(
 
   try {
     // Phase B: D→I event extraction (if this run examines events).
-    // Session facts land unclaimed so a later integrate-only run can pick
-    // them up — extract at threshold, integrate at compaction, not four LLM stages
-    // in the compaction hook.
+    // Session facts land unclaimed so a later run that includes integrate
+    // can claim them; which moments run which steps is MOMENT_POLICY.
     if (extractNow && extractionEnabled) {
       const extracted = await extractFactsFromEvents(
         db,
@@ -1141,16 +1140,22 @@ async function loadConversationEventsAfter(
   db: Db,
   ref: ConversationRef,
   afterSequence: number,
+  limit: number = Number.POSITIVE_INFINITY,
 ): Promise<SessionEvent[]> {
+  // The cap is applied in SQL so a capped run over a long transcript does
+  // not materialise and parse the whole conversation to examine 50 lines.
+  const bounded = Number.isFinite(limit);
   const sql =
-    ref.kind === "client"
+    (ref.kind === "client"
       ? `SELECT * FROM session_events
          WHERE sequence > ? AND client_session_id = ?
          ORDER BY sequence ASC`
       : `SELECT * FROM session_events
          WHERE sequence > ? AND client_session_id IS NULL AND mcp_session_id = ?
-         ORDER BY sequence ASC`;
-  const rows = (await db.prepare(sql).all(afterSequence, ref.id)) as SessionEventRow[];
+         ORDER BY sequence ASC`) + (bounded ? ` LIMIT ?` : ``);
+  const rows = (bounded
+    ? await db.prepare(sql).all(afterSequence, ref.id, Math.max(0, Math.floor(limit)))
+    : await db.prepare(sql).all(afterSequence, ref.id)) as SessionEventRow[];
   return rows.map(parseEventRow);
 }
 
@@ -1494,9 +1499,8 @@ async function extractFactsFromEvents(
 
     const ref: ConversationRef = { kind: conv.kind, id: conv.id };
     const through = await conversationExtractThrough(db, ref);
-    let loaded = await loadConversationEventsAfter(db, ref, through);
+    const loaded = await loadConversationEventsAfter(db, ref, through, budget);
     if (loaded.length === 0) continue;
-    if (loaded.length > budget) loaded = loaded.slice(0, budget);
     budget -= loaded.length;
 
     const eligible = loaded.filter((e) =>

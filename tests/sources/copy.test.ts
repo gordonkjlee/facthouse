@@ -525,6 +525,26 @@ describe("createCopyHeartbeat", () => {
     expect(walks).toBe(2);
   });
 
+  it("force walks again inside the debounce window, so a consolidate sees the newest lines", async () => {
+    let t = 1_000;
+    let calls = 0;
+    const hb = createCopyHeartbeat({
+      db: {} as never,
+      sources: [{ kind: "claude-code", home: "~/.claude", cwd: "C:\\dev\\app" }],
+      now: () => t,
+      copy: async () => {
+        calls++;
+        return { sources: 1, files: 1, events_inserted: 1, events_skipped: 0 };
+      },
+    });
+    await hb.copyIfGrown();
+    t += 100;
+    await hb.copyIfGrown();
+    expect(calls).toBe(1);
+    await hb.copyIfGrown({ force: true });
+    expect(calls).toBe(2);
+  });
+
   it("debounces two walks inside the window into one", async () => {
     let walks = 0;
     let t = 0;

@@ -12,6 +12,8 @@
  *   'e' (0x65) → threshold  — events arrived; extract if the count is due
  *   'c' (0x63) → compaction — the client window is about to collapse; run
  *                             consolidate now, asynchronously
+ *   't' / 'f'  → the 0.25 spellings of the same two, accepted until the
+ *                `signal` alias is removed
  *
  * Path format:
  *   Unix:    <dataDir>/.scheduler.sock
@@ -60,10 +62,15 @@ function encodeMoment(moment: NotifiableMoment): string {
   return moment === "compaction" ? "c" : "e";
 }
 
-/** Decode a received byte into a moment, or null if unrecognised. */
+/**
+ * Decode a received byte into a moment, or null if unrecognised. The 0.25
+ * CLI wrote 't' (tick → threshold) and 'f' (flush → compaction); a hook
+ * still pinned to that CLI keeps working against this server until the
+ * aliases go.
+ */
 function decodeMoment(byte: number): NotifiableMoment | null {
-  if (byte === 0x63) return "compaction"; // 'c'
-  if (byte === 0x65) return "threshold"; // 'e'
+  if (byte === 0x63 || byte === 0x66) return "compaction"; // 'c', legacy 'f'
+  if (byte === 0x65 || byte === 0x74) return "threshold"; // 'e', legacy 't'
   return null;
 }
 

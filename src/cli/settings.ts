@@ -14,6 +14,7 @@ import {
   mergeConfig,
   readConfigDocument,
   writeConfigDocument,
+  honourLegacyConfigKeys,
 } from "../config.js";
 import type { ServerConfig } from "../types/config.js";
 import {
@@ -116,7 +117,12 @@ function moreDumpLines(shown: MoreShown): string[] {
 }
 
 function shownFromDocument(doc: Record<string, unknown>): MoreShown {
-  const merged = mergeConfig(defaultServerConfig(), doc) as ServerConfig;
+  // The on-disk document is patched, never re-rendered, so the legacy key is
+  // honoured on a copy for display; the patch path migrates it on write.
+  const merged = mergeConfig(
+    defaultServerConfig(),
+    honourLegacyConfigKeys(structuredClone(doc)),
+  ) as ServerConfig;
   return moreShownFromConfig(merged, {});
 }
 

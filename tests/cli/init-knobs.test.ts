@@ -20,6 +20,7 @@ import {
   moreShownFromConfig,
   silentEmbeddingProvider,
   silentSources,
+  applyMoreOverlayToIntelligence,
 } from "../../src/cli/init-knobs.js";
 
 const ROOT = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
@@ -461,5 +462,30 @@ describe("init knobs — one definition", () => {
     expect(body).not.toMatch(/McClelland/);
     expect(body).not.toMatch(/decisions\.md/);
     expect(body).not.toMatch(/ADR-/);
+  });
+});
+
+describe("legacy intelligence.cli.graduate_model on a settings write", () => {
+  it("migrates the key on an Enter-through walk, so the notice stops repeating", () => {
+    const { intel, written } = applyMoreOverlayToIntelligence(
+      { provider: "cli", cli: { model: "haiku", graduate_model: "sonnet" } },
+      {},
+      "patch",
+    );
+    const cli = intel?.cli as Record<string, unknown>;
+    expect(cli.integrate_model).toBe("sonnet");
+    expect(cli).not.toHaveProperty("graduate_model");
+    expect(written).toContain("intelligence.cli.integrate_model");
+  });
+
+  it("keeps the new key when both are present", () => {
+    const { intel } = applyMoreOverlayToIntelligence(
+      { provider: "cli", cli: { graduate_model: "old", integrate_model: "new" } },
+      {},
+      "patch",
+    );
+    const cli = intel?.cli as Record<string, unknown>;
+    expect(cli.integrate_model).toBe("new");
+    expect(cli).not.toHaveProperty("graduate_model");
   });
 });

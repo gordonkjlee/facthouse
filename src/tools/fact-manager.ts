@@ -26,7 +26,7 @@ import {
   type ConsolidateSteps,
   type ConsolidateCaller,
 } from "../intelligence/consolidate.js";
-import { ALL_STEPS } from "../intelligence/steps.js";
+import { ALL_STEPS, EXTRACT_CAP_EVENTS } from "../intelligence/steps.js";
 import { captureFactDescription } from "./capture-fact-description.js";
 import {
   buildBriefing,
@@ -409,12 +409,32 @@ export function createFactManager(
             `contradictions, the knowledge graph.\n\n` +
             `Call this to integrate pending facts into long-term knowledge. Good ` +
             `checkpoints: after capturing several facts, at a topic change, or ` +
-            `before the conversation ends.`,
-          {},
-          async () => {
+            `before the conversation ends.\n\n` +
+            `Extract is capped at ${EXTRACT_CAP_EVENTS} of the oldest unexamined ` +
+            `events per call; events_remaining in the result says how many wait. ` +
+            `Pass all: true to take the whole backlog in one call, or limit: N ` +
+            `for the oldest N.`,
+          {
+            all: z
+              .boolean()
+              .optional()
+              .describe("Extract the whole backlog this call instead of the capped oldest batch"),
+            limit: z
+              .number()
+              .int()
+              .min(1)
+              .optional()
+              .describe("Extract at most this many of the oldest unexamined events"),
+          },
+          async ({ all, limit }) => {
             try {
-              await opts?.beforeRead?.();
-              const result = await manager.runConsolidate();
+              // No beforeRead here: the copy step inside consolidate walks the
+              // sources itself, past the heartbeat debounce, so the result can
+              // report events_copied honestly.
+              const result = await manager.runConsolidate(ALL_STEPS, {
+                trigger: "mcp",
+                extractLimit: all ? null : limit,
+              });
 
               return {
                 content: [

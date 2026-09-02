@@ -59,7 +59,12 @@ const EMPTY_COPY: CopyResult = {
 
 export interface CopyHeartbeat {
   /** Copy new JSONL lines if files grew. Never extracts. */
-  copyIfGrown(): Promise<CopyResult>;
+  /**
+   * Copy new JSONL lines if files grew. Never extracts. `force` skips the
+   * debounce (still coalesces an in-flight walk): the copy step of a
+   * consolidate must see the newest lines, not the last call's snapshot.
+   */
+  copyIfGrown(opts?: { force?: boolean }): Promise<CopyResult>;
 }
 
 export interface CopyHeartbeatOpts {
@@ -86,13 +91,13 @@ export function createCopyHeartbeat(opts: CopyHeartbeatOpts): CopyHeartbeat {
   let inFlight: Promise<CopyResult> | null = null;
 
   return {
-    async copyIfGrown(): Promise<CopyResult> {
+    async copyIfGrown(call: { force?: boolean } = {}): Promise<CopyResult> {
       if (!storeHasNamedSources(opts.sources)) {
         return { ...EMPTY_COPY };
       }
       if (inFlight) return inFlight;
       const t = now();
-      if (lastWalkAt !== null && t - lastWalkAt < debounceMs) {
+      if (!call.force && lastWalkAt !== null && t - lastWalkAt < debounceMs) {
         return { ...EMPTY_COPY };
       }
       inFlight = (async () => {

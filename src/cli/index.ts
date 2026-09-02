@@ -72,6 +72,7 @@ import {
   type NotifiableMoment,
 } from "../intelligence/steps.js";
 import { createIntelligenceProvider, resolveProviderType } from "../intelligence/provider.js";
+import { createHeuristicProvider } from "../intelligence/heuristic.js";
 import { probeHttpModels } from "../intelligence/http.js";
 import { loadStoreVocabulary } from "../db/domains.js";
 import { createEmbeddingProvider } from "../embedding/provider.js";
@@ -201,7 +202,7 @@ function usageText(): string {
     `                  (${NOTIFIABLE_MOMENTS.join(", ")})`,
     ``,
     `Consolidate`,
-    `  consolidate     Copy new lines, extract facts, integrate them into knowledge`,
+    `  consolidate     Copy lines, extract facts, integrate them (spends model calls)`,
     `                  -c --copy  -e --extract  -i --integrate   run only these steps`,
     `                  -a --all   extract past the cap      -l --limit N  oldest N`,
     ``,
@@ -762,6 +763,18 @@ async function consolidateStore(
   opts: ConsolidateStoreOpts = {},
 ): Promise<ConsolidationResult | undefined> {
   const config = ensureBitemporalSince(dataDir, loadConfig(dataDir));
+  if (!steps.extract && !steps.integrate) {
+    // Copy only: no model, no embeddings, no vocabulary. The heuristic
+    // provider is a placeholder consolidate() never calls on this path.
+    return consolidateInProcess(
+      dataDir,
+      createHeuristicProvider(),
+      config,
+      null,
+      steps,
+      opts,
+    );
+  }
   if (
     steps.extract &&
     resolveProviderType(config.intelligence.provider) === "heuristic"
@@ -902,7 +915,11 @@ function deprecated(oldForm: string, newForm: string): void {
   );
 }
 
-/** `pull` → `consolidate --copy`; `pull --flush` → copy, then `notify compaction`. */
+/**
+ * `pull` → `consolidate --copy`; `pull --flush` → copy, then `notify compaction`.
+ * Keeps the 0.25 stdout shape ({sources, files, events_inserted, events_skipped})
+ * so a hook that parses it keeps working until the alias goes.
+ */
 async function runPullCompat() {
   const { values } = parseArgs({
     args: process.argv.slice(3),
@@ -914,16 +931,32 @@ async function runPullCompat() {
     strict: true,
   });
   const dataDir = resolveUserPath(values.data as string);
-  const copyOnly: ConsolidateSteps = { copy: true, extract: false, integrate: false };
-  if (values.flush) {
-    deprecated("pull --flush", "notify compaction");
-    await consolidateStore(dataDir, copyOnly, { print: false });
-    await notifyMoment(dataDir, "compaction");
-    return;
+  const form = values.flush ? "pull --flush" : values["no-tick"] ? "pull --no-tick" : "pull";
+  deprecated(form, values.flush ? "notify compaction" : "consolidate --copy");
+  const config = loadConfig(dataDir);
+  let copied;
+  try {
+    copied = await withDb(dataDir, (db) => copySources(db, config.sources));
+  } catch (err: unknown) {
+    console.error(errorMessage(err));
+    process.exit(1);
   }
-  deprecated(values["no-tick"] ? "pull --no-tick" : "pull", "consolidate --copy");
-  await consolidateStore(dataDir, copyOnly, { json: true });
-  if (!values["no-tick"]) await notifyServer(dataDir, "threshold");
+  if (values.flush) {
+    const delivered = await notifyServer(dataDir, "compaction");
+    if (!delivered) {
+      console.error(
+        `[factmem] No MCP server listening — run ${CLI_NAME} consolidate to process pending events.`,
+      );
+    }
+  } else if (!values["no-tick"]) {
+    const delivered = await notifyServer(dataDir, "threshold");
+    if (!delivered) {
+      console.error(
+        `[factmem] No MCP server listening — run ${CLI_NAME} consolidate to extract these events.`,
+      );
+    }
+  }
+  console.log(JSON.stringify(copied));
 }
 
 /** `signal flush` → `notify compaction`; `signal tick` → `notify threshold`. */

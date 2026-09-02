@@ -102,6 +102,26 @@ describe("notify IPC", () => {
     expect(received).toEqual([]);
   });
 
+  it("accepts the 0.25 bytes 't' and 'f' as threshold and compaction", async () => {
+    const { createConnection } = await import("node:net");
+    const received: NotifiableMoment[] = [];
+    const listener = await startNotifyListener(dir, (moment) => {
+      received.push(moment);
+    });
+    listeners.push(listener);
+    const sendRaw = (byte: string) =>
+      new Promise<void>((resolve) => {
+        const c = createConnection(schedulerIpcPath(dir));
+        c.once("connect", () => c.write(byte, () => c.end()));
+        c.once("close", () => resolve());
+        c.once("error", () => resolve());
+      });
+    await sendRaw("t");
+    await sendRaw("f");
+    await new Promise((r) => setTimeout(r, 50));
+    expect(received).toEqual(["threshold", "compaction"]);
+  });
+
   it("detects a concurrent listener on the same data dir", async () => {
     const first = await startNotifyListener(dir, () => {});
     listeners.push(first);
