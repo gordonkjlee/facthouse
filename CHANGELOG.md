@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.26.0](https://github.com/gordonkjlee/factmem/compare/v0.25.0...v0.26.0) (2026-09-02)
+
+
+### ⚠ BREAKING CHANGES
+
+* **cli:** `factmem pull`, `factmem signal`, and `factmem log-event` are removed. Use `consolidate`, `notify`, and `record`.
+* `factmem pull`, `factmem signal`, and `factmem log-event` are hidden aliases; use `consolidate`, `notify`, and `record`. The PreCompact hook recipe is `factmem notify compaction`. The consolidate result key `facts_graduated` is now `facts_integrated`.
+
+### Features
+
+* **cli:** remove the 0.25 verbs pull, signal, and log-event ([#234](https://github.com/gordonkjlee/factmem/issues/234)) ([8c475e3](https://github.com/gordonkjlee/factmem/commit/8c475e38ebb2cba05d9ddc7765611f11382a25b9))
+* one pipeline vocabulary — copy, extract, integrate, consolidate ([#233](https://github.com/gordonkjlee/factmem/issues/233)) ([1b1153f](https://github.com/gordonkjlee/factmem/commit/1b1153f8af54c92dd504747fd4673f296c901fac))
+
+
+### Bug Fixes
+
+* **cli:** clear lint errors left by onboarding merge ([#231](https://github.com/gordonkjlee/factmem/issues/231)) ([aa7127b](https://github.com/gordonkjlee/factmem/commit/aa7127b7ba68ea20aab385531ce60a50be2abf0b))
+
 ## [0.25.0](https://github.com/gordonkjlee/factmem/compare/v0.24.2...v0.25.0) (2026-09-01)
 
 
