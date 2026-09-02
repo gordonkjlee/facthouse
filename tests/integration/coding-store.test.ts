@@ -455,9 +455,9 @@ describe.skipIf(!required || unavailable !== null)(
         const { dir, home } = initPullStore("cursor");
         plantCursor(home, "sess-coding-grain", GRAIN_FILE);
 
-        const pulled = run(["pull", "--data", dir]);
+        const pulled = run(["consolidate", "--copy", "--json", "--data", dir]);
         expect(pulled.status).toBe(0);
-        expect(JSON.parse(pulled.stdout).events_inserted).toBeGreaterThan(0);
+        expect(JSON.parse(pulled.stdout).eventsCopied).toBeGreaterThan(0);
 
         const before = run(["search", "bookings", "--json", "--data", dir]);
         expect(before.status).toBe(0);
@@ -495,7 +495,7 @@ describe.skipIf(!required || unavailable !== null)(
         const { dir, home } = initPullStore("cursor");
         plantCursor(home, "sess-coding-eph", EPH_FILE);
 
-        expect(run(["pull", "--data", dir]).status).toBe(0);
+        expect(run(["consolidate", "--copy", "--json", "--data", dir]).status).toBe(0);
         const consolidated = run(["consolidate", "--data", dir], {
           timeout: 180_000,
         });

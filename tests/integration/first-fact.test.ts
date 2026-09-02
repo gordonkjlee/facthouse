@@ -243,10 +243,10 @@ describe.skipIf(!required || unavailable !== null)(
         };
         writeFileSync(configPath, JSON.stringify(config, null, 2));
 
-        const pulled = run(["pull", "--data", dir]);
+        const pulled = run(["consolidate", "--copy", "--json", "--data", dir]);
         expect(pulled.status).toBe(0);
         const pullJson = JSON.parse(pulled.stdout);
-        expect(pullJson.events_inserted).toBeGreaterThan(0);
+        expect(pullJson.eventsCopied).toBeGreaterThan(0);
 
         const before = run(["search", QUERY, "--json", "--data", dir]);
         expect(before.status).toBe(0);

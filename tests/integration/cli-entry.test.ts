@@ -692,7 +692,7 @@ describe.skipIf(!runnable)("cli entry — search and stats", () => {
     );
   });
 
-  it.each(["search", "stats", "pull"])(
+  it.each(["search", "stats", "consolidate"])(
     "%s points at init rather than leaking a raw SQLite error when there is no database",
     (cmd) => {
       const dir = path.join(root, "uninitialised");
@@ -841,84 +841,16 @@ describe.skipIf(!runnable)("cli entry — notify", () => {
   });
 });
 
-describe.skipIf(!runnable)("cli entry — hidden aliases for the 0.25 verbs", () => {
-  it("pull copies, names consolidate --copy, and still exits 0", () => {
-    const dir = path.join(root, "alias-pull");
-    run(["init", dir]);
-    nameFixtureSource(dir, "claude-home-alias", "sess-alias");
-    const r = run(["pull", "--data", dir]);
-    expect(r.status).toBe(0);
-    expect(r.stderr).toMatch(/"factmem pull" is deprecated/);
-    expect(r.stderr).toMatch(/factmem consolidate --copy/);
-    // The 0.25 shape, so a hook that parsed it keeps working.
-    expect(JSON.parse(r.stdout).events_inserted).toBe(1);
-    expect(r.stderr).toMatch(/No MCP server listening/);
-  });
-
-  it("pull --no-tick still parses and copies", () => {
-    const dir = path.join(root, "alias-notick");
-    run(["init", dir]);
-    const r = run(["pull", "--no-tick", "--data", dir]);
-    expect(r.status).toBe(0);
-    expect(r.stderr).toMatch(/pull --no-tick" is deprecated/);
-  });
-
-  it("pull --flush copies then notifies compaction", () => {
-    const dir = path.join(root, "alias-flush");
-    run(["init", dir]);
-    const r = run(["pull", "--flush", "--data", dir]);
-    expect(r.status).toBe(0);
-    expect(r.stderr).toMatch(/pull --flush" is deprecated/);
-    expect(r.stderr).toMatch(/factmem notify compaction/);
-    expect(JSON.parse(r.stdout)).toEqual({
-      sources: 0,
-      files: 0,
-      events_inserted: 0,
-      events_skipped: 0,
-    });
-    expect(r.stderr).toMatch(/No MCP server listening/);
-  });
-
-  it("signal flush maps to notify compaction", () => {
-    const dir = path.join(root, "alias-signal");
-    run(["init", dir]);
-    const r = run(["signal", "flush", "--data", dir]);
-    expect(r.status).toBe(0);
-    expect(r.stderr).toMatch(/signal flush" is deprecated/);
-    expect(JSON.parse(r.stdout)).toEqual({ delivered: false, moment: "compaction" });
-  });
-
-  it("signal tick maps to notify threshold", () => {
-    const dir = path.join(root, "alias-tick");
-    run(["init", dir]);
-    const r = run(["signal", "tick", "--data", dir]);
-    expect(r.status).toBe(0);
-    expect(JSON.parse(r.stdout)).toEqual({ delivered: false, moment: "threshold" });
-  });
-
-  it("log-event records and names record", () => {
-    const dir = path.join(root, "alias-log-event");
-    run(["init", dir]);
-    const r = run(["log-event", "--role", "user", "--content", "synthetic line", "--data", dir]);
-    expect(r.status).toBe(0);
-    expect(r.stderr).toMatch(/"factmem log-event" is deprecated/);
-    expect(r.stderr).toMatch(/factmem record/);
-    expect(JSON.parse(r.stdout)).toHaveProperty("event_id");
-  });
-
-  it("signal with an unknown kind still exits 1", () => {
-    const r = run(["signal", "bogus", "--data", root]);
-    expect(r.status).toBe(1);
-  });
-
-  it("the public verbs never print a deprecation line", () => {
-    const dir = path.join(root, "no-deprecation");
-    run(["init", dir]);
-    for (const args of [["consolidate", "--copy"], ["notify", "compaction"], ["stats"]]) {
-      const r = run([...args, "--data", dir]);
+describe.skipIf(!runnable)("cli entry — the 0.25 verbs are gone", () => {
+  it.each([["pull"], ["signal", "flush"], ["log-event", "--content", "x"]])(
+    "%s prints usage and exits 1",
+    (...args) => {
+      const r = run([...args, "--data", root]);
+      expect(r.status).toBe(1);
+      expect(r.stderr).toMatch(/^Usage: factmem/m);
       expect(r.stderr).not.toMatch(/deprecated/);
-    }
-  });
+    },
+  );
 });
 
 describe.skipIf(!runnable)("prune", () => {

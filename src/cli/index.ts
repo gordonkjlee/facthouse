@@ -4,9 +4,9 @@
  * FactMem CLI entry point.
  *
  * Public verbs: init, settings, record, notify, consolidate, search, stats,
- * inspect, prune. `pull`, `signal`, and `log-event` remain as hidden aliases for one minor
- * release. The vocabulary (copy, extract, integrate; consolidate; moments) is
- * defined once in src/intelligence/steps.ts.
+ * inspect, prune. The 0.25 verbs `pull`, `signal`, and `log-event` are gone;
+ * they print usage and exit 1. The vocabulary (copy, extract, integrate;
+ * consolidate; moments) is defined once in src/intelligence/steps.ts.
  */
 
 import { parseArgs } from "node:util";
@@ -174,13 +174,6 @@ async function main() {
     await runInspectCmd();
   } else if (subcommand === "prune") {
     await runPruneCmd();
-  } else if (subcommand === "pull") {
-    await runPullCompat();
-  } else if (subcommand === "signal") {
-    await runSignalCompat();
-  } else if (subcommand === "log-event") {
-    deprecated("log-event", "record");
-    await runRecord();
   } else {
     console.error(usageText());
     process.exit(1);
@@ -902,88 +895,6 @@ async function notifyMoment(
   }
   console.log(JSON.stringify({ delivered, moment }));
 }
-
-// ---------------------------------------------------------------------------
-// Hidden compatibility aliases for the 0.25 verbs. Not in usage. Remove no
-// earlier than 0.27.
-// ---------------------------------------------------------------------------
-
-function deprecated(oldForm: string, newForm: string): void {
-  console.error(
-    `[factmem] "${CLI_NAME} ${oldForm}" is deprecated and will be removed; ` +
-      `use "${CLI_NAME} ${newForm}".`,
-  );
-}
-
-/**
- * `pull` → `consolidate --copy`; `pull --flush` → copy, then `notify compaction`.
- * Keeps the 0.25 stdout shape ({sources, files, events_inserted, events_skipped})
- * so a hook that parses it keeps working until the alias goes.
- */
-async function runPullCompat() {
-  const { values } = parseArgs({
-    args: process.argv.slice(3),
-    options: {
-      data: { type: "string", default: dataDirFromEnvOrDefault() },
-      flush: { type: "boolean", default: false },
-      "no-tick": { type: "boolean", default: false },
-    },
-    strict: true,
-  });
-  const dataDir = resolveUserPath(values.data as string);
-  const form = values.flush ? "pull --flush" : values["no-tick"] ? "pull --no-tick" : "pull";
-  deprecated(form, values.flush ? "notify compaction" : "consolidate --copy");
-  const config = loadConfig(dataDir);
-  let copied;
-  try {
-    copied = await withDb(dataDir, (db) => copySources(db, config.sources));
-  } catch (err: unknown) {
-    console.error(errorMessage(err));
-    process.exit(1);
-  }
-  if (values.flush) {
-    const delivered = await notifyServer(dataDir, "compaction");
-    if (!delivered) {
-      console.error(
-        `[factmem] No MCP server listening — run ${CLI_NAME} consolidate to process pending events.`,
-      );
-    }
-  } else if (!values["no-tick"]) {
-    const delivered = await notifyServer(dataDir, "threshold");
-    if (!delivered) {
-      console.error(
-        `[factmem] No MCP server listening — run ${CLI_NAME} consolidate to extract these events.`,
-      );
-    }
-  }
-  console.log(JSON.stringify(copied));
-}
-
-/** `signal flush` → `notify compaction`; `signal tick` → `notify threshold`. */
-async function runSignalCompat() {
-  const kindArg = process.argv[3] ?? "tick";
-  const { values } = parseArgs({
-    args: process.argv.slice(4),
-    options: {
-      data: { type: "string", default: dataDirFromEnvOrDefault() },
-    },
-    strict: true,
-  });
-  const dataDir = resolveUserPath(values.data as string);
-  if (kindArg === "flush") {
-    deprecated("signal flush", "notify compaction");
-    await notifyMoment(dataDir, "compaction");
-    return;
-  }
-  if (kindArg === "tick") {
-    deprecated("signal tick", "notify threshold");
-    await notifyMoment(dataDir, "threshold");
-    return;
-  }
-  console.error(`Invalid signal kind: ${kindArg}. Expected 'tick' or 'flush'.`);
-  process.exit(1);
-}
-
 
 async function runRecord() {
   const { values } = parseArgs({
