@@ -37,7 +37,6 @@ import {
 import { resolveSources } from "../sources/resolve.js";
 import type { IntelligenceProviderType, EmbeddingConfig } from "../types/config.js";
 import {
-  CLI_NAME,
   DEFAULT_MCP_SERVER_NAME,
   envName,
 } from "../identity.js";
