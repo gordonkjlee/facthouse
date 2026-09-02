@@ -49,7 +49,9 @@ def test_builds_site_from_readme(tmp_path: Path):
     assert "<title>FactMem</title>" in index
     assert "A local memory engine any AI tool can use." in index
     assert "[`gordonkjlee/factmem`]" not in index
-    assert "npm install -g @factmem/mcp" in index
+    version = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))["version"]
+    assert f"<code>npm install -g @factmem/mcp@{version}</code>" in index
+    assert "<code>npm install -g @factmem/mcp</code>" not in index
     assert "https://github.com/gordonkjlee/factmem" in index
     assert "https://www.npmjs.com/package/@factmem/mcp" in index
     assert "What you get" in index
@@ -89,6 +91,21 @@ def test_builds_site_from_readme(tmp_path: Path):
 
     assert ">gordonkjlee/openmemory<" not in index
     assert ">gordonkjlee/factmem<" in index
+
+
+def test_npm_global_install_command_matches_package_json():
+    version = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))["version"]
+    assert build_pages.npm_global_install_command() == (
+        f"npm install -g @factmem/mcp@{version}"
+    )
+
+
+def test_npm_global_install_command_refuses_empty_version(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setattr(build_pages, "package_metadata", lambda: {"version": ""})
+    with pytest.raises(SystemExit, match="package.json version"):
+        build_pages.npm_global_install_command()
 
 
 def test_pitch_helpers_keep_readme_lede():
