@@ -3,7 +3,7 @@
  *
  * Mocks child_process.spawn so we don't make real claude CLI calls. Each
  * stage's response is canned to simulate what a real LLM would return —
- * exercises extraction → entity resolution → reconcile → graduate → summarise.
+ * exercises extraction → entity resolution → reconcile → integrate → summarise.
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
@@ -93,7 +93,7 @@ afterEach(async () => {
 // ---------------------------------------------------------------------------
 
 describe("CLI provider end-to-end consolidation", () => {
-  it("extracts facts with entities, graduates them, writes all K-layer rows", async () => {
+  it("extracts facts with entities, integrates them, writes all K-layer rows", async () => {
     // Seed events.
     await insertEvent(db, {
       mcp_session_id: sessionId,
@@ -174,7 +174,7 @@ describe("CLI provider end-to-end consolidation", () => {
     });
 
     expect(result.skipped).toBe(false);
-    expect(result.factsGraduated).toBe(2);
+    expect(result.factsIntegrated).toBe(2);
 
     // facts: content paraphrased from raw events, domain + subdomain set
     const facts = (await db
@@ -334,7 +334,7 @@ describe("CLI provider end-to-end consolidation", () => {
     // is nothing to extract — which is the honest outcome, not a silent
     // pretence of intelligence.
     expect(result.skipped).toBe(false);
-    expect(result.factsGraduated).toBe(0);
+    expect(result.factsIntegrated).toBe(0);
 
     // Explicit captures are unaffected by the LLM being down — only inference is.
     const facts = (await db.prepare(`SELECT COUNT(*) c FROM facts`).get()) as { c: number };

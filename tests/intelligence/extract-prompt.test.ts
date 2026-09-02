@@ -27,14 +27,14 @@ describe("EXTRACT_CONTEXT_CONTRACT", () => {
     expect(EXTRACT_CONTEXT_CONTRACT).toMatch(/session_now/);
     expect(EXTRACT_CONTEXT_CONTRACT).toMatch(/referents/);
     expect(EXTRACT_CONTEXT_CONTRACT).toMatch(/CONTRADICTS long_term_memory/);
-    expect(EXTRACT_CONTEXT_CONTRACT).toMatch(/small set of related graduated facts/);
+    expect(EXTRACT_CONTEXT_CONTRACT).toMatch(/small set of related integrated facts/);
     expect(EXTRACT_CONTEXT_CONTRACT).toMatch(/reminder_events/);
     expect(EXTRACT_CONTEXT_CONTRACT).not.toMatch(/pronoun resolution/i);
     expect(EXTRACT_CONTEXT_CONTRACT).toMatch(/said_at/);
     expect(EXTRACT_CONTEXT_CONTRACT).toMatch(/Never guess a calendar day/);
   });
 
-  it("said_at is utterance time, never ingest time", () => {
+  it("said_at is utterance time, never copy time", () => {
     expect(
       extractEventPayload({
         role: "user",

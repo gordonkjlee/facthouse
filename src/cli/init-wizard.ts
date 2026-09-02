@@ -252,14 +252,14 @@ export async function askMoreSettings(
         if (modelRaw !== "") overlay.cliModel = modelRaw;
         break;
       }
-      case "cliGraduateModel": {
+      case "cliIntegrateModel": {
         const shownGrad = opts.gate
-          ? (overlay.cliModel ?? shown.cliGraduateModel)
-          : shown.cliGraduateModel;
+          ? (overlay.cliModel ?? shown.cliIntegrateModel)
+          : shown.cliIntegrateModel;
         const raw = (
-          await io.question(INIT_PROMPTS.moreCliGraduateModel(shownGrad))
+          await io.question(INIT_PROMPTS.moreCliIntegrateModel(shownGrad))
         ).trim();
-        if (raw !== "") overlay.cliGraduateModel = raw;
+        if (raw !== "") overlay.cliIntegrateModel = raw;
         break;
       }
       case "cliTimeoutMs": {

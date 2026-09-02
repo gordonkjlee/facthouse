@@ -78,7 +78,7 @@ describe("DIKW pipeline end-to-end", () => {
     const context = await factManager.getSessionContext();
     expect(context).toHaveLength(3);
 
-    // Verify: 0 graduated facts yet
+    // Verify: 0 integrated facts yet
     const preFacts = await searchMod.structuredSearch(db, {});
     expect(preFacts).toHaveLength(0);
 
@@ -87,10 +87,10 @@ describe("DIKW pipeline end-to-end", () => {
 
     expect(result.skipped).toBe(false);
     expect(result.factsIn).toBe(3);
-    expect(result.factsGraduated).toBe(3);
+    expect(result.factsIntegrated).toBe(3);
     expect(result.summary).toBeTruthy();
 
-    // Verify: graduated facts exist with correct domains
+    // Verify: integrated facts exist with correct domains
     const profileFacts = await searchMod.structuredSearch(db, { domain: "profile" });
     expect(profileFacts).toHaveLength(1);
     expect(profileFacts[0].content).toContain("Alex");
@@ -102,7 +102,7 @@ describe("DIKW pipeline end-to-end", () => {
     expect(medFacts).toHaveLength(1);
   });
 
-  it("hybrid search finds graduated facts", async () => {
+  it("hybrid search finds integrated facts", async () => {
     const { factManager } = await setup();
 
     await factManager.captureFact({ content: "I prefer dark roast coffee", domain_hint: "preferences" });
@@ -238,11 +238,11 @@ describe("DIKW pipeline end-to-end", () => {
 
     const first = await factManager.runConsolidate();
     expect(first.factsIn).toBe(1);
-    expect(first.factsGraduated).toBe(1);
+    expect(first.factsIntegrated).toBe(1);
 
     const second = await factManager.runConsolidate();
     expect(second.factsIn).toBe(0);
-    expect(second.factsGraduated).toBe(0);
+    expect(second.factsIntegrated).toBe(0);
   });
 
   it("consolidation creates entities and links them to facts", async () => {
@@ -291,7 +291,7 @@ describe("DIKW pipeline end-to-end", () => {
 
     expect(record).toBeTruthy();
     expect(record.facts_in).toBe(2);
-    expect(record.facts_graduated).toBe(2);
+    expect(record.facts_integrated).toBe(2);
     expect(record.summary).toBeTruthy();
   });
 

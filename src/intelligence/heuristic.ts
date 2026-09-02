@@ -227,18 +227,18 @@ export function createHeuristicProvider(
       return dupe ? { kind: "noop" } : { kind: "add" };
     },
 
-    async summarise(facts, graduatedFacts, priorSummary, _closedTopics) {
-      if (graduatedFacts.length === 0) {
+    async summarise(facts, integratedFacts, priorSummary, _closedTopics) {
+      if (integratedFacts.length === 0) {
         // Empty run: keep the prior rolling summary verbatim if it exists.
         return {
-          summary: priorSummary ?? "No facts graduated.",
+          summary: priorSummary ?? "No facts integrated.",
           openThreads: [],
         };
       }
 
-      // Count by actual classified domain (from graduated facts, not hints)
+      // Count by actual classified domain (from integrated facts, not hints)
       const domains = new Map<string, number>();
-      for (const f of graduatedFacts) {
+      for (const f of integratedFacts) {
         domains.set(f.domain, (domains.get(f.domain) ?? 0) + 1);
       }
 
@@ -246,14 +246,14 @@ export function createHeuristicProvider(
         .map(([d, n]) => `${d} (${n})`)
         .join(", ");
 
-      const previews = graduatedFacts
+      const previews = integratedFacts
         .slice(0, 3)
         .map((f) => f.content.length > 60 ? f.content.slice(0, 60) + "…" : f.content)
         .join("; ");
 
       // Heuristic can't merge prior + new narratively. Concatenate as a crude
       // rolling summary — the LLM-backed providers do this properly.
-      const newPart = `Graduated ${graduatedFacts.length} facts across domains: ${domainList}. Key topics: ${previews}.`;
+      const newPart = `Integrated ${integratedFacts.length} facts across domains: ${domainList}. Key topics: ${previews}.`;
       const summary = priorSummary
         ? `${priorSummary} ${newPart}`
         : newPart;

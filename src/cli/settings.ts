@@ -54,8 +54,8 @@ function moreDumpJson(shown: MoreShown): Record<string, unknown> {
       case "cliModel":
         out.cliModel = shown.cliModel;
         break;
-      case "cliGraduateModel":
-        out.cliGraduateModel = shown.cliGraduateModel;
+      case "cliIntegrateModel":
+        out.cliIntegrateModel = shown.cliIntegrateModel;
         break;
       case "cliTimeoutMs":
         out.cliTimeoutMs = shown.cliTimeoutMs;
@@ -88,8 +88,8 @@ function moreDumpLines(shown: MoreShown): string[] {
       case "cliModel":
         lines.push(`Model to extract facts from messages: ${shown.cliModel}`);
         break;
-      case "cliGraduateModel":
-        lines.push(`Model to update long-term knowledge: ${shown.cliGraduateModel}`);
+      case "cliIntegrateModel":
+        lines.push(`Model to update long-term knowledge: ${shown.cliIntegrateModel}`);
         break;
       case "cliTimeoutMs":
         lines.push(`Per-stage timeout in ms: ${shown.cliTimeoutMs}`);

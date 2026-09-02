@@ -238,7 +238,7 @@ describe("collectInitAnswers", () => {
     ]);
     expect(result.overlay.embeddingProvider).toBe("ollama");
     expect(result.overlay.cliModel).toBe("sonnet");
-    expect(result.overlay.cliGraduateModel).toBeUndefined();
+    expect(result.overlay.cliIntegrateModel).toBeUndefined();
     expect(result.overlay.cliTimeoutMs).toBe(180_000);
     expect(result.captureAskedAndEmpty).toBe(false);
   });
@@ -267,7 +267,7 @@ describe("collectInitAnswers", () => {
     const io = fakeIo(["record", "off", "y", "", "sonnet", "", "n"]);
     const result = await collectInitAnswers(io, seed, deps());
     expect(result.overlay.cliModel).toBeUndefined();
-    expect(result.overlay.cliGraduateModel).toBe("sonnet");
+    expect(result.overlay.cliIntegrateModel).toBe("sonnet");
   });
 
   it("omits extra knobs when More is Y but answers are empty", async () => {
@@ -383,7 +383,7 @@ describe("init-wizard file-scan", () => {
     expect(body).toContain("MORE_SETTING_IDS");
     expect(MORE_SETTING_IDS).toEqual([
       "cliModel",
-      "cliGraduateModel",
+      "cliIntegrateModel",
       "cliTimeoutMs",
       "httpExtract",
       "httpBaseUrl",

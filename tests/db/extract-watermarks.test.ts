@@ -101,7 +101,7 @@ describe("extract watermark helper", () => {
     await db
       .prepare(
         `INSERT INTO consolidations
-           (id, session_id, facts_in, facts_graduated, facts_rejected,
+           (id, session_id, facts_in, facts_integrated, facts_rejected,
             entities_created, entities_linked, supersessions,
             summary, open_threads, last_event_sequence, created_at)
          VALUES ('c-old', NULL, 0, 0, 0, 0, 0, 0, NULL, NULL, 2, ?)`,

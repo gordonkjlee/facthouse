@@ -104,11 +104,11 @@ describe("extract stamps speaker_role from the primary event", () => {
     await consolidate(db, createHeuristicProvider(), {
       extraction: { enabled: false } as never,
     });
-    const graduated = (await db
+    const integrated = (await db
       .prepare(`SELECT speaker_role, speaker FROM facts WHERE content = ?`)
       .get(GRAIN)) as { speaker_role: string | null; speaker: string | null };
-    expect(graduated.speaker_role).toBeNull();
-    expect(graduated.speaker).toBeNull();
+    expect(integrated.speaker_role).toBeNull();
+    expect(integrated.speaker).toBeNull();
   });
 
   it("copies a named speaker from the primary event onto I and K", async () => {
@@ -128,11 +128,11 @@ describe("extract stamps speaker_role from the primary event", () => {
       .get(GRAIN)) as { speaker: string | null; speaker_role: string | null };
     expect(staged.speaker).toBe("Alex");
     expect(staged.speaker_role).toBe("user");
-    const graduated = (await db
+    const integrated = (await db
       .prepare(`SELECT speaker, speaker_role FROM facts WHERE content = ?`)
       .get(GRAIN)) as { speaker: string | null; speaker_role: string | null };
-    expect(graduated.speaker).toBe("Alex");
-    expect(graduated.speaker_role).toBe("user");
+    expect(integrated.speaker).toBe("Alex");
+    expect(integrated.speaker_role).toBe("user");
   });
 
   it("does not mint an entity from a display name", async () => {

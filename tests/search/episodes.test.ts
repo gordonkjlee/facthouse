@@ -1,5 +1,5 @@
 /**
- * Episode slices: keyword-on-D when graduated knowledge is empty.
+ * Episode slices: keyword-on-D when integrated knowledge is empty.
  * Synthetic fixtures only.
  */
 
@@ -95,7 +95,7 @@ describe("searchEpisodes", () => {
 });
 
 describe("hybridSearch fills episodes only when K is empty", () => {
-  it("returns an episode slice for a pulled line that never graduated", async () => {
+  it("returns an episode slice for a pulled line that never integrated", async () => {
     await user("sess-aaa", "Alex keeps a brass kaleidoscope on the desk at Acme.");
     const result = await searchMod.hybridSearch(db, "kaleidoscope");
     expect(result.results).toEqual([]);
@@ -106,7 +106,7 @@ describe("hybridSearch fills episodes only when K is empty", () => {
     expect(result.coverage_estimate).toBe(0);
   });
 
-  it("does not search D when a graduated fact already matched", async () => {
+  it("does not search D when a integrated fact already matched", async () => {
     await user("sess-aaa", "Alex keeps a brass kaleidoscope on the desk at Acme.");
     await dbMod.insertFact(db, {
       content: "Alex keeps a brass kaleidoscope on the desk at Acme.",

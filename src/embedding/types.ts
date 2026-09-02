@@ -36,7 +36,7 @@ export interface EmbeddingProvider {
    * Embed a batch of texts.
    *
    * Throws on failure rather than returning a partial result. Consolidation
-   * catches it, graduates the facts anyway, and leaves the missing rows to be
+   * catches it, integrates the facts anyway, and leaves the missing rows to be
    * picked up next run — losing quality temporarily instead of losing facts
    * permanently.
    */

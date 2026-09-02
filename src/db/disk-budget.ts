@@ -1,5 +1,5 @@
 /**
- * Optional disk ceiling on one brain, and the ingest guard that honours it.
+ * Optional disk ceiling on one brain, and the copy guard that honours it.
  *
  * Unset = unlimited. The number is SQLite `memory.db` (page count × page
  * size), not event-content bytes. Cap-driven prune uses the existing

@@ -69,7 +69,7 @@ describe("offerInitBackfill", () => {
     const consolidated: string[] = [];
     await offerInitBackfill(io, "/tmp/store", {
       providerIsHeuristic: false,
-      pull: async (dir) => {
+      copy: async (dir) => {
         pulled.push(dir);
         return { events_inserted: 3 };
       },
@@ -85,12 +85,12 @@ describe("offerInitBackfill", () => {
     expect(io.writes).toContain(INIT_PROMPTS.copiedEvents(3));
   });
 
-  it("N on copy does not pull", async () => {
+  it("N on copy does not copy", async () => {
     const io = fakeIo(["n"]);
     let pulled = false;
     await offerInitBackfill(io, "/tmp/store", {
       providerIsHeuristic: false,
-      pull: async () => {
+      copy: async () => {
         pulled = true;
         return { events_inserted: 1 };
       },
@@ -103,12 +103,12 @@ describe("offerInitBackfill", () => {
     expect(io.prompts).toEqual([INIT_PROMPTS.copyNow]);
   });
 
-  it("skips extract when pull inserted nothing", async () => {
+  it("skips extract when copy inserted nothing", async () => {
     const io = fakeIo([""]);
     let consolidated = false;
     await offerInitBackfill(io, "/tmp/store", {
       providerIsHeuristic: false,
-      pull: async () => ({ events_inserted: 0 }),
+      copy: async () => ({ events_inserted: 0 }),
       unextracted: async () => 0,
       consolidate: async () => {
         consolidated = true;
@@ -124,7 +124,7 @@ describe("offerInitBackfill", () => {
     let consolidated = false;
     await offerInitBackfill(io, "/tmp/store", {
       providerIsHeuristic: true,
-      pull: async () => ({ events_inserted: 9 }),
+      copy: async () => ({ events_inserted: 9 }),
       unextracted: async () => 9,
       consolidate: async () => {
         consolidated = true;
@@ -140,7 +140,7 @@ describe("offerInitBackfill", () => {
     let consolidated = false;
     await offerInitBackfill(io, "/tmp/store", {
       providerIsHeuristic: false,
-      pull: async () => ({ events_inserted: 2 }),
+      copy: async () => ({ events_inserted: 2 }),
       unextracted: async () => 2,
       consolidate: async () => {
         consolidated = true;

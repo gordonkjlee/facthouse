@@ -14,7 +14,7 @@
  *   2. Live CLI (opt-in). `OPENMEMORY_REQUIRE_CODING_STORE_EVAL=1`
  *      (`npm run test:coding-store`) then *fails* when the CLI is missing
  *      rather than quietly verifying nothing. Discriminating rows: grain is
- *      searchable; a failing-join task does not graduate.
+ *      searchable; a failing-join task does not integrate.
  */
 
 import { describe, it, expect, afterEach } from "vitest";
@@ -37,7 +37,7 @@ import { findEntity, SUBJECT_OF } from "../../src/db/entities.js";
 import { consolidate } from "../../src/intelligence/consolidate.js";
 import { createHeuristicProvider } from "../../src/intelligence/heuristic.js";
 import { probeCliProvider } from "../../src/intelligence/cli.js";
-import { pullSources } from "../../src/sources/pull.js";
+import { copySources } from "../../src/sources/copy.js";
 import { withoutStoreEnv } from "../helpers/cli-env.js";
 import {
   encodeCursorProjectDir,
@@ -213,7 +213,7 @@ async function pullCursorAndConsolidate(
   await applySchema(db);
   const home = path.join(tmp("om-coding-"), "cursor-home");
   plantCursor(home, sessionId, fixture);
-  const pulled = await pullSources(db, [
+  const pulled = await copySources(db, [
     { kind: "cursor", home, cwd: PROJECT_CWD },
   ]);
   const done = await consolidate(db, recording as never, {
@@ -244,7 +244,7 @@ describe("coding-store pipeline (recording extractor)", () => {
     expect(pulled.events_inserted).toBeGreaterThan(0);
     expect(rec.extractCalls()).toBeGreaterThan(0);
     expect(done.skipped).toBe(false);
-    expect(done.factsGraduated).toBeGreaterThan(0);
+    expect(done.factsIntegrated).toBeGreaterThan(0);
 
     const beforeStyle = await searchWithProvider(db, "bookings", null);
     expect(hitsNeedle(beforeStyle, "bookings")).toBe(true);
@@ -271,7 +271,7 @@ describe("coding-store pipeline (recording extractor)", () => {
     await applySchema(control);
     const home = path.join(tmp("om-coding-h-"), "cursor-home");
     plantCursor(home, "sess-coding-grain", GRAIN_FILE);
-    await pullSources(control, [{ kind: "cursor", home, cwd: PROJECT_CWD }]);
+    await copySources(control, [{ kind: "cursor", home, cwd: PROJECT_CWD }]);
     const emptyK = await searchWithProvider(control, "bookings", null);
     expect(hitsNeedle(emptyK, "bookings")).toBe(false);
     expect(episodeMentions(emptyK, "bookings")).toBe(true);
@@ -291,7 +291,7 @@ describe("coding-store pipeline (recording extractor)", () => {
     const home = path.join(tmp("om-coding-id-"), "cursor-home");
     plantCursor(home, "sess-coding-grain", GRAIN_FILE);
     plantCursor(home, "sess-coding-ident", IDENT_FILE);
-    await pullSources(db, [{ kind: "cursor", home, cwd: PROJECT_CWD }]);
+    await copySources(db, [{ kind: "cursor", home, cwd: PROJECT_CWD }]);
     await consolidate(db, rec.provider as never, {
       extraction: extractionConfig() as never,
     });
@@ -326,14 +326,14 @@ describe("coding-store pipeline (recording extractor)", () => {
     await closeDatabase(db);
   });
 
-  it("does not graduate a failing-join task; episodes still show the raw log", async () => {
+  it("does not integrate a failing-join task; episodes still show the raw log", async () => {
     const rec = recordingExtractor();
     const { db, done } = await pullCursorAndConsolidate(
       EPH_FILE,
       "sess-coding-eph",
       rec.provider,
     );
-    expect(done.factsGraduated).toBe(0);
+    expect(done.factsIntegrated).toBe(0);
 
     const found = await searchWithProvider(db, "failing", null);
     expect(hitsNeedle(found, "failing")).toBe(false);
@@ -342,21 +342,21 @@ describe("coding-store pipeline (recording extractor)", () => {
     await closeDatabase(db);
   });
 
-  it("graduates grain when the assistant states it and the user assents", async () => {
+  it("integrates grain when the assistant states it and the user assents", async () => {
     const rec = recordingExtractor();
     const { db, done } = await pullCursorAndConsolidate(
       ASSENT_FILE,
       "sess-coding-assent",
       rec.provider,
     );
-    expect(done.factsGraduated).toBeGreaterThan(0);
+    expect(done.factsIntegrated).toBeGreaterThan(0);
     expect(contentsOf(await searchWithProvider(db, "bookings", null))).toContain(
       GRAIN_FACT,
     );
     await closeDatabase(db);
   });
 
-  it("does not mint an entity per table in a truncated tool dump; user prose still graduates", async () => {
+  it("does not mint an entity per table in a truncated tool dump; user prose still integrates", async () => {
     const rec = recordingExtractor();
     const db = openDatabase(":memory:");
     await applySchema(db);
@@ -382,7 +382,7 @@ describe("coding-store pipeline (recording extractor)", () => {
         },
       }),
     ]);
-    const pulled = await pullSources(db, [
+    const pulled = await copySources(db, [
       { kind: "claude-code", home, cwd: PROJECT_CWD },
     ]);
     expect(pulled.events_inserted).toBeGreaterThanOrEqual(2);
@@ -469,7 +469,7 @@ describe.skipIf(!required || unavailable !== null)(
         expect(consolidated.status).toBe(0);
         const result = JSON.parse(consolidated.stdout);
         expect(result.skipped).toBe(false);
-        expect(result.factsGraduated).toBeGreaterThan(0);
+        expect(result.factsIntegrated).toBeGreaterThan(0);
 
         const after = run(["search", "bookings", "--json", "--data", dir]);
         expect(after.status).toBe(0);
@@ -490,7 +490,7 @@ describe.skipIf(!required || unavailable !== null)(
     );
 
     it(
-      "failing-join task does not graduate; episodes still hit the raw log",
+      "failing-join task does not integrate; episodes still hit the raw log",
       () => {
         const { dir, home } = initPullStore("cursor");
         plantCursor(home, "sess-coding-eph", EPH_FILE);

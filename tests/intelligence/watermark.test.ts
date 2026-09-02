@@ -39,8 +39,8 @@ describe("consolidation watermark", () => {
       extraction: { enabled: true } as any,
     });
 
-    // Empty run — no facts graduated, but a consolidations row still exists.
-    expect(result.factsGraduated).toBe(0);
+    // Empty run — no facts integrated, but a consolidations row still exists.
+    expect(result.factsIntegrated).toBe(0);
 
     const row = (await db
       .prepare(
@@ -176,10 +176,10 @@ describe("the watermark holds when extraction could not run", () => {
     expect(seen).toBe(4);
   });
 
-  it("holds the watermark even when other facts graduate in the same run", async () => {
-    // The path the two tests above do not reach. When a run graduates nothing,
+  it("holds the watermark even when other facts integrate in the same run", async () => {
+    // The path the two tests above do not reach. When a run integrates nothing,
     // no consolidations row is written at all, so the watermark stays put for a
-    // second reason and the gate is never consulted. Explicit captures graduate
+    // second reason and the gate is never consulted. Explicit captures integrate
     // independently of event extraction — so a run can succeed loudly, write its
     // row, and advance past events that were never read.
     await seed(4);
@@ -195,7 +195,7 @@ describe("the watermark holds when extraction could not run", () => {
     });
 
     // A row was written: this is the loud-success path.
-    expect(result.factsGraduated).toBeGreaterThan(0);
+    expect(result.factsIntegrated).toBeGreaterThan(0);
     expect(result.extractionDegraded).toBe(true);
     const rows = (await db
       .prepare(`SELECT COUNT(*) AS n FROM consolidations`)

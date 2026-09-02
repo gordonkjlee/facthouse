@@ -105,7 +105,7 @@ function recording(
     },
     async summarise(
       facts: SessionFact[],
-      _graduated: Fact[],
+      _integrated: Fact[],
       prior: string | null,
     ) {
       const id = facts[0]?.session_id ?? "unknown";
@@ -168,7 +168,7 @@ describe("K is cue not veto", () => {
     expect(EXTRACT_CONTEXT_CONTRACT).toMatch(/CONTRADICTS long_term_memory/);
   });
 
-  it("does not dump unrelated graduated facts into extract extras", async () => {
+  it("does not dump unrelated integrated facts into extract extras", async () => {
     await insertFact(db, {
       content: "Alex prefers coffee.",
       domain: "preferences",
@@ -245,15 +245,15 @@ describe("K is cue not veto", () => {
       provider as never,
       { extraction: { enabled: true } as never },
       null,
-      "extract",
+      { copy: false, extract: true, integrate: false },
     );
     expect(await factRows()).toEqual([
       { session_id: "sess-aaa", content: "Alex prefers oat milk at Acme." },
     ]);
-    const graduated = (await db
+    const integrated = (await db
       .prepare(`SELECT COUNT(*) AS n FROM facts`)
       .get()) as { n: number };
-    expect(graduated.n).toBe(0);
+    expect(integrated.n).toBe(0);
     const row = await situation("sess-aaa");
     expect(row).toBeDefined();
     expect(row!.now).toBe("choosing milk");
@@ -444,7 +444,7 @@ describe("now, referents, segments", () => {
     const ts = "2026-08-25T12:00:00.000Z";
     const insert = db.prepare(
       `INSERT INTO consolidations
-         (id, session_id, facts_in, facts_graduated, facts_rejected,
+         (id, session_id, facts_in, facts_integrated, facts_rejected,
           entities_created, entities_linked, supersessions,
           summary, open_threads, last_event_sequence, created_at,
           now, now_referents, segments)

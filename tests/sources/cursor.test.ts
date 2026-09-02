@@ -9,7 +9,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { closeDatabase, openDatabase, type Db } from "../../src/db/connection.js";
 import { applySchema } from "../../src/db/schema.js";
-import { pullSources } from "../../src/sources/pull.js";
+import { copySources } from "../../src/sources/copy.js";
 import { cursorGroupNames } from "../../src/sources/cursor.js";
 import { encodeCursorProjectDir } from "../../src/sources/resolve.js";
 
@@ -92,8 +92,8 @@ describe("cursorGroupNames", () => {
   });
 });
 
-describe("pullSources cursor", () => {
-  it("ingests nested agent-transcripts JSONL and skips turn_ended", async () => {
+describe("copySources cursor", () => {
+  it("copies nested agent-transcripts JSONL and skips turn_ended", async () => {
     const home = path.join(root, "cursor-home");
     const group = encodeCursorProjectDir("C:\\dev\\app");
     const session = "11111111-1111-1111-1111-111111111111";
@@ -102,7 +102,7 @@ describe("pullSources cursor", () => {
       cursorLines(),
     );
 
-    const result = await pullSources(db, [{ kind: "cursor", home }]);
+    const result = await copySources(db, [{ kind: "cursor", home }]);
     expect(result.sources).toBe(1);
     expect(result.files).toBe(1);
     expect(result.events_inserted).toBe(3);
@@ -134,7 +134,7 @@ describe("pullSources cursor", () => {
       cursorLines(),
     );
 
-    const result = await pullSources(db, [{ kind: "cursor", home }]);
+    const result = await copySources(db, [{ kind: "cursor", home }]);
     expect(result.files).toBe(1);
     expect(result.events_inserted).toBe(3);
     expect((await events(db))[0].client_session_id).toBe("sess-flat");
@@ -158,7 +158,7 @@ describe("pullSources cursor", () => {
       cursorLines(),
     );
 
-    const filtered = await pullSources(db, [
+    const filtered = await copySources(db, [
       { kind: "cursor", home, cwd: "C:\\dev\\app" },
     ]);
     expect(filtered.files).toBe(1);
@@ -192,7 +192,7 @@ describe("pullSources cursor", () => {
       cursorLines(),
     );
 
-    const result = await pullSources(db, [{ kind: "cursor", home }]);
+    const result = await copySources(db, [{ kind: "cursor", home }]);
     expect(result.files).toBe(1);
     expect((await events(db)).every((r) => r.client_session_id === "sess-real")).toBe(true);
   });
@@ -204,8 +204,8 @@ describe("pullSources cursor", () => {
       path.join(home, "projects", group, "agent-transcripts", "sess-aaa.jsonl"),
       cursorLines(),
     );
-    await pullSources(db, [{ kind: "cursor", home }]);
-    const second = await pullSources(db, [{ kind: "cursor", home }]);
+    await copySources(db, [{ kind: "cursor", home }]);
+    const second = await copySources(db, [{ kind: "cursor", home }]);
     expect(second.events_inserted).toBe(0);
     expect(await events(db)).toHaveLength(3);
   });

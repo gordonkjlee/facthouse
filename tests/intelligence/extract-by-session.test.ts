@@ -30,7 +30,7 @@ const {
   setConversationExtractThrough,
 } = await import("../../src/db/extract-watermarks.js");
 const { pruneEvents } = await import("../../src/db/prune.js");
-const { pullSources } = await import("../../src/sources/pull.js");
+const { copySources } = await import("../../src/sources/copy.js");
 const { encodeProjectDir } = await import("../../src/sources/resolve.js");
 const { PERSONAL_VOCABULARY } = await import("../fixtures/vocabulary.js");
 
@@ -94,7 +94,7 @@ function recording() {
     },
     async summarise(
       facts: SessionFact[],
-      _graduated: Fact[],
+      _integrated: Fact[],
       prior: string | null,
     ) {
       summaries.push({
@@ -152,7 +152,7 @@ describe("extraction groups by conversation, not by pull batch", () => {
       userLine("sess-bbb", factB),
     ]);
 
-    const pulled = await pullSources(db, [{ kind: "claude-code", home }]);
+    const pulled = await copySources(db, [{ kind: "claude-code", home }]);
     expect(pulled.events_inserted).toBe(2);
 
     const { provider, calls } = recording();
@@ -195,7 +195,7 @@ describe("extraction groups by conversation, not by pull batch", () => {
     const priorB = "Alex previously mentioned a shellfish allergy.";
     writeJsonl(fileA, [userLine("sess-aaa", priorA)]);
     writeJsonl(fileB, [userLine("sess-bbb", priorB)]);
-    await pullSources(db, [{ kind: "claude-code", home }]);
+    await copySources(db, [{ kind: "claude-code", home }]);
     await consolidate(db, recording().provider as never, {
       extraction: { enabled: true } as never,
     });
@@ -204,7 +204,7 @@ describe("extraction groups by conversation, not by pull batch", () => {
     const nextB = "Alex is allergic to shellfish.";
     appendFileSync(fileA, userLine("sess-aaa", nextA) + "\n");
     appendFileSync(fileB, userLine("sess-bbb", nextB) + "\n");
-    const secondPull = await pullSources(db, [{ kind: "claude-code", home }]);
+    const secondPull = await copySources(db, [{ kind: "claude-code", home }]);
     expect(secondPull.events_inserted).toBe(2);
 
     const { provider, calls } = recording();
@@ -339,7 +339,7 @@ describe("extraction groups by conversation, not by pull batch", () => {
     utimesSync(fileA, stamp, stamp);
     utimesSync(fileB, stamp, stamp);
 
-    await pullSources(db, [{ kind: "claude-code", home }]);
+    await copySources(db, [{ kind: "claude-code", home }]);
     const { provider, calls } = recording();
     await consolidate(db, provider as never, {
       extraction: { enabled: true } as never,
@@ -358,7 +358,7 @@ describe("extraction groups by conversation, not by pull batch", () => {
     writeJsonl(path.join(home, "projects", group, "sess-bbb.jsonl"), [
       userLine("sess-bbb", "Alex is allergic to shellfish."),
     ]);
-    await pullSources(db, [{ kind: "claude-code", home }]);
+    await copySources(db, [{ kind: "claude-code", home }]);
 
     const { provider, summaries } = recording();
     await consolidate(db, provider as never, {
@@ -372,7 +372,7 @@ describe("extraction groups by conversation, not by pull batch", () => {
 
     const satellites = (await db
       .prepare(
-        `SELECT session_id, summary, facts_graduated, last_event_sequence
+        `SELECT session_id, summary, facts_integrated, last_event_sequence
            FROM consolidations
           WHERE session_id IS NOT NULL AND summary IS NOT NULL
           ORDER BY session_id`,
@@ -380,11 +380,11 @@ describe("extraction groups by conversation, not by pull batch", () => {
       .all()) as Array<{
       session_id: string;
       summary: string;
-      facts_graduated: number;
+      facts_integrated: number;
       last_event_sequence: number;
     }>;
     expect(satellites).toHaveLength(2);
-    expect(satellites.every((r) => r.facts_graduated === 0)).toBe(true);
+    expect(satellites.every((r) => r.facts_integrated === 0)).toBe(true);
     expect(satellites.map((r) => r.session_id).sort()).toEqual([
       "sess-aaa",
       "sess-bbb",
@@ -424,7 +424,7 @@ describe("extraction groups by conversation, not by pull batch", () => {
     writeJsonl(path.join(home, "projects", group, "sess-bbb.jsonl"), [
       userLine("sess-bbb", "Alex is allergic to shellfish."),
     ]);
-    await pullSources(db, [{ kind: "claude-code", home }]);
+    await copySources(db, [{ kind: "claude-code", home }]);
 
     // What `log-event` without --session-id does: create/reuse a sessions row
     // and store it as mcp_session_id. Pull must not inherit that id.
@@ -530,7 +530,7 @@ describe("extraction groups by conversation, not by pull batch", () => {
     ]);
   });
 
-  it("keeps that disjoint prefix on extract-only (tick)", async () => {
+  it("keeps that disjoint prefix on extract-only (threshold moment)", async () => {
     await insertEvent(db, {
       client_session_id: "sess-aaa",
       event_type: "message",
@@ -567,7 +567,7 @@ describe("extraction groups by conversation, not by pull batch", () => {
       flaky as never,
       { extraction: { enabled: true } as never },
       null,
-      "extract",
+      { copy: false, extract: true, integrate: false },
     );
     expect(first.extractionDegraded).toBe(true);
     const staged = (await db
@@ -612,7 +612,7 @@ describe("extraction groups by conversation, not by pull batch", () => {
       flaky as never,
       { extraction: { enabled: true } as never },
       null,
-      "extract",
+      { copy: false, extract: true, integrate: false },
     );
     expect(first.extractionDegraded).toBe(true);
     expect(await factRows()).toEqual([]);
@@ -842,7 +842,7 @@ describe("extraction groups by conversation, not by pull batch", () => {
     expect(aaa!.workingMemory.join(" ")).not.toContain("shellfish");
   });
 
-  it("does not advance extract marks on graduate-only", async () => {
+  it("does not advance extract marks on integrate-only", async () => {
     await insertEvent(db, {
       client_session_id: "sess-aaa",
       event_type: "message",
@@ -854,7 +854,7 @@ describe("extraction groups by conversation, not by pull batch", () => {
       recording().provider as never,
       { extraction: { enabled: true } as never },
       null,
-      "graduate",
+      { copy: false, extract: false, integrate: true },
     );
     expect(await conversationExtractThrough(db, { kind: "client", id: "sess-aaa" })).toBe(0);
     expect(await extractWatermark(db)).toBe(0);

@@ -63,7 +63,7 @@ export const STAGE1_STDIN_CEILING =
 export const EXTRACT_REREAD_CONFIDENCE = 0.5;
 
 /**
- * Graduated facts passed into D→I. Not the whole store — a small related
+ * Integrated facts passed into D→I. Not the whole store — a small related
  * set from hybrid search. Cue, not veto.
  */
 export const EXTRACT_RELATED_K_CAP = 8;
@@ -117,7 +117,7 @@ Extract-context fields (do not paraphrase these jobs):
 - topic_segments: closed nows, oldest first. Each has a gist, the referents as they were then, and an event-sequence range. A later turn can return to one. Do not rewrite them away. A binding change is NOT a new segment.
 - recent_events: a short raw prefix of this conversation. Evidence that session_now has not drifted. Do NOT extract from it. Do NOT treat it as the disambiguation table.
 - session_summary: rolling gist of the episode. May mention closed topics; the segment list is the topic log.
-- long_term_memory: a small set of related graduated facts (not the whole store). Use to resolve a name this episode never introduced, and to skip duplicating what is already known. If a new candidate line CONTRADICTS long_term_memory, extract the new fact anyway — updating the graph happens later. Do not silence the line.
+- long_term_memory: a small set of related integrated facts (not the whole store). Use to resolve a name this episode never introduced, and to skip duplicating what is already known. If a new candidate line CONTRADICTS long_term_memory, extract the new fact anyway — updating the graph happens later. Do not silence the line.
 - reminder_events: present only on a retry. A short look at this conversation's raw log because the previous pass could not tell. Reminder only. Do NOT extract facts from reminder_events unless the same content is also in candidate_events.
 
 session_now / topic_shifted / referents:

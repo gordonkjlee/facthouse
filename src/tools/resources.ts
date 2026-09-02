@@ -30,6 +30,7 @@ import { keyFacts } from "../search/key-facts.js";
 import { formatDiskBudget } from "../db/disk-budget.js";
 import { getStats } from "../db/stats.js";
 import { unexaminedEventCount } from "../db/extract-watermarks.js";
+import { EXTRACT_CAP_EVENTS } from "../intelligence/steps.js";
 
 // The URI keeps its historical name so existing subscribers do not break; the
 // content is no longer domain-scoped. It is the store's key facts, whatever the
@@ -83,22 +84,22 @@ async function consolidationRunCount(db: Db): Promise<number> {
 }
 
 /**
- * Next step when the store has no graduated facts. The profile is loaded by
+ * Next step when the store has no integrated facts. The profile is loaded by
  * the MCP client for the assistant — name the `consolidate` tool, not only
- * the CLI. Pending count is since the last watermark, so a 5_000-event
- * backfill is not promised a session-start flush.
+ * the CLI. Pending count is since the last watermark; extract is capped per
+ * run, so a 5_000-event backfill is told it takes several runs or `--all`.
  */
 async function emptyStoreNextStep(db: Db): Promise<string> {
   const pending = await pendingEventCount(db);
   if (pending > 0) {
-    const flushNote =
-      pending <= 50
-        ? " A later MCP session start will flush this leftover."
-        : " A pull of more than 50 events is never auto-flushed.";
+    const capNote =
+      pending <= EXTRACT_CAP_EVENTS
+        ? " A later MCP session start will take this leftover."
+        : ` More than ${EXTRACT_CAP_EVENTS} events wait; each run extracts that many oldest first, or run \`factmem consolidate --all\`.`;
     return (
       "Nothing captured yet. Conversation events are waiting — call the " +
       "`consolidate` tool, or run `factmem consolidate` from the CLI." +
-      flushNote
+      capNote
     );
   }
   if ((await consolidationRunCount(db)) > 0) {
@@ -110,7 +111,7 @@ async function emptyStoreNextStep(db: Db): Promise<string> {
   }
   return (
     "Nothing captured yet. If this store has a named source, run " +
-    "`factmem pull`, then call `consolidate`."
+    "`factmem consolidate` from the CLI, or call `consolidate`."
   );
 }
 
@@ -154,7 +155,7 @@ export async function buildBriefing(db: Db): Promise<string> {
     );
   }
 
-  // No domain filter -> most recently graduated facts across every domain.
+  // No domain filter -> most recently integrated facts across every domain.
   const recent = await structuredSearch(db, { limit: RECENT_LIMIT });
   if (recent.length) {
     parts.push(

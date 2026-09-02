@@ -1,10 +1,10 @@
 /**
  * Consolidation pipeline — the core intelligence engine.
- * Two DIKW arrows, independently timed:
- *   D → I: Extract facts from raw events (tick / pull)
- *   I → K: Graduate session_facts through classify, entities, reconcile,
- *          supersede (flush / PreCompact / shutdown)
- *   Both:  MCP `consolidate` tool, CLI, session-start leftovers (`full`)
+ * Three steps, each optional per run (see ./steps.ts):
+ *   copy:      sources → D, through the caller's copier
+ *   extract:   D → I, candidate facts from raw events, capped per run
+ *   integrate: I → K, classify, entities, reconcile, supersede, embed
+ * consolidate = all three. Which moments run which steps is MOMENT_POLICY.
  *
  * Loose analogy to human memory: rapid, context-rich capture during a session
  * is separated from a later batch that integrates new information with prior
@@ -91,7 +91,13 @@ import {
   extractWatermark,
   listUnexaminedConversations,
   setConversationExtractThrough,
+  unexaminedEventCount,
 } from "../db/extract-watermarks.js";
+import {
+  ALL_STEPS,
+  EXTRACT_CAP_EVENTS,
+  type ConsolidateSteps,
+} from "./steps.js";
 import type { EmbeddingProvider } from "../embedding/types.js";
 import {
   getFactsMissingEmbeddings,
@@ -103,7 +109,7 @@ import {
   type IntelligenceUsage,
 } from "./usage.js";
 import {
-  GRADUATE_STAGE_NAMES,
+  INTEGRATE_STAGE_NAMES,
   resolveStageProviderType,
   setHttpExtractCliFallback,
 } from "./stage-router.js";
@@ -121,29 +127,38 @@ import {
 // Result type
 // ---------------------------------------------------------------------------
 
-/**
- * Which arrows of consolidate() to run.
- *
- * `full` is the tester path and the MCP tool. `extract` is D→I on pull/tick
- * (tick). `graduate` is I→K on PreCompact flush / shutdown — skip extract so
- * compaction is not four `claude -p` stages when D was already examined.
- */
-export type ConsolidatePhase = "extract" | "graduate" | "full";
+/** Which steps of consolidate() to run: copy, extract, integrate. */
+export type { ConsolidateSteps } from "./steps.js";
 
 export interface ConsolidateCaller {
   trigger?: "mcp" | "cli" | "scheduler" | null;
   sourceTool?: string | null;
   project?: string | null;
+  /**
+   * The copy step. Sources → D, supplied by the caller so this module keeps
+   * no opinion about where D comes from: the server passes its heartbeat,
+   * the CLI passes copyIfGrown. Absent means the copy step is a no-op.
+   */
+  copy?: () => Promise<{ events_inserted: number }>;
+  /**
+   * How many of the oldest unexamined events extract may examine this run.
+   * Undefined means the default cap (EXTRACT_CAP_EVENTS); null lifts it.
+   */
+  extractLimit?: number | null;
 }
 
 export interface ConsolidationResult {
   consolidationId: string;
   factsIn: number;
-  factsGraduated: number;
+  factsIntegrated: number;
   factsRejected: number;
   entitiesCreated: number;
   entitiesLinked: number;
   supersessions: number;
+  /** Events the copy step inserted this run (0 when copy did not run). */
+  eventsCopied: number;
+  /** Unexamined events left in D after this run. Non-zero after a capped extract. */
+  eventsRemaining: number;
   summary: string | null;
   openThreads: string[];
   skipped: boolean;
@@ -154,7 +169,7 @@ export interface ConsolidationResult {
    * how far the watermark moved (held, a prefix, or complete).
    *
    * Reported because the failure is otherwise invisible: facts captured
-   * explicitly still graduate, so the run returns healthy-looking counts while
+   * explicitly still integrate, so the run returns healthy-looking counts while
    * unread conversation looks like a successful empty extract.
    */
   extractionDegraded?: boolean;
@@ -196,12 +211,23 @@ export async function consolidate(
    * about providers, exactly as it keeps none about intelligence providers.
    */
   embeddingProvider: EmbeddingProvider | null = null,
-  phase: ConsolidatePhase = "full",
+  steps: ConsolidateSteps = ALL_STEPS,
   caller: ConsolidateCaller = {},
 ): Promise<ConsolidationResult> {
   const consolidationId = randomUUID();
-  const doExtract = phase === "extract" || phase === "full";
-  const doGraduate = phase === "graduate" || phase === "full";
+  const doExtract = steps.extract;
+  const doIntegrate = steps.integrate;
+  // Extract is bounded per run unless the caller lifted the cap (null).
+  const extractLimit =
+    caller.extractLimit === undefined ? EXTRACT_CAP_EVENTS : caller.extractLimit;
+  const remainingEvents = () => unexaminedEventCount(db);
+
+  // Step 1: copy. Sources → D through the caller's copier. Runs before the
+  // lock: copying is an append and needs no exclusivity.
+  let eventsCopied = 0;
+  if (steps.copy && caller.copy) {
+    eventsCopied = (await caller.copy()).events_inserted;
+  }
   const extractionEnabled = config?.extraction?.enabled ?? false;
   // Read from the vocabulary the user configured, not a separate map. Importance
   // is a property of a domain — a domain's calibration belongs with the domain,
@@ -218,7 +244,7 @@ export async function consolidate(
     return {
       consolidationId,
       factsIn: 0,
-      factsGraduated: 0,
+      factsIntegrated: 0,
       factsRejected: 0,
       entitiesCreated: 0,
       entitiesLinked: 0,
@@ -227,6 +253,8 @@ export async function consolidate(
       openThreads: [],
       skipped: true,
       skipReason: "Another consolidation is in progress",
+      eventsCopied,
+      eventsRemaining: await remainingEvents(),
       examinedThrough: await extractWatermark(db),
     };
   }
@@ -260,12 +288,12 @@ export async function consolidate(
     api_key: null,
   };
   let skipExtract = false;
-  let skipGraduate = false;
+  let skipIntegrate = false;
   let budgetReason: string | undefined;
   let allowHttpCliFallback = true;
   const parsedBudget =
     getBoundTokenBudget(db) ?? parseIntelligenceTokenBudget(intel);
-  if (parsedBudget && (doExtract || doGraduate)) {
+  if (parsedBudget && (doExtract || doIntegrate)) {
     const runs = await loadRunsForBudget(
       (since) => listIntelligenceRunsSince(db, since),
       parsedBudget,
@@ -284,8 +312,8 @@ export async function consolidate(
         allowHttpCliFallback = !verdictForProvider(report, "cli").skip;
       }
     }
-    if (doGraduate) {
-      for (const stage of GRADUATE_STAGE_NAMES) {
+    if (doIntegrate) {
+      for (const stage of INTEGRATE_STAGE_NAMES) {
         const stageType = resolveStageProviderType(
           intel,
           stage as IntelligenceStageName,
@@ -293,20 +321,20 @@ export async function consolidate(
         if (!isBilledProvider(stageType)) continue;
         const verdict = verdictForProvider(report, stageType);
         if (verdict.skip) {
-          skipGraduate = true;
+          skipIntegrate = true;
           budgetReason = verdict.reason;
           break;
         }
       }
     }
     const extractWillRun = doExtract && !skipExtract;
-    const graduateWillRun = doGraduate && !skipGraduate;
-    if (!extractWillRun && !graduateWillRun && (skipExtract || skipGraduate)) {
+    const integrateWillRun = doIntegrate && !skipIntegrate;
+    if (!extractWillRun && !integrateWillRun && (skipExtract || skipIntegrate)) {
       await releaseLock(db, consolidationId);
       return {
         consolidationId,
         factsIn: 0,
-        factsGraduated: 0,
+        factsIntegrated: 0,
         factsRejected: 0,
         entitiesCreated: 0,
         entitiesLinked: 0,
@@ -315,25 +343,28 @@ export async function consolidate(
         openThreads: [],
         skipped: true,
         skipReason: budgetReason,
+        eventsCopied,
+        eventsRemaining: await remainingEvents(),
         examinedThrough: prevWatermark,
       };
     }
   }
 
   const extractNow = doExtract && !skipExtract;
-  const graduateNow = doGraduate && !skipGraduate;
+  const integrateNow = doIntegrate && !skipIntegrate;
   setHttpExtractCliFallback(intelligence, allowHttpCliFallback);
 
   try {
     // Phase B: D→I event extraction (if this run examines events).
-    // Session facts land unclaimed so a later graduate-only flush can pick
-    // them up — extract on tick, graduate on PreCompact, not four LLM stages
+    // Session facts land unclaimed so a later integrate-only run can pick
+    // them up — extract at threshold, integrate at compaction, not four LLM stages
     // in the compaction hook.
     if (extractNow && extractionEnabled) {
       const extracted = await extractFactsFromEvents(
         db,
         intelligence,
         config,
+        extractLimit,
       );
       extractionDegraded = extracted.degraded;
       extractPending = extracted.pending;
@@ -344,27 +375,27 @@ export async function consolidate(
       await advanceExtractMarksToCurrentMax(db);
     }
 
-    // Graduate-only leaves extract marks untouched. Extract writes per-id
+    // Integrate-only leaves extract marks untouched. Extract writes per-id
     // marks as it goes; the run row audits the global MIN through.
     const effectiveWatermark = await extractWatermark(db);
 
-    if (graduateNow) {
+    if (integrateNow) {
       await claimForConsolidation(db, consolidationId);
     }
-    const sessionFacts = graduateNow
+    const sessionFacts = integrateNow
       ? await getClaimedFacts(db, consolidationId)
       : [];
 
     if (sessionFacts.length === 0) {
       // Only record an empty run when this run examined events and the
-      // watermark actually advances. Graduate-only with nothing pending is
+      // watermark actually advances. Integrate-only with nothing pending is
       // a PreCompact no-op — do not spam rows or pretend D was read.
       if (extractNow && effectiveWatermark > prevWatermark) {
         const onlyId =
           extractPending.length === 1 ? extractPending[0].group.ref.id : null;
         await db.prepare(
           `INSERT INTO consolidations
-           (id, session_id, facts_in, facts_graduated, facts_rejected,
+           (id, session_id, facts_in, facts_integrated, facts_rejected,
             entities_created, entities_linked, supersessions,
             summary, open_threads, last_event_sequence, created_at)
            VALUES (?, ?, 0, 0, 0, 0, 0, 0, NULL, NULL, ?, ?)`,
@@ -382,14 +413,14 @@ export async function consolidate(
           effectiveWatermark,
         );
       }
-      // Backfill on the empty path too. This branch is "nothing new graduated",
+      // Backfill on the empty path too. This branch is "nothing new integrated",
       // which is exactly the state a store is in when it has a backlog and no
       // fresh input — semantic search switched on over an existing store, or a
       // previous run whose provider was down. Returning here without embedding
       // would mean the backlog only ever drains on runs that happen to have new
       // facts, which for a quiet store is never.
-      if (graduateNow) {
-        await embedGraduatedFacts(db, embeddingProvider, config);
+      if (integrateNow) {
+        await embedIntegratedFacts(db, embeddingProvider, config);
       }
 
       await releaseLock(db, consolidationId);
@@ -401,11 +432,13 @@ export async function consolidate(
         consolidationId,
         extractionDegraded,
         factsIn: extractedCount,
-        factsGraduated: 0,
+        factsIntegrated: 0,
         factsRejected: 0,
         entitiesCreated: 0,
         entitiesLinked: 0,
         supersessions: 0,
+        eventsCopied,
+        eventsRemaining: await remainingEvents(),
         summary: null,
         openThreads: [],
         skipped: false,
@@ -415,7 +448,7 @@ export async function consolidate(
       });
     }
 
-    // Phase C: I→K graduation pipeline (LLM calls happen here, outside transaction)
+    // Phase C: I→K integration pipeline (LLM calls happen here, outside transaction)
 
     // Build lookup map for O(1) access in Phase C and D
     const sessionFactMap = new Map(sessionFacts.map((f) => [f.id, f]));
@@ -491,7 +524,7 @@ export async function consolidate(
     };
 
     // Step 3: Reconcile each fact against existing knowledge
-    const toGraduate: Array<{
+    const toIntegrate: Array<{
       sessionFactId: string;
       content: string;
       domain: string;
@@ -502,11 +535,11 @@ export async function consolidate(
     let rejected = 0;
     /** Confidence boosts to apply to existing facts via Mem0's "enrich"
      *  reconcile decision — candidate is a paraphrase / corroboration of an
-     *  existing fact, so instead of graduating we strengthen the existing one. */
+     *  existing fact, so instead of integrating we strengthen the existing one. */
     const enrichments: Array<{ existingFactId: string; confidenceDelta: number }> = [];
-    // Intra-batch dedup: track normalised content already queued for graduation.
+    // Intra-batch dedup: track normalised content already queued for integration.
     // Without this, two session_facts with identical content from different sessions
-    // both pass same-session hash dedup and both pass reconcile (neither has a graduated
+    // both pass same-session hash dedup and both pass reconcile (neither has a integrated
     // twin yet), producing duplicate rows in the facts table.
     const seenBatchContent = new Set<string>();
 
@@ -567,7 +600,7 @@ export async function consolidate(
         sessionFact.importance_signal ??
         defaultsByDomain[cf.domain] ??
         DEFAULT_IMPORTANCE;
-      toGraduate.push({
+      toIntegrate.push({
         sessionFactId: cf.id,
         content: cf.content,
         domain: cf.domain,
@@ -587,11 +620,11 @@ export async function consolidate(
 
     // Step 4: Detect supersessions (outside transaction — may involve LLM)
     // Known limitation: supersession only checks new facts against EXISTING
-    // graduated facts (from the domainCache populated above). Two facts in the
+    // integrated facts (from the domainCache populated above). Two facts in the
     // SAME batch cannot supersede each other. If a user captures "I prefer
-    // coffee" then "I no longer prefer coffee" in one session, both graduate
+    // coffee" then "I no longer prefer coffee" in one session, both integrate
     // as active facts. Fix: add an intra-batch supersession pass over
-    // toGraduate before the write transaction.
+    // toIntegrate before the write transaction.
     const supersessionMap = new Map<string, string>(); // sessionFactId → existingFactId to supersede
     const alreadySuperseded = new Set<string>(); // existingFactId already claimed by another candidate
     // Track supersession intents that were dropped because another candidate
@@ -599,9 +632,9 @@ export async function consolidate(
     // the user knows their contradiction signal was partially lost.
     const droppedSupersessions: Array<{ newContent: string; targetedContent: string }> = [];
 
-    // toGraduate is ordered by capture time (classifyFacts preserves input order).
+    // toIntegrate is ordered by capture time (classifyFacts preserves input order).
     // First candidate to claim an existing fact wins — temporal priority.
-    for (const item of toGraduate) {
+    for (const item of toIntegrate) {
       // Supersession is domain-scoped. FTS5 is the wrong tool here: it fails
       // when the new fact contains negation tokens ("no longer", "stopped")
       // that don't appear in the old fact. Use cached domain scan instead.
@@ -619,7 +652,7 @@ export async function consolidate(
           alreadySuperseded.add(result.existingFactId);
         } else {
           // Another candidate already claimed this target. This candidate will
-          // graduate as a plain insert rather than a supersession — record the
+          // integrate as a plain insert rather than a supersession — record the
           // conflict so it can surface in openThreads.
           const targeted = candidates.find((c) => c.id === result.existingFactId);
           droppedSupersessions.push({
@@ -631,7 +664,7 @@ export async function consolidate(
     }
     const supersessionCount = supersessionMap.size;
 
-    const graduatedFacts: Fact[] = [];
+    const integratedFacts: Fact[] = [];
 
     // Phase D: Write results in a transaction
     const writeResults = await withTransaction(db, async () => {
@@ -639,15 +672,15 @@ export async function consolidate(
       let entitiesLinked = 0;
 
       // Ensure all unique domains exist once, before the per-fact loop
-      const uniqueDomains = new Set(toGraduate.map((item) => item.domain));
+      const uniqueDomains = new Set(toIntegrate.map((item) => item.domain));
       for (const domain of uniqueDomains) {
         await ensureDomain(db, domain);
       }
 
-      for (const item of toGraduate) {
+      for (const item of toIntegrate) {
         const sessionFact = sessionFactMap.get(item.sessionFactId)!;
 
-        // Write provenance source linking graduated fact back to its session_fact
+        // Write provenance source linking integrated fact back to its session_fact
         // (and through session_fact_sources, to the originating events).
         const source = await createSource(db, {
           type: "session-fact",
@@ -668,10 +701,10 @@ export async function consolidate(
 
         // World time if extract stated a real ISO day; explicit null if not.
         // Do not omit the field — insertFact would then default to now, and a
-        // past event would look as if it became true at graduation.
+        // past event would look as if it became true at integration.
         const validFrom = sessionFact.valid_from_hint;
 
-        const graduatedFact = supersededId
+        const integratedFact = supersededId
           ? await supersedeFact(db, supersededId, {
               content: item.content,
               domain: item.domain,
@@ -709,12 +742,12 @@ export async function consolidate(
               speaker: sessionFact.speaker,
               valid_from: validFrom,
             });
-        graduatedFacts.push(graduatedFact);
+        integratedFacts.push(integratedFact);
 
         // Link entities
         const extractedEntities = entityMap.get(item.sessionFactId);
         if (extractedEntities) {
-          const factId = graduatedFact.id;
+          const factId = integratedFact.id;
           const resolvedIds: string[] = [];
           const resolvedEntities: Entity[] = [];
 
@@ -771,8 +804,8 @@ export async function consolidate(
         // Only the deterministic self-case is handled here. Third-party
         // subjects come from the provider's entity list (subject_of). A wrong
         // automatic guess is worse than a mention-only link.
-        if (isAboutTheUser(graduatedFact.content)) {
-          await linkFactEntity(db, graduatedFact.id, (await ensureSelfEntity(db)).id, SUBJECT_OF);
+        if (isAboutTheUser(integratedFact.content)) {
+          await linkFactEntity(db, integratedFact.id, (await ensureSelfEntity(db)).id, SUBJECT_OF);
           entitiesLinked++;
         }
 
@@ -785,7 +818,7 @@ export async function consolidate(
           );
           const speakerEntity = pickUtteredByPerson(persons, sessionFact.speaker);
           if (speakerEntity) {
-            await linkFactEntity(db, graduatedFact.id, speakerEntity.id, UTTERED_BY);
+            await linkFactEntity(db, integratedFact.id, speakerEntity.id, UTTERED_BY);
             entitiesLinked++;
           }
         } else if (sessionFact.speaker_role === "user") {
@@ -793,7 +826,7 @@ export async function consolidate(
           // Do not write speaker "self" or "the user" — the link is the id.
           await linkFactEntity(
             db,
-            graduatedFact.id,
+            integratedFact.id,
             (await ensureSelfEntity(db)).id,
             UTTERED_BY,
           );
@@ -813,7 +846,7 @@ export async function consolidate(
       // Insert consolidation record
       await db.prepare(
         `INSERT INTO consolidations
-         (id, session_id, facts_in, facts_graduated, facts_rejected,
+         (id, session_id, facts_in, facts_integrated, facts_rejected,
           entities_created, entities_linked, supersessions,
           summary, open_threads, last_event_sequence, created_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -821,7 +854,7 @@ export async function consolidate(
         consolidationId,
         recordSessionId,
         sessionFacts.length,
-        toGraduate.length,
+        toIntegrate.length,
         rejected,
         entitiesCreated,
         entitiesLinked,
@@ -836,7 +869,7 @@ export async function consolidate(
     });
     phaseDCommitted = true;
 
-    // Phase E: embed the facts that just graduated, if semantic search is on.
+    // Phase E: embed the facts that just integrated, if semantic search is on.
     //
     // After the commit, deliberately. An embedding is derived data, and no
     // failure here may cost a fact: the provider is a network call or a local
@@ -845,19 +878,19 @@ export async function consolidate(
     // vector until the next run picks them up.
     //
     // Also outside the lock — like summarise() below, and for the same reason.
-    await embedGraduatedFacts(db, embeddingProvider, config);
+    await embedIntegratedFacts(db, embeddingProvider, config);
 
     // Release lock before summary generation. summarise() is async on the
     // IntelligenceProvider interface — LLM-based providers make calls that
     // should not hold the advisory lock. If the process crashes between release
     // and the summary UPDATE, the consolidation record has summary=NULL, which
-    // is acceptable (all facts are already graduated).
+    // is acceptable (all facts are already integrated).
     await releaseLock(db, consolidationId);
 
     // Build open threads from summary + any dropped supersessions
     const conflictMessages = droppedSupersessions.map(
       (d) =>
-        `Conflict: "${d.newContent}" also targeted "${d.targetedContent}" for supersession but another candidate won. Graduated as an independent fact — review manually.`,
+        `Conflict: "${d.newContent}" also targeted "${d.targetedContent}" for supersession but another candidate won. Integrated as an independent fact — review manually.`,
     );
 
     // Generate summaries (non-critical — don't lose a successful consolidation
@@ -883,7 +916,7 @@ export async function consolidate(
         const closed = closedGistsFor(extractPending, recordSessionId);
         const summaryResult = await intelligence.summarise(
           sessionFacts,
-          graduatedFacts,
+          integratedFacts,
           priorSessionSummary,
           closed,
         );
@@ -914,7 +947,7 @@ export async function consolidate(
       );
       for (const sessionId of uniqueSessionIds) {
         const factsFor = sessionFacts.filter((f) => f.session_id === sessionId);
-        const graduatedFor = graduatedFacts.filter(
+        const integratedFor = integratedFacts.filter(
           (f) => f.session_id === sessionId,
         );
         const prior = await latestSessionSummary(db, sessionId, consolidationId);
@@ -922,7 +955,7 @@ export async function consolidate(
         try {
           const summaryResult = await intelligence.summarise(
             factsFor,
-            graduatedFor,
+            integratedFor,
             prior,
             closed,
           );
@@ -938,7 +971,7 @@ export async function consolidate(
           } else {
             await db.prepare(
               `INSERT INTO consolidations
-               (id, session_id, facts_in, facts_graduated, facts_rejected,
+               (id, session_id, facts_in, facts_integrated, facts_rejected,
                 entities_created, entities_linked, supersessions,
                 summary, open_threads, last_event_sequence, created_at)
                VALUES (?, ?, 0, 0, 0, 0, 0, 0, ?, ?, ?, ?)`,
@@ -953,7 +986,7 @@ export async function consolidate(
           }
         } catch {
           // Satellite summary is non-critical — the run row already advanced
-          // the watermark and the facts are graduated.
+          // the watermark and the facts are integrated.
         }
       }
     }
@@ -962,11 +995,13 @@ export async function consolidate(
       consolidationId,
       extractionDegraded,
       factsIn: sessionFacts.length,
-      factsGraduated: toGraduate.length,
+      factsIntegrated: toIntegrate.length,
       factsRejected: rejected,
       entitiesCreated: writeResults.entitiesCreated,
       entitiesLinked: writeResults.entitiesLinked,
       supersessions: supersessionCount,
+      eventsCopied,
+      eventsRemaining: await remainingEvents(),
       summary: summaryText,
       openThreads: threads,
       skipped: false,
@@ -976,7 +1011,7 @@ export async function consolidate(
     });
   } catch (err) {
     // Only unclaim if Phase D hasn't committed — otherwise the facts are
-    // already graduated and unclaiming would cause re-processing on the next run.
+    // already integrated and unclaiming would cause re-processing on the next run.
     if (!phaseDCommitted) {
       await db.prepare(
         `UPDATE session_facts SET consolidation_id = NULL WHERE consolidation_id = ?`,
@@ -1008,7 +1043,7 @@ async function persistIntelligenceUsage(
       project: caller.project ?? null,
     });
   } catch {
-    // Spend is derived. A failed insert must not cost graduated facts.
+    // Spend is derived. A failed insert must not cost integrated facts.
   }
   return usage;
 }
@@ -1279,7 +1314,7 @@ async function persistSituations(
     const id = randomUUID();
     await db.prepare(
       `INSERT INTO consolidations
-       (id, session_id, facts_in, facts_graduated, facts_rejected,
+       (id, session_id, facts_in, facts_integrated, facts_rejected,
         entities_created, entities_linked, supersessions,
         summary, open_threads, last_event_sequence, created_at,
         now, now_start_sequence, now_referents, segments)
@@ -1377,7 +1412,7 @@ async function persistPending(db: Db, pending: ExtractPending[]): Promise<void> 
         source_quality: item.source_quality ?? "heuristic",
         speaker_role: speakerRoleOf(primary?.role),
         speaker: speakerNameOf(primary?.speaker),
-        // Unclaimed: a later graduate-only flush (PreCompact) picks these up.
+        // Unclaimed: a later integrate-only run (shutdown) picks these up.
         consolidation_id: null,
       });
 
@@ -1411,6 +1446,7 @@ async function extractFactsFromEvents(
   db: Db,
   intelligence: IntelligenceProvider,
   config?: Partial<ServerConfig>,
+  limit: number | null = null,
 ): Promise<ExtractResult> {
   const empty: ExtractResult = {
     degraded: false,
@@ -1443,7 +1479,13 @@ async function extractFactsFromEvents(
   let degraded = false;
   let advanced = false;
 
+  // Oldest conversations first, bounded by `limit` events across the run. A
+  // per-conversation mark advances only through what this run examined, so a
+  // truncated tail is simply the next run's work — never a claim to have read it.
+  let budget = limit ?? Number.POSITIVE_INFINITY;
+
   for (const conv of conversations) {
+    if (budget <= 0) break;
     if (conv.kind === "unkeyed") {
       await setConversationExtractThrough(db, conv, conv.minSequence);
       advanced = true;
@@ -1452,8 +1494,10 @@ async function extractFactsFromEvents(
 
     const ref: ConversationRef = { kind: conv.kind, id: conv.id };
     const through = await conversationExtractThrough(db, ref);
-    const loaded = await loadConversationEventsAfter(db, ref, through);
+    let loaded = await loadConversationEventsAfter(db, ref, through);
     if (loaded.length === 0) continue;
+    if (loaded.length > budget) loaded = loaded.slice(0, budget);
+    budget -= loaded.length;
 
     const eligible = loaded.filter((e) =>
       isEligibleEvent(e, eventTypes, roles, minContentLength),
@@ -1616,7 +1660,7 @@ async function extractFactsFromEvents(
 /**
  * Embed facts that have no vector for the configured model.
  *
- * Works from *the store*, not from what this run happened to graduate. That is
+ * Works from *the store*, not from what this run happened to integrate. That is
  * what makes it a backfill as well as a write: a run whose provider was down, a
  * store where semantic search was switched on later, and a model change all
  * present identically — facts with no row for the current model — and all drain
@@ -1626,7 +1670,7 @@ async function extractFactsFromEvents(
  * run costs recall until the next consolidation, and the alternative — failing
  * a consolidation that has already committed its facts — costs far more.
  */
-async function embedGraduatedFacts(
+async function embedIntegratedFacts(
   db: Db,
   provider: EmbeddingProvider | null,
   config?: Partial<ServerConfig>,
@@ -1647,7 +1691,7 @@ async function embedGraduatedFacts(
     // decide how much of the backlog a run clears, or turning semantic search
     // on over an existing store would need one consolidation per 128 facts
     // with no indication that more were owed. The backlog is a one-off — a
-    // steady-state run embeds the handful of facts that just graduated.
+    // steady-state run embeds the handful of facts that just integrated.
     const attempted = new Set<string>();
     for (;;) {
       const pending = await getFactsMissingEmbeddings(db, model, dimensions, batchSize);

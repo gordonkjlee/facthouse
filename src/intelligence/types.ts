@@ -83,7 +83,7 @@ export interface ExtractExtras {
   segments?: TopicSegment[];
   reminderEvents?: SessionEvent[];
   /**
-   * Bounded related graduated facts for this extract (hybrid search, capped).
+   * Bounded related integrated facts for this extract (hybrid search, capped).
    * Same list as the longTermMemory argument. Cue, not veto.
    */
   relatedFacts?: Fact[];
@@ -118,7 +118,7 @@ export interface ExtractedFact {
   /** Entities mentioned in this fact, pre-resolved against existing candidates. */
   entities?: ExtractedEntity[];
   /** Which provider produced this extraction. Consolidate uses this to
-   *  propagate source_quality through to graduated facts. */
+   *  propagate source_quality through to integrated facts. */
   source_quality?: SourceQuality;
 }
 
@@ -171,7 +171,7 @@ export interface IntelligenceProvider {
    *                          that session_now has not drifted). NOT the
    *                          disambiguation table and NOT re-extracted.
    *  @param sessionSummary   Rolling gist of the episode (optional).
-   *  @param longTermMemory   Small related set of graduated facts (optional).
+   *  @param longTermMemory   Small related set of integrated facts (optional).
    *                          Same list as extras.relatedFacts. Cue and
    *                          de-dupe; must not veto a contradicting new line.
    *  @param extras           session_now, referents, closed segments, and
@@ -199,7 +199,7 @@ export interface IntelligenceProvider {
 
   /** Generate the rolling session summary. The returned `summary` is the
    *  CUMULATIVE summary of the session as of this consolidation — combining
-   *  any prior summary with what was just graduated. Stored on the
+   *  any prior summary with what was just integrated. Stored on the
    *  consolidations row; the latest row's summary acts as long-range working
    *  memory for the next consolidation in the same session.
    *  @param priorSummary  Rolling summary from the latest prior consolidation
@@ -207,7 +207,7 @@ export interface IntelligenceProvider {
    *                       first consolidation in a session. */
   summarise(
     facts: SessionFact[],
-    graduatedFacts: Fact[],
+    integratedFacts: Fact[],
     priorSummary?: string | null,
     closedTopics?: string[],
   ): Promise<SessionSummary>;

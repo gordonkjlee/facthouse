@@ -691,10 +691,10 @@ describe("createCliProvider — summarise", () => {
     expect(result.openThreads).toHaveLength(1);
   });
 
-  it("returns heuristic summary for empty graduation set", async () => {
+  it("returns heuristic summary for empty integration set", async () => {
     const provider = createCliProvider();
     const result = await provider.summarise([], []);
-    expect(result.summary).toBe("No facts graduated.");
+    expect(result.summary).toBe("No facts integrated.");
   });
 
   it("threads the prior rolling summary into the stage-4 payload", async () => {

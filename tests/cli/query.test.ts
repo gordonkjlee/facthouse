@@ -128,11 +128,11 @@ describe("formatSearch", () => {
             ],
           },
         ],
-        suggested_refinement: "No graduated facts matched.",
+        suggested_refinement: "No integrated facts matched.",
       }),
       "kaleidoscope",
     );
-    expect(out).toContain("No graduated facts");
+    expect(out).toContain("No integrated facts");
     expect(out).toContain("kaleidoscope");
     expect(out).not.toContain("No knowledge found");
   });
@@ -144,7 +144,7 @@ describe("formatSearch", () => {
     expect(out).toContain("entities: Robin");
   });
 
-  it("renders pending when nothing has graduated yet", () => {
+  it("renders pending when nothing has integrated yet", () => {
     const out = formatSearch(
       response({
         pending: [
@@ -161,7 +161,7 @@ describe("formatSearch", () => {
       }),
       "coffee",
     );
-    expect(out).toContain("No graduated facts for \"coffee\"");
+    expect(out).toContain("No integrated facts for \"coffee\"");
     expect(out).toContain("Pending (not yet consolidated)");
     expect(out).toContain("The user prefers dark roast coffee");
     expect(out).toContain("preferences");
@@ -169,7 +169,7 @@ describe("formatSearch", () => {
     expect(out).not.toContain("No knowledge found");
   });
 
-  it("renders pending after graduated results", () => {
+  it("renders pending after integrated results", () => {
     const out = formatSearch(
       response({
         results: [result("Prefers tea")] as any,

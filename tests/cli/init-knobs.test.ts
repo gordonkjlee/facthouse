@@ -103,7 +103,7 @@ describe("init knobs — one definition", () => {
     expect(INIT_PROMPTS.moreCliModel("haiku")).toBe(
       "Model to extract facts from messages  [haiku]: ",
     );
-    expect(INIT_PROMPTS.moreCliGraduateModel("haiku")).toBe(
+    expect(INIT_PROMPTS.moreCliIntegrateModel("haiku")).toBe(
       "Model to update long-term knowledge  [haiku]: ",
     );
     expect(INIT_PROMPTS.copyNow).toMatch(/\[Y\]: $/);
@@ -143,7 +143,7 @@ describe("init knobs — one definition", () => {
         "intro",
         "kind",
         "mcpVsCli",
-        "mixPullLogEvent",
+        "mixCopyLogEvent",
         "shellNote",
         "more",
         "webExisting",
@@ -151,7 +151,7 @@ describe("init knobs — one definition", () => {
         "webSaved",
         "webYesRefuse",
         "moreCliModel",
-        "moreCliGraduateModel",
+        "moreCliIntegrateModel",
         "moreCliTimeout",
         "moreCliTimeoutInvalid",
         "moreHttpBaseUrl",
@@ -182,7 +182,7 @@ describe("init knobs — one definition", () => {
     expect(INIT_KNOB_IDS).toEqual(["dataDir", "sources", "embedding", "more"]);
     expect(MORE_SETTING_IDS).toEqual([
       "cliModel",
-      "cliGraduateModel",
+      "cliIntegrateModel",
       "cliTimeoutMs",
       "httpExtract",
       "httpBaseUrl",
@@ -233,20 +233,20 @@ describe("init knobs — one definition", () => {
     });
     expect(next.intelligence.cli?.model).toBe("sonnet");
     expect(next.intelligence.cli?.timeout_ms).toBe(180_000);
-    expect(next.intelligence.cli?.graduate_model).toBeUndefined();
+    expect(next.intelligence.cli?.integrate_model).toBeUndefined();
     expect(next.intelligence.provider).toBe("cli");
     const split = applyInitOverlay(defaultServerConfig(), {
       cliModel: "haiku",
-      cliGraduateModel: "sonnet",
+      cliIntegrateModel: "sonnet",
     });
     expect(split.intelligence.cli?.model).toBe("haiku");
-    expect(split.intelligence.cli?.graduate_model).toBe("sonnet");
+    expect(split.intelligence.cli?.integrate_model).toBe("sonnet");
     const same = applyInitOverlay(defaultServerConfig(), {
       cliModel: "sonnet",
-      cliGraduateModel: "sonnet",
+      cliIntegrateModel: "sonnet",
     });
     expect(same.intelligence.cli?.model).toBe("sonnet");
-    expect(same.intelligence.cli?.graduate_model).toBeUndefined();
+    expect(same.intelligence.cli?.integrate_model).toBeUndefined();
     const withHttp = applyInitOverlay(defaultServerConfig(), {
       httpExtract: true,
       httpBaseUrl: "http://localhost:1234/v1",
@@ -293,7 +293,7 @@ describe("init knobs — one definition", () => {
     expect(readme).toMatch(
       /non-default data directory prints a distinct MCP server name/i,
     );
-    expect(readme).toContain(INIT_PROMPTS.mixPullLogEvent);
+    expect(readme).toContain(INIT_PROMPTS.mixCopyLogEvent);
   });
 
   it("scripted README init uses --yes, except a lone walk-through fence", () => {

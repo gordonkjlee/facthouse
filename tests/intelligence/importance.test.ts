@@ -8,7 +8,7 @@
  *
  * **Only the first and last were reachable.** capture_fact stamped
  * `importance ?? DEFAULT_IMPORTANCE` at write time, so the column was never
- * null; graduation resolves `importance ?? importance_signal ?? domain default
+ * null; integration resolves `importance ?? importance_signal ?? domain default
  * ?? baseline`, and a non-null first link short-circuits the rest. Both middle
  * layers were dead code. Meanwhile `capture.importance_defaults` shipped as
  * `{}`, so even the config layer had nothing in it.
@@ -47,12 +47,12 @@ async function manager(configOverride?: Record<string, unknown>) {
   });
 }
 
-/** Importance of the single graduated fact matching a content fragment. */
+/** Importance of the single integrated fact matching a content fragment. */
 async function importanceOf(fragment: string): Promise<number> {
   const row = (await db
     .prepare(`SELECT importance FROM facts WHERE content LIKE ?`)
     .get(`%${fragment}%`)) as { importance: number } | undefined;
-  if (!row) throw new Error(`no graduated fact matching "${fragment}"`);
+  if (!row) throw new Error(`no integrated fact matching "${fragment}"`);
   return row.importance;
 }
 

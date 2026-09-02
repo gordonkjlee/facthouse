@@ -42,7 +42,7 @@ export function registerInferenceTools(
         .array(z.string())
         .min(1)
         .describe(
-          "Graduated fact ids that support the hypothesis. At least one. " +
+          "Integrated fact ids that support the hypothesis. At least one. " +
             "A guess with no evidence is not this tool.",
         ),
       entity_ids: z
@@ -84,7 +84,7 @@ export function registerInferenceTools(
       confirmed: z
         .boolean()
         .describe(
-          "true graduates it as labelled knowledge; false rejects it",
+          "true integrates it as labelled knowledge; false rejects it",
         ),
       reason: z
         .string()

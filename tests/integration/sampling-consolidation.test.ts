@@ -1,11 +1,11 @@
 /**
  * End-to-end test: session_events → sampling provider → consolidate() →
- * graduated facts + entities.
+ * integrated facts + entities.
  *
  * Stubs server.createMessage with canned JSON responses that mimic what a
  * real host LLM would return, and drives consolidate() through the sampling
  * provider. Exercises the full Phase B (event extraction) + Phase C
- * (classify / extract entities / reconcile / supersede / graduate) pipeline.
+ * (classify / extract entities / reconcile / supersede / integrate) pipeline.
  *
  * Purpose: catches wiring bugs between the sampling provider's JSON contract
  * and the downstream consolidation code that the unit-level sampling tests
@@ -114,7 +114,7 @@ function makeSamplingStub(): { server: Server; calls: number } {
 }
 
 describe("end-to-end sampling consolidation", () => {
-  it("extracts, classifies, resolves entities, and graduates facts", async () => {
+  it("extracts, classifies, resolves entities, and integrates facts", async () => {
     // Seed raw conversation events.
     await insertEvent(db, {
       mcp_session_id: sessionId,
@@ -138,7 +138,7 @@ describe("end-to-end sampling consolidation", () => {
 
     expect(result.skipped).toBe(false);
     expect(result.factsIn).toBe(2);
-    expect(result.factsGraduated).toBe(2);
+    expect(result.factsIntegrated).toBe(2);
     expect(result.entitiesCreated).toBeGreaterThanOrEqual(1);
 
     const facts = (await db.prepare(`SELECT content, domain FROM facts`).all()) as Array<{
@@ -160,10 +160,10 @@ describe("end-to-end sampling consolidation", () => {
     expect(links.n).toBeGreaterThanOrEqual(1);
 
     const consolidations = (await db
-      .prepare(`SELECT facts_graduated, last_event_sequence FROM consolidations`)
-      .all()) as Array<{ facts_graduated: number; last_event_sequence: number }>;
+      .prepare(`SELECT facts_integrated, last_event_sequence FROM consolidations`)
+      .all()) as Array<{ facts_integrated: number; last_event_sequence: number }>;
     expect(consolidations).toHaveLength(1);
-    expect(consolidations[0].facts_graduated).toBe(2);
+    expect(consolidations[0].facts_integrated).toBe(2);
     expect(consolidations[0].last_event_sequence).toBe(2);
   });
 
@@ -193,7 +193,7 @@ describe("end-to-end sampling consolidation", () => {
       extraction: { enabled: true } as any,
     });
 
-    expect(result.factsGraduated).toBe(0);
+    expect(result.factsIntegrated).toBe(0);
     const facts = (await db.prepare(`SELECT COUNT(*) AS n FROM facts`).get()) as { n: number };
     expect(facts.n).toBe(0);
     // But a watermark row still lands — event was consumed.
@@ -260,7 +260,7 @@ describe("end-to-end sampling consolidation", () => {
       extraction: { enabled: true } as any,
     });
 
-    expect(result.factsGraduated).toBe(1);
+    expect(result.factsIntegrated).toBe(1);
     const facts = (await db.prepare(`SELECT domain FROM facts`).all()) as Array<{ domain: string }>;
     expect(facts[0].domain).toBe("medical");
   });

@@ -4,7 +4,7 @@
  * `session_events` is the D layer of the pipeline: raw conversation and tool
  * output, read once by extraction and then kept for ever. On a store in daily
  * use that is almost all of the database — measured at 47,000 events and 493 MB
- * against 21 graduated facts, because agentic tool output is logged wholesale
+ * against 21 integrated facts, because agentic tool output is logged wholesale
  * and dwarfs everything a person actually says.
  *
  * **The rule is reachability, not age.** A clock is the wrong instrument here:
@@ -29,7 +29,7 @@
  *      extract glances at when now/referents are not enough.
  *
  * The CLI is dry-run by default and never automatic. A store that set
- * `retention.disk_budget` may apply this same rule before more D ingest,
+ * `retention.disk_budget` may apply this same rule before more D copy,
  * then refuse if the file is still at the ceiling. That path does not VACUUM.
  */
 

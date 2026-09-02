@@ -42,7 +42,6 @@ import {
   envName,
 } from "../identity.js";
 import { defaultDataDir } from "../paths.js";
-import { SESSION_START_FLUSH_MAX_INSERTED } from "../sources/pull.js";
 import {
   INIT_PROMPTS,
   applyInitOverlay,
@@ -240,7 +239,7 @@ export function appendCaptureRecipe(
   const status = sourcesStatusLines(sources);
   try {
     if (resolveSources(sources).length > 0) {
-      return [...status, INIT_PROMPTS.mixPullLogEvent];
+      return [...status, INIT_PROMPTS.mixCopyLogEvent];
     }
   } catch {
     return status;
@@ -249,12 +248,12 @@ export function appendCaptureRecipe(
 }
 
 /**
- * Report whether this store will pull Claude Code transcripts.
+ * Report whether this store will copy Claude Code transcripts.
  *
- * Empty `sources` is the shipped default and means pull is off. Init writes
+ * Empty `sources` is the shipped default and means copy is off. Init writes
  * that empty list so the knob is visible. Facts still get in via
  * `capture_fact` until a source is named — that is the sentence a silent
- * `--yes` run must print, or it reads like pull is required.
+ * `--yes` run must print, or it reads like copy is required.
  */
 export function sourcesStatusLines(sources: unknown): string[] {
   let n: number;
@@ -266,14 +265,13 @@ export function sourcesStatusLines(sources: unknown): string[] {
   }
   if (n === 0) {
     return [
-      `Capture: pull is off. capture_fact is how facts get in.`,
-      `Transcripts: ${CLI_NAME} init on a terminal, pick copy, set cwd, then ${CLI_NAME} pull.`,
+      `Capture: copy is off. capture_fact is how facts get in.`,
+      `Transcripts: ${CLI_NAME} init on a terminal, pick copy, set cwd, then ${CLI_NAME} consolidate.`,
     ];
   }
   return [
-    `Capture: ${n} source${n === 1 ? "" : "s"}. Run ${CLI_NAME} pull.`,
+    `Capture: ${n} source${n === 1 ? "" : "s"}. Run ${CLI_NAME} consolidate.`,
     INIT_PROMPTS.copyStorewide,
-    `A first pull of more than ${SESSION_START_FLUSH_MAX_INSERTED} events needs ${CLI_NAME} consolidate.`,
   ];
 }
 
@@ -332,7 +330,7 @@ export async function initDataDir(args: InitArgs): Promise<InitResult> {
     await applySchema(db);
     schemaVersion = await getSchemaVersion(db);
     // Seed the domain vocabulary the config declares. The table previously
-    // started empty and stayed empty until the first fact graduated, so the
+    // started empty and stayed empty until the first fact integrated, so the
     // earliest facts had no existing vocabulary to be routed against — the
     // point at which consistent routing matters most. ensureDomain is
     // idempotent, so re-running init is safe.

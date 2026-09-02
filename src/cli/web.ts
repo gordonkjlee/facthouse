@@ -194,8 +194,8 @@ export function renderInitWebHtml(opts: {
     switch (id) {
       case "cliModel":
         return `<label>Model to extract facts from messages <input name="cliModel" autocomplete="off" placeholder="haiku"></label>`;
-      case "cliGraduateModel":
-        return `<label>Model to update long-term knowledge <input name="cliGraduateModel" autocomplete="off" placeholder="haiku"></label>`;
+      case "cliIntegrateModel":
+        return `<label>Model to update long-term knowledge <input name="cliIntegrateModel" autocomplete="off" placeholder="haiku"></label>`;
       case "cliTimeoutMs":
         return `<label>Per-stage timeout in ms <input name="cliTimeoutMs" inputmode="numeric" autocomplete="off"></label>`;
       case "httpExtract":
@@ -285,7 +285,7 @@ export function renderSettingsWebHtml(opts: {
 <p class="hint">Extra knobs only. Capture and search stay as they are.</p>
 <form method="post" action="?token=${encodeURIComponent(opts.token)}">
   <label>Model to extract facts from messages <input name="cliModel" value="${escapeHtml(s.cliModel)}" autocomplete="off"></label>
-  <label>Model to update long-term knowledge <input name="cliGraduateModel" value="${escapeHtml(s.cliGraduateModel)}" autocomplete="off"></label>
+  <label>Model to update long-term knowledge <input name="cliIntegrateModel" value="${escapeHtml(s.cliIntegrateModel)}" autocomplete="off"></label>
   <label>Per-stage timeout in ms <input name="cliTimeoutMs" value="${escapeHtml(String(s.cliTimeoutMs))}" inputmode="numeric" autocomplete="off"></label>
   <label><input type="checkbox" name="httpExtract" value="yes"${s.httpExtract ? " checked" : ""}> Local extract on an OpenAI-compatible host</label>
   <label>Host URL <input name="httpBaseUrl" value="${escapeHtml(s.httpBaseUrl)}" autocomplete="off"></label>
@@ -441,9 +441,9 @@ function applyMoreFromParams(
         if (v) overlay.cliModel = v;
         break;
       }
-      case "cliGraduateModel": {
-        const v = (params.get("cliGraduateModel") ?? "").trim();
-        if (v) overlay.cliGraduateModel = v;
+      case "cliIntegrateModel": {
+        const v = (params.get("cliIntegrateModel") ?? "").trim();
+        if (v) overlay.cliIntegrateModel = v;
         break;
       }
       case "cliTimeoutMs": {

@@ -6,11 +6,11 @@
  *
  *   Data         SessionEvent    Raw interactions, uninterpreted, append-only
  *   Information  SessionFact     LLM-extracted, tagged, awaiting integration
- *   Knowledge    Fact            Graduated, entity-linked, deduplicated, routed
+ *   Knowledge    Fact            Integrated, entity-linked, deduplicated, routed
  *   Wisdom       Inference       Gated hypotheses. Default off. Not produced by I→K.
  *
  * Each transformation is explicit:
- *   Data → Information    Pull / log-event fill session_events; capture_fact is
+ *   Data → Information    Copy / log-event fill session_events; capture_fact is
  *                          an optional explicit correction; extraction runs at
  *                          consolidation
  *   Information → Knowledge   Event-driven batch consolidation
@@ -62,7 +62,7 @@ export interface Consolidation {
   id: string;
   session_id: string | null;
   facts_in: number;
-  facts_graduated: number;
+  facts_integrated: number;
   facts_rejected: number;
   entities_created: number;
   entities_linked: number;
@@ -107,7 +107,7 @@ export interface SessionEvent {
   created_at: string;
   /**
    * When the turn was said. Pull copies Claude Code JSONL `timestamp` when
-   * present, otherwise null (a backfill must not pretend ingest was speech).
+   * present, otherwise null (a backfill must not pretend copying was speech).
    * Hook `log-event` and MCP `log_event` stamp the call — those fire at the
    * turn, and the hook payload has no clock of its own.
    */
@@ -117,7 +117,7 @@ export interface SessionEvent {
 /**
  * DIKW: Information — captured or extracted fact awaiting consolidation.
  * Also serves as in-session working memory (queryable via get_session_context).
- * Graduates to Fact during consolidation.
+ * Integrates to Fact during consolidation.
  */
 export interface SessionFact {
   id: string;
@@ -192,7 +192,7 @@ export const BACKING_TYPES = [
 export type BackingType = (typeof BACKING_TYPES)[number];
 
 /**
- * DIKW: Knowledge — graduated fact in the canonical store. Entity-linked,
+ * DIKW: Knowledge — integrated fact in the canonical store. Entity-linked,
  * deduplicated, domain-routed. Only enters this table after consolidation.
  */
 export interface Fact {
@@ -219,7 +219,7 @@ export interface Fact {
    *  tracking and future reprocess passes that upgrade heuristic-era facts. */
   source_quality: SourceQuality;
   /**
-   * Role of the primary event, copied from session_facts at graduation.
+   * Role of the primary event, copied from session_facts at integration.
    * Null when unknown. Distinct from source_origin (how it entered I) and
    * source_type (conversation vs inference).
    */
@@ -294,7 +294,7 @@ export interface Inference {
    */
   entity_ids: string[];
   reason: string | null;
-  /** Graduated fact id, set only when confirmed. */
+  /** Integrated fact id, set only when confirmed. */
   fact_id: string | null;
   created_at: string;
   validated_at: string | null;
@@ -318,7 +318,7 @@ export interface SearchResult {
  * pending fact has been through none of the pipeline: not deduplicated, not
  * reconciled against existing knowledge, possibly contradicting a fact already
  * held, with a domain that is still only a hint. It is real knowledge and must
- * be findable — but presenting it as equal to a graduated fact would overstate
+ * be findable — but presenting it as equal to a integrated fact would overstate
  * what is actually known.
  */
 export interface PendingFact {
@@ -345,12 +345,12 @@ export interface SearchResponse {
   /**
    * Matching facts captured this session or a previous one that have not been
    * consolidated yet. Keyword-matched only — entities and domains do not exist
-   * for a fact until it graduates.
+   * for a fact until it integrates.
    */
   pending: PendingFact[];
   /**
    * Short raw-log windows around a keyword hit in `session_events`. Filled
-   * only when graduated `results` are empty — pattern completion from D, not
+   * only when integrated `results` are empty — pattern completion from D, not
    * a second retrieval product. Not extracted, not reconciled; never mixed
    * into `results` or `pending`.
    */

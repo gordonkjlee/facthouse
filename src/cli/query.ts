@@ -27,6 +27,7 @@ import {
   formatTokenCount,
 } from "../intelligence/token-budget.js";
 import { formatDiskBudget } from "../db/disk-budget.js";
+import type { ConsolidationResult } from "../intelligence/consolidate.js";
 import type { EpisodeSlice, PendingFact, SearchResponse } from "../types/data.js";
 import type { InterlocutorConfig } from "../types/config.js";
 
@@ -109,13 +110,13 @@ export function formatSearch(response: SearchResponse, query: string): string {
       lines.push("");
     }
     // Retrieval-quality signals — the same ones the tool hands an AI, so a thin
-    // result set is visibly thin rather than silently wrong. Graduated only.
+    // result set is visibly thin rather than silently wrong. Integrated only.
     lines.push(
       `  coverage ${(response.coverage_estimate * 100).toFixed(0)}%  ·  ` +
         `confidence ${(response.result_confidence * 100).toFixed(0)}%`,
     );
   } else {
-    lines.push(`No graduated facts for "${query}".`);
+    lines.push(`No integrated facts for "${query}".`);
   }
 
   if (pending.length > 0) {
@@ -168,6 +169,33 @@ function formatEpisodeSlices(episodes: EpisodeSlice[]): string[] {
 // ---------------------------------------------------------------------------
 
 /** Render knowledge base statistics for a terminal. */
+/**
+ * Human summary of one consolidate run. `--json` prints the result object
+ * instead; this is what a person reads at the terminal.
+ */
+export function formatConsolidate(r: ConsolidationResult): string {
+  const lines: string[] = ["", "FactMem consolidate", ""];
+  if (r.skipped) {
+    lines.push(`  Skipped            ${r.skipReason ?? "nothing to do"}`);
+    lines.push(`  Events remaining   ${r.eventsRemaining}`);
+    return lines.join("\n");
+  }
+  lines.push(`  Events copied      ${r.eventsCopied}`);
+  lines.push(`  Candidates in      ${r.factsIn}`);
+  lines.push(`  Facts integrated   ${r.factsIntegrated}`);
+  if (r.factsRejected > 0) lines.push(`  Rejected           ${r.factsRejected}`);
+  lines.push(
+    `  Entities           ${r.entitiesCreated} created, ${r.entitiesLinked} linked`,
+  );
+  if (r.supersessions > 0) lines.push(`  Supersessions      ${r.supersessions}`);
+  lines.push(`  Events remaining   ${r.eventsRemaining}`);
+  if (r.extractionDegraded) {
+    lines.push(`  Extraction         degraded — see the message above`);
+  }
+  if (r.summary) lines.push("", `  ${r.summary}`);
+  return lines.join("\n");
+}
+
 export function formatStats(stats: KnowledgeStats): string {
   const lines: string[] = ["", "FactMem statistics", ""];
 

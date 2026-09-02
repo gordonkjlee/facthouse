@@ -43,7 +43,7 @@ Two ways. Pick one per store.
 |---|---|---|
 | Who | Claude Code or Cursor, when that client writes a JSONL file here | Any MCP client (Grok Build, Desktop, …) |
 | How | Name a source; FactMem copies new lines into your file | Empty `sources`; the assistant calls `capture_fact` |
-| First run | TTY walk-through, pick **copy**, set cwd, then pull | The paste above (already record) |
+| First run | TTY walk-through, pick **copy**, set cwd, then `factmem consolidate` | The paste above (already record) |
 
 On a copy store, capture_fact is a correction for every MCP client, not only the one that writes JSONL. Grok has no transcript adapter — do not put Claude Code on copy and Grok on the same store expecting Grok to record.
 
@@ -51,9 +51,9 @@ On a copy store, capture_fact is a correction for every MCP client, not only the
 factmem init
 ```
 
-Pick copy, set cwd, then `factmem pull` once. More than 50 new events: `factmem consolidate`. After that, the server copies new lines when it handles a call.
+Pick copy, set cwd, then `factmem consolidate` once. It copies your transcripts, extracts facts from the oldest 50 events, and integrates them; `--all` takes the whole backlog. After that, the server copies new lines when it handles a call.
 
-Compact (optional): `factmem pull --flush` — not a turn-end Stop hook.
+Compact (optional): `factmem notify compaction` — not a turn-end Stop hook.
 
 Replay: [factmem.dev/demo.html](https://factmem.dev/demo.html).
 
@@ -69,13 +69,13 @@ Replay: [factmem.dev/demo.html](https://factmem.dev/demo.html).
 
 One SQLite file you own. Three tables in that file, not three databases:
 
-- **D** (`session_events`) — what was said (pulled transcripts, or `log_event`)
+- **D** (`session_events`) — what was said (copied transcripts, or `log_event`)
 - **I** (`session_facts`) — what was just extracted, or `capture_fact`
-- **K** (`facts`) — graduated knowledge
+- **K** (`facts`) — integrated knowledge
 
 FTS5 (words) and optional embeddings (meaning) are indexes of **K**. They are not a second store. Semantic search is off unless you turn it on: `search "shellfish"` finds a shellfish fact, `search "food"` does not, until you choose an embedding model — a model is an opinion about what “similar” means.
 
-Two speeds. **Extract** turns new transcript lines into self-contained facts (session start leftover, `factmem pull` with a listening server, or `consolidate`). **Flush** (`pull --flush`, shutdown) graduates those pending facts. The MCP server copies the raw log on a call; it does not extract then. Consolidation does not invent a sentence nobody said.
+Two speeds. **Extract** turns new transcript lines into self-contained facts. **Integrate** fits them into what the store already knows: domains, entities, duplicates, contradictions, the graph. `consolidate` runs copy, extract, and integrate together — in the server at session start and at compaction, or by hand from the CLI. Extract is capped at 50 events per run, so a first backfill is never spent on the lot. The MCP server copies the raw log on a call; it does not extract then. Consolidation does not invent a sentence nobody said.
 
 Storage needs Node. Intelligence needs a language model. By default that is the [Claude Code CLI](https://github.com/anthropics/claude-code) on your existing subscription. Without it, consolidation falls back to a built-in heuristic that **does not extract facts from transcripts**. `capture_fact` still stores facts, with no entities and no domain routing.
 
@@ -104,11 +104,11 @@ Both are read-only views over the same database the tools query. Clients that ne
 
 - `get_entity` — Everything known about any named subject — person, organisation, project, place, product — and how it connects. When several rows share the name under different types, facts from all of them come back. Hyphens, underscores, and stray punctuation count as the same letters only when that does not join two names already stored as separate rows. If there is no entity by that name, facts that mention the wording still come back rather than an empty miss.
 - `get_context` — Everything relevant to a topic (search + entity traversal)
-- `search_knowledge` — Hybrid search across graduated knowledge
+- `search_knowledge` — Hybrid search across integrated knowledge
 
 **Writing**
 
-- `capture_fact` — Store a fact. On a pull store this is a correction for something extraction missed; on a store with empty `sources` it is how facts get in. The description the assistant sees is generated from that same rule.
+- `capture_fact` — Store a fact. On a copy store this is a correction for something extraction missed; on a store with empty `sources` it is how facts get in. The description the assistant sees is generated from that same rule.
 - `consolidate` — Integrate pending facts into long-term knowledge. Extracts entities, resolves duplicates, detects contradictions, builds the knowledge graph.
 - Inference tools — Opt-in, off by default (`inferences.enabled` in config.json). A hypothesis cites existing fact ids and stays pending until confirmed. Those tools are not registered until you turn the gate on. Consolidate never invents a sentence nobody said.
 
@@ -178,7 +178,7 @@ factmem settings --data ~/my-memory
 
 #### `factmem log-event`
 
-Inserts events directly into the database (no running server needed). Supported for demos and for stores that have no named source. Not the Claude Code or Cursor default — that is `sources` plus `factmem pull`.
+Inserts events directly into the database (no running server needed). Supported for demos and for stores that have no named source. Not the Claude Code or Cursor default — that is `sources` plus `factmem consolidate`.
 
 ```bash
 # From a hook (reads JSON payload from stdin):
@@ -197,45 +197,42 @@ factmem log-event --role user --event-type message --content "hello world"
 #   --data          Data directory (default: ~/.factmem or FACTMEM_DATA)
 ```
 
-#### `factmem pull`
-
-Ingest new session events from `config.sources`. Empty `sources` is a successful no-op:
-
-```bash
-factmem pull
-factmem pull --no-tick
-factmem pull --flush
-
-# Options:
-#   --data     Data directory (default: ~/.factmem or FACTMEM_DATA)
-#   --no-tick  Copy only; do not ask the MCP server to extract
-#   --flush    Copy, then graduate pending facts (compact wake-up; does not extract)
-```
-
-Set `cwd` on the source unless you intend to ingest every project group. Do not also run `log-event` hooks on this store.
-
 #### `factmem consolidate`
+
+Copy new lines from `config.sources`, extract candidate facts from them, and integrate the pending facts into knowledge. The one command that spends model calls:
 
 ```bash
 factmem consolidate
+factmem consolidate --copy            # copy only; spends nothing
+factmem consolidate --integrate       # pending facts to knowledge; no extract pass
+factmem consolidate --all             # extract the whole backlog now
+factmem consolidate --limit 200       # extract the oldest 200
 
-# Options:
-#   --data     Data directory (default: ~/.factmem or FACTMEM_DATA)
+# Steps — named steps run, in order; none named means all three:
+#   -c, --copy       copy new transcript lines into events
+#   -e, --extract    turn new events into candidate facts (the model call)
+#   -i, --integrate  classify, link, dedupe, supersede, embed
+# Extract is capped at 50 events per run so a first backfill is never spent on
+# the lot; the run says how many remain. --all lifts the cap, --limit N sets it.
+#   --json           print the result object instead of the summary
+#   --data           Data directory (default: ~/.factmem or FACTMEM_DATA)
 ```
 
-Honours the configured provider (by default `claude -p`). Prints JSON — facts graduated, entities extracted, duplicates and contradictions resolved.
+Honours the configured provider (by default `claude -p`). Empty `sources` makes the copy step a no-op. Set `cwd` on the source unless you intend to copy every project group. Do not also run `log-event` hooks on a store with named sources.
 
-#### `factmem signal [tick|flush]`
+#### `factmem notify <moment>`
+
+Tell the running MCP server that a moment happened. The server decides what to run and does it in the background, so a hook returns at once:
 
 ```bash
-factmem signal tick    # extract if the event threshold is due
-factmem signal flush   # graduate pending facts — PreCompact / shutdown
+factmem notify compaction   # the client window is about to collapse: copy, extract, integrate now
+factmem notify threshold    # events arrived: extract if the threshold is due
 
 # Options:
 #   --data     Data directory (default: ~/.factmem or FACTMEM_DATA)
 ```
 
-`pull --flush` is what a PreCompact hook calls so new lines are copied and pending facts survive a context collapse. If no server is listening, flush falls back to an in-process **heuristic** graduate — deliberately, because compaction is time-critical. A `tick` that finds no server simply exits.
+No server listening is not an error: the command says so and exits 0, and the next session start covers it. This is what the PreCompact hook calls.
 
 #### `factmem search <query>`
 
@@ -303,7 +300,7 @@ A non-default data directory prints a distinct MCP server name so two stores can
 ```
 <!-- x-release-please-end -->
 
-Point each store's `sources.cwd` (or hook `--data`) at that store only. Two directories do not isolate anything if both pull the same home.
+Point each store's `sources.cwd` (or hook `--data`) at that store only. Two directories do not isolate anything if both copy the same home.
 
 ### Postgres (optional)
 
@@ -337,7 +334,7 @@ Example — placeholders only; do not put a real password in a committed file:
 
 Choose one mechanism per store.
 
-**Recommended — pull.** Name a `claude-code` or `cursor` source (set `cwd`) and run `factmem pull` from the CLI first. The MCP server also copies at session start and when it handles a call. Grok and Codex are later adapters. Unknown `kind` values are rejected.
+**Recommended — copy.** Name a `claude-code` or `cursor` source (set `cwd`) and run `factmem consolidate` from the CLI first. The MCP server also copies at session start and when it handles a call. Grok and Codex are later adapters. Unknown `kind` values are rejected.
 
 ```json
 {
@@ -351,13 +348,13 @@ Choose one mechanism per store.
 }
 ```
 
-`home` is the client config dir (`~/.claude` or `~/.cursor` — path examples, not extra discovery). Cursor is `"kind": "cursor"` and `home/projects/*/agent-transcripts/**/*.jsonl` only — not Composer SQLite. Cursor encodes `C:\\dev\\app` as `c-dev-app` (Claude Code uses `C--dev-app`). A first pull of more than 50 events needs `factmem consolidate`.
+`home` is the client config dir (`~/.claude` or `~/.cursor` — path examples, not extra discovery). Cursor is `"kind": "cursor"` and `home/projects/*/agent-transcripts/**/*.jsonl` only — not Composer SQLite. Cursor encodes `C:\\dev\\app` as `c-dev-app` (Claude Code uses `C--dev-app`). A first backfill of more than 50 events takes several runs, or one `factmem consolidate --all`.
 
 **Alternative — `log-event`, no sources.** Leave `sources` empty. Pipe a client hook payload into `factmem log-event` if you have one. MCP `log_event` / `capture_fact` keep working.
 
 Do not install log-event hooks on this store — both write the same rows. FactMem does not detect or rewrite existing hook configs.
 
-### Hooks (after the first CLI pull)
+### Hooks (after the first consolidate)
 
 `mcp.json` `env` is **not** visible to hooks. Pass the same `--data` (or set `FACTMEM_DATA` in the environment the client itself inherits). The command must invoke the CLI (`factmem` or the `openmemory` shim), never the server binary. `npx -y @factmem/mcp` with no `-p` / `factmem` starts the MCP **server** and hangs a hook. Pin the package version, quote it if the hook runs PowerShell, and put `--` before `factmem` so a globally installed older binary on PATH cannot win. Existing hooks that call `openmemory` keep working.
 
@@ -373,7 +370,7 @@ Do not install log-event hooks on this store — both write the same rows. FactM
         "hooks": [
           {
             "type": "command",
-            "command": "npx -y -p @factmem/mcp@0.25.0 -- factmem pull --flush --data /absolute/path/to/the-same-store"
+            "command": "npx -y -p @factmem/mcp@0.25.0 -- factmem notify compaction --data /absolute/path/to/the-same-store"
           }
         ]
       }
@@ -385,9 +382,9 @@ Do not install log-event hooks on this store — both write the same rows. FactM
 
 </details>
 
-PreCompact `pull --flush` copies new JSONL lines, then graduates pending facts already in the database. It does not extract. We do not install a turn-end Stop hook. On Windows the `--data` path is the same absolute directory you put in `FACTMEM_DATA` (for example `C:\\Users\\alex\\AppData\\Local\\Temp\\factmem-try`).
+PreCompact `notify compaction` asks the running server to consolidate: copy the newest JSONL lines, extract, integrate. The hook returns at once; the server does the work. We do not install a turn-end Stop hook. On Windows the `--data` path is the same absolute directory you put in `FACTMEM_DATA` (for example `C:\\Users\\alex\\AppData\\Local\\Temp\\factmem-try`).
 
-Frequent incremental pull interleaves conversations on the global sequence: a long chat kept open is sliced between other chats. Extract progress is per conversation, so a timeout in one chat does not discard another. Shrinking `extraction.batch_size` means more extract calls (more chances of a timeout), not a store-wide hold-all. `factmem stats` reports unextracted events against that extract watermark.
+Frequent incremental copying interleaves conversations on the global sequence: a long chat kept open is sliced between other chats. Extract progress is per conversation, so a timeout in one chat does not discard another. Shrinking `extraction.batch_size` means more extract calls (more chances of a timeout), not a store-wide hold-all. `factmem stats` reports unextracted events against that extract watermark.
 
 If the MCP server does not start, or lists no tools, check the package version the client actually spawned. A global `factmem` or `openmemory` on PATH can be years behind the pin in this README. Diagnose with `factmem stats --data <dir>` (the CLI prints whether the scheduler is listening) and by inspecting `serverInfo.version` from `initialize` plus `tools/list` over stdio. `0.2.x` answers `initialize` then throws on `tools/list`.
 
@@ -486,25 +483,25 @@ om stats
 
 ## Integration
 
-FactMem's tool descriptions tell assistants when to search and when a correction is worth staging. They are not how Claude Code conversations enter the store — that is pull from a named source.
+FactMem's tool descriptions tell assistants when to search and when a correction is worth staging. They are not how Claude Code conversations enter the store — that is copy from a named source.
 
 ### Without configuration
 
-Claude Code or Cursor: name a `sources` entry (set `cwd`) and pull from the CLI first. MCP session start also pulls. `capture_fact` is there if the assistant needs to correct or add something pull-plus-extraction will not produce.
+Claude Code or Cursor: name a `sources` entry (set `cwd`) and run `factmem consolidate` from the CLI first. MCP session start also copies. `capture_fact` is there if the assistant needs to correct or add something copy-plus-extraction will not produce.
 
-Clients with no pull adapter still rely on `log_event` / `capture_fact` until their adapter exists.
+Clients with no copy adapter still rely on `log_event` / `capture_fact` until their adapter exists.
 
 ### Hook points
 
 | Hook point | When | What to call | Why |
 |---|---|---|---|
 | Session start | Conversation begins | `memory://profile` (automatic), `search_knowledge` | The assistant knows who you are from message one |
-| Correction | A durable fact is missing from the store | `capture_fact` | Optional; Claude Code conversations are already in `session_events` via pull |
+| Correction | A durable fact is missing from the store | `capture_fact` | Optional; Claude Code conversations are already in `session_events` via copy |
 | Pre-response search | Before generating a reply | `search_knowledge`, `get_context` | Responses informed by stored knowledge |
-| Pre-compaction | Before context window compression | `factmem pull --flush` | Copies new lines, then graduates pending facts |
+| Pre-compaction | Before context window compression | `factmem notify compaction` | The server copies new lines, extracts, integrates |
 | Natural breakpoints | Topic change, task completion | `consolidate` (optional) | Keeps the knowledge graph current |
 
-**On pre-compaction:** `factmem pull --flush` copies new transcript lines, then graduates what extract already wrote. It does not extract. It is not a `log-event` hook.
+**On pre-compaction:** `factmem notify compaction` asks the server to consolidate. It is not a `log-event` hook.
 
 ### Claude Code
 
@@ -513,12 +510,12 @@ Create `.claude/rules/factmem.md` in your project (or `~/.claude/rules/factmem.m
 ```markdown
 # FactMem
 
-- Conversations are pulled from the named Claude Code source (first backfill: `factmem pull` on the CLI)
+- Conversations are copied from the named Claude Code source (first backfill: `factmem consolidate` on the CLI)
 - Do not install log-event hooks on this store
 - Identity context loads automatically from the `memory://profile` resource — no tool call needed
 - Before answering questions this store might already know, call `search_knowledge`
 - Call `capture_fact` only to correct or add something that is not in the transcript
-- When the conversation is getting long, call `consolidate` (or rely on PreCompact `factmem pull --flush`)
+- When the conversation is getting long, call `consolidate` (or rely on PreCompact `factmem notify compaction`)
 - At natural breakpoints (topic change, task completion), call `consolidate` to keep the knowledge graph current
 ```
 
@@ -542,19 +539,19 @@ Add to `.cursorrules` (Cursor) or `.windsurfrules` (Windsurf) in your project ro
 When the factmem MCP server is available:
 - Before answering questions this store might already know, call search_knowledge
 - To find out everything known about a particular person, project, or thing, call get_entity
-- Call capture_fact only to correct or add something pull or extraction missed
+- Call capture_fact only to correct or add something copy or extraction missed
 - When context is getting long, call consolidate to process pending facts before they are lost
 ```
 
-Cursor and Windsurf consume tools but not resources, so `memory://profile` will not load on its own there. Cursor conversations themselves are pulled with `kind: "cursor"` (JSONL under `~/.cursor/projects/`, not the SQLite composer store).
+Cursor and Windsurf consume tools but not resources, so `memory://profile` will not load on its own there. Cursor conversations themselves are copied with `kind: "cursor"` (JSONL under `~/.cursor/projects/`, not the SQLite composer store).
 
 ### Claude Desktop / other MCP clients
 
-No pull adapter yet. Tool descriptions handle search and optional `capture_fact`; conversations are not tailed until a later adapter exists.
+No copy adapter yet. Tool descriptions handle search and optional `capture_fact`; conversations are not tailed until a later adapter exists.
 
 ## Reclaiming space
 
-FactMem logs raw conversation and tool output to `session_events`. On a store wired into an agentic client this becomes almost all of the database. A store measured in daily use held 47,000 events and 493 MB against 21 graduated facts.
+FactMem logs raw conversation and tool output to `session_events`. On a store wired into an agentic client this becomes almost all of the database. A store measured in daily use held 47,000 events and 493 MB against 21 integrated facts.
 
 `factmem stats` reports the raw layer alongside the knowledge, including how much is reclaimable. To reclaim it:
 
@@ -585,7 +582,7 @@ npm run build
 npm test
 ```
 
-`npm test` always runs hermetic pipelines (fixture JSONL → pull → extract →
+`npm test` always runs hermetic pipelines (fixture JSONL → copy → extract →
 search) with a recording extractor, and skips live evals that need a real
 model:
 

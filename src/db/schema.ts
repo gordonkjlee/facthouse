@@ -93,6 +93,9 @@ export async function applySchema(db: Db): Promise<void> {
   if (version < 23) {
     await applyV23(db);
   }
+  if (version < 24) {
+    await applyV24(db);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -443,7 +446,7 @@ async function applyV7(db: Db): Promise<void> {
 /**
  * Makes captured-but-not-yet-consolidated facts searchable.
  *
- * capture_fact writes to session_facts; only graduated facts reach the `facts`
+ * capture_fact writes to session_facts; only integrated facts reach the `facts`
  * table and its FTS index. Until consolidation ran — by default after 10 events
  * or at session end — a fact the assistant had just been told was unfindable by
  * search_knowledge. "I just told you that" failing is a bad look for a memory
@@ -634,7 +637,7 @@ async function applyV12(db: Db): Promise<void> {
 // ---------------------------------------------------------------------------
 // Schema version 13 — FTS index over session_events (D when K is thin)
 //
-// search_knowledge only looks at graduated facts and pending session_facts.
+// search_knowledge only looks at integrated facts and pending session_facts.
 // A pulled line that extraction has not yet turned into a fact is invisible,
 // which is the first-fact miss: the words are in the store and search says
 // nothing. Keyword-on-D is the honest fill — not embeddings, not a second
@@ -672,14 +675,14 @@ async function applyV13(db: Db): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
-// Schema version 14 — when a session event was said, vs when it was ingested
+// Schema version 14 — when a session event was said, vs when it was copied
 //
 // `created_at` is when FactMem wrote the row. Claude Code JSONL lines
 // already carry a top-level ISO `timestamp` for when the turn was recorded;
-// pull used to drop it, so a backfill looked like it all happened at ingest.
+// copy used to drop it, so a backfill looked like it all happened at copy time.
 // `occurred_at` is when the turn was said: JSONL `timestamp` on pull, or the
 // hook/MCP call instant on live capture. A pulled line without a usable
-// timestamp stays null rather than copying ingest time.
+// timestamp stays null rather than copying copy time.
 //
 // Not a fact-layer clock. Sequence remains conversation order; this column
 // does not reorder extract.
@@ -695,7 +698,7 @@ async function applyV14(db: Db): Promise<void> {
 // ---------------------------------------------------------------------------
 // Schema version 15 — gated inferences (hypotheses, not speech)
 //
-// A hypothesis is not a fact. I→K still only graduates what was said (or
+// A hypothesis is not a fact. I→K still only integrates what was said (or
 // capture_fact). These rows are the gate: pending until validate_inference
 // confirms or rejects. Confirming inserts a facts row with
 // source_type = 'inference' and provenance pointing here. Default-off: the
@@ -1021,4 +1024,22 @@ async function applyV23(db: Db): Promise<void> {
   }
   await pragmaWrite(db, "foreign_keys = ON");
   await pragmaWrite(db, "user_version = 23");
+}
+
+/**
+ * v24: the pipeline vocabulary settled on copy / extract / integrate, and the
+ * run row's count of facts that reached K is named after the step that put
+ * them there. Guarded: a store rebuilt at v7 already carries the old name;
+ * a store created at v24 has the new one from applyV4's successor DDL.
+ */
+async function applyV24(db: Db): Promise<void> {
+  const cols = (await db.prepare(`PRAGMA table_info(consolidations)`).all()) as Array<{
+    name: string;
+  }>;
+  if (cols.some((c) => c.name === "facts_graduated")) {
+    await db.exec(
+      `ALTER TABLE consolidations RENAME COLUMN facts_graduated TO facts_integrated`,
+    );
+  }
+  await pragmaWrite(db, "user_version = 24");
 }

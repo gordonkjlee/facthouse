@@ -84,7 +84,7 @@ function providerReturningEntity(
 }
 
 describe("consolidation pipeline", () => {
-  it("consolidates session_facts into graduated facts", async () => {
+  it("consolidates session_facts into integrated facts", async () => {
     const sessionId = await setupSession();
     const provider = createHeuristicProvider(PERSONAL_VOCABULARY);
 
@@ -108,10 +108,10 @@ describe("consolidation pipeline", () => {
 
     expect(result.skipped).toBe(false);
     expect(result.factsIn).toBe(3);
-    expect(result.factsGraduated).toBe(3);
+    expect(result.factsIntegrated).toBe(3);
     expect(result.factsRejected).toBe(0);
 
-    // Verify graduated facts exist in their correct domains
+    // Verify integrated facts exist in their correct domains
     const profileFacts = await getFactsByDomain(db, "profile");
     expect(profileFacts.length).toBeGreaterThanOrEqual(1);
     expect(profileFacts.some((f: any) => f.content.includes("Alex"))).toBe(true);
@@ -122,7 +122,7 @@ describe("consolidation pipeline", () => {
     const medFacts = await getFactsByDomain(db, "medical");
     expect(medFacts.length).toBeGreaterThanOrEqual(1);
 
-    // Untimed extracts must not look as if they became true at graduation.
+    // Untimed extracts must not look as if they became true at integration.
     expect(profileFacts.every((f) => f.valid_from === null)).toBe(true);
     expect(prefFacts.every((f) => f.valid_from === null)).toBe(true);
     expect(medFacts.every((f) => f.valid_from === null)).toBe(true);
@@ -140,7 +140,7 @@ describe("consolidation pipeline", () => {
     expect(await listIntelligenceRuns(db)).toEqual([]);
   });
 
-  it("persists classify spend for explicit captures on the graduate run", async () => {
+  it("persists classify spend for explicit captures on the integrate run", async () => {
     const sessionId = await setupSession();
     const base = createHeuristicProvider(PERSONAL_VOCABULARY);
     const acc = new UsageAccumulator({ provider: "cli", model: "haiku" });
@@ -165,7 +165,7 @@ describe("consolidation pipeline", () => {
       session_id: sessionId,
       content: "The user prefers oat milk in coffee",
     });
-    const result = await consolidate(db, provider, undefined, null, "full", {
+    const result = await consolidate(db, provider, undefined, null, { copy: false, extract: true, integrate: true }, {
       trigger: "cli",
     });
     expect(result.usage?.stages.classify.calls).toBe(1);
@@ -180,7 +180,7 @@ describe("consolidation pipeline", () => {
     expect(rows[0].trigger).toBe("cli");
   });
 
-  it("graduates a stated valid_from_hint and leaves an untimed fact undated", async () => {
+  it("integrates a stated valid_from_hint and leaves an untimed fact undated", async () => {
     const sessionId = await setupSession();
     await insertSessionFact(db, {
       session_id: sessionId,
@@ -225,7 +225,7 @@ describe("consolidation pipeline", () => {
     expect(entity!.name).toBe("Robin");
   });
 
-  it("links entities to graduated facts", async () => {
+  it("links entities to integrated facts", async () => {
     const sessionId = await setupSession();
     const provider = providerReturningEntity("Robin", "partner_of");
 
@@ -243,7 +243,7 @@ describe("consolidation pipeline", () => {
     const sessionId = await setupSession();
     const provider = createHeuristicProvider(PERSONAL_VOCABULARY);
 
-    // Pre-insert a graduated fact
+    // Pre-insert a integrated fact
     await ensureDomain(db, "profile");
     await insertFact(db, {
       content: "My name is Alex",
@@ -261,7 +261,7 @@ describe("consolidation pipeline", () => {
 
     expect(result.factsIn).toBe(1);
     expect(result.factsRejected).toBe(1);
-    expect(result.factsGraduated).toBe(0);
+    expect(result.factsIntegrated).toBe(0);
   });
 
   it("skips when lock is held by another process", async () => {
@@ -295,12 +295,12 @@ describe("consolidation pipeline", () => {
 
     const first = await consolidate(db, provider);
     expect(first.factsIn).toBe(1);
-    expect(first.factsGraduated).toBe(1);
+    expect(first.factsIntegrated).toBe(1);
 
     // Second run: no unclaimed session_facts remain
     const second = await consolidate(db, provider);
     expect(second.factsIn).toBe(0);
-    expect(second.factsGraduated).toBe(0);
+    expect(second.factsIntegrated).toBe(0);
   });
 
   it("generates a summary", async () => {
@@ -341,7 +341,7 @@ describe("consolidation pipeline", () => {
 
     expect(record).toBeDefined();
     expect(record.facts_in).toBe(1);
-    expect(record.facts_graduated).toBe(1);
+    expect(record.facts_integrated).toBe(1);
     expect(record.session_id).toBe(sessionId);
   });
 
@@ -438,7 +438,7 @@ describe("consolidation pipeline", () => {
     const result = await consolidate(db, createHeuristicProvider(PERSONAL_VOCABULARY));
 
     expect(result.skipped).toBe(false);
-    expect(result.factsGraduated).toBe(2);
+    expect(result.factsIntegrated).toBe(2);
     // Exactly one supersession (the first candidate wins)
     expect(result.supersessions).toBe(1);
   });
@@ -478,8 +478,8 @@ describe("consolidation pipeline", () => {
 
     const result = await consolidate(db, createHeuristicProvider(PERSONAL_VOCABULARY));
     expect(result.factsIn).toBe(2);
-    // Only one graduates — the second is rejected as intra-batch duplicate
-    expect(result.factsGraduated).toBe(1);
+    // Only one integrates — the second is rejected as intra-batch duplicate
+    expect(result.factsIntegrated).toBe(1);
     expect(result.factsRejected).toBe(1);
 
     // Verify: exactly one active fact in the preferences domain
@@ -507,10 +507,10 @@ describe("consolidation pipeline", () => {
     const result = await consolidate(db, createHeuristicProvider(PERSONAL_VOCABULARY));
     // Heuristic reconcile returns "noop" on exact content match
     expect(result.factsRejected).toBe(1);
-    expect(result.factsGraduated).toBe(0);
+    expect(result.factsIntegrated).toBe(0);
   });
 
-  it("graduated facts have a source_id linking back to provenance (C1)", async () => {
+  it("integrated facts have a source_id linking back to provenance (C1)", async () => {
     const session = await createSession(db, { source_tool: "test", project: null });
     await insertSessionFact(db, {
       session_id: session.id,
@@ -519,19 +519,19 @@ describe("consolidation pipeline", () => {
     });
 
     const result = await consolidate(db, createHeuristicProvider(PERSONAL_VOCABULARY));
-    expect(result.factsGraduated).toBe(1);
+    expect(result.factsIntegrated).toBe(1);
 
-    // Graduated fact should have source_id set
-    const graduatedFact = (await db
+    // Integrated fact should have source_id set
+    const integratedFact = (await db
       .prepare(`SELECT * FROM facts WHERE source_id IS NOT NULL LIMIT 1`)
       .get()) as any;
-    expect(graduatedFact).toBeTruthy();
-    expect(graduatedFact.source_id).toBeTruthy();
+    expect(integratedFact).toBeTruthy();
+    expect(integratedFact.source_id).toBeTruthy();
 
     // Source should exist and contain session_fact_id in metadata
     const source = (await db
       .prepare(`SELECT * FROM sources WHERE id = ?`)
-      .get(graduatedFact.source_id)) as any;
+      .get(integratedFact.source_id)) as any;
     expect(source).toBeTruthy();
     expect(source.type).toBe("session-fact");
     const metadata = JSON.parse(source.metadata);
@@ -598,7 +598,7 @@ describe("consolidation pipeline", () => {
   it("surfaces dropped supersessions via openThreads when two candidates target the same prior", async () => {
     const sessionId = await setupSession();
 
-    // Seed an existing graduated fact to be targeted
+    // Seed an existing integrated fact to be targeted
     await ensureDomain(db, "preferences");
     const oldCoffee = await insertFact(db, {
       content: "I prefer dark roast coffee",
@@ -624,8 +624,8 @@ describe("consolidation pipeline", () => {
 
     // Exactly one supersession fires — the other is a conflict
     expect(result.supersessions).toBe(1);
-    // Both facts still graduate (the loser as a plain insert)
-    expect(result.factsGraduated).toBe(2);
+    // Both facts still integrate (the loser as a plain insert)
+    expect(result.factsIntegrated).toBe(2);
     // The loser's conflict is surfaced in openThreads
     const conflictThreads = result.openThreads.filter((t: string) =>
       t.toLowerCase().includes("conflict"),
@@ -692,10 +692,10 @@ describe("consolidation pipeline", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Domain handling at graduation
+// Domain handling at integration
 // ---------------------------------------------------------------------------
 
-describe("domain handling at graduation", () => {
+describe("domain handling at integration", () => {
   /** A provider that returns whatever domain it is told to — as an LLM might. */
   function providerReturning(domain: string) {
     const base = createHeuristicProvider(PERSONAL_VOCABULARY);
@@ -712,11 +712,11 @@ describe("domain handling at graduation", () => {
     };
   }
 
-  async function graduateWith(domain: string, content = "A synthetic fact") {
+  async function integrateWith(domain: string, content = "A synthetic fact") {
     const sessionId = await setupSession();
     await insertSessionFact(db, { session_id: sessionId, content, domain_hint: null });
     const result = await consolidate(db, providerReturning(domain) as never);
-    expect(result.factsGraduated).toBe(1);
+    expect(result.factsIntegrated).toBe(1);
     return ((await db.prepare(`SELECT domain FROM facts`).get()) as { domain: string }).domain;
   }
 
@@ -724,7 +724,7 @@ describe("domain handling at graduation", () => {
     // The taxonomy is open beyond the core: an assistant that decides a fact
     // belongs in "fitness" knows the user better than our list does. Coercing it
     // to `general` would throw away the most informative thing about the fact.
-    expect(await graduateWith("fitness")).toBe("fitness");
+    expect(await integrateWith("fitness")).toBe("fitness");
 
     const domains = (await db.prepare(`SELECT name FROM domains`).all()) as Array<{ name: string }>;
     expect(domains.map((d) => d.name)).toContain("fitness");
@@ -733,22 +733,22 @@ describe("domain handling at graduation", () => {
   it("merges a spelling variant instead of forking the domain", async () => {
     // "Preferences" and "preferences" are one domain. This is the drift control:
     // canonicalise the spelling, don't police the meaning.
-    expect(await graduateWith("Preferences")).toBe("preferences");
+    expect(await integrateWith("Preferences")).toBe("preferences");
 
     const domains = (await db.prepare(`SELECT name FROM domains`).all()) as Array<{ name: string }>;
     expect(domains.map((d) => d.name)).not.toContain("Preferences");
   });
 
   it("still honours a core domain from a provider", async () => {
-    expect(await graduateWith("work")).toBe("work");
+    expect(await integrateWith("work")).toBe("work");
   });
 
   it("falls back only when a provider returns no domain at all", async () => {
-    expect(await graduateWith("")).toBe("general");
+    expect(await integrateWith("")).toBe("general");
   });
 });
 
-describe("subject marking at graduation", () => {
+describe("subject marking at integration", () => {
   /**
    * A fact→entity link says a fact *names* something. It cannot say a fact is
    * *about* something, which is what "tell me about X" needs — and what
@@ -809,7 +809,7 @@ describe("subject marking at graduation", () => {
     await consolidate(db, createHeuristicProvider(PERSONAL_VOCABULARY), {});
 
     expect(await getFactsBySubject(db, self.id)).toEqual([]);
-    // And the fact still graduated — declining to name a subject must not drop
+    // And the fact still integrated — declining to name a subject must not drop
     // the fact along with it.
     expect((await getFactsByDomain(db, "general")).length + (await getFactsByDomain(db, "work")).length)
       .toBeGreaterThan(0);
@@ -864,7 +864,7 @@ describe("embedding never costs a fact", () => {
     },
   });
 
-  it("graduates facts even when the embedding provider throws", async () => {
+  it("integrates facts even when the embedding provider throws", async () => {
     const sessionId = await setupSession();
     await insertSessionFact(db, {
       session_id: sessionId,
@@ -879,7 +879,7 @@ describe("embedding never costs a fact", () => {
       failing as never,
     );
 
-    expect(result.factsGraduated).toBe(1);
+    expect(result.factsIntegrated).toBe(1);
     expect(result.skipped).toBe(false);
   });
 
@@ -907,7 +907,7 @@ describe("embedding never costs a fact", () => {
     await consolidate(db, createHeuristicProvider(PERSONAL_VOCABULARY), {}, failing as never);
     expect(await countEmbeddings(db, "test-model", 3)).toBe(0);
 
-    // Second run graduates nothing new — the backfill must come from the store,
+    // Second run integrates nothing new — the backfill must come from the store,
     // not from what this run happened to produce.
     await consolidate(db, createHeuristicProvider(PERSONAL_VOCABULARY), {}, working() as never);
 
@@ -955,7 +955,7 @@ describe("embedding never costs a fact", () => {
 
     // Guards the premise: if dedup collapsed these to one fact there would be
     // no backlog and the test would pass without exercising anything.
-    expect(result.factsGraduated).toBe(7);
+    expect(result.factsIntegrated).toBe(7);
     expect(await countEmbeddings(db, "test-model", 3)).toBe(7);
     expect(await getFactsMissingEmbeddings(db, "test-model", 3, 100)).toHaveLength(0);
     // One probe plus four batches of two — not one batch and a silent remainder.
@@ -1226,7 +1226,7 @@ describe("extraction honours what a store told it to look at", () => {
   });
 });
 
-describe("extract and graduate can run separately", () => {
+describe("extract and integrate can run separately", () => {
   const FACT = "The user prefers oat milk at Acme";
 
   async function eventWatermark(): Promise<number> {
@@ -1257,7 +1257,7 @@ describe("extract and graduate can run separately", () => {
       async extractFactsFromEvents() {
         hooks.onExtract?.();
         return {
-          // No domain_hint: graduate must call classifyFacts. Extract-only must not.
+          // No domain_hint: integrate must call classifyFacts. Extract-only must not.
           facts: [{ content: FACT }],
           degraded: false,
           now: "talking about milk",
@@ -1287,10 +1287,10 @@ describe("extract and graduate can run separately", () => {
       extractingProvider({ onClassify: () => classifyCalls++ }) as never,
       { extraction: { enabled: true } as never },
       null,
-      "extract",
+      { copy: false, extract: true, integrate: false },
     );
 
-    expect(result.factsGraduated).toBe(0);
+    expect(result.factsIntegrated).toBe(0);
     expect(result.factsIn).toBe(1);
     expect(classifyCalls).toBe(0);
     expect(
@@ -1304,7 +1304,7 @@ describe("extract and graduate can run separately", () => {
     expect(await eventWatermark()).toBe(1);
   });
 
-  it("graduate-only does not re-read events or advance the watermark past them", async () => {
+  it("integrate-only does not re-read events or advance the watermark past them", async () => {
     const sessionId = await setupSession();
     await insertEvent(db, {
       mcp_session_id: sessionId,
@@ -1317,7 +1317,7 @@ describe("extract and graduate can run separately", () => {
       extractingProvider() as never,
       { extraction: { enabled: true } as never },
       null,
-      "extract",
+      { copy: false, extract: true, integrate: false },
     );
     expect(await eventWatermark()).toBe(1);
 
@@ -1334,25 +1334,25 @@ describe("extract and graduate can run separately", () => {
       extractingProvider({ onExtract: () => extractCalls++ }) as never,
       { extraction: { enabled: true } as never },
       null,
-      "graduate",
+      { copy: false, extract: false, integrate: true },
     );
 
     expect(extractCalls).toBe(0);
-    expect(result.factsGraduated).toBe(1);
+    expect(result.factsIntegrated).toBe(1);
     expect(await eventWatermark()).toBe(1);
 
-    const graduated = (await db
+    const integrated = (await db
       .prepare(`SELECT content FROM facts`)
       .all()) as Array<{ content: string }>;
-    expect(graduated).toHaveLength(1);
-    expect(graduated[0].content).toBe(FACT);
+    expect(integrated).toHaveLength(1);
+    expect(integrated[0].content).toBe(FACT);
 
     const staged = await sessionFactRows();
     expect(staged).toHaveLength(1);
     expect(staged[0].consolidation_id).toBe(result.consolidationId);
   });
 
-  it("graduate-only with nothing pending does not pretend events were read", async () => {
+  it("integrate-only with nothing pending does not pretend events were read", async () => {
     const sessionId = await setupSession();
     await insertEvent(db, {
       mcp_session_id: sessionId,
@@ -1367,7 +1367,7 @@ describe("extract and graduate can run separately", () => {
       extractingProvider({ onExtract: () => extractCalls++ }) as never,
       { extraction: { enabled: true } as never },
       null,
-      "graduate",
+      { copy: false, extract: false, integrate: true },
     );
 
     expect(extractCalls).toBe(0);
@@ -1379,7 +1379,7 @@ describe("extract and graduate can run separately", () => {
     expect(await sessionFactRows()).toHaveLength(0);
   });
 
-  it("full still extracts and graduates in one run", async () => {
+  it("full still extracts and integrates in one run", async () => {
     const sessionId = await setupSession();
     await insertEvent(db, {
       mcp_session_id: sessionId,
@@ -1393,15 +1393,15 @@ describe("extract and graduate can run separately", () => {
       extractingProvider() as never,
       { extraction: { enabled: true } as never },
       null,
-      "full",
+      { copy: false, extract: true, integrate: true },
     );
 
-    expect(result.factsGraduated).toBe(1);
-    const graduated = (await db
+    expect(result.factsIntegrated).toBe(1);
+    const integrated = (await db
       .prepare(`SELECT content FROM facts`)
       .all()) as Array<{ content: string }>;
-    expect(graduated).toHaveLength(1);
-    expect(graduated[0].content).toBe(FACT);
+    expect(integrated).toHaveLength(1);
+    expect(integrated[0].content).toBe(FACT);
     const staged = await sessionFactRows();
     expect(staged).toHaveLength(1);
     expect(staged[0].consolidation_id).toBe(result.consolidationId);
@@ -1543,7 +1543,7 @@ describe("token budget gate", () => {
     expect(spy.calls).toBe(1);
   });
 
-  it("skips billed graduate and leaves pending I", async () => {
+  it("skips billed integrate and leaves pending I", async () => {
     const sessionId = await setupSession();
     await insertSessionFact(db, {
       session_id: sessionId,
@@ -1557,7 +1557,7 @@ describe("token budget gate", () => {
       spy.provider as never,
       cliConfig({ cli: { week: "100" } }),
       null,
-      "graduate",
+      { copy: false, extract: false, integrate: true },
     );
     expect(result.skipped).toBe(true);
     expect(spy.calls).toBe(0);
@@ -1569,7 +1569,7 @@ describe("token budget gate", () => {
     expect(pending.n).toBe(1);
   });
 
-  it("lets this run finish past the cap and skips the next tick", async () => {
+  it("lets this run finish past the cap and skips the next threshold run", async () => {
     await seedEvent();
     const spy = extractingSpy();
     const first = await consolidate(
@@ -1668,7 +1668,7 @@ describe("token budget gate", () => {
       spy.provider as never,
       cliConfig({ cli: { week: "100" } }),
       null,
-      "full",
+      { copy: false, extract: true, integrate: true },
       { trigger: "cli" },
     );
     expect(result.skipped).toBe(false);

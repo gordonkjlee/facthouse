@@ -32,11 +32,8 @@ import { registerInferenceTools } from "./tools/inferences.js";
 import { registerResources, SESSION_BOOTSTRAP_INSTRUCTIONS } from "./tools/resources.js";
 import { startScheduler, type Scheduler } from "./scheduler.js";
 import { loadShippedStoreConfig, ensureBitemporalSince } from "./config.js";
-import { startSchedulerListener, type SchedulerListener } from "./ipc/scheduler-ipc.js";
-import {
-  createPullHeartbeat,
-  shouldFlushAfterSessionStartPull,
-} from "./sources/pull.js";
+import { startNotifyListener, type NotifyListener } from "./ipc/scheduler-ipc.js";
+import { createCopyHeartbeat } from "./sources/copy.js";
 
 // ---------------------------------------------------------------------------
 // Parse arguments
@@ -75,7 +72,7 @@ const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url),
 let db: Db | undefined;
 let scheduler: Scheduler | undefined;
 let triggers = new Set<string>();
-let ipcListener: SchedulerListener | null = null;
+let ipcListener: NotifyListener | null = null;
 
 // Idempotent shutdown path — may be invoked by MCP transport close, SIGINT,
 // or SIGTERM. Guards against double-run so concurrent signals don't race.
@@ -85,7 +82,7 @@ async function shutdown(): Promise<void> {
   shuttingDown = true;
   ipcListener?.close();
   if (scheduler && triggers.has("shutdown")) {
-    await scheduler.flush().catch(() => undefined);
+    await scheduler.run("shutdown").catch(() => undefined);
   }
   if (db) await closeDatabase(db);
 }
@@ -165,25 +162,25 @@ async function main() {
     onUnavailable: (reason) => console.error(`[factmem] ${reason}`),
   });
 
-  // Named sources: tail JSONL when a tool or resource is read if the files
-  // grew. Empty sources never walks a client home. Does not extract.
-  const heartbeat = createPullHeartbeat({
+  // Named sources: copy new lines when a tool or resource is read if the
+  // files grew. Empty sources never walks a client home. Does not extract.
+  const heartbeat = createCopyHeartbeat({
     db: database,
     sources: config.sources,
-    onPulled: (pulled) => {
+    onCopied: (copied) => {
       console.error(
-        `[factmem] Pulled ${pulled.events_inserted} event(s) from ${pulled.files} source file(s).`,
+        `[factmem] Copied ${copied.events_inserted} event(s) from ${copied.files} source file(s).`,
       );
     },
     onError: (err) => {
-      console.error(`[factmem] Source pull failed: ${err.message}`);
+      console.error(`[factmem] Source copy failed: ${err.message}`);
     },
   });
   const beforeRead = async () => {
     try {
-      await heartbeat.pullIfGrown();
+      await heartbeat.copyIfGrown();
     } catch {
-      // pullIfGrown already swallows; a throwing hook must not fail search.
+      // copyIfGrown already swallows; a throwing hook must not fail search.
     }
   };
 
@@ -206,7 +203,9 @@ async function main() {
     autoLinkEvents: config.consolidation.auto_link_events,
     sources: config.sources,
     beforeRead,
-    // Consolidation is the only thing that changes graduated knowledge, so it's
+    // The copy step of consolidate is this same heartbeat.
+    copy: () => heartbeat.copyIfGrown(),
+    // Consolidation is the only thing that changes integrated knowledge, so it's
     // the only thing that can change what these resources render.
     onConsolidated: () => resources.notifyUpdated(),
   });
@@ -234,8 +233,8 @@ async function main() {
 
   const sched = startScheduler({
     db: database,
-    runConsolidate: (phase) =>
-      factManager.runConsolidate(phase, {
+    runConsolidate: (steps) =>
+      factManager.runConsolidate(steps, {
         trigger: "scheduler",
         project: envValue("PROJECT") ?? null,
       }),
@@ -253,16 +252,16 @@ async function main() {
       envValue("PROJECT") ?? null,
     );
 
-    // IPC listener for threshold + compaction signals.
+    // Listener for moments another process reports (threshold, compaction).
+    // The moment → steps policy is MOMENT_POLICY; the listener only relays.
     if (triggerSet.has("threshold") || triggerSet.has("compaction")) {
       try {
-        ipcListener = await startSchedulerListener(dataDir, (kind) => {
-          if (kind === "flush") void sched.flush();
-          else void sched.tick();
+        ipcListener = await startNotifyListener(dataDir, (moment) => {
+          if (triggerSet.has(moment)) void sched.run(moment);
         });
         if (!ipcListener.bound) {
           console.error(
-            "[factmem] Another MCP server is handling scheduler signals for this data dir.",
+            "[factmem] Another MCP server is handling notifications for this data dir.",
           );
         }
       } catch (err) {
@@ -273,32 +272,31 @@ async function main() {
       }
     }
 
-    // Same helper as tool/resource reads so a first get_session_context
-    // cannot race a second walk of the same JSONL. Empty sources is a
-    // no-op. Errors are logged on the heartbeat, not fatal.
-    const pulled = await heartbeat.pullIfGrown();
-    const eventsInserted = pulled.events_inserted;
-
-    // session_start: leftovers when nothing new was pulled, or a handful of
-    // new lines. Full pipeline (extract then graduate). A large first-backfill
-    // must not spawn that here. PreCompact flush is graduate-only.
+    // session_start: copy, extract (capped), integrate. The copy step is the
+    // same heartbeat every tool read uses, so a first get_session_context
+    // cannot race a second walk of the same file. A large first backfill is
+    // not extracted on the lot: the cap bounds the run and the remainder is
+    // reported once.
     if (triggerSet.has("session_start")) {
-      if (shouldFlushAfterSessionStartPull(eventsInserted)) {
-        void sched.full();
-      } else {
-        console.error(
-          `[factmem] Pulled ${eventsInserted} event(s) — skipping session_start ` +
-            `consolidation so a first-run backfill does not spawn claude -p on the lot. ` +
-            `Run ${CLI_NAME} consolidate when ready, or wait for a later incremental pull.`,
-        );
-      }
+      void sched.run("session_start").then((result) => {
+        if (result && result.eventsRemaining > 0) {
+          console.error(
+            `[factmem] ${result.eventsRemaining} event(s) still waiting to be extracted ` +
+              `after this run's cap. Run ${CLI_NAME} consolidate --all, or let the ` +
+              `next session start take the next batch.`,
+          );
+        }
+      });
+    } else {
+      // No session_start trigger: still keep D current for the first read.
+      await heartbeat.copyIfGrown();
     }
   };
 
   // The MCP SDK calls onclose synchronously and doesn't await our handler.
   // Run the shutdown sequence explicitly and exit only after it completes —
-  // otherwise Node may exit before the shutdown-trigger flush finishes its
-  // LLM calls and DB writes.
+  // otherwise Node may exit before the shutdown-trigger integrate finishes
+  // its LLM calls and DB writes.
   server.server.onclose = () => {
     void shutdown().then(() => process.exit(0));
   };

@@ -134,7 +134,7 @@ export interface CaptureConfig {
 /** Event extraction configuration (D→I during consolidation). */
 export interface ExtractionConfig {
   /** Whether to scan raw events for facts during consolidation.
-   *  Defaults to true — the in-process scheduler relies on this to graduate
+   *  Defaults to true — the in-process scheduler relies on this to integrate
    *  session_events into facts without requiring the AI client to call
    *  capture_fact. Set to false to make consolidation rely solely on explicit
    *  capture. */
@@ -178,7 +178,7 @@ export interface CliProviderConfig {
    * CLI model for I→K (summarise, reconcile, supersede). Omit to use `model`.
    * Extract / classify / entities still use `model`.
    */
-  graduate_model?: string;
+  integrate_model?: string;
   /** Per-stage subprocess timeout in ms. Default: CLI_DEFAULT_TIMEOUT_MS. */
   timeout_ms?: number;
   /** Emit provider debug logging to stderr. Default: false. */
@@ -360,7 +360,7 @@ export interface EmbeddingConfig {
 /**
  * A named capture source for this store.
  *
- * Empty `sources` (the default) means pull is off: nothing is discovered, and
+ * Empty `sources` (the default) means copy is off: nothing is discovered, and
  * MCP `log_event` / `capture_fact` keep working as they do today. A source is
  * explicit — `{ kind, home, cwd? }` — and scoped to this store. FactMem
  * does not auto-glob `~/.claude*` / `~/.cursor*` or honour `CLAUDE_CONFIG_DIR`
@@ -391,10 +391,10 @@ export interface CaptureSource {
    */
   home: string;
   /**
-   * Strongly recommended. Restricts ingest to that project's transcript
+   * Strongly recommended. Restricts copy to that project's transcript
    * group. Encodings differ by client: Claude Code turns `C:\\dev\\app`
    * into `C--dev-app`; Cursor into `c-dev-app`. A bare `home` walks every
-   * project group under `projects/` — a first pull of a shared home can be
+   * project group under `projects/` — a first copy of a shared home can be
    * thousands of files.
    */
   cwd?: string;
@@ -431,7 +431,7 @@ export interface ServerConfig {
   inferences: InferencesConfig;
 
   /**
-   * Named capture sources to pull into `session_events`. Default `[]` — pull
+   * Named capture sources to copy into `session_events`. Default `[]` — copy
    * is off until the user names a source. Replaced (not merged) like every
    * other config array: a user-supplied list is the whole list.
    */

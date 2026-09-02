@@ -46,7 +46,7 @@ export type InitKnobId = (typeof INIT_KNOB_IDS)[number];
 export interface MoreOverlay {
   cliModel?: string;
   /** CLI model for summarise / reconcile / supersede. Omit to use cliModel. */
-  cliGraduateModel?: string;
+  cliIntegrateModel?: string;
   cliTimeoutMs?: number;
   /** Y on local OpenAI-compat extract. */
   httpExtract?: boolean;
@@ -57,7 +57,7 @@ export interface MoreOverlay {
 
 export const MORE_SETTING_IDS = [
   "cliModel",
-  "cliGraduateModel",
+  "cliIntegrateModel",
   "cliTimeoutMs",
   "httpExtract",
   "httpBaseUrl",
@@ -86,7 +86,7 @@ export type OverlayWriteMode = "defaults" | "patch";
 /** JSON paths actually written, for settingsWrote and tests. */
 export type OverlayWrittenPath =
   | "intelligence.cli.model"
-  | "intelligence.cli.graduate_model"
+  | "intelligence.cli.integrate_model"
   | "intelligence.cli.timeout_ms"
   | "intelligence.http.base_url"
   | "intelligence.http.model"
@@ -98,7 +98,7 @@ export type OverlayWrittenPath =
 
 export interface MoreShown {
   cliModel: string;
-  cliGraduateModel: string;
+  cliIntegrateModel: string;
   cliTimeoutMs: number;
   httpExtract: boolean;
   httpBaseUrl: string;
@@ -109,7 +109,7 @@ export interface MoreShown {
 /** Init More walk only. Enable-default on_fail is cli, not resolved CLI none. */
 export const SHIPPED_MORE_SHOWN: MoreShown = {
   cliModel: CLI_DEFAULT_MODEL,
-  cliGraduateModel: CLI_DEFAULT_MODEL,
+  cliIntegrateModel: CLI_DEFAULT_MODEL,
   cliTimeoutMs: CLI_DEFAULT_TIMEOUT_MS,
   httpExtract: false,
   httpBaseUrl: HTTP_DEFAULT_BASE_URL,
@@ -260,7 +260,7 @@ export function applyMoreOverlayToIntelligence(
 
   if (
     overlay.cliModel !== undefined ||
-    overlay.cliGraduateModel !== undefined ||
+    overlay.cliIntegrateModel !== undefined ||
     overlay.cliTimeoutMs !== undefined
   ) {
     const cli = ensureObj(working, "cli");
@@ -268,21 +268,27 @@ export function applyMoreOverlayToIntelligence(
       cli.model = overlay.cliModel;
       written.push("intelligence.cli.model");
     }
-    if (overlay.cliGraduateModel !== undefined) {
+    if (overlay.cliIntegrateModel !== undefined) {
       const extract =
         (
           overlay.cliModel ??
           (typeof cli.model === "string" ? cli.model : undefined) ??
           CLI_DEFAULT_MODEL
         ).trim() || CLI_DEFAULT_MODEL;
-      if (overlay.cliGraduateModel.trim() === extract) {
-        if (cli.graduate_model !== undefined) {
-          delete cli.graduate_model;
-          written.push("intelligence.cli.graduate_model");
+      // The pre-vocabulary spelling is read for compatibility but never kept:
+      // a settings write is the moment the document catches up.
+      if (cli.graduate_model !== undefined) {
+        delete cli.graduate_model;
+        written.push("intelligence.cli.integrate_model");
+      }
+      if (overlay.cliIntegrateModel.trim() === extract) {
+        if (cli.integrate_model !== undefined) {
+          delete cli.integrate_model;
+          written.push("intelligence.cli.integrate_model");
         }
       } else {
-        cli.graduate_model = overlay.cliGraduateModel;
-        written.push("intelligence.cli.graduate_model");
+        cli.integrate_model = overlay.cliIntegrateModel;
+        written.push("intelligence.cli.integrate_model");
       }
     }
     if (overlay.cliTimeoutMs !== undefined) {
@@ -343,8 +349,8 @@ export function patchConfigDocument(
 ): { next: Record<string, unknown>; written: OverlayWrittenPath[] } {
   const more: MoreOverlay = {};
   if (overlay.cliModel !== undefined) more.cliModel = overlay.cliModel;
-  if (overlay.cliGraduateModel !== undefined) {
-    more.cliGraduateModel = overlay.cliGraduateModel;
+  if (overlay.cliIntegrateModel !== undefined) {
+    more.cliIntegrateModel = overlay.cliIntegrateModel;
   }
   if (overlay.cliTimeoutMs !== undefined) more.cliTimeoutMs = overlay.cliTimeoutMs;
   if (overlay.httpExtract !== undefined) more.httpExtract = overlay.httpExtract;
@@ -400,8 +406,8 @@ export function moreShownFromConfig(
 ): MoreShown {
   const shown: MoreShown = {
     cliModel: config.intelligence.cli?.model ?? CLI_DEFAULT_MODEL,
-    cliGraduateModel:
-      config.intelligence.cli?.graduate_model ??
+    cliIntegrateModel:
+      config.intelligence.cli?.integrate_model ??
       config.intelligence.cli?.model ??
       CLI_DEFAULT_MODEL,
     cliTimeoutMs: config.intelligence.cli?.timeout_ms ?? CLI_DEFAULT_TIMEOUT_MS,
@@ -463,7 +469,7 @@ export const INIT_PROMPTS = {
     "Project directory (cwd) — required; a bare home walks every project group\n" +
     `  [${shown}]: `,
   cwdSkip:
-    "cwd is required to add a source. Leaving pull off (sources stays empty).",
+    "cwd is required to add a source. Leaving copy off (sources stays empty).",
   embedding:
     "Semantic search  [off]\n" +
     '  off     keyword only — "shellfish" finds a shellfish fact, "food" does not\n' +
@@ -477,7 +483,7 @@ export const INIT_PROMPTS = {
     "  [N]: ",
   moreCliModel: (shown: string) =>
     `Model to extract facts from messages  [${shown}]: `,
-  moreCliGraduateModel: (shown: string) =>
+  moreCliIntegrateModel: (shown: string) =>
     `Model to update long-term knowledge  [${shown}]: `,
   moreCliTimeout: (shown: string) => `Per-stage timeout in ms  [${shown}]: `,
   moreCliTimeoutInvalid:
@@ -512,26 +518,26 @@ export const INIT_PROMPTS = {
     "  http  retry on HTTP (only useful when extract is the CLI)\n" +
     `  [${shown}]: `,
   moreHttpOnFailInvalid: "Use cli, none, or http.",
-  mixPullLogEvent:
+  mixCopyLogEvent:
     "Do not install log-event hooks on this store — both write the same rows.",
   forceHelp:
     "Replace config.json with shipped defaults (and, on a TTY, with the wizard answers). Does not merge with the previous file.",
   existingConfig:
     `already exists — left unchanged; run ${CLI_NAME} settings to change extra knobs, or --force to reset. Prompts run only when writing config.json.`,
   homeMissing: (stored: string) =>
-    `Note: ${stored} does not exist yet. Pull will fail until the client has written it.`,
+    `Note: ${stored} does not exist yet. Copy will fail until the client has written it.`,
   projectGroupMissing: (home: string, cwd: string, encoded: string) =>
     `Note: no project group for cwd ${cwd} under ${home} (looked for ${encoded}).`,
   gitBashCwdHint: (cwd: string, encoded: string) =>
     `A POSIX-looking cwd ${cwd} on Windows is not the path Claude Code encodes (${encoded} vs ${INIT_SYNTHETIC.cwd} → C--dev-app). Store what the client used.`,
   copyNow: "Copy transcripts now?  [Y]: ",
-  extractNow: "Extract and graduate now?  [Y]: ",
+  extractNow: "Extract and integrate now?  [Y]: ",
   copiedEvents: (n: number) =>
     n === 0 ? "No new transcript lines." : `Copied ${n} event(s).`,
   extractSkippedHeuristic:
     "Skipped extract — the heuristic does not read transcripts.",
   captureDeclined:
-    "Capture: pull is off (record). capture_fact is how facts get in.",
+    "Capture: copy is off (record). capture_fact is how facts get in.",
   copyStorewide:
     "On a copy store, capture_fact is a correction for every MCP client, not only the one that writes JSONL.",
   webExisting:

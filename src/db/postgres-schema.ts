@@ -46,6 +46,22 @@ export async function applyPostgresSchema(db: Db): Promise<void> {
   if (version > 0 && version < 23) {
     await applyPostgresV23(db);
   }
+  if (version > 0 && version < 24) {
+    // Vocabulary: I→K is "integrate". Rename only if the old column is there;
+    // a store created at v24 already has the new name from the DDL above.
+    await db.exec(`
+      DO $v24$
+      BEGIN
+        IF EXISTS (
+          SELECT 1 FROM information_schema.columns
+           WHERE table_name = 'consolidations' AND column_name = 'facts_graduated'
+        ) THEN
+          ALTER TABLE consolidations RENAME COLUMN facts_graduated TO facts_integrated;
+        END IF;
+      END
+      $v24$;
+    `);
+  }
   await db
     .prepare(`INSERT OR IGNORE INTO schema_migrations (version) VALUES (?)`)
     .run(SCHEMA_VERSION);
@@ -308,7 +324,7 @@ CREATE TABLE IF NOT EXISTS consolidations (
   id TEXT PRIMARY KEY,
   session_id TEXT,
   facts_in INTEGER NOT NULL,
-  facts_graduated INTEGER NOT NULL,
+  facts_integrated INTEGER NOT NULL,
   facts_rejected INTEGER NOT NULL,
   entities_created INTEGER NOT NULL DEFAULT 0,
   entities_linked INTEGER NOT NULL DEFAULT 0,

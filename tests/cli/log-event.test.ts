@@ -203,7 +203,7 @@ describe("logEvent attributes every event to a session", () => {
         .get("client-abc-123")) as { occurred_at: string | null; created_at: string };
       expect(row.occurred_at).not.toBeNull();
       expect(row.occurred_at! >= before).toBe(true);
-      // Live capture: said and ingested are the same instant, give or take
+      // Live capture: said and copied are the same instant, give or take
       // the millisecond between the two Date.now calls.
       expect(Math.abs(Date.parse(row.occurred_at!) - Date.parse(row.created_at))).toBeLessThan(
         1000,

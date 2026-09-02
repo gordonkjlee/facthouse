@@ -20,11 +20,11 @@ import type { Db } from "../db/connection.js";
 import { speakerNameOf } from "../db/session-facts.js";
 import type { NewSessionEvent } from "../db/sessions.js";
 import {
-  ingestJsonlFile,
+  copyJsonlFile,
   isDir,
   listJsonl,
-  type JsonlFilePull,
-} from "./jsonl-ingest.js";
+  type JsonlFileCopy,
+} from "./jsonl-copy.js";
 import { encodeProjectDir, type ResolvedCaptureSource } from "./resolve.js";
 
 const SKIP_TYPES = new Set([
@@ -77,8 +77,8 @@ export function discoverClaudeCodeFiles(source: ResolvedCaptureSource): string[]
 }
 
 /** Tail one Claude Code JSONL file into session_events. */
-export async function ingestClaudeCodeFile(db: Db, filePath: string): Promise<JsonlFilePull> {
-  return await ingestJsonlFile(db, filePath, {
+export async function copyClaudeCodeFile(db: Db, filePath: string): Promise<JsonlFileCopy> {
+  return await copyJsonlFile(db, filePath, {
     sourceTool: "claude-code",
     mapLine: mapTranscriptLine,
   });
@@ -115,7 +115,7 @@ export function mapTranscriptLine(
   const type = typeof row.type === "string" ? row.type : undefined;
   if (type && SKIP_TYPES.has(type)) return [];
   // Claude Code marks hook output, caveats, and system-reminders with
-  // isMeta. Those are not user turns — ingesting them as role:user is
+  // isMeta. Those are not user turns — copying them as role:user is
   // the same class of error as labelling a tool_result a user message.
   if (row.isMeta === true) return [];
 
@@ -134,7 +134,7 @@ export function mapTranscriptLine(
     path: filePath,
     line: lineNumber,
   };
-  // Transcript clock, not ingest time. Null when the line has no usable
+  // Transcript clock, not copy time. Null when the line has no usable
   // timestamp — copying created_at would pretend we know when it was said.
   const occurredAt = parseJsonlTimestamp(row.timestamp);
   // Named participant only when the line has `speaker`. Do not guess
