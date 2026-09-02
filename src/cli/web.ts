@@ -371,6 +371,7 @@ export async function collectInitWebAnswers(
       overlay: {},
       writeConfig: false,
       captureAskedAndEmpty: false,
+      captureSkippedCwd: false,
     };
   }
 
