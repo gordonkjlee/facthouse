@@ -135,6 +135,18 @@ describe("offerInitBackfill", () => {
     expect(consolidated).toBe(false);
   });
 
+  it("reports what integrate did and what remains, on the prompt channel", async () => {
+    const io = fakeIo(["", ""]);
+    await offerInitBackfill(io, "/tmp/store", {
+      providerIsHeuristic: false,
+      copy: async () => ({ events_inserted: 60 }),
+      unextracted: async () => 60,
+      consolidate: async () => ({ factsIntegrated: 4, eventsRemaining: 10 }),
+    });
+    expect(io.writes).toContain(INIT_PROMPTS.integrated(4, 10));
+    expect(io.writes.at(-1)).toMatch(/10 event\(s\) remain/);
+  });
+
   it("N on extract does not consolidate", async () => {
     const io = fakeIo(["y", "n"]);
     let consolidated = false;

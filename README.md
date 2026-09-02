@@ -69,7 +69,7 @@ Replay: [factmem.dev/demo.html](https://factmem.dev/demo.html).
 
 One SQLite file you own. Three tables in that file, not three databases:
 
-- **D** (`session_events`) — what was said (copied transcripts, or `log_event`)
+- **D** (`session_events`) — what was said (copied transcripts, or what the assistant records)
 - **I** (`session_facts`) — what was just extracted, or `capture_fact`
 - **K** (`facts`) — integrated knowledge
 

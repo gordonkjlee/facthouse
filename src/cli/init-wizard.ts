@@ -86,6 +86,8 @@ export interface InitWizardResult {
   overlay: InitOverlay;
   writeConfig: boolean;
   captureAskedAndEmpty: boolean;
+  /** Copy was chosen but no cwd given: sources stays empty, and the outro says why. */
+  captureSkippedCwd: boolean;
 }
 
 export function willAskQuestions(seed: InitWizardSeed, configExists: boolean): boolean {
@@ -151,15 +153,17 @@ function parseTimeoutMs(raw: string): number | "empty" | "invalid" {
   return n;
 }
 
+type CaptureOutcome = "copy" | "record" | "cwd-skipped";
+
 async function askCapture(
   io: InitIo,
   deps: InitWizardDeps,
   overlay: InitOverlay,
-): Promise<boolean> {
+): Promise<CaptureOutcome> {
   for (;;) {
     const choice = copyOrRecord(await io.question(INIT_PROMPTS.capture));
     if (choice === "retry") continue;
-    if (choice === "record") return true;
+    if (choice === "record") return "record";
     break;
   }
 
@@ -185,7 +189,7 @@ async function askCapture(
   const stored = storeCwdAnswer(cwdRaw, deps.cwd());
   if (stored === "skip") {
     io.write(INIT_PROMPTS.cwdSkip);
-    return true;
+    return "cwd-skipped";
   }
 
   if (shouldHintGitBashCwd(stored, deps.platform())) {
@@ -202,7 +206,7 @@ async function askCapture(
   }
 
   overlay.sources = [{ kind, home, cwd: stored }];
-  return false;
+  return "copy";
 }
 
 async function askSearch(io: InitIo, overlay: InitOverlay): Promise<void> {
@@ -253,11 +257,11 @@ export async function askMoreSettings(
         break;
       }
       case "cliIntegrateModel": {
-        const shownGrad = opts.gate
+        const shownIntegrate = opts.gate
           ? (overlay.cliModel ?? shown.cliIntegrateModel)
           : shown.cliIntegrateModel;
         const raw = (
-          await io.question(INIT_PROMPTS.moreCliIntegrateModel(shownGrad))
+          await io.question(INIT_PROMPTS.moreCliIntegrateModel(shownIntegrate))
         ).trim();
         if (raw !== "") overlay.cliIntegrateModel = raw;
         break;
@@ -363,6 +367,7 @@ export async function collectInitAnswers(
       overlay: {},
       writeConfig: !seedExists || seed.force,
       captureAskedAndEmpty: false,
+      captureSkippedCwd: false,
     };
   }
 
@@ -382,11 +387,12 @@ export async function collectInitAnswers(
       overlay: {},
       writeConfig: false,
       captureAskedAndEmpty: false,
+      captureSkippedCwd: false,
     };
   }
 
   const overlay: InitOverlay = {};
-  const captureEmpty = await askCapture(io, deps, overlay);
+  const captureOutcome = await askCapture(io, deps, overlay);
   await askSearch(io, overlay);
   await askMoreSettings(io, overlay, deps, {
     gate: true,
@@ -397,6 +403,7 @@ export async function collectInitAnswers(
     dataDir,
     overlay,
     writeConfig: true,
-    captureAskedAndEmpty: captureEmpty,
+    captureAskedAndEmpty: captureOutcome !== "copy",
+    captureSkippedCwd: captureOutcome === "cwd-skipped",
   };
 }

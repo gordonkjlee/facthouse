@@ -231,8 +231,11 @@ export async function embeddingStatusLines(
 
 export function appendCaptureRecipe(
   sources: unknown,
-  opts: { captureAskedAndEmpty?: boolean } = {},
+  opts: { captureAskedAndEmpty?: boolean; captureSkippedCwd?: boolean } = {},
 ): string[] {
+  if (opts.captureSkippedCwd) {
+    return [INIT_PROMPTS.cwdSkipped];
+  }
   if (opts.captureAskedAndEmpty) {
     return [INIT_PROMPTS.captureDeclined];
   }
@@ -266,11 +269,11 @@ export function sourcesStatusLines(sources: unknown): string[] {
   if (n === 0) {
     return [
       `Capture: copy is off. capture_fact is how facts get in.`,
-      `Transcripts: ${CLI_NAME} init on a terminal, pick copy, set cwd, then ${CLI_NAME} consolidate.`,
+      `Transcripts: ${INIT_PROMPTS.copyRecipe}`,
     ];
   }
   return [
-    `Capture: ${n} source${n === 1 ? "" : "s"}. Run ${CLI_NAME} consolidate.`,
+    `Capture: ${n} source${n === 1 ? "" : "s"}. ${INIT_PROMPTS.copyNext}`,
     INIT_PROMPTS.copyStorewide,
   ];
 }

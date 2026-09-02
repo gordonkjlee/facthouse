@@ -1,3 +1,4 @@
+import { EXTRACT_CAP_EVENTS } from "../../src/intelligence/steps.js";
 import { readFileSync } from "node:fs";
 import { describe, it, expect } from "vitest";
 import { fileURLToPath } from "node:url";
@@ -131,6 +132,10 @@ describe("init knobs — one definition", () => {
         "copiedEvents",
         "cwd",
         "cwdSkip",
+        "cwdSkipped",
+        "copyRecipe",
+        "copyNext",
+        "integrated",
         "dataDir",
         "embedding",
         "extractNow",
@@ -371,7 +376,7 @@ describe("init knobs — one definition", () => {
     }
   });
 
-  it("Quick Start does not shout pull, hooks, embeddings, or a second store", () => {
+  it("Quick Start does not shout copy steps, hooks, embeddings, or a second store", () => {
     const readme = readmeText();
     const start = readme.indexOf("## Quick Start");
     const next = readme.indexOf("\n## ", start + 1);
@@ -395,7 +400,25 @@ describe("init knobs — one definition", () => {
     }
   });
 
-  it("does not recommend a Stop hook as the pull path", () => {
+  it("README states the extract cap with the one constant, in every sentence that names it", () => {
+    const readme = readmeText();
+    const cap = String(EXTRACT_CAP_EVENTS);
+    // Each sentence that teaches the cap must carry the same number the
+    // engine enforces; a change to EXTRACT_CAP_EVENTS must fail here.
+    expect(readme).toContain(`extracts facts from the oldest ${cap} events`);
+    expect(readme).toContain(`Extract is capped at ${cap} events per run`);
+    expect(readme).toContain(`A first backfill of more than ${cap} events`);
+    expect(readme).toContain(INIT_PROMPTS.mixCopyRecord);
+  });
+
+  it("init's copy recipe and the extract prompt name the cap once", () => {
+    expect(INIT_PROMPTS.extractNow).toContain(String(EXTRACT_CAP_EVENTS));
+    expect(INIT_PROMPTS.copyNext).toContain(String(EXTRACT_CAP_EVENTS));
+    expect(INIT_PROMPTS.integrated(3, 7)).toContain(String(EXTRACT_CAP_EVENTS));
+    expect(INIT_PROMPTS.integrated(3, 0)).not.toMatch(/remain/);
+  });
+
+  it("does not recommend a Stop hook as the copy path", () => {
     const readme = readmeText();
     expect(readme).not.toMatch(/"Stop"\s*:/);
     expect(readme).not.toMatch(/Stop tails new lines/);

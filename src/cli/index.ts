@@ -62,7 +62,7 @@ import { applySqliteDiskBudget, getBoundDiskBudget } from "../db/disk-budget.js"
 import { closeDatabase, type Db } from "../db/connection.js";
 import { applySchema } from "../db/schema.js";
 import { openStore, sqliteMemoryPath } from "../db/store.js";
-import { consolidate } from "../intelligence/consolidate.js";
+import { consolidate, type ConsolidationResult } from "../intelligence/consolidate.js";
 import {
   ALL_STEPS,
   NOTIFIABLE_MOMENTS,
@@ -318,6 +318,7 @@ async function runInit() {
   const embedLines = await embeddingStatusLines(written.embedding);
   const captureLines = appendCaptureRecipe(written.sources, {
     captureAskedAndEmpty: wizard.captureAskedAndEmpty,
+    captureSkippedCwd: wizard.captureSkippedCwd,
   });
 
   const lines = [
@@ -350,18 +351,11 @@ async function runInit() {
     ``,
     ...embedLines,
     ``,
-    ...captureLines,
-    ``,
   ];
-  if (result.wroteConfig) {
-    const later =
-      result.dataDir === defaultDataDir()
-        ? `Later: ${CLI_NAME} settings  (extra knobs; does not reset this file)`
-        : `Later: ${CLI_NAME} settings --data ${result.dataDir}  (extra knobs; does not reset this file)`;
-    lines.push(later, ``);
-  }
   console.log(lines.join("\n"));
 
+  // The copy offer runs before the outro, so the next-command line is not
+  // printed above the prompt that performs it.
   if (rl) {
     try {
       if (
@@ -379,13 +373,18 @@ async function runInit() {
             return withDb(dir, (db) => copySources(db, cfg.sources));
           },
           unextracted: (dir) => withDb(dir, (db) => unexaminedEventCount(db)),
-          // The offer already copied; extract (capped) and integrate.
-          consolidate: (dir) =>
-            consolidateStore(
+          // The offer already copied; extract (capped) and integrate. The
+          // offer prints the counts itself, on the same channel as its prompts.
+          consolidate: async (dir) => {
+            const r = await consolidateStore(
               dir,
               { copy: false, extract: true, integrate: true },
               { print: false },
-            ),
+            );
+            return r
+              ? { factsIntegrated: r.factsIntegrated, eventsRemaining: r.eventsRemaining }
+              : undefined;
+          },
         });
       }
     } finally {
@@ -393,6 +392,16 @@ async function runInit() {
       rl.close();
     }
   }
+
+  const outro = [...captureLines, ``];
+  if (result.wroteConfig) {
+    const later =
+      result.dataDir === defaultDataDir()
+        ? `Later: ${CLI_NAME} settings  (extra knobs; does not reset this file)`
+        : `Later: ${CLI_NAME} settings --data ${result.dataDir}  (extra knobs; does not reset this file)`;
+    outro.push(later, ``);
+  }
+  console.log(outro.join("\n"));
 }
 
 async function runSettingsCmd() {
@@ -751,7 +760,7 @@ async function consolidateStore(
   dataDir: string,
   steps: ConsolidateSteps,
   opts: ConsolidateStoreOpts = {},
-): Promise<void> {
+): Promise<ConsolidationResult | undefined> {
   const config = ensureBitemporalSince(dataDir, loadConfig(dataDir));
   if (
     steps.extract &&
@@ -774,7 +783,7 @@ async function consolidateStore(
   const embedding = createEmbeddingProvider(config.embedding, {
     onUnavailable: (reason) => console.error(`[factmem] ${reason}`),
   });
-  await consolidateInProcess(dataDir, provider, config, embedding, steps, opts);
+  return consolidateInProcess(dataDir, provider, config, embedding, steps, opts);
 }
 
 /**
@@ -789,7 +798,7 @@ export async function consolidateInProcess(
   embedding: EmbeddingProvider | null = null,
   steps: ConsolidateSteps = ALL_STEPS,
   opts: ConsolidateStoreOpts = {},
-): Promise<void> {
+): Promise<ConsolidationResult | undefined> {
   const storeConfig = loadShippedStoreConfig(dataDir);
   const db = await openStore(dataDir, storeConfig);
 
@@ -815,14 +824,21 @@ export async function consolidateInProcess(
         );
       }
     }
-    if (steps.extract && !result.extractionDegraded && result.eventsRemaining > 0) {
+    if (
+      opts.print !== false &&
+      steps.extract &&
+      !result.extractionDegraded &&
+      result.eventsRemaining > 0
+    ) {
       console.error(
         `[factmem] ${result.eventsRemaining} event(s) still waiting to be extracted. ` +
           `Run ${CLI_NAME} consolidate --all to take them all now, or --limit N for the oldest N.`,
       );
     }
-    if (opts.print === false) return;
-    console.log(opts.json ? JSON.stringify(result) : formatConsolidate(result));
+    if (opts.print !== false) {
+      console.log(opts.json ? JSON.stringify(result) : formatConsolidate(result));
+    }
+    return result;
   } catch (err: unknown) {
     console.error(errorMessage(err));
     process.exit(1);

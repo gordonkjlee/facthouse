@@ -25,6 +25,7 @@ import type {
   ServerConfig,
 } from "../types/config.js";
 import { CLI_NAME } from "../identity.js";
+import { EXTRACT_CAP_EVENTS } from "../intelligence/steps.js";
 import { defaultServerConfig, mergeConfig } from "../config.js";
 import { httpBaseUrlOf, httpIsOptedIn, httpModelOf } from "../intelligence/http.js";
 import {
@@ -531,13 +532,25 @@ export const INIT_PROMPTS = {
   gitBashCwdHint: (cwd: string, encoded: string) =>
     `A POSIX-looking cwd ${cwd} on Windows is not the path Claude Code encodes (${encoded} vs ${INIT_SYNTHETIC.cwd} → C--dev-app). Store what the client used.`,
   copyNow: "Copy transcripts now?  [Y]: ",
-  extractNow: "Extract and integrate now?  [Y]: ",
+  extractNow: `Extract the oldest ${EXTRACT_CAP_EVENTS} events and integrate now?  [Y]: `,
   copiedEvents: (n: number) =>
     n === 0 ? "No new transcript lines." : `Copied ${n} event(s).`,
   extractSkippedHeuristic:
     "Skipped extract — the heuristic does not read transcripts.",
+  /** After the init offer ran extract + integrate. Same channel as the prompts. */
+  integrated: (facts: number, remaining: number) =>
+    remaining > 0
+      ? `Integrated ${facts} fact(s). ${remaining} event(s) remain — ${CLI_NAME} consolidate takes the next ${EXTRACT_CAP_EVENTS}; --all takes the lot.`
+      : `Integrated ${facts} fact(s).`,
   captureDeclined:
-    "Capture: copy is off (record). capture_fact is how facts get in.",
+    `Capture: copy is off (record). capture_fact is how facts get in; a client hook can pipe into ${CLI_NAME} record.`,
+  cwdSkipped:
+    `Capture: copy is off — no cwd was given. capture_fact is how facts get in; re-run ${CLI_NAME} init --force on a terminal to name a source.`,
+  /** The one sentence that says how a copy store starts. init prints it; README repeats it. */
+  copyRecipe:
+    `${CLI_NAME} init on a terminal, pick copy, set cwd, then ${CLI_NAME} consolidate.`,
+  copyNext:
+    `Run ${CLI_NAME} consolidate (oldest ${EXTRACT_CAP_EVENTS} events per run; --all for the lot).`,
   copyStorewide:
     "On a copy store, capture_fact is a correction for every MCP client, not only the one that writes JSONL.",
   webExisting:
@@ -557,7 +570,7 @@ export const INIT_PROMPTS = {
     "--yes does not start a local page. Re-run without --yes, or skip --web.",
   webListening: (url: string) =>
     `Open ${url}  (bound to 127.0.0.1; this process does not open a browser). Ctrl+C to cancel.`,
-  webSaved: "Wrote config. Reload the MCP server for routing to change.",
+  webSaved: "Answers received. The terminal shows what was written. Reload the MCP server for routing to change.",
 } as const;
 
 export const SETTINGS_PROMPTS = {
