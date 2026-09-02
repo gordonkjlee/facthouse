@@ -157,6 +157,18 @@ def package_metadata() -> dict:
     return json.loads((ROOT / "package.json").read_text(encoding="utf-8"))
 
 
+def npm_global_install_command() -> str:
+    """Pinned global install. One definition: package.json version.
+
+    An unpinned `npm install -g @factmem/mcp` is how a stale binary on PATH
+    shadows the README pin. The hero is the first command on factmem.dev.
+    """
+    version = package_metadata().get("version")
+    if not isinstance(version, str) or not version.strip():
+        raise SystemExit("package.json version is required for the install hero")
+    return f"npm install -g @factmem/mcp@{version.strip()}"
+
+
 def software_application_ld() -> dict:
     """Schema.org SoftwareApplication from repo-backed fields only."""
     pkg = package_metadata()
@@ -198,10 +210,11 @@ def wrap_html(
     title_html = f"<h1>{heading}</h1>\n      " if heading else ""
     desc = html.escape(description, quote=True)
     json_ld = json_ld_script()
+    install = html.escape(npm_global_install_command(), quote=True)
     landing = (
         f'<section class="landing">\n'
         f"      {title_html}<p class=\"pitch\">{pitch_html(pitch)}</p>\n"
-        f"      <pre class=\"install\"><code>npm install -g @factmem/mcp</code></pre>\n"
+        f"      <pre class=\"install\"><code>{install}</code></pre>\n"
         f"    </section>"
     )
     return f"""<!DOCTYPE html>
