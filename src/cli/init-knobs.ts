@@ -518,8 +518,8 @@ export const INIT_PROMPTS = {
     "  http  retry on HTTP (only useful when extract is the CLI)\n" +
     `  [${shown}]: `,
   moreHttpOnFailInvalid: "Use cli, none, or http.",
-  mixCopyLogEvent:
-    "Do not install log-event hooks on this store — both write the same rows.",
+  mixCopyRecord:
+    "Do not install record hooks on this store — both write the same rows.",
   forceHelp:
     "Replace config.json with shipped defaults (and, on a TTY, with the wizard answers). Does not merge with the previous file.",
   existingConfig:

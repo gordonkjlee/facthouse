@@ -143,7 +143,7 @@ describe("init knobs — one definition", () => {
         "intro",
         "kind",
         "mcpVsCli",
-        "mixCopyLogEvent",
+        "mixCopyRecord",
         "shellNote",
         "more",
         "webExisting",
@@ -293,7 +293,7 @@ describe("init knobs — one definition", () => {
     expect(readme).toMatch(
       /non-default data directory prints a distinct MCP server name/i,
     );
-    expect(readme).toContain(INIT_PROMPTS.mixCopyLogEvent);
+    expect(readme).toContain(INIT_PROMPTS.mixCopyRecord);
   });
 
   it("scripted README init uses --yes, except a lone walk-through fence", () => {
@@ -378,6 +378,7 @@ describe("init knobs — one definition", () => {
     expect(start).toBeGreaterThanOrEqual(0);
     const quick = readme.slice(start, next === -1 ? undefined : next);
     expect(quick).not.toMatch(/log-event/);
+    expect(quick).not.toMatch(/factmem record/);
     expect(quick).not.toMatch(/"hooks"/);
     expect(quick).not.toMatch(/embedding\.provider/);
     expect(quick).not.toMatch(/intelligence\.http/);

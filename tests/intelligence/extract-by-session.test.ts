@@ -415,7 +415,7 @@ describe("extraction groups by conversation, not by pull batch", () => {
     expect(aaa!.sessionSummary).not.toContain("sess-bbb");
   });
 
-  it("does not attach pulled conversations to log-event's most-recent session", async () => {
+  it("does not attach pulled conversations to record's most-recent session", async () => {
     const home = path.join(tmpRoot, "claude-home");
     const group = encodeProjectDir("C:\\dev\\app");
     writeJsonl(path.join(home, "projects", group, "sess-aaa.jsonl"), [
@@ -426,7 +426,7 @@ describe("extraction groups by conversation, not by pull batch", () => {
     ]);
     await copySources(db, [{ kind: "claude-code", home }]);
 
-    // What `log-event` without --session-id does: create/reuse a sessions row
+    // What `record` without --session-id does: create/reuse a sessions row
     // and store it as mcp_session_id. Pull must not inherit that id.
     const mcp = (await createSession(db, { source_tool: "cli", project: null })).id;
     await insertEvent(db, {

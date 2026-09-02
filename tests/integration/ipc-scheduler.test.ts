@@ -56,7 +56,7 @@ afterEach(async () => {
 });
 
 async function writeEventsFromAnotherConnection(n: number) {
-  // Writer connection simulates the log-event CLI — events must come from
+  // Writer connection simulates the record CLI — events must come from
   // a different connection or data_version won't bump.
   const writerDb = openDatabase(path.join(dir, "memory.db"));
   const writerSession = (await createSession(writerDb, {

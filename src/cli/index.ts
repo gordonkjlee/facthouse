@@ -3,8 +3,8 @@
 /**
  * FactMem CLI entry point.
  *
- * Public verbs: init, settings, log-event, notify, consolidate, search, stats,
- * inspect, prune. `pull` and `signal` remain as hidden aliases for one minor
+ * Public verbs: init, settings, record, notify, consolidate, search, stats,
+ * inspect, prune. `pull`, `signal`, and `log-event` remain as hidden aliases for one minor
  * release. The vocabulary (copy, extract, integrate; consolidate; moments) is
  * defined once in src/intelligence/steps.ts.
  */
@@ -13,7 +13,7 @@ import { parseArgs } from "node:util";
 import { createInterface } from "node:readline/promises";
 import { existsSync } from "node:fs";
 import path from "node:path";
-import { logEvent, extractContentFromHookPayload } from "./log-event.js";
+import { recordEvent, extractContentFromHookPayload } from "./record.js";
 import {
   initDataDir,
   mcpConfigSnippet,
@@ -159,8 +159,8 @@ async function main() {
     await runInit();
   } else if (subcommand === "settings") {
     await runSettingsCmd();
-  } else if (subcommand === "log-event") {
-    await runLogEvent();
+  } else if (subcommand === "record") {
+    await runRecord();
   } else if (subcommand === "notify") {
     await runNotify();
   } else if (subcommand === "consolidate") {
@@ -177,6 +177,9 @@ async function main() {
     await runPullCompat();
   } else if (subcommand === "signal") {
     await runSignalCompat();
+  } else if (subcommand === "log-event") {
+    deprecated("log-event", "record");
+    await runRecord();
   } else {
     console.error(usageText());
     process.exit(1);
@@ -193,7 +196,7 @@ function usageText(): string {
     `  settings        Change extra knobs on an existing store (--json, --web)`,
     ``,
     `Feed`,
-    `  log-event       Record one session event (used by hooks; reads stdin)`,
+    `  record          Record one session event (used by hooks; reads stdin)`,
     `  notify <moment> Tell the running MCP server a moment happened`,
     `                  (${NOTIFIABLE_MOMENTS.join(", ")})`,
     ``,
@@ -933,7 +936,7 @@ async function runSignalCompat() {
 }
 
 
-async function runLogEvent() {
+async function runRecord() {
   const { values } = parseArgs({
     args: process.argv.slice(3),
     options: {
@@ -990,7 +993,7 @@ async function runLogEvent() {
   }
 
   try {
-    const event = await logEvent({
+    const event = await recordEvent({
       role,
       eventType,
       content,

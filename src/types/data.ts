@@ -10,7 +10,7 @@
  *   Wisdom       Inference       Gated hypotheses. Default off. Not produced by I→K.
  *
  * Each transformation is explicit:
- *   Data → Information    Copy / log-event fill session_events; capture_fact is
+ *   Data → Information    Copy / record fill session_events; capture_fact is
  *                          an optional explicit correction; extraction runs at
  *                          consolidation
  *   Information → Knowledge   Event-driven batch consolidation
@@ -108,7 +108,7 @@ export interface SessionEvent {
   /**
    * When the turn was said. Pull copies Claude Code JSONL `timestamp` when
    * present, otherwise null (a backfill must not pretend copying was speech).
-   * Hook `log-event` and MCP `log_event` stamp the call — those fire at the
+   * Hook `record` and MCP `log_event` stamp the call — those fire at the
    * turn, and the hook payload has no clock of its own.
    */
   occurred_at: string | null;

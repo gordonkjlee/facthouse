@@ -176,16 +176,16 @@ factmem settings
 factmem settings --data ~/my-memory
 ```
 
-#### `factmem log-event`
+#### `factmem record`
 
 Inserts events directly into the database (no running server needed). Supported for demos and for stores that have no named source. Not the Claude Code or Cursor default — that is `sources` plus `factmem consolidate`.
 
 ```bash
 # From a hook (reads JSON payload from stdin):
-echo '{"hook_event_name":"UserPromptSubmit","prompt":"hello"}' | factmem log-event --role user
+echo '{"hook_event_name":"UserPromptSubmit","prompt":"hello"}' | factmem record --role user
 
 # With explicit content:
-factmem log-event --role user --event-type message --content "hello world"
+factmem record --role user --event-type message --content "hello world"
 
 # Options:
 #   --role          user | assistant | system | tool (default: user)
@@ -218,7 +218,7 @@ factmem consolidate --limit 200       # extract the oldest 200
 #   --data           Data directory (default: ~/.factmem or FACTMEM_DATA)
 ```
 
-Honours the configured provider (by default `claude -p`). Empty `sources` makes the copy step a no-op. Set `cwd` on the source unless you intend to copy every project group. Do not also run `log-event` hooks on a store with named sources.
+Honours the configured provider (by default `claude -p`). Empty `sources` makes the copy step a no-op. Set `cwd` on the source unless you intend to copy every project group. Do not also run `record` hooks on a store with named sources.
 
 #### `factmem notify <moment>`
 
@@ -330,7 +330,7 @@ Example — placeholders only; do not put a real password in a committed file:
 ```
 <!-- x-release-please-end -->
 
-### Pull versus log-event
+### Copy versus record
 
 Choose one mechanism per store.
 
@@ -350,9 +350,9 @@ Choose one mechanism per store.
 
 `home` is the client config dir (`~/.claude` or `~/.cursor` — path examples, not extra discovery). Cursor is `"kind": "cursor"` and `home/projects/*/agent-transcripts/**/*.jsonl` only — not Composer SQLite. Cursor encodes `C:\\dev\\app` as `c-dev-app` (Claude Code uses `C--dev-app`). A first backfill of more than 50 events takes several runs, or one `factmem consolidate --all`.
 
-**Alternative — `log-event`, no sources.** Leave `sources` empty. Pipe a client hook payload into `factmem log-event` if you have one. MCP `log_event` / `capture_fact` keep working.
+**Alternative — record, no sources.** Leave `sources` empty. Pipe a client hook payload into `factmem record` if you have one. MCP `log_event` / `capture_fact` keep working.
 
-Do not install log-event hooks on this store — both write the same rows. FactMem does not detect or rewrite existing hook configs.
+Do not install record hooks on this store — both write the same rows. FactMem does not detect or rewrite existing hook configs.
 
 ### Hooks (after the first consolidate)
 
@@ -457,9 +457,9 @@ om() { npx -y -p "@factmem/mcp@0.25.0" -- factmem "$@"; }
 
 om init --yes
 
-om log-event --role user --content "I prefer dark mode in every editor, and I never want telemetry enabled."
-om log-event --role user --content "I am allergic to shellfish, so avoid seafood restaurants when booking anything."
-om log-event --role user --content "My colleague Robin at Acme is leading the Atlas migration project this quarter."
+om record --role user --content "I prefer dark mode in every editor, and I never want telemetry enabled."
+om record --role user --content "I am allergic to shellfish, so avoid seafood restaurants when booking anything."
+om record --role user --content "My colleague Robin at Acme is leading the Atlas migration project this quarter."
 
 om consolidate
 om search "Atlas"
@@ -470,9 +470,9 @@ om stats
 $env:FACTMEM_DATA = Join-Path $env:TEMP "factmem-demo"
 function om { npx -y -p "@factmem/mcp@0.25.0" -- factmem @args }
 om init --yes
-om log-event --role user --content "I prefer dark mode in every editor, and I never want telemetry enabled."
-om log-event --role user --content "I am allergic to shellfish, so avoid seafood restaurants when booking anything."
-om log-event --role user --content "My colleague Robin at Acme is leading the Atlas migration project this quarter."
+om record --role user --content "I prefer dark mode in every editor, and I never want telemetry enabled."
+om record --role user --content "I am allergic to shellfish, so avoid seafood restaurants when booking anything."
+om record --role user --content "My colleague Robin at Acme is leading the Atlas migration project this quarter."
 om consolidate
 om search "Atlas"
 om stats
@@ -501,7 +501,7 @@ Clients with no copy adapter still rely on `log_event` / `capture_fact` until th
 | Pre-compaction | Before context window compression | `factmem notify compaction` | The server copies new lines, extracts, integrates |
 | Natural breakpoints | Topic change, task completion | `consolidate` (optional) | Keeps the knowledge graph current |
 
-**On pre-compaction:** `factmem notify compaction` asks the server to consolidate. It is not a `log-event` hook.
+**On pre-compaction:** `factmem notify compaction` asks the server to consolidate. It is not a `record` hook.
 
 ### Claude Code
 
@@ -511,7 +511,7 @@ Create `.claude/rules/factmem.md` in your project (or `~/.claude/rules/factmem.m
 # FactMem
 
 - Conversations are copied from the named Claude Code source (first backfill: `factmem consolidate` on the CLI)
-- Do not install log-event hooks on this store
+- Do not install record hooks on this store
 - Identity context loads automatically from the `memory://profile` resource — no tool call needed
 - Before answering questions this store might already know, call `search_knowledge`
 - Call `capture_fact` only to correct or add something that is not in the transcript

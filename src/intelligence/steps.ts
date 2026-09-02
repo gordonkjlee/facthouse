@@ -80,7 +80,7 @@ export interface MomentPolicy {
 /**
  * What the server does at each moment.
  *
- * threshold     — events arrived (log-event, or a client nudge). Extract if
+ * threshold     — events arrived (record, or a client nudge). Extract if
  *                 the unexamined count is due and the throttle allows. No
  *                 copy: a record store has no sources, and a copy store's
  *                 heartbeat already copied before the call that raised the

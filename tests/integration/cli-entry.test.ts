@@ -68,7 +68,7 @@ describe.skipIf(!runnable)("cli entry — dispatch and usage", () => {
   const PUBLIC_VERBS = [
     "init",
     "settings",
-    "log-event",
+    "record",
     "notify",
     "consolidate",
     "search",
@@ -406,10 +406,10 @@ describe.skipIf(!runnable)("cli entry — subprocess recursion guard", () => {
     expect(existsSync(path.join(dir, "memory.db"))).toBe(true);
   });
 
-  it("skips log-event under OPENMEMORY_SUBPROCESS=1 without writing anything", () => {
+  it("skips record under OPENMEMORY_SUBPROCESS=1 without writing anything", () => {
     const dir = path.join(root, "guarded-log");
     const r = run(
-      ["log-event", "--role", "user", "--content", "synthetic", "--data", dir],
+      ["record", "--role", "user", "--content", "synthetic", "--data", dir],
       { OPENMEMORY_SUBPROCESS: "1" },
     );
     expect(r.status).toBe(0);
@@ -437,12 +437,12 @@ describe.skipIf(!runnable)("cli entry — subprocess recursion guard", () => {
 
   it("logs an event normally when the guard is not set", () => {
     // Control case for the guard tests above: proves they skip because of the
-    // env var, not because log-event is broken.
+    // env var, not because record is broken.
     const dir = path.join(root, "unguarded");
     run(["init", dir]);
 
     const r = run([
-      "log-event", "--role", "user", "--event-type", "message",
+      "record", "--role", "user", "--event-type", "message",
       "--content", "synthetic event", "--data", dir,
     ]);
     expect(r.status).toBe(0);
@@ -456,7 +456,7 @@ describe.skipIf(!runnable)("cli entry — subprocess recursion guard", () => {
     // stderr where nobody sees it.
     const dir = path.join(root, "never-initialised");
     const r = run([
-      "log-event", "--role", "user", "--event-type", "message",
+      "record", "--role", "user", "--event-type", "message",
       "--content", "synthetic", "--data", dir,
     ]);
     expect(r.status).toBe(0);
@@ -886,6 +886,16 @@ describe.skipIf(!runnable)("cli entry — hidden aliases for the 0.25 verbs", ()
     const r = run(["signal", "tick", "--data", dir]);
     expect(r.status).toBe(0);
     expect(JSON.parse(r.stdout)).toEqual({ delivered: false, moment: "threshold" });
+  });
+
+  it("log-event records and names record", () => {
+    const dir = path.join(root, "alias-log-event");
+    run(["init", dir]);
+    const r = run(["log-event", "--role", "user", "--content", "synthetic line", "--data", dir]);
+    expect(r.status).toBe(0);
+    expect(r.stderr).toMatch(/"factmem log-event" is deprecated/);
+    expect(r.stderr).toMatch(/factmem record/);
+    expect(JSON.parse(r.stdout)).toHaveProperty("event_id");
   });
 
   it("signal with an unknown kind still exits 1", () => {

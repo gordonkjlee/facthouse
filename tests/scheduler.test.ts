@@ -105,7 +105,7 @@ describe("scheduler", () => {
 
   it("skips SQL work when data_version is unchanged between threshold moments", async () => {
     // data_version only bumps when ANOTHER connection writes, so this test
-    // opens a second connection to represent the CLI's log-event writer.
+    // opens a second connection to represent the CLI's record writer.
     const os = await import("node:os");
     const pathMod = await import("node:path");
     const fs = await import("node:fs");

@@ -368,14 +368,14 @@ describe("appendCaptureRecipe", () => {
   it("does not throw or mix-warn on invalid sources", () => {
     const lines = appendCaptureRecipe([{ kind: "grok", home: "~/.grok" }]);
     expect(lines.join("\n")).toMatch(/invalid/i);
-    expect(lines.join("\n")).not.toMatch(/log-event hooks/i);
+    expect(lines.join("\n")).not.toMatch(/record hooks/i);
   });
 
   it("adds the mix warning when a source is present", () => {
     const lines = appendCaptureRecipe([
       { kind: "claude-code", home: "~/.claude", cwd: "C:\\dev\\app" },
     ]);
-    expect(lines.join("\n")).toMatch(/log-event hooks/i);
+    expect(lines.join("\n")).toMatch(/record hooks/i);
   });
 });
 

@@ -239,7 +239,7 @@ export function appendCaptureRecipe(
   const status = sourcesStatusLines(sources);
   try {
     if (resolveSources(sources).length > 0) {
-      return [...status, INIT_PROMPTS.mixCopyLogEvent];
+      return [...status, INIT_PROMPTS.mixCopyRecord];
     }
   } catch {
     return status;

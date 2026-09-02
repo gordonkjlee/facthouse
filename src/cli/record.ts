@@ -1,5 +1,5 @@
 /**
- * log-event CLI command — inserts a SessionEvent directly into the database.
+ * record CLI command — inserts one SessionEvent directly into the database.
  * Used by AI client hooks to pipe conversation messages to FactMem.
  */
 
@@ -18,7 +18,7 @@ import { envValue } from "../identity.js";
 import { notifyServer } from "../ipc/scheduler-ipc.js";
 import type { SessionEvent } from "../types/data.js";
 
-export interface LogEventArgs {
+export interface RecordEventArgs {
   role: SessionEvent["role"];
   eventType: SessionEvent["event_type"];
   content: string;
@@ -45,7 +45,7 @@ export interface LogEventArgs {
  * both session columns null is examined and declined, not attached to
  * whatever was last active. Events used to be stored that way whenever no
  * session id was supplied, which meant the documented manual form
- * (`log-event --content "..."`) wrote rows that extraction skipped for ever,
+ * (`record --content "..."`) wrote rows that extraction skipped for ever,
  * with nothing reported at either end.
  *
  * After insertion, best-effort tells the running MCP server events arrived
@@ -59,7 +59,7 @@ export interface LogEventArgs {
  * and the event is lost — with the error going to a hook's stderr, where
  * nobody sees it.
  */
-export async function logEvent(args: LogEventArgs): Promise<SessionEvent> {
+export async function recordEvent(args: RecordEventArgs): Promise<SessionEvent> {
   const env = args.env ?? process.env;
   const config = loadShippedStoreConfig(args.dataDir, env);
   mkdirSync(args.dataDir, { recursive: true });
