@@ -15,7 +15,7 @@
  * are skipped. Nothing outside projects/<group>/agent-transcripts/ is walked.
  *
  * Cursor's JSONL has no timestamp and no tool results. `occurred_at` stays
- * null rather than copying ingest time; missing tool output is not invented.
+ * null rather than copying copy time; missing tool output is not invented.
  *
  * Optional `cwd` restricts discovery to that project's group. Cursor encodes
  * `C:\dev\app` as `c-dev-app` (not Claude Code's `C--dev-app`). A cwd that
@@ -29,11 +29,11 @@ import path from "node:path";
 import type { Db } from "../db/connection.js";
 import { mapTranscriptLine } from "./claude-code.js";
 import {
-  ingestJsonlFile,
+  copyJsonlFile,
   isDir,
   listJsonl,
-  type JsonlFilePull,
-} from "./jsonl-ingest.js";
+  type JsonlFileCopy,
+} from "./jsonl-copy.js";
 import { encodeCursorProjectDir, type ResolvedCaptureSource } from "./resolve.js";
 
 const SKIP_NEST_DIRS = new Set(["subagents"]);
@@ -61,8 +61,8 @@ export function discoverCursorFiles(source: ResolvedCaptureSource): string[] {
 }
 
 /** Tail one Cursor Agent JSONL file into session_events. */
-export async function ingestCursorFile(db: Db, filePath: string): Promise<JsonlFilePull> {
-  return await ingestJsonlFile(db, filePath, {
+export async function copyCursorFile(db: Db, filePath: string): Promise<JsonlFileCopy> {
+  return await copyJsonlFile(db, filePath, {
     sourceTool: "cursor",
     mapLine: mapTranscriptLine,
   });

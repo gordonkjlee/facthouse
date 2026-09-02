@@ -1,5 +1,5 @@
 /**
- * Data access for graduated facts (DIKW: Knowledge layer).
+ * Data access for integrated facts (DIKW: Knowledge layer).
  */
 
 import { randomUUID } from "node:crypto";
@@ -115,7 +115,7 @@ export function currencyClause(
   };
 }
 
-/** Insert a graduated fact. Returns the created Fact.
+/** Insert a integrated fact. Returns the created Fact.
  *  valid_from defaults to now if not provided. Pass null explicitly for unknown validity start (e.g., historical imports). */
 export async function insertFact(db: Db, fact: NewFact): Promise<Fact> {
   const id = randomUUID();

@@ -2,7 +2,7 @@
  * Gated inferences — hypotheses, not speech.
  *
  * Capture stores a pending row with supporting fact ids. Confirm inserts a
- * graduated fact with source_type "inference". Reject records that it is not
+ * integrated fact with source_type "inference". Reject records that it is not
  * knowledge. Consolidate never writes this table.
  */
 
@@ -213,7 +213,7 @@ export async function listInferences(
 }
 
 /**
- * Confirm (graduate to K) or reject. Confirming inserts a fact labelled
+ * Confirm (integrate to K) or reject. Confirming inserts a fact labelled
  * inference; it does not pretend the sentence was said.
  */
 export async function validateInference(

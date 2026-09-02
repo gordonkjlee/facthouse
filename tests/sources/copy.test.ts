@@ -11,14 +11,10 @@ import path from "node:path";
 import { closeDatabase, openDatabase, type Db } from "../../src/db/connection.js";
 import { applySchema } from "../../src/db/schema.js";
 import {
-  PULL_HEARTBEAT_DEBOUNCE_MS,
-  SESSION_START_FLUSH_MAX_INSERTED,
-  createPullHeartbeat,
-  pullFollowUp,
-  pullSources,
-  shouldFlushAfterSessionStartPull,
-  shouldTickAfterCliPull,
-} from "../../src/sources/pull.js";
+  COPY_HEARTBEAT_DEBOUNCE_MS,
+  createCopyHeartbeat,
+  copySources,
+} from "../../src/sources/copy.js";
 import { encodeProjectDir } from "../../src/sources/resolve.js";
 
 /**
@@ -99,7 +95,7 @@ let root: string;
 let db: Db;
 
 beforeEach(async () => {
-  root = mkdtempSync(path.join(tmpdir(), "om-pull-"));
+  root = mkdtempSync(path.join(tmpdir(), "om-copy-"));
   db = openDatabase(":memory:");
   await applySchema(db);
 });
@@ -109,9 +105,9 @@ afterEach(async () => {
   rmSync(root, { recursive: true, force: true });
 });
 
-describe("pullSources", () => {
+describe("copySources", () => {
   it("is a no-op when sources is empty", async () => {
-    const result = await pullSources(db, []);
+    const result = await copySources(db, []);
     expect(result).toEqual({
       sources: 0,
       files: 0,
@@ -121,13 +117,13 @@ describe("pullSources", () => {
     expect(await events(db)).toHaveLength(0);
   });
 
-  it("ingests a fixture JSONL into session_events and skips system and isMeta lines", async () => {
+  it("copies a fixture JSONL into session_events and skips system and isMeta lines", async () => {
     const home = path.join(root, "claude-home");
     const group = encodeProjectDir("C:\\dev\\app");
     const file = path.join(home, "projects", group, "sess-aaa.jsonl");
     writeJsonl(file, fixtureLines("sess-aaa"));
 
-    const result = await pullSources(db, [{ kind: "claude-code", home }]);
+    const result = await copySources(db, [{ kind: "claude-code", home }]);
     expect(result.sources).toBe(1);
     expect(result.files).toBe(1);
     expect(result.events_inserted).toBe(4);
@@ -153,7 +149,7 @@ describe("pullSources", () => {
     expect(session.project).toBe(group);
   });
 
-  it("records the JSONL timestamp as occurred_at, distinct from ingest created_at", async () => {
+  it("records the JSONL timestamp as occurred_at, distinct from copy created_at", async () => {
     const home = path.join(root, "claude-home");
     const group = encodeProjectDir("C:\\dev\\app");
     const file = path.join(home, "projects", group, "sess-time.jsonl");
@@ -168,7 +164,7 @@ describe("pullSources", () => {
     ]);
 
     const before = new Date().toISOString();
-    await pullSources(db, [{ kind: "claude-code", home }]);
+    await copySources(db, [{ kind: "claude-code", home }]);
     const row = (await db
       .prepare(
         `SELECT occurred_at, created_at FROM session_events WHERE client_session_id = ?`,
@@ -180,7 +176,7 @@ describe("pullSources", () => {
     expect(row.created_at).not.toBe(said);
   });
 
-  it("a second pull of the same file is a no-op", async () => {
+  it("a second copy of the same file is a no-op", async () => {
     const home = path.join(root, "claude-home");
     const file = path.join(
       home,
@@ -190,20 +186,20 @@ describe("pullSources", () => {
     );
     writeJsonl(file, fixtureLines("sess-aaa"));
 
-    await pullSources(db, [{ kind: "claude-code", home }]);
-    const second = await pullSources(db, [{ kind: "claude-code", home }]);
+    await copySources(db, [{ kind: "claude-code", home }]);
+    const second = await copySources(db, [{ kind: "claude-code", home }]);
     expect(second.events_inserted).toBe(0);
     expect(await events(db)).toHaveLength(4);
   });
 
-  it("a no-op pull still records project on a store that had none", async () => {
+  it("a no-op copy still records project on a store that had none", async () => {
     const home = path.join(root, "claude-home");
     const group = encodeProjectDir("C:\\dev\\app");
     const file = path.join(home, "projects", group, "sess-aaa.jsonl");
     writeJsonl(file, fixtureLines("sess-aaa"));
-    await pullSources(db, [{ kind: "claude-code", home }]);
+    await copySources(db, [{ kind: "claude-code", home }]);
     await db.prepare(`DELETE FROM sessions`).run();
-    const again = await pullSources(db, [{ kind: "claude-code", home }]);
+    const again = await copySources(db, [{ kind: "claude-code", home }]);
     expect(again.events_inserted).toBe(0);
     const row = (await db
       .prepare(`SELECT project FROM sessions WHERE id = ?`)
@@ -211,7 +207,7 @@ describe("pullSources", () => {
     expect(row.project).toBe(group);
   });
 
-  it("an appended line is the only insert on a third pull", async () => {
+  it("an appended line is the only insert on a third copy", async () => {
     const home = path.join(root, "claude-home");
     const file = path.join(
       home,
@@ -220,8 +216,8 @@ describe("pullSources", () => {
       "sess-aaa.jsonl",
     );
     writeJsonl(file, fixtureLines("sess-aaa"));
-    await pullSources(db, [{ kind: "claude-code", home }]);
-    await pullSources(db, [{ kind: "claude-code", home }]);
+    await copySources(db, [{ kind: "claude-code", home }]);
+    await copySources(db, [{ kind: "claude-code", home }]);
 
     appendFileSync(
       file,
@@ -232,7 +228,7 @@ describe("pullSources", () => {
       }) + "\n",
     );
 
-    const third = await pullSources(db, [{ kind: "claude-code", home }]);
+    const third = await copySources(db, [{ kind: "claude-code", home }]);
     expect(third.events_inserted).toBe(1);
     const rows = await events(db);
     expect(rows).toHaveLength(5);
@@ -252,7 +248,7 @@ describe("pullSources", () => {
       fixtureLines("sess-other"),
     );
 
-    const filtered = await pullSources(db, [
+    const filtered = await copySources(db, [
       { kind: "claude-code", home, cwd: "C:\\dev\\app" },
     ]);
     expect(filtered.files).toBe(1);
@@ -260,7 +256,7 @@ describe("pullSources", () => {
     expect((await events(db)).every((r) => r.client_session_id === "sess-keep")).toBe(true);
 
     // Without cwd, the nested sessions/ file is discovered too.
-    const unfiltered = await pullSources(db, [{ kind: "claude-code", home }]);
+    const unfiltered = await copySources(db, [{ kind: "claude-code", home }]);
     expect(unfiltered.files).toBe(2);
     const projects = (await db
       .prepare(`SELECT id, project FROM sessions ORDER BY id`)
@@ -285,14 +281,14 @@ describe("pullSources", () => {
       fixtureLines("real"),
     );
 
-    const result = await pullSources(db, [{ kind: "claude-code", home }]);
+    const result = await copySources(db, [{ kind: "claude-code", home }]);
     expect(result.files).toBe(1);
     expect((await events(db)).every((r) => r.client_session_id === "real")).toBe(true);
   });
 
   it("rejects an unknown kind without inserting anything", async () => {
     await expect(
-      pullSources(db, [{ kind: "grok", home: path.join(root, "nope") }]),
+      copySources(db, [{ kind: "grok", home: path.join(root, "nope") }]),
     ).rejects.toThrow(/Unknown source kind "grok"/);
     expect(await events(db)).toHaveLength(0);
   });
@@ -322,13 +318,13 @@ describe("pullSources", () => {
     // change the prefix hash and look like a rewrite.
     expect(Buffer.byteLength(complete + incomplete, "utf-8")).toBeLessThan(256);
 
-    const first = await pullSources(db, [{ kind: "claude-code", home }]);
+    const first = await copySources(db, [{ kind: "claude-code", home }]);
     expect(first.events_inserted).toBe(1);
     expect(await events(db)).toHaveLength(1);
     expect((await events(db))[0].content).toContain("Complete line one");
 
     writeFileSync(file, complete + incomplete + "\n", "utf-8");
-    const second = await pullSources(db, [{ kind: "claude-code", home }]);
+    const second = await copySources(db, [{ kind: "claude-code", home }]);
     expect(second.events_inserted).toBe(1);
     const rows = await events(db);
     expect(rows).toHaveLength(2);
@@ -347,7 +343,7 @@ describe("pullSources", () => {
       fixtureLines("agent-aaa"),
     );
 
-    const result = await pullSources(db, [{ kind: "claude-code", home }]);
+    const result = await copySources(db, [{ kind: "claude-code", home }]);
     expect(result.files).toBe(1);
     expect((await events(db)).every((r) => r.client_session_id === "sess-parent")).toBe(true);
   });
@@ -388,11 +384,11 @@ describe("pullSources", () => {
     writeFileSync(file, header + originalBody, "utf-8");
     expect(Buffer.byteLength(header, "utf-8")).toBeGreaterThan(256);
 
-    await pullSources(db, [{ kind: "claude-code", home }]);
+    await copySources(db, [{ kind: "claude-code", home }]);
     expect(await events(db)).toHaveLength(2);
 
     writeFileSync(file, header + compactedBody, "utf-8");
-    const again = await pullSources(db, [{ kind: "claude-code", home }]);
+    const again = await copySources(db, [{ kind: "claude-code", home }]);
     expect(again.events_inserted).toBe(2);
     const rows = await events(db);
     expect(rows).toHaveLength(4);
@@ -408,7 +404,7 @@ describe("pullSources", () => {
       "sess-aaa.jsonl",
     );
     writeJsonl(file, fixtureLines("sess-aaa"));
-    await pullSources(db, [{ kind: "claude-code", home }]);
+    await copySources(db, [{ kind: "claude-code", home }]);
 
     writeJsonl(file, [
       JSON.stringify({
@@ -418,7 +414,7 @@ describe("pullSources", () => {
       }),
     ]);
 
-    const again = await pullSources(db, [{ kind: "claude-code", home }]);
+    const again = await copySources(db, [{ kind: "claude-code", home }]);
     expect(again.events_inserted).toBe(1);
     const rows = await events(db);
     expect(rows).toHaveLength(5);
@@ -426,84 +422,18 @@ describe("pullSources", () => {
   });
 });
 
-describe("shouldTickAfterCliPull", () => {
-  it("does not tick when nothing new was inserted", () => {
-    expect(shouldTickAfterCliPull(0)).toBe(false);
-  });
-
-  it("ticks a handful of new lines so an incremental pull can extract", () => {
-    expect(shouldTickAfterCliPull(1)).toBe(true);
-    expect(shouldTickAfterCliPull(SESSION_START_FLUSH_MAX_INSERTED)).toBe(true);
-  });
-
-  it("does not tick a large first-run backfill", () => {
-    expect(shouldTickAfterCliPull(SESSION_START_FLUSH_MAX_INSERTED + 1)).toBe(false);
-    expect(shouldTickAfterCliPull(5000)).toBe(false);
-  });
-});
-
-describe("shouldFlushAfterSessionStartPull", () => {
-  it("flushes leftovers when the pull inserted nothing", () => {
-    expect(shouldFlushAfterSessionStartPull(0)).toBe(true);
-  });
-
-  it("flushes a handful of new lines from a normal session", () => {
-    expect(shouldFlushAfterSessionStartPull(1)).toBe(true);
-    expect(shouldFlushAfterSessionStartPull(SESSION_START_FLUSH_MAX_INSERTED)).toBe(
-      true,
-    );
-  });
-
-  it("skips flush after a large first-run backfill", () => {
-    expect(shouldFlushAfterSessionStartPull(SESSION_START_FLUSH_MAX_INSERTED + 1)).toBe(
-      false,
-    );
-    expect(shouldFlushAfterSessionStartPull(5000)).toBe(false);
-  });
-});
-
-describe("pullFollowUp", () => {
-  it("flush wins over tick and no-tick", () => {
-    expect(pullFollowUp({ flush: true, noTick: true, eventsInserted: 3 })).toBe(
-      "flush",
-    );
-    expect(pullFollowUp({ flush: true, noTick: false, eventsInserted: 0 })).toBe(
-      "flush",
-    );
-  });
-
-  it("no-tick copies only", () => {
-    expect(pullFollowUp({ flush: false, noTick: true, eventsInserted: 3 })).toBe(
-      "none",
-    );
-  });
-
-  it("default ticks a handful and skips a backfill", () => {
-    expect(pullFollowUp({ flush: false, noTick: false, eventsInserted: 3 })).toBe(
-      "tick",
-    );
-    expect(
-      pullFollowUp({
-        flush: false,
-        noTick: false,
-        eventsInserted: SESSION_START_FLUSH_MAX_INSERTED + 1,
-      }),
-    ).toBe("none");
-  });
-});
-
-describe("createPullHeartbeat", () => {
-  it("never calls pull when sources is empty", async () => {
+describe("createCopyHeartbeat", () => {
+  it("never calls copy when sources is empty", async () => {
     let called = 0;
-    const hb = createPullHeartbeat({
+    const hb = createCopyHeartbeat({
       db,
       sources: [],
-      pull: async () => {
+      copy: async () => {
         called += 1;
-        throw new Error("must not pull on an empty sources list");
+        throw new Error("must not copy on an empty sources list");
       },
     });
-    const result = await hb.pullIfGrown();
+    const result = await hb.copyIfGrown();
     expect(called).toBe(0);
     expect(result.events_inserted).toBe(0);
     expect(result.sources).toBe(0);
@@ -520,17 +450,17 @@ describe("createPullHeartbeat", () => {
     writeJsonl(file, fixtureLines("sess-hb"));
     const sources = [{ kind: "claude-code" as const, home }];
     let t = 10_000;
-    const hb = createPullHeartbeat({
+    const hb = createCopyHeartbeat({
       db,
       sources,
       now: () => t,
-      debounceMs: PULL_HEARTBEAT_DEBOUNCE_MS,
+      debounceMs: COPY_HEARTBEAT_DEBOUNCE_MS,
     });
 
-    const first = await hb.pullIfGrown();
+    const first = await hb.copyIfGrown();
     expect(first.events_inserted).toBe(4);
-    t += PULL_HEARTBEAT_DEBOUNCE_MS;
-    const second = await hb.pullIfGrown();
+    t += COPY_HEARTBEAT_DEBOUNCE_MS;
+    const second = await hb.copyIfGrown();
     expect(second.events_inserted).toBe(0);
     expect(await events(db)).toHaveLength(4);
 
@@ -542,29 +472,29 @@ describe("createPullHeartbeat", () => {
         message: { role: "assistant", content: "Noted the extra preference." },
       }) + "\n",
     );
-    t += PULL_HEARTBEAT_DEBOUNCE_MS;
-    const third = await hb.pullIfGrown();
+    t += COPY_HEARTBEAT_DEBOUNCE_MS;
+    const third = await hb.copyIfGrown();
     expect(third.events_inserted).toBe(1);
     expect(await events(db)).toHaveLength(5);
   });
 
-  it("coalesces overlapping walks onto one in-flight pull", async () => {
+  it("coalesces overlapping walks onto one in-flight copy", async () => {
     let walks = 0;
     let release!: () => void;
     const gate = new Promise<void>((resolve) => {
       release = resolve;
     });
-    const hb = createPullHeartbeat({
+    const hb = createCopyHeartbeat({
       db,
       sources: [{ kind: "claude-code", home: "/tmp/unused" }],
-      pull: async () => {
+      copy: async () => {
         walks += 1;
         await gate;
         return { sources: 1, files: 1, events_inserted: 2, events_skipped: 0 };
       },
     });
-    const first = hb.pullIfGrown();
-    const second = hb.pullIfGrown();
+    const first = hb.copyIfGrown();
+    const second = hb.copyIfGrown();
     expect(walks).toBe(1);
     release();
     expect(await first).toEqual(await second);
@@ -575,45 +505,65 @@ describe("createPullHeartbeat", () => {
   it("debounces from walk completion, not walk start", async () => {
     let t = 0;
     let walks = 0;
-    const hb = createPullHeartbeat({
+    const hb = createCopyHeartbeat({
       db,
       sources: [{ kind: "claude-code", home: "/tmp/unused" }],
       now: () => t,
       debounceMs: 2000,
-      pull: async () => {
+      copy: async () => {
         walks += 1;
         t = 3000;
         return { sources: 1, files: 1, events_inserted: 0, events_skipped: 0 };
       },
     });
-    await hb.pullIfGrown();
+    await hb.copyIfGrown();
     t = 4000;
-    await hb.pullIfGrown();
+    await hb.copyIfGrown();
     expect(walks).toBe(1);
     t = 5000;
-    await hb.pullIfGrown();
+    await hb.copyIfGrown();
     expect(walks).toBe(2);
+  });
+
+  it("force walks again inside the debounce window, so a consolidate sees the newest lines", async () => {
+    let t = 1_000;
+    let calls = 0;
+    const hb = createCopyHeartbeat({
+      db: {} as never,
+      sources: [{ kind: "claude-code", home: "~/.claude", cwd: "C:\\dev\\app" }],
+      now: () => t,
+      copy: async () => {
+        calls++;
+        return { sources: 1, files: 1, events_inserted: 1, events_skipped: 0 };
+      },
+    });
+    await hb.copyIfGrown();
+    t += 100;
+    await hb.copyIfGrown();
+    expect(calls).toBe(1);
+    await hb.copyIfGrown({ force: true });
+    expect(calls).toBe(2);
   });
 
   it("debounces two walks inside the window into one", async () => {
     let walks = 0;
     let t = 0;
-    const hb = createPullHeartbeat({
+    const hb = createCopyHeartbeat({
       db,
       sources: [{ kind: "claude-code", home: "/tmp/unused" }],
       now: () => t,
       debounceMs: 2000,
-      pull: async () => {
+      copy: async () => {
         walks += 1;
         return { sources: 1, files: 1, events_inserted: 0, events_skipped: 0 };
       },
     });
-    await hb.pullIfGrown();
+    await hb.copyIfGrown();
     t = 500;
-    await hb.pullIfGrown();
+    await hb.copyIfGrown();
     expect(walks).toBe(1);
     t = 2000;
-    await hb.pullIfGrown();
+    await hb.copyIfGrown();
     expect(walks).toBe(2);
   });
 });

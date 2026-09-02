@@ -38,8 +38,8 @@ export const DEFAULT_HTTP_STAGES: Record<IntelligenceStageName, "http" | "cli"> 
   supersede: "cli",
 };
 
-/** I→K stages that share the graduate lock. Classify/entities follow extract. */
-export const GRADUATE_STAGE_NAMES = [
+/** I→K stages that share the integrate lock. Classify/entities follow extract. */
+export const INTEGRATE_STAGE_NAMES = [
   "reconcile",
   "supersede",
   "summarise",
@@ -53,11 +53,11 @@ export function httpIsConfigured(config: IntelligenceConfig): boolean {
  * Whether this config builds the per-stage router. Kill-switch heuristic /
  * sampling / api never mix with HTTP — that would bill the wrong pot.
  */
-function cliGraduateModelDiffers(config: IntelligenceConfig): boolean {
-  const graduate = config.cli?.graduate_model?.trim();
-  if (!graduate) return false;
+function cliIntegrateModelDiffers(config: IntelligenceConfig): boolean {
+  const integrate = config.cli?.integrate_model?.trim();
+  if (!integrate) return false;
   const extract = (config.cli?.model ?? CLI_DEFAULT_MODEL).trim();
-  return graduate !== extract;
+  return integrate !== extract;
 }
 
 export function usesStageRouter(
@@ -66,7 +66,7 @@ export function usesStageRouter(
 ): boolean {
   const type = resolveProviderType(config.provider, env);
   if (type === "heuristic" || type === "sampling" || type === "api") return false;
-  return httpIsOptedIn(config) || type === "http" || cliGraduateModelDiffers(config);
+  return httpIsOptedIn(config) || type === "http" || cliIntegrateModelDiffers(config);
 }
 
 export function resolveStageProviderType(
@@ -246,13 +246,13 @@ export function createStageRouter(
       return httpFor(model);
     }
     if (type === "cli") {
-      const graduate =
+      const integrate =
         stage === "summarise" ||
         stage === "reconcile" ||
         stage === "supersede";
       return cliFor(
         modelOverride ||
-          (graduate ? config.cli?.graduate_model?.trim() : undefined) ||
+          (integrate ? config.cli?.integrate_model?.trim() : undefined) ||
           config.cli?.model,
       );
     }

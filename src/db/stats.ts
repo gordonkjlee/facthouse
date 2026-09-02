@@ -50,7 +50,7 @@ export interface KnowledgeStats {
    *
    * Reported because it is invisible everywhere else and routinely dwarfs
    * everything above it: a store in daily use was measured at 47,000 events and
-   * 493 MB against 21 graduated facts, almost all of it logged tool output. The
+   * 493 MB against 21 integrated facts, almost all of it logged tool output. The
    * facts were healthy, so no other number in this object hinted at it. See
    * `factmem prune`.
    */
@@ -72,7 +72,7 @@ export interface KnowledgeStats {
    * subtraction treats a neighbour’s high mark as a drained backlog.
    */
   extract: { watermark: number; unextracted_events: number };
-  /** session_facts not yet claimed by a graduate (`consolidation_id` is null). */
+  /** session_facts not yet claimed by a integrate (`consolidation_id` is null). */
   pending_facts: number;
   /**
    * Billed intelligence: 24h and all-time roll-ups plus the last N runs.

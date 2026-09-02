@@ -1,6 +1,6 @@
 /**
  * Data access for provenance source records.
- * Each graduated fact points at a source row via facts.source_id, enabling
+ * Each integrated fact points at a source row via facts.source_id, enabling
  * the provenance chain:
  *   Fact.source_id → sources.id
  *   sources.metadata.session_fact_id (JSON field, not a column)

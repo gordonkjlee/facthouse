@@ -6,7 +6,7 @@ import type { Db } from "../../src/db/connection.js";
 
 
 const dbMod = await import("../../src/db/index.js");
-const { extractContentFromHookPayload, logEvent } = await import("../../src/cli/log-event.js");
+const { extractContentFromHookPayload, recordEvent } = await import("../../src/cli/record.js");
 
 let db: Db;
 
@@ -73,7 +73,7 @@ describe("extractContentFromHookPayload", () => {
   });
 });
 
-describe("logEvent (function)", () => {
+describe("recordEvent (function)", () => {
   it("getLatestSession finds the most recent session", async () => {
     await dbMod.createSession(db, { source_tool: "claude-code", project: null });
     const latest = await dbMod.getLatestSession(db);
@@ -82,7 +82,7 @@ describe("logEvent (function)", () => {
   });
 });
 
-describe("logEvent attributes every event to a session", () => {
+describe("recordEvent attributes every event to a session", () => {
   /**
    * An event with both session columns null is not just untidy — consolidation's
    * event-extraction pass resolves a session from the batch it is reading and
@@ -125,7 +125,7 @@ describe("logEvent attributes every event to a session", () => {
       JSON.stringify({ storage: { provider: "postgres" } }),
     );
     await expect(
-      logEvent({
+      recordEvent({
         role: "user",
         eventType: "message",
         content: "the grain is bookings",
@@ -137,7 +137,7 @@ describe("logEvent attributes every event to a session", () => {
   });
 
   it("attaches an event to a session on a store that has none", async () => {
-    await logEvent({
+    await recordEvent({
       role: "user",
       eventType: "message",
       content: "Robin is leading the Atlas migration.",
@@ -151,7 +151,7 @@ describe("logEvent attributes every event to a session", () => {
 
   it("reuses the latest session instead of one per event", async () => {
     for (const content of ["first message", "second message", "third message"]) {
-      await logEvent({ role: "user", eventType: "message", content, dataDir });
+      await recordEvent({ role: "user", eventType: "message", content, dataDir });
     }
 
     const events = await readEvents();
@@ -166,7 +166,7 @@ describe("logEvent attributes every event to a session", () => {
   });
 
   it("stores a named speaker on the event", async () => {
-    await logEvent({
+    await recordEvent({
       role: "user",
       eventType: "message",
       content: "the grain is bookings",
@@ -187,7 +187,7 @@ describe("logEvent attributes every event to a session", () => {
 
   it("stamps occurred_at as hook time, not null", async () => {
     const before = new Date().toISOString();
-    await logEvent({
+    await recordEvent({
       role: "user",
       eventType: "message",
       content: "from a hook",
@@ -203,7 +203,7 @@ describe("logEvent attributes every event to a session", () => {
         .get("client-abc-123")) as { occurred_at: string | null; created_at: string };
       expect(row.occurred_at).not.toBeNull();
       expect(row.occurred_at! >= before).toBe(true);
-      // Live capture: said and ingested are the same instant, give or take
+      // Live capture: said and copied are the same instant, give or take
       // the millisecond between the two Date.now calls.
       expect(Math.abs(Date.parse(row.occurred_at!) - Date.parse(row.created_at))).toBeLessThan(
         1000,
@@ -214,7 +214,7 @@ describe("logEvent attributes every event to a session", () => {
   });
 
   it("keeps a hook-supplied session id as the client's own", async () => {
-    await logEvent({
+    await recordEvent({
       role: "user",
       eventType: "message",
       content: "from a hook",
@@ -232,7 +232,7 @@ describe("logEvent attributes every event to a session", () => {
     const previous = process.env.OPENMEMORY_PROJECT;
     process.env.OPENMEMORY_PROJECT = "atlas";
     try {
-      await logEvent({
+      await recordEvent({
         role: "user",
         eventType: "message",
         content: "from a hook",
@@ -256,13 +256,13 @@ describe("logEvent attributes every event to a session", () => {
   });
 
   it("the most-recent fallback is not how pull attributes conversations", async () => {
-    await logEvent({
+    await recordEvent({
       role: "user",
       eventType: "message",
       content: "manual, no session id",
       dataDir,
     });
-    await logEvent({
+    await recordEvent({
       role: "user",
       eventType: "message",
       content: "from a hook",

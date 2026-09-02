@@ -82,7 +82,7 @@ describe("loadSpendDashboard", () => {
     expect(day!.examined).toBe(1);
     expect(day!.unread).toBe(1);
     expect(day!.staged).toBe(1);
-    expect(day!.graduated).toBe(1);
+    expect(day!.integrated).toBe(1);
     expect(dash.days).toHaveLength(14);
     expect(dash.days[0].day).toBe("2026-08-15");
     expect(dash.days[13].day).toBe("2026-08-28");
@@ -146,7 +146,7 @@ describe("spendBucketKey / rollSpendDays", () => {
         examined: 4,
         unread: 6,
         staged: 1,
-        graduated: 2,
+        integrated: 2,
         calls: 3,
         input_tokens: 100,
       },
@@ -156,7 +156,7 @@ describe("spendBucketKey / rollSpendDays", () => {
         examined: 1,
         unread: 4,
         staged: 2,
-        graduated: 3,
+        integrated: 3,
         calls: 7,
         input_tokens: 50,
       },

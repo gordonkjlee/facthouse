@@ -72,7 +72,7 @@ describe("insertInference", () => {
 });
 
 describe("validateInference", () => {
-  it("confirm graduates a labelled fact with provenance", async () => {
+  it("confirm integrates a labelled fact with provenance", async () => {
     const a = await supportingFact(db, "The demo store prefers dark mode.");
     const inf = await insertInference(db, {
       hypothesis: "The demo store's UI is dark-theme only.",
@@ -187,7 +187,7 @@ describe("same_as via inference confirm", () => {
 });
 
 describe("consolidate does not invent inferences", () => {
-  it("graduating a session fact leaves the inferences table empty", async () => {
+  it("integrating a session fact leaves the inferences table empty", async () => {
     const session = await createSession(db, { source_tool: "claude-code", project: null });
     await insertSessionFact(db, {
       session_id: session.id,

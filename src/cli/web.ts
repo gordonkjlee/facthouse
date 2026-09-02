@@ -15,6 +15,7 @@ import {
   type InitOverlay,
   type MoreOverlay,
   type MoreShown,
+  type MoreSettingId,
 } from "./init-knobs.js";
 import { isCaptureSourceKind, isStageOnFail } from "../types/config.js";
 import {
@@ -185,40 +186,55 @@ ${inner}
 </html>`;
 }
 
+/** The prompt's first line, before the default in brackets: one label, one source. */
+function promptLabel(prompt: string): string {
+  const first = prompt.split("\n")[0] ?? prompt;
+  return first.split("  [")[0]!.replace(/\?$/, "").trim();
+}
+
+/**
+ * One More-knob field for both pages. Labels come from INIT_PROMPTS so the
+ * terminal and the page cannot drift; `shown` fills current values (settings).
+ */
+function moreFieldHtml(id: MoreSettingId, shown?: MoreShown): string {
+  const val = (v: string | number | undefined) =>
+    v === undefined ? "" : ` value="${escapeHtml(String(v))}"`;
+  switch (id) {
+    case "cliModel":
+      return `<label>${escapeHtml(promptLabel(INIT_PROMPTS.moreCliModel("")))} <input name="cliModel"${val(shown?.cliModel)} autocomplete="off" placeholder="haiku"></label>`;
+    case "cliIntegrateModel":
+      return `<label>${escapeHtml(promptLabel(INIT_PROMPTS.moreCliIntegrateModel("")))} <input name="cliIntegrateModel"${val(shown?.cliIntegrateModel)} autocomplete="off" placeholder="haiku"></label>`;
+    case "cliTimeoutMs":
+      return `<label>${escapeHtml(promptLabel(INIT_PROMPTS.moreCliTimeout("")))} <input name="cliTimeoutMs"${val(shown?.cliTimeoutMs)} inputmode="numeric" autocomplete="off"></label>`;
+    case "httpExtract":
+      return `<label><input type="checkbox" name="httpExtract" value="yes"${shown?.httpExtract ? " checked" : ""}> ${escapeHtml(promptLabel(INIT_PROMPTS.moreHttpExtract("N")))}</label>`;
+    case "httpBaseUrl":
+      return `<label>${escapeHtml(promptLabel(INIT_PROMPTS.moreHttpBaseUrl("")))} <input name="httpBaseUrl"${val(shown?.httpBaseUrl)} placeholder="${escapeHtml(HTTP_DEFAULT_BASE_URL)}" autocomplete="off"></label>`;
+    case "httpModel":
+      return `<label>${escapeHtml(promptLabel(INIT_PROMPTS.moreHttpModel("", [])))} <input name="httpModel"${val(shown?.httpModel)} autocomplete="off"></label>`;
+    case "httpExtractOnFail": {
+      const sel = (v: string) => (shown ? (shown.httpExtractOnFail === v ? " selected" : "") : v === "cli" ? " selected" : "");
+      return `<label>${escapeHtml(promptLabel(INIT_PROMPTS.moreHttpOnFail("")))}
+          <select name="httpExtractOnFail">
+            <option value="cli"${sel("cli")}>cli</option>
+            <option value="none"${sel("none")}>none</option>
+            <option value="http"${sel("http")}>http</option>
+          </select>
+        </label>`;
+    }
+    default: {
+      const _exhaustive: never = id;
+      return _exhaustive;
+    }
+  }
+}
+
 export function renderInitWebHtml(opts: {
   token: string;
   dataDir: string;
   processCwd: string;
 }): string {
-  const moreFields = MORE_SETTING_IDS.map((id) => {
-    switch (id) {
-      case "cliModel":
-        return `<label>Model to extract facts from messages <input name="cliModel" autocomplete="off" placeholder="haiku"></label>`;
-      case "cliGraduateModel":
-        return `<label>Model to update long-term knowledge <input name="cliGraduateModel" autocomplete="off" placeholder="haiku"></label>`;
-      case "cliTimeoutMs":
-        return `<label>Per-stage timeout in ms <input name="cliTimeoutMs" inputmode="numeric" autocomplete="off"></label>`;
-      case "httpExtract":
-        return `<label><input type="checkbox" name="httpExtract" value="yes"> Local extract on an OpenAI-compatible host</label>`;
-      case "httpBaseUrl":
-        return `<label>Host URL <input name="httpBaseUrl" placeholder="http://localhost:11434/v1" autocomplete="off"></label>`;
-      case "httpModel":
-        return `<label>Local chat model <input name="httpModel" autocomplete="off"></label>`;
-      case "httpExtractOnFail":
-        return `<label>If local extract cannot run
-          <select name="httpExtractOnFail">
-            <option value="cli" selected>cli</option>
-            <option value="none">none</option>
-            <option value="http">http</option>
-          </select>
-        </label>`;
-      default: {
-        const _exhaustive: never = id;
-        return _exhaustive;
-      }
-    }
-  }).join("\n");
-
+  const moreFields = MORE_SETTING_IDS.map((id) => moreFieldHtml(id)).join("\n  ");
   const inner = `
 <h1>FactMem setup</h1>
 <p class="hint">${escapeHtml(INIT_PROMPTS.intro)}</p>
@@ -241,7 +257,7 @@ export function renderInitWebHtml(opts: {
       <label>Client config dir (home)
         <input name="home" placeholder="~/.claude" autocomplete="off">
       </label>
-      <label>Project directory (cwd) — required for copy
+      <label>${escapeHtml(promptLabel(INIT_PROMPTS.cwd("")))}
         <input name="cwd" value="${escapeHtml(opts.processCwd)}" autocomplete="off">
       </label>
     </div>
@@ -284,19 +300,7 @@ export function renderSettingsWebHtml(opts: {
 <h1>FactMem settings</h1>
 <p class="hint">Extra knobs only. Capture and search stay as they are.</p>
 <form method="post" action="?token=${encodeURIComponent(opts.token)}">
-  <label>Model to extract facts from messages <input name="cliModel" value="${escapeHtml(s.cliModel)}" autocomplete="off"></label>
-  <label>Model to update long-term knowledge <input name="cliGraduateModel" value="${escapeHtml(s.cliGraduateModel)}" autocomplete="off"></label>
-  <label>Per-stage timeout in ms <input name="cliTimeoutMs" value="${escapeHtml(String(s.cliTimeoutMs))}" inputmode="numeric" autocomplete="off"></label>
-  <label><input type="checkbox" name="httpExtract" value="yes"${s.httpExtract ? " checked" : ""}> Local extract on an OpenAI-compatible host</label>
-  <label>Host URL <input name="httpBaseUrl" value="${escapeHtml(s.httpBaseUrl)}" autocomplete="off"></label>
-  <label>Local chat model <input name="httpModel" value="${escapeHtml(s.httpModel)}" autocomplete="off"></label>
-  <label>If local extract cannot run
-    <select name="httpExtractOnFail">
-      <option value="cli"${s.httpExtractOnFail === "cli" ? " selected" : ""}>cli</option>
-      <option value="none"${s.httpExtractOnFail === "none" ? " selected" : ""}>none</option>
-      <option value="http"${s.httpExtractOnFail === "http" ? " selected" : ""}>http</option>
-    </select>
-  </label>
+  ${MORE_SETTING_IDS.map((id) => moreFieldHtml(id, s)).join("\n  ")}
   <button type="submit">Save</button>
 </form>`;
   return wrapPage(inner);
@@ -367,6 +371,7 @@ export async function collectInitWebAnswers(
       overlay: {},
       writeConfig: false,
       captureAskedAndEmpty: false,
+      captureSkippedCwd: false,
     };
   }
 
@@ -403,7 +408,7 @@ export async function collectInitWebAnswers(
 
   opts.stdout.write(INIT_PROMPTS.webListening(handle.url) + "\n");
   await handle.finished;
-  return { dataDir, overlay, writeConfig: true, captureAskedAndEmpty };
+  return { dataDir, overlay, writeConfig: true, captureAskedAndEmpty, captureSkippedCwd: false };
 }
 
 export async function collectSettingsWebAnswers(opts: {
@@ -441,9 +446,9 @@ function applyMoreFromParams(
         if (v) overlay.cliModel = v;
         break;
       }
-      case "cliGraduateModel": {
-        const v = (params.get("cliGraduateModel") ?? "").trim();
-        if (v) overlay.cliGraduateModel = v;
+      case "cliIntegrateModel": {
+        const v = (params.get("cliIntegrateModel") ?? "").trim();
+        if (v) overlay.cliIntegrateModel = v;
         break;
       }
       case "cliTimeoutMs": {

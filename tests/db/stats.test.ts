@@ -163,7 +163,7 @@ describe("getStats", () => {
     await insertSessionFact(db, {
       session_id: "sess-1",
       content: "Alex prefers oat milk.",
-      consolidation_id: "run-already-graduated",
+      consolidation_id: "run-already-integrated",
     });
     const s = await getStats(db);
     expect(s.pending_facts).toBe(1);

@@ -1,3 +1,4 @@
+import { EXTRACT_CAP_EVENTS } from "../../src/intelligence/steps.js";
 import { readFileSync } from "node:fs";
 import { describe, it, expect } from "vitest";
 import { fileURLToPath } from "node:url";
@@ -19,6 +20,7 @@ import {
   moreShownFromConfig,
   silentEmbeddingProvider,
   silentSources,
+  applyMoreOverlayToIntelligence,
 } from "../../src/cli/init-knobs.js";
 
 const ROOT = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
@@ -103,7 +105,7 @@ describe("init knobs — one definition", () => {
     expect(INIT_PROMPTS.moreCliModel("haiku")).toBe(
       "Model to extract facts from messages  [haiku]: ",
     );
-    expect(INIT_PROMPTS.moreCliGraduateModel("haiku")).toBe(
+    expect(INIT_PROMPTS.moreCliIntegrateModel("haiku")).toBe(
       "Model to update long-term knowledge  [haiku]: ",
     );
     expect(INIT_PROMPTS.copyNow).toMatch(/\[Y\]: $/);
@@ -131,6 +133,10 @@ describe("init knobs — one definition", () => {
         "copiedEvents",
         "cwd",
         "cwdSkip",
+        "cwdSkipped",
+        "copyRecipe",
+        "copyNext",
+        "integrated",
         "dataDir",
         "embedding",
         "extractNow",
@@ -143,7 +149,7 @@ describe("init knobs — one definition", () => {
         "intro",
         "kind",
         "mcpVsCli",
-        "mixPullLogEvent",
+        "mixCopyRecord",
         "shellNote",
         "more",
         "webExisting",
@@ -151,7 +157,7 @@ describe("init knobs — one definition", () => {
         "webSaved",
         "webYesRefuse",
         "moreCliModel",
-        "moreCliGraduateModel",
+        "moreCliIntegrateModel",
         "moreCliTimeout",
         "moreCliTimeoutInvalid",
         "moreHttpBaseUrl",
@@ -182,7 +188,7 @@ describe("init knobs — one definition", () => {
     expect(INIT_KNOB_IDS).toEqual(["dataDir", "sources", "embedding", "more"]);
     expect(MORE_SETTING_IDS).toEqual([
       "cliModel",
-      "cliGraduateModel",
+      "cliIntegrateModel",
       "cliTimeoutMs",
       "httpExtract",
       "httpBaseUrl",
@@ -233,20 +239,20 @@ describe("init knobs — one definition", () => {
     });
     expect(next.intelligence.cli?.model).toBe("sonnet");
     expect(next.intelligence.cli?.timeout_ms).toBe(180_000);
-    expect(next.intelligence.cli?.graduate_model).toBeUndefined();
+    expect(next.intelligence.cli?.integrate_model).toBeUndefined();
     expect(next.intelligence.provider).toBe("cli");
     const split = applyInitOverlay(defaultServerConfig(), {
       cliModel: "haiku",
-      cliGraduateModel: "sonnet",
+      cliIntegrateModel: "sonnet",
     });
     expect(split.intelligence.cli?.model).toBe("haiku");
-    expect(split.intelligence.cli?.graduate_model).toBe("sonnet");
+    expect(split.intelligence.cli?.integrate_model).toBe("sonnet");
     const same = applyInitOverlay(defaultServerConfig(), {
       cliModel: "sonnet",
-      cliGraduateModel: "sonnet",
+      cliIntegrateModel: "sonnet",
     });
     expect(same.intelligence.cli?.model).toBe("sonnet");
-    expect(same.intelligence.cli?.graduate_model).toBeUndefined();
+    expect(same.intelligence.cli?.integrate_model).toBeUndefined();
     const withHttp = applyInitOverlay(defaultServerConfig(), {
       httpExtract: true,
       httpBaseUrl: "http://localhost:1234/v1",
@@ -293,7 +299,7 @@ describe("init knobs — one definition", () => {
     expect(readme).toMatch(
       /non-default data directory prints a distinct MCP server name/i,
     );
-    expect(readme).toContain(INIT_PROMPTS.mixPullLogEvent);
+    expect(readme).toContain(INIT_PROMPTS.mixCopyRecord);
   });
 
   it("scripted README init uses --yes, except a lone walk-through fence", () => {
@@ -371,13 +377,14 @@ describe("init knobs — one definition", () => {
     }
   });
 
-  it("Quick Start does not shout pull, hooks, embeddings, or a second store", () => {
+  it("Quick Start does not shout copy steps, hooks, embeddings, or a second store", () => {
     const readme = readmeText();
     const start = readme.indexOf("## Quick Start");
     const next = readme.indexOf("\n## ", start + 1);
     expect(start).toBeGreaterThanOrEqual(0);
     const quick = readme.slice(start, next === -1 ? undefined : next);
     expect(quick).not.toMatch(/log-event/);
+    expect(quick).not.toMatch(/factmem record/);
     expect(quick).not.toMatch(/"hooks"/);
     expect(quick).not.toMatch(/embedding\.provider/);
     expect(quick).not.toMatch(/intelligence\.http/);
@@ -394,7 +401,25 @@ describe("init knobs — one definition", () => {
     }
   });
 
-  it("does not recommend a Stop hook as the pull path", () => {
+  it("README states the extract cap with the one constant, in every sentence that names it", () => {
+    const readme = readmeText();
+    const cap = String(EXTRACT_CAP_EVENTS);
+    // Each sentence that teaches the cap must carry the same number the
+    // engine enforces; a change to EXTRACT_CAP_EVENTS must fail here.
+    expect(readme).toContain(`extracts facts from the oldest ${cap} events`);
+    expect(readme).toContain(`Extract is capped at ${cap} events per run`);
+    expect(readme).toContain(`A first backfill of more than ${cap} events`);
+    expect(readme).toContain(INIT_PROMPTS.mixCopyRecord);
+  });
+
+  it("init's copy recipe and the extract prompt name the cap once", () => {
+    expect(INIT_PROMPTS.extractNow).toContain(String(EXTRACT_CAP_EVENTS));
+    expect(INIT_PROMPTS.copyNext).toContain(String(EXTRACT_CAP_EVENTS));
+    expect(INIT_PROMPTS.integrated(3, 7)).toContain(String(EXTRACT_CAP_EVENTS));
+    expect(INIT_PROMPTS.integrated(3, 0)).not.toMatch(/remain/);
+  });
+
+  it("does not recommend a Stop hook as the copy path", () => {
     const readme = readmeText();
     expect(readme).not.toMatch(/"Stop"\s*:/);
     expect(readme).not.toMatch(/Stop tails new lines/);
@@ -437,5 +462,30 @@ describe("init knobs — one definition", () => {
     expect(body).not.toMatch(/McClelland/);
     expect(body).not.toMatch(/decisions\.md/);
     expect(body).not.toMatch(/ADR-/);
+  });
+});
+
+describe("legacy intelligence.cli.graduate_model on a settings write", () => {
+  it("migrates the key on an Enter-through walk, so the notice stops repeating", () => {
+    const { intel, written } = applyMoreOverlayToIntelligence(
+      { provider: "cli", cli: { model: "haiku", graduate_model: "sonnet" } },
+      {},
+      "patch",
+    );
+    const cli = intel?.cli as Record<string, unknown>;
+    expect(cli.integrate_model).toBe("sonnet");
+    expect(cli).not.toHaveProperty("graduate_model");
+    expect(written).toContain("intelligence.cli.integrate_model");
+  });
+
+  it("keeps the new key when both are present", () => {
+    const { intel } = applyMoreOverlayToIntelligence(
+      { provider: "cli", cli: { graduate_model: "old", integrate_model: "new" } },
+      {},
+      "patch",
+    );
+    const cli = intel?.cli as Record<string, unknown>;
+    expect(cli.integrate_model).toBe("new");
+    expect(cli).not.toHaveProperty("graduate_model");
   });
 });

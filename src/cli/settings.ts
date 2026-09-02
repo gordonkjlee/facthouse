@@ -14,6 +14,7 @@ import {
   mergeConfig,
   readConfigDocument,
   writeConfigDocument,
+  honourLegacyConfigKeys,
 } from "../config.js";
 import type { ServerConfig } from "../types/config.js";
 import {
@@ -54,8 +55,8 @@ function moreDumpJson(shown: MoreShown): Record<string, unknown> {
       case "cliModel":
         out.cliModel = shown.cliModel;
         break;
-      case "cliGraduateModel":
-        out.cliGraduateModel = shown.cliGraduateModel;
+      case "cliIntegrateModel":
+        out.cliIntegrateModel = shown.cliIntegrateModel;
         break;
       case "cliTimeoutMs":
         out.cliTimeoutMs = shown.cliTimeoutMs;
@@ -88,8 +89,8 @@ function moreDumpLines(shown: MoreShown): string[] {
       case "cliModel":
         lines.push(`Model to extract facts from messages: ${shown.cliModel}`);
         break;
-      case "cliGraduateModel":
-        lines.push(`Model to update long-term knowledge: ${shown.cliGraduateModel}`);
+      case "cliIntegrateModel":
+        lines.push(`Model to update long-term knowledge: ${shown.cliIntegrateModel}`);
         break;
       case "cliTimeoutMs":
         lines.push(`Per-stage timeout in ms: ${shown.cliTimeoutMs}`);
@@ -116,7 +117,12 @@ function moreDumpLines(shown: MoreShown): string[] {
 }
 
 function shownFromDocument(doc: Record<string, unknown>): MoreShown {
-  const merged = mergeConfig(defaultServerConfig(), doc) as ServerConfig;
+  // The on-disk document is patched, never re-rendered, so the legacy key is
+  // honoured on a copy for display; the patch path migrates it on write.
+  const merged = mergeConfig(
+    defaultServerConfig(),
+    honourLegacyConfigKeys(structuredClone(doc)),
+  ) as ServerConfig;
   return moreShownFromConfig(merged, {});
 }
 

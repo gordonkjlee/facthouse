@@ -29,7 +29,7 @@ export interface NewSessionEvent {
   metadata?: Record<string, unknown> | null;
   /**
    * When the turn was said, if the source recorded it. Omit or null when
-   * unknown — do not copy ingest time here.
+   * unknown — do not copy copy time here.
    */
   occurred_at?: string | null;
   speaker?: string | null;
@@ -44,7 +44,7 @@ export interface GetEventsOpts {
  * The conversation an event belongs to.
  *
  * `client_session_id` is the client's own conversation (a Claude Code JSONL
- * file, `log-event --session-id`, `FACTMEM_CLIENT_SESSION`). Prefer it:
+ * file, `record --session-id`, `FACTMEM_CLIENT_SESSION`). Prefer it:
  * `mcp_session_id` is our MCP connection, one per handshake, not one per chat.
  *
  * Pull writes only the client column and never calls `getLatestSession()`.

@@ -329,15 +329,15 @@ describe("reconcile", () => {
 });
 
 describe("summarise", () => {
-  it("produces summary with domain counts from graduated facts", async () => {
+  it("produces summary with domain counts from integrated facts", async () => {
     const sessionFacts = [fakeFact("a"), fakeFact("b"), fakeFact("c")];
-    const graduatedFacts = [
+    const integratedFacts = [
       fakeFact2("My name is Alex", "profile"),
       fakeFact2("I prefer dark roast", "preferences"),
       fakeFact2("I'm allergic to aspirin", "medical"),
     ];
 
-    const result = await provider.summarise(sessionFacts, graduatedFacts);
+    const result = await provider.summarise(sessionFacts, integratedFacts);
 
     expect(result.summary).toContain("3 facts");
     expect(result.summary).toContain("profile");
@@ -346,18 +346,18 @@ describe("summarise", () => {
     expect(result.openThreads).toEqual([]);
   });
 
-  it("returns 'No facts graduated.' when no graduated facts", async () => {
+  it("returns 'No facts integrated.' when no integrated facts", async () => {
     const result = await provider.summarise([fakeFact("a")], []);
 
-    expect(result.summary).toBe("No facts graduated.");
+    expect(result.summary).toBe("No facts integrated.");
     expect(result.openThreads).toEqual([]);
   });
 
   it("counts by actual domain not domain_hint", async () => {
     const sessionFacts = [fakeFact("Something random")];
-    const graduatedFacts = [fakeFact2("Something random", "medical")];
+    const integratedFacts = [fakeFact2("Something random", "medical")];
 
-    const result = await provider.summarise(sessionFacts, graduatedFacts);
+    const result = await provider.summarise(sessionFacts, integratedFacts);
     expect(result.summary).toContain("medical");
   });
 });

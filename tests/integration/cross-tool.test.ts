@@ -7,7 +7,7 @@
  * points both at ONE data directory: one SQLite file, two connections, two
  * schedulers, one advisory consolidation lock. That combination is unreachable
  * from in-process tests, and it is exactly where a reliability bug would hide —
- * a stranded fact or a double-graduation shows up here and nowhere else.
+ * a stranded fact or a double-integration shows up here and nowhere else.
  *
  * Requires a build: CI runs `build` before `test`. Skips when dist is absent
  * rather than failing with a confusing module-not-found.
@@ -89,7 +89,7 @@ const json = async (c: Client, name: string, args: Record<string, unknown> = {})
 async function consolidateForReal(client: Client) {
   const result = await json(client, "consolidate", {});
   if (result.skipped) {
-    // The scheduler beat us to the lock. Its run graduates the same facts, so
+    // The scheduler beat us to the lock. Its run integrates the same facts, so
     // retry rather than fail — but never proceed on the assumption it happened.
     const retry = await json(client, "consolidate", {});
     expect(retry.skipped).toBe(false);
@@ -223,7 +223,7 @@ describe.skipIf(!runnable)("cross-tool knowledge sharing", () => {
       expect(ra.status).toBe("fulfilled");
       expect(rb.status).toBe("fulfilled");
 
-      // Every captured fact graduates exactly once. The advisory lock serialises
+      // Every captured fact integrates exactly once. The advisory lock serialises
       // the two runs: whichever wins takes the whole pending batch — including
       // the other session's facts — and the loser finds nothing left to do.
       // Under-counting means facts were stranded; over-counting means the batch

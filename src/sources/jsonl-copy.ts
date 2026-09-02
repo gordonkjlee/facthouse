@@ -1,7 +1,7 @@
 /**
  * Shared JSONL tail: watermark, fingerprint, insert.
  *
- * Adapters discover files and map lines. This module is the one ingest
+ * Adapters discover files and map lines. This module is the one copy
  * path so a crash cannot duplicate a line, regardless of which client
  * wrote the transcript.
  */
@@ -27,7 +27,7 @@ import { getWatermark, upsertWatermark } from "../db/watermarks.js";
  *  (compaction) that keeps the same header. */
 const FINGERPRINT_BYTES = 256;
 
-export interface JsonlFilePull {
+export interface JsonlFileCopy {
   path: string;
   inserted: number;
   skipped: number;
@@ -41,7 +41,7 @@ export type MapTranscriptLine = (
   sourceTool: string,
 ) => NewSessionEvent[];
 
-export interface JsonlIngestOptions {
+export interface JsonlCopyOptions {
   sourceTool: string;
   mapLine: MapTranscriptLine;
 }
@@ -50,11 +50,11 @@ export interface JsonlIngestOptions {
  * Tail one JSONL file into session_events from its watermark. Inserts and the
  * watermark update share a transaction so a crash cannot duplicate a line.
  */
-export async function ingestJsonlFile(
+export async function copyJsonlFile(
   db: Db,
   filePath: string,
-  opts: JsonlIngestOptions,
-): Promise<JsonlFilePull> {
+  opts: JsonlCopyOptions,
+): Promise<JsonlFileCopy> {
   const abs = path.resolve(filePath);
   const fd = openSync(abs, "r");
   try {

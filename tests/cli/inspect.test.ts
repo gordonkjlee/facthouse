@@ -83,7 +83,7 @@ describe("inspect layers", () => {
       .prepare(`UPDATE session_facts SET consolidation_id = ?`)
       .run("c1");
     const empty = await runInspect(db, { dataDir, layer: "i", limit: 10 });
-    expect(empty.stdout).toContain("Nothing is waiting to graduate");
+    expect(empty.stdout).toContain("Nothing is waiting to integrate");
     expect(empty.stdout).not.toContain("Robin owns stg_orders");
   });
 

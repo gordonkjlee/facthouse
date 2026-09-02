@@ -1,5 +1,5 @@
 /**
- * Disk budget parser and cap-driven D ingest.
+ * Disk budget parser and cap-driven D copy.
  */
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
@@ -75,7 +75,7 @@ describe("formatDiskBudget", () => {
   });
 });
 
-describe("cap-driven ingest", () => {
+describe("cap-driven copy", () => {
   it("accepts events under the ceiling", async () => {
     await applySqliteDiskBudget(db, 64 * 1024 * 1024);
     bindDiskBudget(db, { bytes: 64 * 1024 * 1024, keepPerSession: 50 });

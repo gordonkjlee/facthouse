@@ -23,9 +23,10 @@ import { getEventById } from "../db/sessions.js";
 import {
   consolidate,
   type ConsolidationResult,
-  type ConsolidatePhase,
+  type ConsolidateSteps,
   type ConsolidateCaller,
 } from "../intelligence/consolidate.js";
+import { ALL_STEPS, EXTRACT_CAP_EVENTS } from "../intelligence/steps.js";
 import { captureFactDescription } from "./capture-fact-description.js";
 import {
   buildBriefing,
@@ -50,9 +51,9 @@ export interface FactManager {
   /** Retrieve session facts for the current or specified session. */
   getSessionContext(sessionId?: string): Promise<SessionFact[]>;
 
-  /** Run the consolidation pipeline. Default `full` (D→I then I→K). */
+  /** Run the consolidation pipeline. Default: copy, extract, integrate. */
   runConsolidate(
-    phase?: ConsolidatePhase,
+    steps?: ConsolidateSteps,
     caller?: ConsolidateCaller,
   ): Promise<ConsolidationResult>;
 
@@ -90,9 +91,14 @@ export interface FactManagerOpts {
   sources?: unknown;
   /**
    * Called at the start of MCP capture_fact / get_session_context /
-   * consolidate. Used to tail JSONL on a pull store. Must not throw.
+   * consolidate. Used to copy new lines on a copy store. Must not throw.
    */
   beforeRead?: () => Promise<void>;
+  /**
+   * The copy step for consolidate: the server's heartbeat. Returns how many
+   * events landed so the run can report it. Absent on a record store.
+   */
+  copy?: () => Promise<{ events_inserted: number }>;
 }
 
 export function createFactManager(
@@ -112,7 +118,7 @@ export function createFactManager(
    * Capture cannot know a fact's domain — the classifier has not run — so it
    * cannot apply a domain's default. It used to try, keyed on the caller's
    * `domain_hint`, which callers rarely pass. Everything else resolves at
-   * graduation, where the domain is known. Null means "not scored yet", which
+   * integration, where the domain is known. Null means "not scored yet", which
    * is true.
    */
   function resolveImportance(explicit: number | null | undefined): number | null {
@@ -172,7 +178,7 @@ export function createFactManager(
         confidence: input.confidence ?? defaultConfidence,
         // Left null when nothing knows yet — deliberately, and this is the
         // whole point. Stamping DEFAULT_IMPORTANCE here made the column
-        // non-null forever, and graduation resolves
+        // non-null forever, and integration resolves
         // `importance ?? importance_signal ?? domain default ?? baseline`.
         // A non-null value short-circuits that chain at its first link, so both
         // the provider's LLM judgement and the domain's default were unreachable
@@ -214,7 +220,7 @@ export function createFactManager(
     },
 
     async runConsolidate(
-      phase: ConsolidatePhase = "full",
+      steps: ConsolidateSteps = ALL_STEPS,
       caller: ConsolidateCaller = { trigger: "mcp" },
     ) {
       if (!intelligence) {
@@ -226,8 +232,12 @@ export function createFactManager(
         intelligence,
         serverConfig,
         embedding,
-        phase,
+        steps,
         {
+          // The copy step is the same heartbeat every tool read uses, so a
+          // consolidate never reads stale D and never walks the disk twice.
+          copy: caller.copy ?? opts?.copy,
+          extractLimit: caller.extractLimit,
           trigger: caller.trigger ?? "mcp",
           sourceTool: caller.sourceTool ?? session?.source_tool ?? null,
           project:
@@ -393,17 +403,38 @@ export function createFactManager(
       if (intelligence) {
         server.tool(
           "consolidate",
-          `Integrate captured knowledge into long-term memory. Extracts entities, ` +
-            `resolves duplicates, detects contradictions with existing knowledge, ` +
-            `and builds the knowledge graph.\n\n` +
+          `Turn what has been captured into long-term knowledge. Copies new ` +
+            `lines from named sources, extracts candidate facts from them, and ` +
+            `integrates the pending facts: domains, entities, duplicates, ` +
+            `contradictions, the knowledge graph.\n\n` +
             `Call this to integrate pending facts into long-term knowledge. Good ` +
             `checkpoints: after capturing several facts, at a topic change, or ` +
-            `before the conversation ends.`,
-          {},
-          async () => {
+            `before the conversation ends.\n\n` +
+            `Extract is capped at ${EXTRACT_CAP_EVENTS} of the oldest unexamined ` +
+            `events per call; events_remaining in the result says how many wait. ` +
+            `Pass all: true to take the whole backlog in one call, or limit: N ` +
+            `for the oldest N.`,
+          {
+            all: z
+              .boolean()
+              .optional()
+              .describe("Extract the whole backlog this call instead of the capped oldest batch"),
+            limit: z
+              .number()
+              .int()
+              .min(1)
+              .optional()
+              .describe("Extract at most this many of the oldest unexamined events"),
+          },
+          async ({ all, limit }) => {
             try {
-              await opts?.beforeRead?.();
-              const result = await manager.runConsolidate();
+              // No beforeRead here: the copy step inside consolidate walks the
+              // sources itself, past the heartbeat debounce, so the result can
+              // report events_copied honestly.
+              const result = await manager.runConsolidate(ALL_STEPS, {
+                trigger: "mcp",
+                extractLimit: all ? null : limit,
+              });
 
               return {
                 content: [
@@ -412,11 +443,13 @@ export function createFactManager(
                     text: JSON.stringify({
                       consolidation_id: result.consolidationId,
                       facts_in: result.factsIn,
-                      facts_graduated: result.factsGraduated,
+                      facts_integrated: result.factsIntegrated,
                       facts_rejected: result.factsRejected,
                       entities_created: result.entitiesCreated,
                       entities_linked: result.entitiesLinked,
                       supersessions: result.supersessions,
+                      events_copied: result.eventsCopied,
+                      events_remaining: result.eventsRemaining,
                       summary: result.summary,
                       skipped: result.skipped,
                       skip_reason: result.skipReason ?? null,

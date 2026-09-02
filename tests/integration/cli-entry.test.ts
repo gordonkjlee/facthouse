@@ -65,17 +65,44 @@ afterEach(() => {
 });
 
 describe.skipIf(!runnable)("cli entry — dispatch and usage", () => {
-  it("prints usage listing every command and exits non-zero with no subcommand", () => {
+  const PUBLIC_VERBS = [
+    "init",
+    "settings",
+    "record",
+    "notify",
+    "consolidate",
+    "search",
+    "stats",
+    "inspect",
+    "prune",
+  ];
+
+  it("prints grouped usage on stdout and exits 0 with no subcommand", () => {
     const r = run([]);
-    expect(r.status).toBe(1);
-    for (const cmd of ["init", "settings", "log-event", "signal", "consolidate", "pull", "inspect", "stats"]) {
-      expect(r.stderr).toContain(cmd);
+    expect(r.status).toBe(0);
+    for (const cmd of PUBLIC_VERBS) {
+      expect(r.stdout).toMatch(new RegExp(`^  ${cmd}\\b`, "m"));
     }
+    for (const group of ["Set up", "Feed", "Consolidate", "Read", "Housekeeping"]) {
+      expect(r.stdout).toMatch(new RegExp(`^${group}$`, "m"));
+    }
+    // Hidden aliases are not advertised.
+    expect(r.stdout).not.toMatch(/^  (pull|signal)\b/m);
+    expect(r.stdout).not.toMatch(/\b(tick|flush|graduate)\b/);
   });
 
-  it("exits non-zero on an unknown subcommand", () => {
+  it.each(["--help", "-h", "help"])("%s prints usage and exits 0", (flag) => {
+    const r = run([flag]);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toMatch(/^Usage: factmem/);
+  });
+
+  it("exits non-zero on an unknown subcommand and prints usage to stderr", () => {
     const r = run(["bogus-command"]);
     expect(r.status).toBe(1);
+    // Node may print an ExperimentalWarning first; the usage block follows.
+    expect(r.stderr).toMatch(/^Usage: factmem/m);
+    expect(r.stdout).toBe("");
   });
 });
 
@@ -249,7 +276,7 @@ describe.skipIf(!runnable)("cli entry — init output", () => {
     expect(adviceAt).toBeGreaterThan(snippetAt);
   });
 
-  it("rejects --pull rather than hanging init on a first ingest", () => {
+  it("rejects --pull rather than hanging init on a first backfill", () => {
     const r = run(["init", path.join(root, "no-pull"), "--pull"]);
     expect(r.status).not.toBe(0);
   });
@@ -263,13 +290,14 @@ describe.skipIf(!runnable)("cli entry — init output", () => {
     expect(r.stdout).not.toContain(INIT_PROMPTS.capture);
   });
 
-  it("tells a tester that pull is off until they name a source", () => {
+  it("tells a tester that copy is off until they name a source", () => {
     const dir = path.join(root, "sources-hint");
     const r = run(["init", dir]);
     expect(r.status).toBe(0);
-    expect(r.stdout).toMatch(/pull is off/i);
+    expect(r.stdout).toMatch(/copy is off/i);
     expect(r.stdout).toMatch(/capture_fact is how facts get in/);
-    expect(r.stdout).toMatch(/factmem pull/);
+    expect(r.stdout).toMatch(/factmem consolidate/);
+    expect(r.stdout).not.toMatch(/factmem pull/);
   });
 
   it("prints an MCP snippet that parses as JSON, with the data dir escaped", async () => {
@@ -378,10 +406,10 @@ describe.skipIf(!runnable)("cli entry — subprocess recursion guard", () => {
     expect(existsSync(path.join(dir, "memory.db"))).toBe(true);
   });
 
-  it("skips log-event under OPENMEMORY_SUBPROCESS=1 without writing anything", () => {
+  it("skips record under OPENMEMORY_SUBPROCESS=1 without writing anything", () => {
     const dir = path.join(root, "guarded-log");
     const r = run(
-      ["log-event", "--role", "user", "--content", "synthetic", "--data", dir],
+      ["record", "--role", "user", "--content", "synthetic", "--data", dir],
       { OPENMEMORY_SUBPROCESS: "1" },
     );
     expect(r.status).toBe(0);
@@ -409,12 +437,12 @@ describe.skipIf(!runnable)("cli entry — subprocess recursion guard", () => {
 
   it("logs an event normally when the guard is not set", () => {
     // Control case for the guard tests above: proves they skip because of the
-    // env var, not because log-event is broken.
+    // env var, not because record is broken.
     const dir = path.join(root, "unguarded");
     run(["init", dir]);
 
     const r = run([
-      "log-event", "--role", "user", "--event-type", "message",
+      "record", "--role", "user", "--event-type", "message",
       "--content", "synthetic event", "--data", dir,
     ]);
     expect(r.status).toBe(0);
@@ -428,7 +456,7 @@ describe.skipIf(!runnable)("cli entry — subprocess recursion guard", () => {
     // stderr where nobody sees it.
     const dir = path.join(root, "never-initialised");
     const r = run([
-      "log-event", "--role", "user", "--event-type", "message",
+      "record", "--role", "user", "--event-type", "message",
       "--content", "synthetic", "--data", dir,
     ]);
     expect(r.status).toBe(0);
@@ -678,94 +706,218 @@ describe.skipIf(!runnable)("cli entry — search and stats", () => {
   );
 });
 
-describe.skipIf(!runnable)("cli entry — pull", () => {
-  it("is a no-op when sources is empty", () => {
-    const dir = path.join(root, "pull-empty");
+/** Write a one-line synthetic transcript and point the store's sources at it. */
+function nameFixtureSource(dir: string, homeName: string, sessionId: string) {
+  const home = path.join(root, homeName);
+  const file = path.join(home, "projects", "C--dev-app", `${sessionId}.jsonl`);
+  mkdirSync(path.dirname(file), { recursive: true });
+  writeFileSync(
+    file,
+    JSON.stringify({
+      type: "user",
+      sessionId,
+      message: { role: "user", content: "The demo store prefers dark mode." },
+    }) + "\n",
+    "utf-8",
+  );
+  const configPath = path.join(dir, "config.json");
+  const config = JSON.parse(readFileSync(configPath, "utf-8"));
+  config.sources = [{ kind: "claude-code", home, cwd: "C:\\dev\\app" }];
+  writeFileSync(configPath, JSON.stringify(config, null, 2), "utf-8");
+}
+
+describe.skipIf(!runnable)("cli entry — consolidate steps", () => {
+  it("--copy is a no-op when sources is empty", () => {
+    const dir = path.join(root, "copy-empty");
     run(["init", dir]);
-    const r = run(["pull", "--data", dir]);
+    const r = run(["consolidate", "--copy", "--json", "--data", dir]);
     expect(r.status).toBe(0);
     const parsed = JSON.parse(r.stdout);
-    expect(parsed.sources).toBe(0);
-    expect(parsed.events_inserted).toBe(0);
+    expect(parsed.eventsCopied).toBe(0);
+    expect(parsed.eventsRemaining).toBe(0);
+    expect(r.stderr).not.toMatch(/deprecated/);
   });
 
-  it("ingests a fixture transcript without capture_fact", () => {
-    const dir = path.join(root, "pull-fixture");
+  it("-c copies a fixture transcript, spends nothing, and reports the backlog", () => {
+    const dir = path.join(root, "copy-fixture");
     run(["init", dir]);
+    nameFixtureSource(dir, "claude-home", "sess-cli");
 
-    const home = path.join(root, "claude-home");
-    const file = path.join(home, "projects", "C--dev-app", "sess-cli.jsonl");
-    mkdirSync(path.dirname(file), { recursive: true });
-    writeFileSync(
-      file,
-      JSON.stringify({
-        type: "user",
-        sessionId: "sess-cli",
-        message: { role: "user", content: "The demo store prefers dark mode." },
-      }) + "\n",
-      "utf-8",
-    );
-
-    const configPath = path.join(dir, "config.json");
-    const config = JSON.parse(readFileSync(configPath, "utf-8"));
-    config.sources = [{ kind: "claude-code", home, cwd: "C:\\dev\\app" }];
-    writeFileSync(configPath, JSON.stringify(config, null, 2), "utf-8");
-
-    const r = run(["pull", "--data", dir]);
+    const r = run(["consolidate", "-c", "--json", "--data", dir]);
     expect(r.status).toBe(0);
-    expect(JSON.parse(r.stdout).events_inserted).toBe(1);
-    // No MCP server in this process — a small pull must not look successful
-    // and then leave search empty. Tick is attempted; when it cannot land,
-    // the CLI names the next command.
-    expect(r.stderr).toMatch(/factmem consolidate/);
-    expect(r.stderr).not.toMatch(/skipping auto-consolidate/);
+    const parsed = JSON.parse(r.stdout);
+    expect(parsed.eventsCopied).toBe(1);
+    expect(parsed.factsIntegrated).toBe(0);
+    // Copy-only never extracts, so the line waits and stats can say so.
+    expect(parsed.eventsRemaining).toBe(1);
+    expect(r.stderr).not.toMatch(/still waiting to be extracted/);
 
-    const again = run(["pull", "--data", dir]);
+    const again = run(["consolidate", "-c", "--json", "--data", dir]);
     expect(again.status).toBe(0);
-    expect(JSON.parse(again.stdout).events_inserted).toBe(0);
+    expect(JSON.parse(again.stdout).eventsCopied).toBe(0);
   });
 
-  it("pull --no-tick copies without asking the server to extract", () => {
-    const dir = path.join(root, "pull-no-tick");
+  it("prints a human summary by default and the object with --json", () => {
+    const dir = path.join(root, "summary");
     run(["init", dir]);
+    const human = run(["consolidate", "--data", dir]);
+    expect(human.status).toBe(0);
+    expect(human.stdout).toMatch(/FactMem consolidate/);
+    expect(human.stdout).toMatch(/Facts integrated/);
+    expect(() => JSON.parse(human.stdout)).toThrow();
+    const json = run(["consolidate", "--json", "--data", dir]);
+    expect(JSON.parse(json.stdout)).toHaveProperty("factsIntegrated");
+  });
 
-    const home = path.join(root, "claude-home-notick");
-    const file = path.join(home, "projects", "C--dev-app", "sess-nt.jsonl");
-    mkdirSync(path.dirname(file), { recursive: true });
-    writeFileSync(
-      file,
-      JSON.stringify({
-        type: "user",
-        sessionId: "sess-nt",
-        message: { role: "user", content: "The demo store prefers dark mode." },
-      }) + "\n",
-      "utf-8",
-    );
+  it("-i integrates a pending fact without an extract pass", async () => {
+    const dir = path.join(root, "integrate-only");
+    run(["init", dir]);
+    const { openDatabase, closeDatabase } = await import("../../src/db/connection.js");
+    const { createSession } = await import("../../src/db/sessions.js");
+    const { insertSessionFact } = await import("../../src/db/session-facts.js");
+    const db = openDatabase(path.join(dir, "memory.db"));
+    const session = await createSession(db, { source_tool: "test", project: null });
+    await insertSessionFact(db, {
+      session_id: session.id,
+      content: "The user prefers oat milk in coffee",
+    });
+    await closeDatabase(db);
 
-    const configPath = path.join(dir, "config.json");
-    const config = JSON.parse(readFileSync(configPath, "utf-8"));
-    config.sources = [{ kind: "claude-code", home, cwd: "C:\\dev\\app" }];
-    writeFileSync(configPath, JSON.stringify(config, null, 2), "utf-8");
+    const before = run(["stats", "--json", "--data", dir]);
+    expect(JSON.parse(before.stdout).facts.total).toBe(0);
 
-    const r = run(["pull", "--no-tick", "--data", dir]);
+    const r = run(["consolidate", "-i", "--json", "--data", dir]);
     expect(r.status).toBe(0);
-    expect(JSON.parse(r.stdout).events_inserted).toBe(1);
-    expect(r.stderr).not.toMatch(/No MCP server listening/);
-    expect(r.stderr).not.toMatch(/skipping auto-consolidate/);
-    expect(r.stderr).not.toMatch(/heuristic I→K/);
+    const parsed = JSON.parse(r.stdout);
+    expect(parsed.factsIntegrated).toBe(1);
+    expect(parsed.eventsCopied).toBe(0);
+
+    const after = run(["stats", "--json", "--data", dir]);
+    expect(JSON.parse(after.stdout).facts.total).toBe(1);
+  });
+
+  it("rejects --limit below 1", () => {
+    const dir = path.join(root, "limit-bad");
+    run(["init", dir]);
+    const r = run(["consolidate", "--limit", "0", "--data", dir]);
+    expect(r.status).toBe(1);
+    expect(r.stderr).toMatch(/--limit must be a whole number/);
   });
 
   it("exits non-zero on an unknown source kind", () => {
-    const dir = path.join(root, "pull-unknown");
+    const dir = path.join(root, "copy-unknown");
     run(["init", dir]);
     const configPath = path.join(dir, "config.json");
     const config = JSON.parse(readFileSync(configPath, "utf-8"));
     config.sources = [{ kind: "grok", home: path.join(root, "nope") }];
     writeFileSync(configPath, JSON.stringify(config, null, 2), "utf-8");
 
-    const r = run(["pull", "--data", dir]);
+    const r = run(["consolidate", "--copy", "--data", dir]);
     expect(r.status).toBe(1);
     expect(r.stderr).toMatch(/Unknown source kind "grok"/);
+  });
+});
+
+describe.skipIf(!runnable)("cli entry — notify", () => {
+  it("exits 0 and says so when no server is listening", () => {
+    const dir = path.join(root, "notify-none");
+    run(["init", dir]);
+    const r = run(["notify", "compaction", "--data", dir]);
+    expect(r.status).toBe(0);
+    expect(JSON.parse(r.stdout)).toEqual({ delivered: false, moment: "compaction" });
+    expect(r.stderr).toMatch(/No MCP server is listening/);
+    expect(r.stderr).toMatch(/factmem consolidate/);
+  });
+
+  it("rejects a moment the server does not accept", () => {
+    const r = run(["notify", "bogus", "--data", root]);
+    expect(r.status).toBe(1);
+    expect(r.stderr).toMatch(/Moments: threshold, compaction/);
+  });
+
+  it("requires a moment", () => {
+    const r = run(["notify", "--data", root]);
+    expect(r.status).toBe(1);
+  });
+});
+
+describe.skipIf(!runnable)("cli entry — hidden aliases for the 0.25 verbs", () => {
+  it("pull copies, names consolidate --copy, and still exits 0", () => {
+    const dir = path.join(root, "alias-pull");
+    run(["init", dir]);
+    nameFixtureSource(dir, "claude-home-alias", "sess-alias");
+    const r = run(["pull", "--data", dir]);
+    expect(r.status).toBe(0);
+    expect(r.stderr).toMatch(/"factmem pull" is deprecated/);
+    expect(r.stderr).toMatch(/factmem consolidate --copy/);
+    // The 0.25 shape, so a hook that parsed it keeps working.
+    expect(JSON.parse(r.stdout).events_inserted).toBe(1);
+    expect(r.stderr).toMatch(/No MCP server listening/);
+  });
+
+  it("pull --no-tick still parses and copies", () => {
+    const dir = path.join(root, "alias-notick");
+    run(["init", dir]);
+    const r = run(["pull", "--no-tick", "--data", dir]);
+    expect(r.status).toBe(0);
+    expect(r.stderr).toMatch(/pull --no-tick" is deprecated/);
+  });
+
+  it("pull --flush copies then notifies compaction", () => {
+    const dir = path.join(root, "alias-flush");
+    run(["init", dir]);
+    const r = run(["pull", "--flush", "--data", dir]);
+    expect(r.status).toBe(0);
+    expect(r.stderr).toMatch(/pull --flush" is deprecated/);
+    expect(r.stderr).toMatch(/factmem notify compaction/);
+    expect(JSON.parse(r.stdout)).toEqual({
+      sources: 0,
+      files: 0,
+      events_inserted: 0,
+      events_skipped: 0,
+    });
+    expect(r.stderr).toMatch(/No MCP server listening/);
+  });
+
+  it("signal flush maps to notify compaction", () => {
+    const dir = path.join(root, "alias-signal");
+    run(["init", dir]);
+    const r = run(["signal", "flush", "--data", dir]);
+    expect(r.status).toBe(0);
+    expect(r.stderr).toMatch(/signal flush" is deprecated/);
+    expect(JSON.parse(r.stdout)).toEqual({ delivered: false, moment: "compaction" });
+  });
+
+  it("signal tick maps to notify threshold", () => {
+    const dir = path.join(root, "alias-tick");
+    run(["init", dir]);
+    const r = run(["signal", "tick", "--data", dir]);
+    expect(r.status).toBe(0);
+    expect(JSON.parse(r.stdout)).toEqual({ delivered: false, moment: "threshold" });
+  });
+
+  it("log-event records and names record", () => {
+    const dir = path.join(root, "alias-log-event");
+    run(["init", dir]);
+    const r = run(["log-event", "--role", "user", "--content", "synthetic line", "--data", dir]);
+    expect(r.status).toBe(0);
+    expect(r.stderr).toMatch(/"factmem log-event" is deprecated/);
+    expect(r.stderr).toMatch(/factmem record/);
+    expect(JSON.parse(r.stdout)).toHaveProperty("event_id");
+  });
+
+  it("signal with an unknown kind still exits 1", () => {
+    const r = run(["signal", "bogus", "--data", root]);
+    expect(r.status).toBe(1);
+  });
+
+  it("the public verbs never print a deprecation line", () => {
+    const dir = path.join(root, "no-deprecation");
+    run(["init", dir]);
+    for (const args of [["consolidate", "--copy"], ["notify", "compaction"], ["stats"]]) {
+      const r = run([...args, "--data", dir]);
+      expect(r.stderr).not.toMatch(/deprecated/);
+    }
   });
 });
 
@@ -778,7 +930,7 @@ describe.skipIf(!runnable)("prune", () => {
    */
   it("is listed as a command", () => {
     const r = run([]);
-    expect(r.stderr).toContain("prune");
+    expect(r.stdout).toMatch(/^  prune\b/m);
   });
 
   it("reports without deleting by default", () => {

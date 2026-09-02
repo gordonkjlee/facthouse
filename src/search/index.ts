@@ -535,7 +535,7 @@ export async function hybridSearch(
 
   // 8. Unconsolidated facts.
   //
-  // capture_fact writes to session_facts; only graduated facts reach the `facts`
+  // capture_fact writes to session_facts; only integrated facts reach the `facts`
   // table above. Without this a fact the assistant was told a minute ago is
   // unfindable until consolidation runs — by default after ten events or at
   // session end — so "I just told you that" silently failed.
@@ -562,7 +562,7 @@ export async function hybridSearch(
       }));
 
   // 9. Compute retrieval quality signals.
-  // Deliberately computed from graduated results only: these signals describe
+  // Deliberately computed from integrated results only: these signals describe
   // how well the knowledge base answered, and a pending fact has not been
   // integrated into it yet. Counting it would report coverage the store does
   // not actually have.
@@ -572,7 +572,7 @@ export async function hybridSearch(
   );
 
   // D only when K is empty. Always-on event search would be a second
-  // retrieval product; a pulled line that never graduated is the named gap.
+  // retrieval product; a pulled line that never integrated is the named gap.
   let episodes: EpisodeSlice[] = [];
   if (!asOf && results.length === 0 && sanitised) {
     episodes = await searchEpisodes(db, sanitised);

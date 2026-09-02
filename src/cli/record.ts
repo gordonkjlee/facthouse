@@ -1,5 +1,5 @@
 /**
- * log-event CLI command — inserts a SessionEvent directly into the database.
+ * record CLI command — inserts one SessionEvent directly into the database.
  * Used by AI client hooks to pipe conversation messages to FactMem.
  */
 
@@ -15,10 +15,10 @@ import {
   ensureSession,
 } from "../db/sessions.js";
 import { envValue } from "../identity.js";
-import { sendSchedulerSignal } from "../ipc/scheduler-ipc.js";
+import { notifyServer } from "../ipc/scheduler-ipc.js";
 import type { SessionEvent } from "../types/data.js";
 
-export interface LogEventArgs {
+export interface RecordEventArgs {
   role: SessionEvent["role"];
   eventType: SessionEvent["event_type"];
   content: string;
@@ -39,18 +39,18 @@ export interface LogEventArgs {
  * session, creating one if the store has none.
  *
  * That fallback is load-bearing, not tidiness, and it is **only** for this
- * command. `factmem pull` writes `client_session_id` from the JSONL and
- * never calls `getLatestSession()` — two files in one pull stay two
+ * command. The copy step writes `client_session_id` from the JSONL and
+ * never calls `getLatestSession()` — two files in one copy stay two
  * conversations. Consolidation groups extraction by that id; an event with
  * both session columns null is examined and declined, not attached to
  * whatever was last active. Events used to be stored that way whenever no
  * session id was supplied, which meant the documented manual form
- * (`log-event --content "..."`) wrote rows that extraction skipped for ever,
+ * (`record --content "..."`) wrote rows that extraction skipped for ever,
  * with nothing reported at either end.
  *
- * After insertion, best-effort signals the running MCP server to tick the
- * scheduler. If the server isn't reachable (not running, different user
- * session, etc.), the signal is silently dropped — session_start on the
+ * After insertion, best-effort tells the running MCP server events arrived
+ * (threshold moment). If the server is not reachable (not running, another
+ * user session), the notification is dropped — session_start on the
  * next server launch will pick up the event.
  *
  * Creates the data directory if it doesn't exist, mirroring what the server
@@ -59,7 +59,7 @@ export interface LogEventArgs {
  * and the event is lost — with the error going to a hook's stderr, where
  * nobody sees it.
  */
-export async function logEvent(args: LogEventArgs): Promise<SessionEvent> {
+export async function recordEvent(args: RecordEventArgs): Promise<SessionEvent> {
   const env = args.env ?? process.env;
   const config = loadShippedStoreConfig(args.dataDir, env);
   mkdirSync(args.dataDir, { recursive: true });
@@ -93,8 +93,8 @@ export async function logEvent(args: LogEventArgs): Promise<SessionEvent> {
       content: args.content,
       content_type: args.contentType ?? "text",
       // The hook fires at the turn. Claude Code's payload has no timestamp
-      // field; this instant is when it was said. Pull must not do the same —
-      // ingest there can be hours later, and a missing JSONL timestamp stays
+      // field; this instant is when it was said. Copy must not do the same —
+      // copying can be hours later, and a missing JSONL timestamp stays
       // null rather than copying created_at.
       occurred_at: new Date().toISOString(),
       speaker: args.speaker ?? null,
@@ -103,8 +103,9 @@ export async function logEvent(args: LogEventArgs): Promise<SessionEvent> {
     await closeDatabase(db);
   }
 
-  // Signal the running MCP server. 500ms timeout internally; never throws.
-  await sendSchedulerSignal(args.dataDir, "tick");
+  // Tell the running MCP server events arrived. It extracts when the
+  // threshold is due. 500ms timeout internally; never throws.
+  await notifyServer(args.dataDir, "threshold");
   return event;
 }
 

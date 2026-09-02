@@ -46,7 +46,7 @@ describe("relatedFactsForExtract", () => {
     ).toEqual([]);
   });
 
-  it("returns related graduated facts and not the whole store", async () => {
+  it("returns related integrated facts and not the whole store", async () => {
     await dbMod.insertFact(db, {
       content: "Alex prefers coffee.",
       domain: "preferences",

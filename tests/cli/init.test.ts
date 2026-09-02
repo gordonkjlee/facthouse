@@ -330,13 +330,13 @@ describe("providerStatusLines", () => {
 });
 
 describe("sourcesStatusLines", () => {
-  it("tells a fresh store capture_fact is how facts get in, then how to turn pull on", () => {
+  it("tells a fresh store capture_fact is how facts get in, then how to turn copy on", () => {
     const text = sourcesStatusLines([]).join("\n");
     expect(text).toMatch(/capture_fact is how facts get in/);
-    expect(text).toMatch(/pull is off/i);
+    expect(text).toMatch(/copy is off/i);
     expect(text).toMatch(/pick copy/);
     expect(text).toMatch(/cwd/);
-    expect(text).toMatch(/factmem pull/);
+    expect(text).toMatch(/factmem consolidate/);
     expect(text).not.toMatch(/more than 50/);
   });
 
@@ -345,10 +345,10 @@ describe("sourcesStatusLines", () => {
       { kind: "claude-code", home: "~/.claude", cwd: "C:\\dev\\app" },
     ]).join("\n");
     expect(text).toMatch(/1 source/);
-    expect(text).toMatch(/factmem pull/);
-    expect(text).toMatch(/more than 50/);
+    expect(text).toMatch(/factmem consolidate/);
+    expect(text).not.toMatch(/pull/);
     expect(text).toContain(INIT_PROMPTS.copyStorewide);
-    expect(text).not.toMatch(/pull is off/i);
+    expect(text).not.toMatch(/copy is off/i);
   });
 
   it("does not swallow an unknown kind", () => {
@@ -368,14 +368,14 @@ describe("appendCaptureRecipe", () => {
   it("does not throw or mix-warn on invalid sources", () => {
     const lines = appendCaptureRecipe([{ kind: "grok", home: "~/.grok" }]);
     expect(lines.join("\n")).toMatch(/invalid/i);
-    expect(lines.join("\n")).not.toMatch(/log-event hooks/i);
+    expect(lines.join("\n")).not.toMatch(/record hooks/i);
   });
 
   it("adds the mix warning when a source is present", () => {
     const lines = appendCaptureRecipe([
       { kind: "claude-code", home: "~/.claude", cwd: "C:\\dev\\app" },
     ]);
-    expect(lines.join("\n")).toMatch(/log-event hooks/i);
+    expect(lines.join("\n")).toMatch(/record hooks/i);
   });
 });
 

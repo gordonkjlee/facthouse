@@ -27,7 +27,7 @@ export const STAGE_HELP: Record<
   extract: {
     title: "Reading chat",
     does: "Turns new conversation lines into draft facts. Usually the expensive part — a long chat is several runs.",
-    when: "When chat is pulled in, and when you consolidate.",
+    when: "When chat is copied in, and when you consolidate.",
     group: "read",
   },
   classify: {
@@ -68,7 +68,7 @@ export interface SpendDay {
   examined: number;
   unread: number;
   staged: number;
-  graduated: number;
+  integrated: number;
   calls: number;
   input_tokens?: number;
   output_tokens?: number;
@@ -126,7 +126,7 @@ export function rollSpendDays(days: SpendDay[], grain: SpendGrain): SpendDay[] {
         examined: 0,
         unread: 0,
         staged: 0,
-        graduated: 0,
+        integrated: 0,
         calls: 0,
       };
       map.set(key, row);
@@ -136,7 +136,7 @@ export function rollSpendDays(days: SpendDay[], grain: SpendGrain): SpendDay[] {
     row.examined += d.examined;
     row.unread += d.unread;
     row.staged += d.staged;
-    row.graduated += d.graduated;
+    row.integrated += d.integrated;
     row.calls += d.calls;
     if (d.input_tokens != null) {
       row.input_tokens = (row.input_tokens || 0) + d.input_tokens;
@@ -171,7 +171,7 @@ function emptyDay(day: string): SpendDay {
     examined: 0,
     unread: 0,
     staged: 0,
-    graduated: 0,
+    integrated: 0,
     calls: 0,
   };
 }
@@ -185,7 +185,7 @@ function fillDays(from: string, to: string): SpendDay[] {
 function bump(
   map: Map<string, SpendDay>,
   day: string,
-  field: "logged" | "examined" | "unread" | "staged" | "graduated" | "calls",
+  field: "logged" | "examined" | "unread" | "staged" | "integrated" | "calls",
   n = 1,
 ): void {
   const row = map.get(day);
@@ -253,12 +253,12 @@ export async function loadSpendDashboard(
     if (day) bump(byDay, day, "staged");
   }
 
-  const graduatedRows = (await db
+  const integratedRows = (await db
     .prepare(`SELECT created_at FROM facts WHERE created_at >= ?`)
     .all(cutoff)) as Array<{ created_at: unknown }>;
-  for (const row of graduatedRows) {
+  for (const row of integratedRows) {
     const day = dayKey(row.created_at);
-    if (day) bump(byDay, day, "graduated");
+    if (day) bump(byDay, day, "integrated");
   }
 
   let runs: IntelligenceRunSummary[] = [];

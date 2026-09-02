@@ -326,7 +326,7 @@ function hero(data: SpendDashboard): string {
     : "Those lines are in the store but have not been turned into facts yet.";
   const catchDo = unread === 0
     ? pending > 0
-      ? `${fmtInt(pending)} drafts are waiting to become lasting facts — run a full consolidate.`
+      ? `${fmtInt(pending)} drafts are waiting to become lasting facts — run consolidate.`
       : "Nothing you need to do."
     : "Run consolidate when you want catch-up. That uses the model.";
   const tokens = data.last_24h_input;
@@ -526,7 +526,7 @@ const SPEND_BOARD_JS = `(function(){
     return n;
   }
   function dayValue(d){
-    if (mode === "catchup") return cmetric === "facts" ? (d.staged + d.graduated) : d.logged;
+    if (mode === "catchup") return cmetric === "facts" ? (d.staged + d.integrated) : d.logged;
     if (metric === "tokens") {
       if (filter === "all") return d.input_tokens || 0;
       var n = 0;
@@ -606,12 +606,12 @@ const SPEND_BOARD_JS = `(function(){
       svg += '<g class="om-day'+on+'" data-day="'+d.day+'">';
       if (mode === "catchup" && cmetric === "facts"){
         var stH = max ? d.staged / max * ih : 0;
-        var gH = max ? d.graduated / max * ih : 0;
+        var gH = max ? d.integrated / max * ih : 0;
         var yS = t + ih - gH - stH;
         var yG = t + ih - gH;
         if (stH > 0) svg += '<rect x="'+x+'" y="'+yS+'" width="'+bw+'" height="'+stH+'" fill="'+C.drafts+'" rx="2"/>';
         if (gH > 0) svg += '<rect x="'+x+'" y="'+yG+'" width="'+bw+'" height="'+gH+'" fill="'+C.lasting+'" rx="2"/>';
-        if (d.staged + d.graduated === 0) svg += '<rect x="'+x+'" y="'+(t+ih-2)+'" width="'+bw+'" height="2" fill="var(--line)"/>';
+        if (d.staged + d.integrated === 0) svg += '<rect x="'+x+'" y="'+(t+ih-2)+'" width="'+bw+'" height="2" fill="var(--line)"/>';
       } else if (mode === "catchup"){
         var examH = max ? d.examined / max * ih : 0;
         var unreadH = max ? d.unread / max * ih : 0;
@@ -651,7 +651,7 @@ const SPEND_BOARD_JS = `(function(){
         if (!d) return;
         var html;
         if (mode === "catchup" && cmetric === "facts"){
-          html = "<strong>"+niceDay(d.day)+"</strong>"+fmt(d.staged)+" drafts · "+fmt(d.graduated)+" lasting facts";
+          html = "<strong>"+niceDay(d.day)+"</strong>"+fmt(d.staged)+" drafts · "+fmt(d.integrated)+" lasting facts";
         } else if (mode === "catchup"){
           html = "<strong>"+niceDay(d.day)+"</strong>"+fmt(d.logged)+" new lines<br>"+
             fmt(d.examined)+" read · "+fmt(d.unread)+" waiting";
@@ -709,7 +709,7 @@ const SPEND_BOARD_JS = `(function(){
     }
     if (!hit) {
       for (var i = view.length - 1; i >= 0; i--) {
-        if (view[i].logged || view[i].calls || view[i].staged || view[i].graduated) {
+        if (view[i].logged || view[i].calls || view[i].staged || view[i].integrated) {
           hit = view[i];
           break;
         }
@@ -754,7 +754,7 @@ const SPEND_BOARD_JS = `(function(){
       if (cmetric === "facts"){
         paintBars([
           { title: "Drafts", n: d.staged, colour: C.drafts, label: fmt(d.staged) },
-          { title: "Lasting facts", n: d.graduated, colour: C.lasting, label: fmt(d.graduated) }
+          { title: "Lasting facts", n: d.integrated, colour: C.lasting, label: fmt(d.integrated) }
         ], false);
         if (dayNote) dayNote.textContent = "Click another bar to compare.";
       } else {

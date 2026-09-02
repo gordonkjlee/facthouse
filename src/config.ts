@@ -267,8 +267,33 @@ export function loadConfig(dataDir: string): ServerConfig {
     return base;
   }
 
-  return mergeConfig(base, parsed);
+  return mergeConfig(base, honourLegacyConfigKeys(parsed));
 }
+
+/**
+ * Read-time compatibility for renamed keys. `intelligence.cli.graduate_model`
+ * became `integrate_model` when the pipeline vocabulary settled on copy /
+ * extract / integrate; a store written by an earlier release keeps working
+ * and is told once per process. `factmem settings` rewrites the key.
+ */
+export function honourLegacyConfigKeys(parsed: unknown): unknown {
+  if (!parsed || typeof parsed !== "object") return parsed;
+  const doc = parsed as { intelligence?: { cli?: Record<string, unknown> } };
+  const cli = doc.intelligence?.cli;
+  if (!cli || typeof cli !== "object") return parsed;
+  if (cli.integrate_model === undefined && typeof cli.graduate_model === "string") {
+    cli.integrate_model = cli.graduate_model;
+    if (!legacyKeyNoticeShown) {
+      legacyKeyNoticeShown = true;
+      console.error(
+        `[factmem] ${CONFIG_FILENAME}: intelligence.cli.graduate_model is now ` +
+          `integrate_model. Still honoured; run factmem settings to rewrite it.`,
+      );
+    }
+  }
+  return parsed;
+}
+let legacyKeyNoticeShown = false;
 
 /**
  * Warning on an as-of-system-time read whose instant precedes the switch to

@@ -621,9 +621,9 @@ export function createHttpProvider(
       return { existingFactId: hit.existing_id, reason: hit.reason };
     },
 
-    async summarise(sessionFacts, graduatedFacts, priorSummary, closedTopics) {
-      if (graduatedFacts.length === 0) {
-        return { summary: "No facts graduated.", openThreads: [] };
+    async summarise(sessionFacts, integratedFacts, priorSummary, closedTopics) {
+      if (integratedFacts.length === 0) {
+        return { summary: "No facts integrated.", openThreads: [] };
       }
       const json = await runStage(
         "stage-4-summarise",
@@ -634,7 +634,7 @@ export function createHttpProvider(
           `\n\nINPUT:\n${JSON.stringify({
             prior_summary: priorSummary ?? null,
             closed_topics: closedTopics ?? [],
-            graduated: graduatedFacts.map((f) => ({
+            integrated: integratedFacts.map((f) => ({
               content: f.content,
               domain: f.domain,
               subdomain: f.subdomain,
@@ -647,7 +647,7 @@ export function createHttpProvider(
         typeof result.summary !== "string" ||
         !Array.isArray(result.openThreads)
       ) {
-        return fallback.summarise(sessionFacts, graduatedFacts, priorSummary);
+        return fallback.summarise(sessionFacts, integratedFacts, priorSummary);
       }
       return {
         summary: result.summary,

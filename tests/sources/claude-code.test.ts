@@ -97,7 +97,7 @@ describe("mapTranscriptLine", () => {
     expect(events.every((e) => e.speaker === "Alex")).toBe(true);
   });
 
-  it("maps the JSONL timestamp as occurred_at, not ingest time", () => {
+  it("maps the JSONL timestamp as occurred_at, not copy time", () => {
     const events = mapTranscriptLine(
       JSON.stringify({
         type: "user",

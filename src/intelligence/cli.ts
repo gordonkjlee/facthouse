@@ -1008,9 +1008,9 @@ export function createCliProvider(
       return { existingFactId: hit.existing_id, reason: hit.reason };
     },
 
-    async summarise(sessionFacts, graduatedFacts, priorSummary, closedTopics) {
-      if (graduatedFacts.length === 0) {
-        return { summary: "No facts graduated.", openThreads: [] };
+    async summarise(sessionFacts, integratedFacts, priorSummary, closedTopics) {
+      if (integratedFacts.length === 0) {
+        return { summary: "No facts integrated.", openThreads: [] };
       }
       const result = await runStage<{
         summary: string;
@@ -1021,14 +1021,14 @@ export function createCliProvider(
           "prior_summary is the rolling summary of this session so far (may be null for the " +
           "first consolidation). closed_topics are activity gists closed this run (may be empty). " +
           "Produce a CUMULATIVE summary that folds what was just learned " +
-          "(graduated) into prior_summary — one natural paragraph, not a diff — " +
+          "(integrated) into prior_summary — one natural paragraph, not a diff — " +
           "and mentions closed topics without treating the paragraph as the topic log. " +
           "List up to 5 open threads — questions or follow-ups the user might want revisited. " +
           "Return strictly {summary, openThreads}.",
         {
           prior_summary: priorSummary ?? null,
           closed_topics: closedTopics ?? [],
-          graduated: graduatedFacts.map((f) => ({
+          integrated: integratedFacts.map((f) => ({
             content: f.content,
             domain: f.domain,
             subdomain: f.subdomain,
@@ -1042,7 +1042,7 @@ export function createCliProvider(
         typeof result.summary !== "string" ||
         !Array.isArray(result.openThreads)
       ) {
-        return fallback.summarise(sessionFacts, graduatedFacts, priorSummary);
+        return fallback.summarise(sessionFacts, integratedFacts, priorSummary);
       }
       return { summary: result.summary, openThreads: result.openThreads };
     },

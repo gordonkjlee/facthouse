@@ -40,7 +40,7 @@ import { applySchema } from "../../src/db/schema.js";
 import { consolidate } from "../../src/intelligence/consolidate.js";
 import { createHeuristicProvider } from "../../src/intelligence/heuristic.js";
 import { probeCliProvider } from "../../src/intelligence/cli.js";
-import { pullSources } from "../../src/sources/pull.js";
+import { copySources } from "../../src/sources/copy.js";
 import { withoutStoreEnv } from "../helpers/cli-env.js";
 import { encodeProjectDir } from "../../src/sources/resolve.js";
 import { searchWithProvider } from "../../src/search/index.js";
@@ -119,7 +119,7 @@ describe("first-fact pipeline (recording extractor)", () => {
     const home = path.join(tmp("om-first-fact-"), "claude-home");
     plantTranscript(home);
 
-    const pulled = await pullSources(db, [
+    const pulled = await copySources(db, [
       { kind: "claude-code", home, cwd: PROJECT_CWD },
     ]);
     expect(pulled.events_inserted).toBeGreaterThan(0);
@@ -161,7 +161,7 @@ describe("first-fact pipeline (recording extractor)", () => {
     });
     expect(extractCalls).toBeGreaterThan(0);
     expect(done.skipped).toBe(false);
-    expect(done.factsGraduated).toBeGreaterThan(0);
+    expect(done.factsIntegrated).toBeGreaterThan(0);
 
     const found = await searchWithProvider(db, QUERY, null);
     expect(hitsKaleidoscope(found)).toBe(true);
@@ -178,7 +178,7 @@ describe("first-fact pipeline (recording extractor)", () => {
     const home = path.join(tmp("om-first-fact-h-"), "claude-home");
     plantTranscript(home);
 
-    await pullSources(db, [{ kind: "claude-code", home, cwd: PROJECT_CWD }]);
+    await copySources(db, [{ kind: "claude-code", home, cwd: PROJECT_CWD }]);
     await consolidate(db, createHeuristicProvider(), {
       extraction: { enabled: true } as never,
     });
@@ -258,7 +258,7 @@ describe.skipIf(!required || unavailable !== null)(
         expect(consolidated.status).toBe(0);
         const result = JSON.parse(consolidated.stdout);
         expect(result.skipped).toBe(false);
-        expect(result.factsGraduated).toBeGreaterThan(0);
+        expect(result.factsIntegrated).toBeGreaterThan(0);
 
         const after = run(["search", QUERY, "--json", "--data", dir]);
         expect(after.status).toBe(0);

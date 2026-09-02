@@ -1,7 +1,7 @@
 /**
  * One definition of the capture_fact tool description.
  *
- * A store with named `sources` already ingests conversations; the assistant
+ * A store with named `sources` already copies conversations; the assistant
  * should not be told to recapture every fact. Empty `sources` is the other
  * product: capture_fact is how knowledge gets in. Those two instructions used
  * to live as a hardcoded proactive string in the tool and a correction story
@@ -13,8 +13,8 @@
 
 import { DURABLE_FACT } from "../intelligence/extract-prompt.js";
 
-/** Named sources mean pull is on. Malformed entries still count: the user
- *  intended a pull store. Empty / omitted is proactive capture. */
+/** Named sources mean copy is on. Malformed entries still count: the user
+ *  intended a copy store. Empty / omitted is proactive capture. */
 export function storeHasNamedSources(sources: unknown): boolean {
   return Array.isArray(sources) && sources.length > 0;
 }
@@ -25,9 +25,9 @@ const PROACTIVE_LEAD =
   " Call this proactively whenever you learn something this store should keep.";
 
 const CORRECTION_LEAD =
-  "Store a durable fact that pull-plus-extraction missed, or a judgement that is not in the transcript. " +
+  "Store a durable fact that copy-plus-extraction missed, or a judgement that is not in the transcript. " +
   DURABLE_FACT +
-  " Named sources already ingest conversations — do not recapture what the user just said. " +
+  " Named sources already copy conversations — do not recapture what the user just said. " +
   "Call this when you need to correct the knowledge, rather than whenever you learn something.";
 
 const FAST =

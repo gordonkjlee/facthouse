@@ -59,7 +59,7 @@ describe("parseSettingsWebPost", () => {
     const overlay = parseSettingsWebPost(
       new URLSearchParams({
         cliModel: "haiku",
-        cliGraduateModel: "sonnet",
+        cliIntegrateModel: "sonnet",
         cliTimeoutMs: "60000",
         httpExtract: "yes",
         httpBaseUrl: "http://localhost:1234/v1",
@@ -68,7 +68,7 @@ describe("parseSettingsWebPost", () => {
       }),
     );
     expect(overlay.cliModel).toBe("haiku");
-    expect(overlay.cliGraduateModel).toBe("sonnet");
+    expect(overlay.cliIntegrateModel).toBe("sonnet");
     expect(overlay.cliTimeoutMs).toBe(60_000);
     expect(overlay.httpExtract).toBe(true);
     expect(overlay.httpModel).toBe("qwen2.5vl:7b");

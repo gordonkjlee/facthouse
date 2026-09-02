@@ -26,7 +26,7 @@ interface ConsolidationRow {
   id: string;
   session_id: string | null;
   facts_in: number;
-  facts_graduated: number;
+  facts_integrated: number;
   facts_rejected: number;
   entities_created: number;
   entities_linked: number;
@@ -115,7 +115,7 @@ function hydrate(row: ConsolidationRow): Consolidation {
     id: row.id,
     session_id: row.session_id,
     facts_in: row.facts_in,
-    facts_graduated: row.facts_graduated,
+    facts_integrated: row.facts_integrated,
     facts_rejected: row.facts_rejected,
     entities_created: row.entities_created,
     entities_linked: row.entities_linked,
@@ -154,7 +154,7 @@ export async function getLatestConsolidation(
  * The most recent consolidation that actually produced a narrative summary.
  *
  * Distinct from `getLatestConsolidation`: a run inserts its row with a NULL
- * summary and fills it in afterwards, and runs that graduate nothing record a
+ * summary and fills it in afterwards, and runs that integrate nothing record a
  * row with no summary at all. So the newest row is often not the newest
  * *narrative* — callers wanting prose want this one.
  */

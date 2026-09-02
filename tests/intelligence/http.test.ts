@@ -166,10 +166,10 @@ describe("engine-default stage routing", () => {
     expect(resolveStageProviderType(cfg, "supersede")).toBe("cli");
   });
 
-  it("routes when the CLI graduate model differs with no HTTP", () => {
+  it("routes when the CLI integrate model differs with no HTTP", () => {
     const split: IntelligenceConfig = {
       ...base,
-      cli: { model: "haiku", graduate_model: "sonnet" },
+      cli: { model: "haiku", integrate_model: "sonnet" },
     };
     expect(usesStageRouter(split)).toBe(true);
     expect(usesStageRouter({ ...base, cli: { model: "haiku" } })).toBe(false);

@@ -1,15 +1,19 @@
 /**
- * Cross-process IPC for scheduler wake-up.
+ * Cross-process notification to the running MCP server.
  *
  * The MCP server holds a listener on a Unix domain socket (or Windows named
- * pipe). The log-event CLI — running in a separate short-lived process
- * spawned by a hook — connects, writes one byte indicating the kind of
- * signal, and closes. The server's listener decodes the byte and calls
- * onSignal('tick') or onSignal('flush').
+ * pipe). A separate short-lived process — `factmem notify`, `record`, a
+ * hook — connects, writes one byte naming the moment that happened, and
+ * closes. The server's listener decodes the byte and calls onMoment with it.
+ * What each moment runs is MOMENT_POLICY in src/intelligence/steps.ts; the
+ * wire carries a moment, never a step.
  *
  * Protocol:
- *   't' (0x74) → tick  — threshold check, skip if delta below threshold
- *   'f' (0x66) → flush — force a consolidation regardless of delta
+ *   'e' (0x65) → threshold  — events arrived; extract if the count is due
+ *   'c' (0x63) → compaction — the client window is about to collapse; run
+ *                             consolidate now, asynchronously
+ *   't' / 'f'  → the 0.25 spellings of the same two, accepted until the
+ *                `signal` alias is removed
  *
  * Path format:
  *   Unix:    <dataDir>/.scheduler.sock
@@ -17,7 +21,7 @@
  *
  * Why these specifically:
  *   - Unix sockets are cleaned up on normal shutdown; on crash the file
- *     remains. We handle that via test-then-bind in startSchedulerListener.
+ *     remains. We handle that via test-then-bind in startNotifyListener.
  *   - Windows named pipes are kernel-managed — they disappear with the
  *     process, no stale artifacts to clean up.
  */
@@ -27,13 +31,12 @@ import { unlinkSync } from "node:fs";
 import { createHash } from "node:crypto";
 import path from "node:path";
 import { WINDOWS_PIPE_PREFIX } from "../identity.js";
+import type { NotifiableMoment } from "../intelligence/steps.js";
 
 // Probed on Windows and verified: ENOENT = no listener, EADDRINUSE = live listener.
 // Unix socket stale handling is test-then-bind below.
 
-export type SignalKind = "tick" | "flush";
-
-export interface SchedulerListener {
+export interface NotifyListener {
   /** Stop accepting new connections and release the socket/pipe. */
   close(): void;
   /** True if the listener is bound (i.e. this process owns the pipe). */
@@ -54,31 +57,36 @@ export function schedulerIpcPath(dataDir: string): string {
   return path.join(dataDir, ".scheduler.sock");
 }
 
-/** Encode a signal kind into its wire byte. */
-function encodeSignal(kind: SignalKind): string {
-  return kind === "flush" ? "f" : "t";
-}
-
-/** Decode a received byte into a signal kind, or null if unrecognised. */
-function decodeSignal(byte: number): SignalKind | null {
-  if (byte === 0x66) return "flush"; // 'f'
-  if (byte === 0x74) return "tick"; // 't'
-  return null;
+/** Encode a moment into its wire byte. */
+function encodeMoment(moment: NotifiableMoment): string {
+  return moment === "compaction" ? "c" : "e";
 }
 
 /**
- * Detect a stale Unix socket file. Returns true if the file exists but
- * nothing is listening on it (i.e. safe to unlink before binding). On
- * Windows this is never needed — pipes are kernel-managed.
+ * Decode a received byte into a moment, or null if unrecognised. The 0.25
+ * CLI wrote 't' (tick → threshold) and 'f' (flush → compaction); a hook
+ * still pinned to that CLI keeps working against this server until the
+ * aliases go.
  */
-/** True when an MCP server is bound for this data dir (does not send a tick). */
-export async function isSchedulerListening(
+function decodeMoment(byte: number): NotifiableMoment | null {
+  if (byte === 0x63 || byte === 0x66) return "compaction"; // 'c', legacy 'f'
+  if (byte === 0x65 || byte === 0x74) return "threshold"; // 'e', legacy 't'
+  return null;
+}
+
+/** True when an MCP server is bound for this data dir (sends no moment). */
+export async function isServerListening(
   dataDir: string,
   timeoutMs = 200,
 ): Promise<boolean> {
   return probeListener(schedulerIpcPath(dataDir), timeoutMs);
 }
 
+/**
+ * Detect a stale Unix socket file. Returns true if something is listening
+ * (i.e. not safe to unlink before binding). On Windows this is never needed —
+ * pipes are kernel-managed.
+ */
 async function probeListener(socketPath: string, timeoutMs = 200): Promise<boolean> {
   return new Promise((resolve) => {
     const client = createConnection(socketPath);
@@ -104,22 +112,22 @@ async function probeListener(socketPath: string, timeoutMs = 200): Promise<boole
  * listening. Windows named pipes don't need this — EADDRINUSE only fires
  * when another process actually holds the pipe.
  */
-export async function startSchedulerListener(
+export async function startNotifyListener(
   dataDir: string,
-  onSignal: (kind: SignalKind) => void,
-): Promise<SchedulerListener> {
+  onMoment: (moment: NotifiableMoment) => void,
+): Promise<NotifyListener> {
   const socketPath = schedulerIpcPath(dataDir);
   const isUnix = process.platform !== "win32";
 
   const server: Server = createServer((socket: Socket) => {
     socket.once("data", (chunk: Buffer | string) => {
       const byte = typeof chunk === "string" ? chunk.charCodeAt(0) : chunk[0];
-      const kind = decodeSignal(byte);
-      if (kind !== null) {
+      const moment = decodeMoment(byte);
+      if (moment !== null) {
         try {
-          onSignal(kind);
+          onMoment(moment);
         } catch {
-          // onSignal must never throw into the listener. Swallow and move on.
+          // onMoment must never throw into the listener. Swallow and move on.
         }
       }
       socket.end();
@@ -166,7 +174,7 @@ export async function startSchedulerListener(
       await tryListen();
     } else {
       // Windows: EADDRINUSE means another process holds the pipe. Nothing
-      // to clean up; this server won't be the signal handler.
+      // to clean up; this server won't be the listener.
       return { close: () => {}, bound: false };
     }
   }
@@ -194,13 +202,13 @@ export async function startSchedulerListener(
 }
 
 /**
- * Send a signal to the running MCP server. Resolves with true if the
+ * Tell the running MCP server a moment happened. Resolves with true if the
  * server acknowledged receipt (connection succeeded and we wrote our byte),
  * false on any failure. Never throws.
  */
-export function sendSchedulerSignal(
+export function notifyServer(
   dataDir: string,
-  kind: SignalKind,
+  moment: NotifiableMoment,
   timeoutMs = 500,
 ): Promise<boolean> {
   const socketPath = schedulerIpcPath(dataDir);
@@ -216,7 +224,7 @@ export function sendSchedulerSignal(
     const timer = setTimeout(() => finish(false), timeoutMs);
 
     client.once("connect", () => {
-      client.write(encodeSignal(kind), () => {
+      client.write(encodeMoment(moment), () => {
         client.end();
       });
     });

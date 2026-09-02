@@ -142,9 +142,16 @@ describe("extraction.batch_size is read by extract", () => {
     const size = DEFAULT_CONFIG.extraction.batch_size;
     await seedConversation(size + 1);
     const { provider, calls } = recording();
-    await consolidate(db, provider as never, {
-      extraction: { enabled: true } as never,
-    });
+    // 51 events is over the per-run extract cap; this test is about chunking,
+    // so lift the cap the way `consolidate --all` does.
+    await consolidate(
+      db,
+      provider as never,
+      { extraction: { enabled: true } as never },
+      null,
+      { copy: false, extract: true, integrate: true },
+      { extractLimit: null },
+    );
     expect(calls.map((c) => c.contents.length)).toEqual([size, 1]);
   });
 });
@@ -241,7 +248,7 @@ describe("chunked topic shift closes segments at distinct clocks", () => {
     await db
       .prepare(
         `INSERT INTO consolidations
-         (id, session_id, facts_in, facts_graduated, facts_rejected,
+         (id, session_id, facts_in, facts_integrated, facts_rejected,
           entities_created, entities_linked, supersessions,
           summary, open_threads, last_event_sequence, created_at,
           now, now_start_sequence, now_referents, segments)
@@ -285,7 +292,7 @@ describe("a failed later chunk keeps the honest prefix", () => {
       provider as never,
       { extraction: { enabled: true, batch_size: 2 } as never },
       null,
-      "extract",
+      { copy: false, extract: true, integrate: false },
     );
     expect(result.extractionDegraded).toBe(true);
     expect(result.prefixCommitted).toBe(true);

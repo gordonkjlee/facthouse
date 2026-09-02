@@ -2,14 +2,18 @@
 
 /**
  * FactMem CLI entry point.
- * Subcommands: init, settings, log-event, consolidate, pull
+ *
+ * Public verbs: init, settings, record, notify, consolidate, search, stats,
+ * inspect, prune. `pull`, `signal`, and `log-event` remain as hidden aliases for one minor
+ * release. The vocabulary (copy, extract, integrate; consolidate; moments) is
+ * defined once in src/intelligence/steps.ts.
  */
 
 import { parseArgs } from "node:util";
 import { createInterface } from "node:readline/promises";
 import { existsSync } from "node:fs";
 import path from "node:path";
-import { logEvent, extractContentFromHookPayload } from "./log-event.js";
+import { recordEvent, extractContentFromHookPayload } from "./record.js";
 import {
   initDataDir,
   mcpConfigSnippet,
@@ -43,7 +47,14 @@ import {
   npmPackageSpec,
 } from "../identity.js";
 import { dataDirFromEnvOrDefault, defaultDataDir, resolveUserPath } from "../paths.js";
-import { runSearch, formatSearch, formatStats, formatPrune, getStats } from "./query.js";
+import {
+  runSearch,
+  formatSearch,
+  formatStats,
+  formatPrune,
+  formatConsolidate,
+  getStats,
+} from "./query.js";
 import { packageVersion } from "./package-version.js";
 import { runInspect } from "./inspect.js";
 import { prunableEvents, pruneEvents, vacuum } from "../db/prune.js";
@@ -51,12 +62,17 @@ import { applySqliteDiskBudget, getBoundDiskBudget } from "../db/disk-budget.js"
 import { closeDatabase, type Db } from "../db/connection.js";
 import { applySchema } from "../db/schema.js";
 import { openStore, sqliteMemoryPath } from "../db/store.js";
+import { consolidate, type ConsolidationResult } from "../intelligence/consolidate.js";
 import {
-  consolidate,
-  type ConsolidatePhase,
-} from "../intelligence/consolidate.js";
-import { createHeuristicProvider } from "../intelligence/heuristic.js";
+  ALL_STEPS,
+  NOTIFIABLE_MOMENTS,
+  isNotifiableMoment,
+  stepsFromFlags,
+  type ConsolidateSteps,
+  type NotifiableMoment,
+} from "../intelligence/steps.js";
 import { createIntelligenceProvider, resolveProviderType } from "../intelligence/provider.js";
+import { createHeuristicProvider } from "../intelligence/heuristic.js";
 import { probeHttpModels } from "../intelligence/http.js";
 import { loadStoreVocabulary } from "../db/domains.js";
 import { createEmbeddingProvider } from "../embedding/provider.js";
@@ -73,12 +89,8 @@ import {
   systemTimeWarning,
 } from "../config.js";
 import { parseSystemTime } from "../db/facts.js";
-import {
-  sendSchedulerSignal,
-  isSchedulerListening,
-  type SignalKind,
-} from "../ipc/scheduler-ipc.js";
-import { pullFollowUp, pullSources } from "../sources/pull.js";
+import { notifyServer, isServerListening } from "../ipc/scheduler-ipc.js";
+import { copySources } from "../sources/copy.js";
 import { unexaminedEventCount } from "../db/extract-watermarks.js";
 
 const SESSION_ROLES = ["user", "assistant", "system", "tool"] as const;
@@ -134,16 +146,26 @@ async function main() {
     process.exit(0);
   }
 
+  if (
+    subcommand === undefined ||
+    subcommand === "--help" ||
+    subcommand === "-h" ||
+    subcommand === "help"
+  ) {
+    console.log(usageText());
+    process.exit(0);
+  }
+
   if (subcommand === "init") {
     await runInit();
   } else if (subcommand === "settings") {
     await runSettingsCmd();
-  } else if (subcommand === "log-event") {
-    await runLogEvent();
+  } else if (subcommand === "record") {
+    await runRecord();
+  } else if (subcommand === "notify") {
+    await runNotify();
   } else if (subcommand === "consolidate") {
     await runConsolidate();
-  } else if (subcommand === "signal") {
-    await runSignal();
   } else if (subcommand === "search") {
     await runSearchCmd();
   } else if (subcommand === "stats") {
@@ -153,24 +175,47 @@ async function main() {
   } else if (subcommand === "prune") {
     await runPruneCmd();
   } else if (subcommand === "pull") {
-    await runPull();
+    await runPullCompat();
+  } else if (subcommand === "signal") {
+    await runSignalCompat();
+  } else if (subcommand === "log-event") {
+    deprecated("log-event", "record");
+    await runRecord();
   } else {
-    console.error(
-      `Usage: ${CLI_NAME} <command>\n\n` +
-        `Commands:\n` +
-        `  init [dir]    Create the data directory, database, and default config (--yes never prompts; --web is a local page)\n` +
-        `  settings      Change extra knobs on an existing store (TTY; --json prints; --web is a local page)\n` +
-        `  search <q>    Search the knowledge base\n` +
-        `  stats         Show knowledge base statistics\n` +
-        `  inspect       Sample D / I / K and write a local HTML graph + spend\n` +
-        `  prune         Reclaim raw events nothing can reach (dry run by default)\n` +
-        `  pull          Ingest new events from named capture sources (--flush, --no-tick)\n` +
-        `  log-event     Log a session event (used by hooks)\n` +
-        `  signal        Signal the running MCP server to tick or flush\n` +
-        `  consolidate   Run consolidation in-process with the configured provider`,
-    );
+    console.error(usageText());
     process.exit(1);
   }
+}
+
+/** One usage block, grouped by job. Hidden aliases are not listed. */
+function usageText(): string {
+  return [
+    `Usage: ${CLI_NAME} <command> [--data <dir>]`,
+    ``,
+    `Set up`,
+    `  init [dir]      Create the store (--yes: no prompts; --web: local page)`,
+    `  settings        Change extra knobs on an existing store (--json, --web)`,
+    ``,
+    `Feed`,
+    `  record          Record one session event (used by hooks; reads stdin)`,
+    `  notify <moment> Tell the running MCP server a moment happened`,
+    `                  (${NOTIFIABLE_MOMENTS.join(", ")})`,
+    ``,
+    `Consolidate`,
+    `  consolidate     Copy lines, extract facts, integrate them (spends model calls)`,
+    `                  -c --copy  -e --extract  -i --integrate   run only these steps`,
+    `                  -a --all   extract past the cap      -l --limit N  oldest N`,
+    ``,
+    `Read`,
+    `  search <q>      Search integrated knowledge (--domain, --limit, --json)`,
+    `  stats           Counts, extract backlog, spend, whether a server is up`,
+    `  inspect         Sample D / I / K and write a local HTML graph`,
+    ``,
+    `Housekeeping`,
+    `  prune           Reclaim raw events nothing can reach (dry run by default)`,
+    ``,
+    `--data defaults to FACTMEM_DATA or ~/.factmem.`,
+  ].join("\n");
 }
 
 async function runInit() {
@@ -274,6 +319,7 @@ async function runInit() {
   const embedLines = await embeddingStatusLines(written.embedding);
   const captureLines = appendCaptureRecipe(written.sources, {
     captureAskedAndEmpty: wizard.captureAskedAndEmpty,
+    captureSkippedCwd: wizard.captureSkippedCwd,
   });
 
   const lines = [
@@ -306,18 +352,11 @@ async function runInit() {
     ``,
     ...embedLines,
     ``,
-    ...captureLines,
-    ``,
   ];
-  if (result.wroteConfig) {
-    const later =
-      result.dataDir === defaultDataDir()
-        ? `Later: ${CLI_NAME} settings  (extra knobs; does not reset this file)`
-        : `Later: ${CLI_NAME} settings --data ${result.dataDir}  (extra knobs; does not reset this file)`;
-    lines.push(later, ``);
-  }
   console.log(lines.join("\n"));
 
+  // The copy offer runs before the outro, so the next-command line is not
+  // printed above the prompt that performs it.
   if (rl) {
     try {
       if (
@@ -330,12 +369,23 @@ async function runInit() {
         const provider = resolveProviderType(written.intelligence.provider);
         await offerInitBackfill(bindInitIo(rl), result.dataDir, {
           providerIsHeuristic: provider === "heuristic",
-          pull: async (dir) => {
+          copy: async (dir) => {
             const cfg = loadConfig(dir);
-            return withDb(dir, (db) => pullSources(db, cfg.sources));
+            return withDb(dir, (db) => copySources(db, cfg.sources));
           },
           unextracted: (dir) => withDb(dir, (db) => unexaminedEventCount(db)),
-          consolidate: (dir) => configuredConsolidate(dir, { print: false }),
+          // The offer already copied; extract (capped) and integrate. The
+          // offer prints the counts itself, on the same channel as its prompts.
+          consolidate: async (dir) => {
+            const r = await consolidateStore(
+              dir,
+              { copy: false, extract: true, integrate: true },
+              { print: false },
+            );
+            return r
+              ? { factsIntegrated: r.factsIntegrated, eventsRemaining: r.eventsRemaining }
+              : undefined;
+          },
         });
       }
     } finally {
@@ -343,6 +393,16 @@ async function runInit() {
       rl.close();
     }
   }
+
+  const outro = [...captureLines, ``];
+  if (result.wroteConfig) {
+    const later =
+      result.dataDir === defaultDataDir()
+        ? `Later: ${CLI_NAME} settings  (extra knobs; does not reset this file)`
+        : `Later: ${CLI_NAME} settings --data ${result.dataDir}  (extra knobs; does not reset this file)`;
+    outro.push(later, ``);
+  }
+  console.log(outro.join("\n"));
 }
 
 async function runSettingsCmd() {
@@ -544,7 +604,7 @@ async function runStatsCmd() {
 
   const dataDir = resolveUserPath(values.data as string);
   const stats = await withDb(dataDir, (db) => getStats(db));
-  stats.listener = await isSchedulerListening(dataDir);
+  stats.listener = await isServerListening(dataDir);
   const payload = { ...stats, package_version: packageVersion() };
 
   console.log(values.json ? JSON.stringify(payload, null, 2) : formatStats(stats));
@@ -643,153 +703,82 @@ async function runPruneCmd() {
   console.log(formatPrune(result, apply, keep, values.vacuum as boolean));
 }
 
-/**
- * Primary entry for client-agnostic capture: read `config.sources` and tail
- * each named home into session_events. Empty sources is a successful no-op.
- * The MCP server runs this same function at session start and on tool reads;
- * do not add a third ingest path.
- */
-async function runPull() {
-  const { values } = parseArgs({
-    args: process.argv.slice(3),
-    options: {
-      data: { type: "string", default: dataDirFromEnvOrDefault() },
-      flush: { type: "boolean", default: false },
-      "no-tick": { type: "boolean", default: false },
-    },
-    strict: true,
-  });
-
-  const dataDir = resolveUserPath(values.data as string);
-  const config = loadConfig(dataDir);
-  const flush = Boolean(values.flush);
-  const noTick = Boolean(values["no-tick"]);
-
-  try {
-    const result = await withDb(dataDir, async (db) => await pullSources(db, config.sources));
-    const provider = resolveProviderType(config.intelligence.provider);
-    if (result.events_inserted > 0 && provider === "heuristic") {
-      console.error(
-        "[factmem] intelligence.provider is heuristic — it does not extract " +
-          "facts from transcripts. capture_fact still works. Use the claude CLI " +
-          "(the default provider) and run factmem consolidate.",
-      );
-    }
-    const follow = pullFollowUp({
-      flush,
-      noTick,
-      eventsInserted: result.events_inserted,
-    });
-    if (follow === "flush") {
-      await flushPendingOrHeuristic(dataDir, { print: false });
-    } else if (follow === "tick") {
-      const delivered = await sendSchedulerSignal(dataDir, "tick");
-      if (!delivered) {
-        console.error(
-          "[factmem] No MCP server listening — run factmem consolidate " +
-            "to graduate these events.",
-        );
-      }
-    } else if (result.events_inserted > 0 && !noTick && !flush) {
-      console.error(
-        `[factmem] Pulled ${result.events_inserted} event(s) — skipping auto-consolidate ` +
-          `so a first-run backfill does not spawn claude -p on the lot. ` +
-          `Run factmem consolidate when ready.`,
-      );
-    }
-    console.log(JSON.stringify(result));
-  } catch (err: unknown) {
-    console.error(errorMessage(err));
-    process.exit(1);
-  }
-}
-
-/** I→K only. Compact wake-up; does not extract. */
-async function flushPendingOrHeuristic(
-  dataDir: string,
-  opts: { print?: boolean } = {},
-): Promise<void> {
-  const delivered = await sendSchedulerSignal(dataDir, "flush");
-  if (delivered) return;
-  console.error(
-    "[factmem] Server unreachable; running heuristic I→K in-process as fallback. " +
-      "Extract already ran on pull, or events stay events. " +
-      "Start the MCP server (cli provider) or run factmem consolidate with the claude CLI.",
-  );
-  await consolidateInProcess(
-    dataDir,
-    createHeuristicProvider(),
-    loadConfig(dataDir),
-    null,
-    "graduate",
-    { print: opts.print ?? true },
-  );
-}
-
-async function runSignal() {
-  const kindArg = process.argv[3] ?? "tick";
-  const { values } = parseArgs({
-    args: process.argv.slice(4),
-    options: {
-      data: { type: "string", default: dataDirFromEnvOrDefault() },
-    },
-    strict: true,
-  });
-
-  if (kindArg !== "tick" && kindArg !== "flush") {
-    console.error(`Invalid signal kind: ${kindArg}. Expected 'tick' or 'flush'.`);
-    process.exit(1);
-  }
-  const kind = kindArg as SignalKind;
-  const dataDir = resolveUserPath(values.data as string);
-
-  const delivered = await sendSchedulerSignal(dataDir, kind);
-  if (delivered) {
-    console.log(JSON.stringify({ delivered: true, kind }));
-    return;
-  }
-
-  // Fallback only for 'flush' — matches the PreCompact "don't lose data"
-  // contract. For 'tick' (routine log-event signals), a missed delivery
-  // is recovered by session_start on the next launch.
-  //
-  // The fallback deliberately uses the heuristic provider (not the configured
-  // one): the point of a PreCompact flush is that data survives the context
-  // collapse quickly. Spawning `claude -p` for cli-quality here could take
-  // ~35-50s during a time-critical compaction. Lower quality, but fast and
-  // dependency-free — heuristic-era facts can be reprocessed later.
-  if (kind === "flush") {
-    await flushPendingOrHeuristic(dataDir);
-    return;
-  }
-
-  // 'tick' delivery failed — silent exit. Don't spawn fallback work.
-  console.log(JSON.stringify({ delivered: false, kind }));
-}
+// ---------------------------------------------------------------------------
+// consolidate — the one verb that spends model calls
+// ---------------------------------------------------------------------------
 
 async function runConsolidate() {
   const { values } = parseArgs({
     args: process.argv.slice(3),
     options: {
       data: { type: "string", default: dataDirFromEnvOrDefault() },
+      copy: { type: "boolean", default: false, short: "c" },
+      extract: { type: "boolean", default: false, short: "e" },
+      integrate: { type: "boolean", default: false, short: "i" },
+      all: { type: "boolean", default: false, short: "a" },
+      limit: { type: "string", short: "l" },
+      json: { type: "boolean", default: false },
     },
     strict: true,
   });
   const dataDir = resolveUserPath(values.data as string);
-  await configuredConsolidate(dataDir);
+
+  // undefined → the default cap; null → no cap; a number → that many.
+  let extractLimit: number | null | undefined = undefined;
+  if (values.all) extractLimit = null;
+  if (values.limit !== undefined) {
+    const n = Number(values.limit);
+    if (!Number.isInteger(n) || n < 1) {
+      console.error("--limit must be a whole number of at least 1");
+      process.exit(1);
+    }
+    extractLimit = n;
+  }
+
+  await consolidateStore(dataDir, stepsFromFlags(values), {
+    extractLimit,
+    json: Boolean(values.json),
+  });
 }
 
-async function configuredConsolidate(
+interface ConsolidateStoreOpts {
+  /** undefined: default cap; null: no cap; number: that many oldest events. */
+  extractLimit?: number | null;
+  /** Print the result object instead of the human summary. */
+  json?: boolean;
+  /** Print nothing on success (the init offer prints its own lines). */
+  print?: boolean;
+}
+
+/**
+ * Consolidate a store in this process with its configured provider. This is
+ * the manual path: no MCP server is involved. A `sampling` selection has no
+ * server to sample from and degrades to heuristic; `cli` spawns `claude -p`
+ * directly. The FACTMEM_SUBPROCESS guard at the top of main() prevents
+ * recursion when this runs inside a provider subprocess.
+ */
+async function consolidateStore(
   dataDir: string,
-  opts: { print?: boolean } = {},
-): Promise<void> {
-  // Manual `factmem consolidate` honours the configured provider (default
-  // cli — real LLM quality). There's no MCP server here, so a `sampling`
-  // selection degrades to heuristic; `cli` spawns `claude -p` directly. The
-  // FACTMEM_SUBPROCESS guard at the top of main() prevents recursion when
-  // this runs inside a provider subprocess.
+  steps: ConsolidateSteps,
+  opts: ConsolidateStoreOpts = {},
+): Promise<ConsolidationResult | undefined> {
   const config = ensureBitemporalSince(dataDir, loadConfig(dataDir));
-  if (resolveProviderType(config.intelligence.provider) === "heuristic") {
+  if (!steps.extract && !steps.integrate) {
+    // Copy only: no model, no embeddings, no vocabulary. The heuristic
+    // provider is a placeholder consolidate() never calls on this path.
+    return consolidateInProcess(
+      dataDir,
+      createHeuristicProvider(),
+      config,
+      null,
+      steps,
+      opts,
+    );
+  }
+  if (
+    steps.extract &&
+    resolveProviderType(config.intelligence.provider) === "heuristic"
+  ) {
     console.error(
       "[factmem] intelligence.provider is heuristic — it does not extract " +
         "facts from transcripts. capture_fact still works.",
@@ -807,37 +796,32 @@ async function configuredConsolidate(
   const embedding = createEmbeddingProvider(config.embedding, {
     onUnavailable: (reason) => console.error(`[factmem] ${reason}`),
   });
-  await consolidateInProcess(dataDir, provider, config, embedding, "full", {
-    print: opts.print,
-  });
+  return consolidateInProcess(dataDir, provider, config, embedding, steps, opts);
 }
 
 /**
- * Open the DB at dataDir, run consolidate() with the given provider, print the
- * JSON result, then close. Used by both `factmem consolidate` (configured
- * provider) and the `signal flush` fallback (heuristic, for fast survival).
- *
- * Taking dataDir + provider as parameters (rather than re-parsing process.argv
- * or hardcoding a provider) lets callers invoke this from contexts where argv
- * contains positional args the parser doesn't expect (e.g. signal flush's own
- * `flush` positional) and choose the provider appropriate to the context.
+ * Open the DB at dataDir, run consolidate() with the given provider and steps,
+ * report, then close. The copy step reads `config.sources` through the same
+ * copySources the server's heartbeat uses — one copy path.
  */
 export async function consolidateInProcess(
   dataDir: string,
   provider: IntelligenceProvider,
   config: Partial<ServerConfig> = DEFAULT_CONFIG,
   embedding: EmbeddingProvider | null = null,
-  phase: ConsolidatePhase = "full",
-  opts: { print?: boolean } = {},
-): Promise<void> {
+  steps: ConsolidateSteps = ALL_STEPS,
+  opts: ConsolidateStoreOpts = {},
+): Promise<ConsolidationResult | undefined> {
   const storeConfig = loadShippedStoreConfig(dataDir);
   const db = await openStore(dataDir, storeConfig);
 
   try {
     await applySchema(db);
-    const result = await consolidate(db, provider, config, embedding, phase, {
+    const result = await consolidate(db, provider, config, embedding, steps, {
       trigger: "cli",
       project: envValue("PROJECT") ?? null,
+      copy: () => copySources(db, config.sources),
+      extractLimit: opts.extractLimit,
     });
     if (result.skipped && result.skipReason) {
       console.error(`[factmem] ${result.skipReason}`);
@@ -845,15 +829,29 @@ export async function consolidateInProcess(
     if (result.extractionDegraded) {
       if (result.prefixCommitted) {
         console.error(
-          `[factmem] Extraction stopped after a failed call. Facts from earlier examined events were kept and the watermark advanced to ${result.examinedThrough}. Remaining events are still eligible. Re-run factmem consolidate to continue.`,
+          `[factmem] Extraction stopped after a failed call. Facts from earlier examined events were kept and the watermark advanced to ${result.examinedThrough}. Remaining events are still eligible. Re-run ${CLI_NAME} consolidate to continue.`,
         );
       } else {
         console.error(
-          "[factmem] Extraction could not run — events were not examined and the watermark was held. A zero factsGraduated here is not a successful empty extract. Re-run factmem consolidate when the CLI provider can run.",
+          `[factmem] Extraction could not run — events were not examined and the watermark was held. A zero factsIntegrated here is not a successful empty extract. Re-run ${CLI_NAME} consolidate when the CLI provider can run.`,
         );
       }
     }
-    if (opts.print !== false) console.log(JSON.stringify(result));
+    if (
+      opts.print !== false &&
+      steps.extract &&
+      !result.extractionDegraded &&
+      result.eventsRemaining > 0
+    ) {
+      console.error(
+        `[factmem] ${result.eventsRemaining} event(s) still waiting to be extracted. ` +
+          `Run ${CLI_NAME} consolidate --all to take them all now, or --limit N for the oldest N.`,
+      );
+    }
+    if (opts.print !== false) {
+      console.log(opts.json ? JSON.stringify(result) : formatConsolidate(result));
+    }
+    return result;
   } catch (err: unknown) {
     console.error(errorMessage(err));
     process.exit(1);
@@ -862,7 +860,132 @@ export async function consolidateInProcess(
   }
 }
 
-async function runLogEvent() {
+// ---------------------------------------------------------------------------
+// notify — tell the running server a moment happened
+// ---------------------------------------------------------------------------
+
+/**
+ * The server decides what to run for a moment (the policy lives with the
+ * engine); this process only relays and exits, so a hook returns at once.
+ * No server listening is not an error: the next session start covers it.
+ */
+async function runNotify() {
+  const momentArg = process.argv[3];
+  const { values } = parseArgs({
+    args: process.argv.slice(4),
+    options: {
+      data: { type: "string", default: dataDirFromEnvOrDefault() },
+    },
+    strict: true,
+  });
+  if (!momentArg || !isNotifiableMoment(momentArg)) {
+    console.error(
+      `Usage: ${CLI_NAME} notify <moment> [--data <dir>]\n` +
+        `Moments: ${NOTIFIABLE_MOMENTS.join(", ")}`,
+    );
+    process.exit(1);
+  }
+  const dataDir = resolveUserPath(values.data as string);
+  await notifyMoment(dataDir, momentArg);
+}
+
+async function notifyMoment(
+  dataDir: string,
+  moment: NotifiableMoment,
+): Promise<void> {
+  const delivered = await notifyServer(dataDir, moment);
+  if (!delivered) {
+    console.error(
+      `[factmem] No MCP server is listening for this store, so there is nothing ` +
+        `to notify. Run ${CLI_NAME} consolidate to process pending events now.`,
+    );
+  }
+  console.log(JSON.stringify({ delivered, moment }));
+}
+
+// ---------------------------------------------------------------------------
+// Hidden compatibility aliases for the 0.25 verbs. Not in usage. Remove no
+// earlier than 0.27.
+// ---------------------------------------------------------------------------
+
+function deprecated(oldForm: string, newForm: string): void {
+  console.error(
+    `[factmem] "${CLI_NAME} ${oldForm}" is deprecated and will be removed; ` +
+      `use "${CLI_NAME} ${newForm}".`,
+  );
+}
+
+/**
+ * `pull` → `consolidate --copy`; `pull --flush` → copy, then `notify compaction`.
+ * Keeps the 0.25 stdout shape ({sources, files, events_inserted, events_skipped})
+ * so a hook that parses it keeps working until the alias goes.
+ */
+async function runPullCompat() {
+  const { values } = parseArgs({
+    args: process.argv.slice(3),
+    options: {
+      data: { type: "string", default: dataDirFromEnvOrDefault() },
+      flush: { type: "boolean", default: false },
+      "no-tick": { type: "boolean", default: false },
+    },
+    strict: true,
+  });
+  const dataDir = resolveUserPath(values.data as string);
+  const form = values.flush ? "pull --flush" : values["no-tick"] ? "pull --no-tick" : "pull";
+  deprecated(form, values.flush ? "notify compaction" : "consolidate --copy");
+  const config = loadConfig(dataDir);
+  let copied;
+  try {
+    copied = await withDb(dataDir, (db) => copySources(db, config.sources));
+  } catch (err: unknown) {
+    console.error(errorMessage(err));
+    process.exit(1);
+  }
+  if (values.flush) {
+    const delivered = await notifyServer(dataDir, "compaction");
+    if (!delivered) {
+      console.error(
+        `[factmem] No MCP server listening — run ${CLI_NAME} consolidate to process pending events.`,
+      );
+    }
+  } else if (!values["no-tick"]) {
+    const delivered = await notifyServer(dataDir, "threshold");
+    if (!delivered) {
+      console.error(
+        `[factmem] No MCP server listening — run ${CLI_NAME} consolidate to extract these events.`,
+      );
+    }
+  }
+  console.log(JSON.stringify(copied));
+}
+
+/** `signal flush` → `notify compaction`; `signal tick` → `notify threshold`. */
+async function runSignalCompat() {
+  const kindArg = process.argv[3] ?? "tick";
+  const { values } = parseArgs({
+    args: process.argv.slice(4),
+    options: {
+      data: { type: "string", default: dataDirFromEnvOrDefault() },
+    },
+    strict: true,
+  });
+  const dataDir = resolveUserPath(values.data as string);
+  if (kindArg === "flush") {
+    deprecated("signal flush", "notify compaction");
+    await notifyMoment(dataDir, "compaction");
+    return;
+  }
+  if (kindArg === "tick") {
+    deprecated("signal tick", "notify threshold");
+    await notifyMoment(dataDir, "threshold");
+    return;
+  }
+  console.error(`Invalid signal kind: ${kindArg}. Expected 'tick' or 'flush'.`);
+  process.exit(1);
+}
+
+
+async function runRecord() {
   const { values } = parseArgs({
     args: process.argv.slice(3),
     options: {
@@ -919,7 +1042,7 @@ async function runLogEvent() {
   }
 
   try {
-    const event = await logEvent({
+    const event = await recordEvent({
       role,
       eventType,
       content,

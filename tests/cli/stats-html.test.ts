@@ -113,7 +113,7 @@ describe("renderSpendBoard", () => {
         examined: 40,
         unread: 120,
         staged: 34,
-        graduated: 32,
+        integrated: 32,
         calls: 73,
         input_tokens: 924_000,
         output_tokens: 15_900,

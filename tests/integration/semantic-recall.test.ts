@@ -138,7 +138,7 @@ async function seed(client: Client) {
   expect(done.skipped).toBe(false);
   // The premise of everything below. Without it a later empty search would look
   // like a recall failure rather than an empty store.
-  expect(done.facts_graduated).toBe(FACTS.length);
+  expect(done.facts_integrated).toBe(FACTS.length);
 }
 
 const contents = (response: any): string[] =>

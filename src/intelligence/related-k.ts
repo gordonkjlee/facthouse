@@ -1,5 +1,5 @@
 /**
- * Related graduated facts for D→I extract.
+ * Related integrated facts for D→I extract.
  *
  * Dumping every active fact into extract is "everything in context". This
  * retrieves a small related set via the same hybrid search the read path

@@ -83,7 +83,7 @@ export function createSessionManager(
         content_ref: opts.content_ref,
         metadata: opts.metadata,
         speaker: opts.speaker ?? null,
-        // Live capture: the call is the turn. Same as hook log-event.
+        // Live capture: the call is the turn. Same as the hook `record` verb.
         occurred_at: new Date().toISOString(),
       });
 

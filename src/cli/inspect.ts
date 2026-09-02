@@ -75,7 +75,7 @@ function formatLayers(rows: InspectLayerRows, which: InspectLayer): string {
     } else if (layer === "i") {
       chunks.push("", "Information (pending)", "");
       if (!rows.pending_i) {
-        chunks.push("  Nothing is waiting to graduate.");
+        chunks.push("  Nothing is waiting to integrate.");
       } else {
         for (const r of rows.i) {
           chunks.push(

@@ -1,8 +1,8 @@
 /**
- * After a TTY copy init: offer pull, then consolidate if anything is unextracted.
+ * After a TTY copy init: offer copy, then extract + integrate if anything is unextracted.
  *
  * Not --yes, not record, not --web. Does not start the MCP server.
- * Pull copies D only (no tick). Consolidate is the slow CLI extract+graduate.
+ * Copy fills D only (no model, no server). Consolidate is the slow CLI extract + integrate.
  */
 
 import { storeHasNamedSources } from "../tools/capture-fact-description.js";
@@ -20,9 +20,12 @@ export function shouldOfferInitBackfill(opts: {
 }
 
 export interface InitBackfillDeps {
-  pull: (dataDir: string) => Promise<{ events_inserted: number }>;
+  copy: (dataDir: string) => Promise<{ events_inserted: number }>;
   unextracted: (dataDir: string) => Promise<number>;
-  consolidate: (dataDir: string) => Promise<void>;
+  /** Extract (capped) and integrate. Returns the counts so the offer can report them. */
+  consolidate: (
+    dataDir: string,
+  ) => Promise<{ factsIntegrated: number; eventsRemaining: number } | undefined>;
   providerIsHeuristic: boolean;
 }
 
@@ -39,7 +42,7 @@ export async function offerInitBackfill(
 
   let inserted: number;
   try {
-    inserted = (await deps.pull(dataDir)).events_inserted;
+    inserted = (await deps.copy(dataDir)).events_inserted;
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
     io.write(message);
@@ -62,7 +65,10 @@ export async function offerInitBackfill(
   if (extract !== "yes") return;
 
   try {
-    await deps.consolidate(dataDir);
+    const result = await deps.consolidate(dataDir);
+    if (result) {
+      io.write(INIT_PROMPTS.integrated(result.factsIntegrated, result.eventsRemaining));
+    }
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
     io.write(message);

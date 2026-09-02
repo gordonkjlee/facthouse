@@ -4,14 +4,14 @@
  */
 
 export const CAPTURE_INFERENCE_DESCRIPTION =
-  "Submit a hypothesis that nobody said, citing existing graduated fact ids as evidence. " +
+  "Submit a hypothesis that nobody said, citing existing integrated fact ids as evidence. " +
   "Call this when you have inferred something from knowledge already in the store — not when the user just stated it (that is capture_fact), " +
   "and not during consolidate, which never invents. The hypothesis stays pending until validate_inference; it is not knowledge yet. " +
   "If the hypothesis is that two named things already in this store are one thing, pass those two entity ids; similar facts are evidence, not identity.";
 
 export const VALIDATE_INFERENCE_DESCRIPTION =
   "Confirm or reject a pending hypothesis. Call this when the user has judged the inference, rather than confirming on your own. " +
-  "Confirming graduates it as a fact labelled source_type inference with the supporting fact ids as provenance. " +
+  "Confirming integrates it as a fact labelled source_type inference with the supporting fact ids as provenance. " +
   "If the hypothesis named two entity ids, confirming also links them as the same thing for lookup; rejecting does not. " +
   "Rejecting records that it is not knowledge. Only a pending inference can be validated.";
 

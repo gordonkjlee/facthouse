@@ -61,7 +61,7 @@ async function consolidation(
 ) {
   await db.prepare(
     `INSERT INTO consolidations
-       (id, session_id, facts_in, facts_graduated, facts_rejected,
+       (id, session_id, facts_in, facts_integrated, facts_rejected,
         entities_created, entities_linked, supersessions,
         summary, open_threads, last_event_sequence, created_at)
      VALUES (?, NULL, 1, 1, 0, 0, 0, 0, ?, ?, 0, ?)`,
@@ -101,7 +101,8 @@ describe("consolidation read helpers", () => {
 describe("memory://profile", () => {
   it("says so plainly when nothing is known", async () => {
     expect(await buildProfile(db)).toContain("Nothing captured yet");
-    expect(await buildProfile(db)).toMatch(/factmem pull/);
+    expect(await buildProfile(db)).toMatch(/factmem consolidate/);
+    expect(await buildProfile(db)).not.toMatch(/factmem pull/);
   });
 
   it("tells you to consolidate when events are waiting", async () => {
@@ -114,11 +115,11 @@ describe("memory://profile", () => {
     expect(md).toContain("Nothing captured yet");
     expect(md).toMatch(/`consolidate`/);
     expect(md).toMatch(/factmem consolidate/);
-    expect(md).toMatch(/session start will flush/);
+    expect(md).toMatch(/session start will take/);
     expect(md).not.toMatch(/factmem pull/);
   });
 
-  it("does not promise a session-start flush after a large backfill", async () => {
+  it("names the cap and --all after a large backfill", async () => {
     for (let i = 0; i < 51; i++) {
       await insertEvent(db, {
         event_type: "message",
@@ -127,8 +128,8 @@ describe("memory://profile", () => {
       });
     }
     const md = await buildProfile(db);
-    expect(md).toMatch(/never auto-flushed/);
-    expect(md).not.toMatch(/session start will flush/);
+    expect(md).toMatch(/consolidate --all/);
+    expect(md).not.toMatch(/session start will take/);
   });
 
   it("names heuristic no-op extraction when a run produced no facts", async () => {
@@ -140,7 +141,7 @@ describe("memory://profile", () => {
     await advanceExtractMarksToCurrentMax(db);
     await db.prepare(
       `INSERT INTO consolidations
-         (id, session_id, facts_in, facts_graduated, facts_rejected,
+         (id, session_id, facts_in, facts_integrated, facts_rejected,
           entities_created, entities_linked, supersessions,
           summary, open_threads, last_event_sequence, created_at)
        VALUES ('c-empty', NULL, 0, 0, 0, 0, 0, 0, NULL, NULL, 1, ?)`,
@@ -243,7 +244,7 @@ describe("memory://briefing", () => {
 });
 
 describe("consolidation notifies subscribers", () => {
-  // The resources are only stale when graduated knowledge changes, and
+  // The resources are only stale when integrated knowledge changes, and
   // consolidation is the only thing that changes it. Both entry points (the
   // scheduler and the `consolidate` tool) funnel through runConsolidate, so
   // the hook lives there.

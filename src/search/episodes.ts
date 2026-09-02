@@ -1,5 +1,5 @@
 /**
- * Keyword search over session_events when graduated knowledge is empty.
+ * Keyword search over session_events when integrated knowledge is empty.
  *
  * Not a second retrieval product: hybridSearch only calls this when `results`
  * is empty. The slice is raw D — not extracted, not reconciled — so it stays
@@ -31,7 +31,7 @@ export const EPISODE_CONTENT_CHARS = 500;
  * One string, used by hybridSearch and asserted in tests.
  */
 export const EPISODE_REFINEMENT =
-  "No graduated facts matched. `episodes` is a short raw-log window around a keyword hit — not yet extracted.";
+  "No integrated facts matched. `episodes` is a short raw-log window around a keyword hit — not yet extracted.";
 
 /** Same partition as prune: client chat, else MCP connection, else the row. */
 const CONVERSATION_KEY = `COALESCE(NULLIF(client_session_id, ''), NULLIF(mcp_session_id, ''), id)`;

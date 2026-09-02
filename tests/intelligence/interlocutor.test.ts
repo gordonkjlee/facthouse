@@ -74,13 +74,13 @@ describe("owner speech (E)", () => {
       )
       .get(self!.id, GRAIN)) as { relationship: string };
     expect(link.relationship).toBe(UTTERED_BY);
-    const graduated = (await db
+    const integrated = (await db
       .prepare(`SELECT speaker, speaker_role FROM facts WHERE content = ?`)
       .get(GRAIN)) as { speaker: string | null; speaker_role: string | null };
-    expect(graduated.speaker).toBeNull();
-    expect(graduated.speaker_role).toBe("user");
-    expect(graduated.speaker).not.toBe("self");
-    expect(graduated.speaker).not.toBe("the user");
+    expect(integrated.speaker).toBeNull();
+    expect(integrated.speaker_role).toBe("user");
+    expect(integrated.speaker).not.toBe("self");
+    expect(integrated.speaker).not.toBe("the user");
   });
 
   it("does not treat a named user speaker as the owner", async () => {

@@ -399,16 +399,16 @@ export function createSamplingProvider(
       );
     },
 
-    async summarise(sessionFacts, graduatedFacts, priorSummary, closedTopics) {
-      if (graduatedFacts.length === 0 && !priorSummary) {
-        return { summary: "No facts graduated.", openThreads: [] };
+    async summarise(sessionFacts, integratedFacts, priorSummary, closedTopics) {
+      if (integratedFacts.length === 0 && !priorSummary) {
+        return { summary: "No facts integrated.", openThreads: [] };
       }
       return withFallback<SessionSummary>(
         async () => {
           const payload = {
             prior_summary: priorSummary ?? null,
             closed_topics: closedTopics ?? [],
-            newly_graduated: graduatedFacts.map((f) => ({
+            newly_integrated: integratedFacts.map((f) => ({
               content: f.content,
               domain: f.domain,
             })),
@@ -417,12 +417,12 @@ export function createSamplingProvider(
             "You maintain a rolling summary of an ongoing conversation. " +
               "Given prior_summary (the existing rolling summary, may be null), " +
               "closed_topics (activity gists closed this run, may be empty), and " +
-              "newly_graduated (facts just consolidated this run), produce an UPDATED " +
+              "newly_integrated (facts just consolidated this run), produce an UPDATED " +
               "rolling summary that integrates the new facts into the prior synopsis " +
               "and folds closed topics without destroying them as a topic log — " +
               "the segment list is stored separately. " +
               "Keep it to one cohesive paragraph; don't accumulate redundantly. " +
-              "If prior_summary is null, write a fresh summary of newly_graduated alone. " +
+              "If prior_summary is null, write a fresh summary of newly_integrated alone. " +
               "Then list up to 5 open threads — questions or follow-ups the user might want revisited. " +
               "Respond with JSON only: {summary: string, openThreads: string[]}. No prose.",
             JSON.stringify(payload),
@@ -434,7 +434,7 @@ export function createSamplingProvider(
             openThreads: Array.isArray(parsed.openThreads) ? parsed.openThreads : [],
           };
         },
-        () => fallback.summarise(sessionFacts, graduatedFacts, priorSummary),
+        () => fallback.summarise(sessionFacts, integratedFacts, priorSummary),
       );
     },
 

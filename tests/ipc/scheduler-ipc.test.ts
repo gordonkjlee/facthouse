@@ -4,14 +4,15 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import {
   schedulerIpcPath,
-  startSchedulerListener,
-  sendSchedulerSignal,
-  type SchedulerListener,
-  type SignalKind,
+  startNotifyListener,
+  notifyServer,
+  isServerListening,
+  type NotifyListener,
 } from "../../src/ipc/scheduler-ipc.js";
+import type { NotifiableMoment } from "../../src/intelligence/steps.js";
 
 let dir: string;
-const listeners: SchedulerListener[] = [];
+const listeners: NotifyListener[] = [];
 
 beforeEach(() => {
   dir = mkdtempSync(path.join(tmpdir(), "om-ipc-"));
@@ -27,7 +28,7 @@ afterEach(() => {
   }
 });
 
-describe("scheduler IPC", () => {
+describe("notify IPC", () => {
   it("derives a stable path per data dir", () => {
     const a = schedulerIpcPath(dir);
     const b = schedulerIpcPath(dir);
@@ -36,79 +37,111 @@ describe("scheduler IPC", () => {
     expect(other).not.toBe(a);
   });
 
-  it("delivers tick signals from client to server", async () => {
-    const received: SignalKind[] = [];
-    const listener = await startSchedulerListener(dir, (kind) => {
-      received.push(kind);
+  it("delivers a threshold moment from client to server", async () => {
+    const received: NotifiableMoment[] = [];
+    const listener = await startNotifyListener(dir, (moment) => {
+      received.push(moment);
     });
     listeners.push(listener);
     expect(listener.bound).toBe(true);
 
-    const ok = await sendSchedulerSignal(dir, "tick");
+    const ok = await notifyServer(dir, "threshold");
     expect(ok).toBe(true);
 
     // Give the async data handler a moment to run.
     await new Promise((r) => setTimeout(r, 50));
-    expect(received).toEqual(["tick"]);
+    expect(received).toEqual(["threshold"]);
   });
 
-  it("delivers flush signals distinctly from tick signals", async () => {
-    const received: SignalKind[] = [];
-    const listener = await startSchedulerListener(dir, (kind) => {
-      received.push(kind);
+  it("delivers compaction distinctly from threshold", async () => {
+    const received: NotifiableMoment[] = [];
+    const listener = await startNotifyListener(dir, (moment) => {
+      received.push(moment);
     });
     listeners.push(listener);
 
-    await sendSchedulerSignal(dir, "flush");
-    await sendSchedulerSignal(dir, "tick");
-    await sendSchedulerSignal(dir, "flush");
+    await notifyServer(dir, "compaction");
+    await notifyServer(dir, "threshold");
+    await notifyServer(dir, "compaction");
     await new Promise((r) => setTimeout(r, 50));
 
-    expect(received).toEqual(["flush", "tick", "flush"]);
+    expect(received).toEqual(["compaction", "threshold", "compaction"]);
   });
 
-  it("handles rapid successive signals without dropping any", async () => {
-    const received: SignalKind[] = [];
-    const listener = await startSchedulerListener(dir, (kind) => {
-      received.push(kind);
+  it("handles rapid successive moments without dropping any", async () => {
+    const received: NotifiableMoment[] = [];
+    const listener = await startNotifyListener(dir, (moment) => {
+      received.push(moment);
     });
     listeners.push(listener);
 
     const N = 20;
     await Promise.all(
-      Array.from({ length: N }, () => sendSchedulerSignal(dir, "tick")),
+      Array.from({ length: N }, () => notifyServer(dir, "threshold")),
     );
     await new Promise((r) => setTimeout(r, 100));
 
     expect(received).toHaveLength(N);
-    expect(received.every((k) => k === "tick")).toBe(true);
+    expect(received.every((m) => m === "threshold")).toBe(true);
   });
 
-  it("sendSchedulerSignal returns false when no server is listening", async () => {
-    const ok = await sendSchedulerSignal(dir, "tick", 200);
+  it("notifyServer returns false when no server is listening", async () => {
+    const ok = await notifyServer(dir, "threshold", 200);
     expect(ok).toBe(false);
   });
 
+  it("isServerListening probes without delivering a moment", async () => {
+    expect(await isServerListening(dir)).toBe(false);
+    const received: NotifiableMoment[] = [];
+    const listener = await startNotifyListener(dir, (moment) => {
+      received.push(moment);
+    });
+    listeners.push(listener);
+    expect(await isServerListening(dir)).toBe(true);
+    await new Promise((r) => setTimeout(r, 50));
+    expect(received).toEqual([]);
+  });
+
+  it("accepts the 0.25 bytes 't' and 'f' as threshold and compaction", async () => {
+    const { createConnection } = await import("node:net");
+    const received: NotifiableMoment[] = [];
+    const listener = await startNotifyListener(dir, (moment) => {
+      received.push(moment);
+    });
+    listeners.push(listener);
+    const sendRaw = (byte: string) =>
+      new Promise<void>((resolve) => {
+        const c = createConnection(schedulerIpcPath(dir));
+        c.once("connect", () => c.write(byte, () => c.end()));
+        c.once("close", () => resolve());
+        c.once("error", () => resolve());
+      });
+    await sendRaw("t");
+    await sendRaw("f");
+    await new Promise((r) => setTimeout(r, 50));
+    expect(received).toEqual(["threshold", "compaction"]);
+  });
+
   it("detects a concurrent listener on the same data dir", async () => {
-    const first = await startSchedulerListener(dir, () => {});
+    const first = await startNotifyListener(dir, () => {});
     listeners.push(first);
     expect(first.bound).toBe(true);
 
-    const second = await startSchedulerListener(dir, () => {});
+    const second = await startNotifyListener(dir, () => {});
     listeners.push(second);
     expect(second.bound).toBe(false);
   });
 
-  it("survives an onSignal callback that throws", async () => {
+  it("survives an onMoment callback that throws", async () => {
     let callCount = 0;
-    const listener = await startSchedulerListener(dir, () => {
+    const listener = await startNotifyListener(dir, () => {
       callCount++;
       throw new Error("boom");
     });
     listeners.push(listener);
 
-    await sendSchedulerSignal(dir, "tick");
-    await sendSchedulerSignal(dir, "tick");
+    await notifyServer(dir, "threshold");
+    await notifyServer(dir, "threshold");
     await new Promise((r) => setTimeout(r, 50));
 
     expect(callCount).toBe(2);

@@ -43,7 +43,7 @@ describe("postgres dialect (PGlite)", () => {
     expect(await getSchemaVersion(db)).toBe(SCHEMA_VERSION);
   });
 
-  it("round-trips a graduated fact and finds it by keyword", async () => {
+  it("round-trips a integrated fact and finds it by keyword", async () => {
     const fact = await insertFact(db, {
       content: GRAIN,
       domain: "pipeline",
@@ -194,7 +194,7 @@ describe("postgres dialect (PGlite)", () => {
     expect(sources.map((s) => s.extraction_type)).toContain("assent");
   });
 
-  it("reports database size and refuses D ingest at a 1-byte budget", async () => {
+  it("reports database size and refuses D copy at a 1-byte budget", async () => {
     const { getStats } = await import("../../src/db/stats.js");
     const { bindDiskBudget, DiskBudgetError, storeBytes } = await import(
       "../../src/db/disk-budget.js"

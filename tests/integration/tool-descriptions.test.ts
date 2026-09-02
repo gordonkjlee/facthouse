@@ -229,7 +229,7 @@ describe.skipIf(!runnable)(
     let pullClient: Client;
     let pullTools: Array<{ name: string; description?: string }> = [];
 
-    const pullSources = [
+    const copySources = [
       {
         kind: "claude-code",
         home: "C:\\Users\\alex\\.claude",
@@ -242,7 +242,7 @@ describe.skipIf(!runnable)(
       spawnSync(process.execPath, [CLI, "init", pullRoot], { encoding: "utf-8" });
       const configPath = path.join(pullRoot, "config.json");
       const config = JSON.parse(readFileSync(configPath, "utf-8"));
-      config.sources = pullSources;
+      config.sources = copySources;
       writeFileSync(configPath, JSON.stringify(config, null, 2));
 
       const env: Record<string, string> = {};
@@ -271,7 +271,7 @@ describe.skipIf(!runnable)(
 
     it("ships the correction text from the same definition", () => {
       const captureFact = pullTools.find((t) => t.name === "capture_fact")!;
-      expect(captureFact.description).toBe(captureFactDescription(pullSources));
+      expect(captureFact.description).toBe(captureFactDescription(copySources));
       expect(captureFact.description).not.toMatch(/proactively/i);
       expect((captureFact.description ?? "").length).toBeGreaterThanOrEqual(120);
       expect(TIMING.test(captureFact.description ?? "")).toBe(true);
@@ -362,7 +362,7 @@ function backtickedIdentifiers(md: string): string[] {
 /**
  * Every tool is named `verb_noun`, so an underscore is what distinguishes a
  * tool reference from the many other lowercase words the README backticks —
- * domain names, provider names, CLI subcommands, signal kinds.
+ * domain names, provider names, CLI subcommands, moments.
  *
  * Matching on shape rather than keeping a list of non-tools is what stops this
  * check rotting into an inventory of README vocabulary that everyone appeases

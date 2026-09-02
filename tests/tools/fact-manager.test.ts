@@ -125,13 +125,13 @@ describe("fact manager", () => {
     // caller's domain_hint. Two things were wrong with that. Capture cannot know
     // a fact's domain — the classifier has not run, and a hint is a suggestion
     // the classifier may overrule. And writing a value here made the column
-    // non-null, which short-circuited the resolution chain at graduation
+    // non-null, which short-circuited the resolution chain at integration
     // (`importance ?? importance_signal ?? domain default ?? baseline`), so a
     // provider's LLM judgement and the domain's real default both became
     // unreachable and every fact scored 0.5.
     //
     // A domain's importance now travels with the domain in the configured
-    // vocabulary and is applied at graduation. See
+    // vocabulary and is applied at integration. See
     // tests/intelligence/importance.test.ts.
     const sessionManager = sessionMod.createSessionManager(db);
     await sessionManager.startSession("test", null);
@@ -163,7 +163,7 @@ describe("fact manager", () => {
   it("leaves importance unscored at capture when nothing knows it yet", async () => {
     // This previously asserted 0.5 here, pinning *where* the default was
     // applied rather than *that* it was. Stamping it at capture made the column
-    // non-null forever, and graduation resolves
+    // non-null forever, and integration resolves
     // `importance ?? importance_signal ?? domain default ?? baseline` — a
     // non-null first link short-circuits the rest, so the provider's LLM
     // judgement and the domain's default were both unreachable and every fact
@@ -171,7 +171,7 @@ describe("fact manager", () => {
     //
     // Capture cannot know a fact's importance: the domain has not been
     // classified yet. null means "not scored", which is true. The baseline is
-    // still applied — at graduation, where the domain is known. See
+    // still applied — at integration, where the domain is known. See
     // tests/intelligence/importance.test.ts.
     const { factManager } = await setup();
 

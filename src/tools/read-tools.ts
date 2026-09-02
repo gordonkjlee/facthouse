@@ -1,5 +1,5 @@
 /**
- * Read tools — search and retrieve graduated knowledge.
+ * Read tools — search and retrieve integrated knowledge.
  */
 
 import type { Db } from "../db/connection.js";
@@ -32,7 +32,7 @@ export function registerReadTools(
    */
   temporal?: TemporalConfig,
   interlocutor?: InterlocutorConfig,
-  /** Tail JSONL on a pull store. Must not throw. */
+  /** Copy new lines on a copy store. Must not throw. */
   beforeRead?: () => Promise<void>,
 ): void {
   const bitemporal = temporal?.mode === "bitemporal";
@@ -55,9 +55,9 @@ export function registerReadTools(
     `existing knowledge, so it may duplicate or contradict a fact in results. ` +
     `Trust results first; use pending to avoid forgetting something you were ` +
     `told minutes ago. \`episodes\` is filled only when results are empty: a ` +
-    `short raw-log window around a keyword hit in the pulled transcript, not ` +
+    `short raw-log window around a keyword hit in the copied transcript, not ` +
     `yet extracted. It is not knowledge of the same standing — do not report ` +
-    `it as a graduated fact.
+    `it as an integrated fact.
 
 ` +
     `When semantic search is enabled, \`results\` also matches on meaning, so a ` +
@@ -311,7 +311,7 @@ export function registerReadTools(
       `wording but not by meaning — worth mentioning if the user asks why ` +
       `something was not recalled.\n\n` +
       `\`extract.unextracted_events\` is how many transcript lines extract has ` +
-      `not examined. \`pending_facts\` is I not yet graduated. ` +
+      `not examined. \`pending_facts\` is I not yet integrated. ` +
       `A large unextracted count with a healthy fact count means capture is ` +
       `writing D that extract has not examined.\n\n` +
       `\`intelligence\` is billed consolidation spend (calls, tokens, elapsed), ` +

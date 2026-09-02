@@ -189,7 +189,7 @@ describe("pending (unconsolidated) facts", () => {
   }
 
   it("finds a fact the assistant was just told, before consolidation runs", async () => {
-    // The gap this closes: capture_fact writes session_facts, and only graduated
+    // The gap this closes: capture_fact writes session_facts, and only integrated
     // facts reach the FTS index searched above. Until consolidation ran — by
     // default after ten events or at session end — "I just told you that"
     // silently returned nothing.
@@ -197,12 +197,12 @@ describe("pending (unconsolidated) facts", () => {
 
     const result = await searchMod.hybridSearch(db, "coffee");
 
-    expect(result.results).toHaveLength(0); // nothing graduated yet
+    expect(result.results).toHaveLength(0); // nothing integrated yet
     expect(result.pending).toHaveLength(1);
     expect(result.pending[0].content).toContain("dark roast");
   });
 
-  it("keeps pending apart from graduated results rather than merging them", async () => {
+  it("keeps pending apart from integrated results rather than merging them", async () => {
     // A pending fact has been through none of the pipeline: not deduplicated,
     // not reconciled, possibly contradicting what is already known. It must be
     // findable without being presented as knowledge of equal standing.
