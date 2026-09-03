@@ -153,7 +153,7 @@ describe("runSettings", () => {
     const stderr = { chunks: [] as string[] };
     const stdout = { chunks: [] as string[] };
     const code = await runSettings({
-      dataDir: "/tmp/factmem-no-such-store",
+      dataDir: "/tmp/facthouse-no-such-store",
       json: false,
 
       stdinIsTTY: true,
@@ -164,7 +164,7 @@ describe("runSettings", () => {
       },
     });
     expect(code).toBe(1);
-    expect(stderr.chunks.join("")).toContain("Run factmem init first");
+    expect(stderr.chunks.join("")).toContain("Run facthouse init first");
     expect(stdout.chunks.join("")).not.toMatch(/Wrote/);
   });
 

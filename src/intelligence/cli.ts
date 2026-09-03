@@ -20,7 +20,7 @@
  * Recursion prevention (three layers):
  *   1. --setting-sources user     → skip project-level hook settings
  *   2. cwd outside project        → don't auto-discover project settings
- *   3. FACTMEM_SUBPROCESS=1 env → our own hook CLI early-exits if set
+ *   3. FACTHOUSE_SUBPROCESS=1 env → our own hook CLI early-exits if set
  *
  * Probes verified the first two layers independently prevent recursion
  * (baseline logged 2 events, each guard alone logged 0). The env var is
@@ -136,7 +136,7 @@ function formatStageFailure(
   extra?: { retrying?: boolean; timeoutMs?: number },
 ): string {
   const bits: string[] = [
-    "[factmem cli-provider]",
+    "[facthouse cli-provider]",
     phase === "retry"
       ? `${stageName} retry failed (${result.error})`
       : `${stageName} failed (${result.error})`,
@@ -341,7 +341,7 @@ function findWrapperViaNpmRoot(): string | null {
   try {
     // One command string rather than (command, args) — with `shell: true` an
     // args array triggers Node's DEP0190 deprecation warning, which lands in
-    // the user's terminal during `factmem init`. The shell is needed on
+    // the user's terminal during `facthouse init`. The shell is needed on
     // Windows, where `npm` is a `.cmd` shim that cannot be spawned directly.
     const r = spawnSync("npm root -g", {
       encoding: "utf-8",
@@ -652,7 +652,7 @@ export function createCliProvider(
   };
 
   const log = (...args: unknown[]) => {
-    if (opts.debug) console.error("[factmem cli-provider]", ...args);
+    if (opts.debug) console.error("[facthouse cli-provider]", ...args);
   };
 
   const usageAcc = new UsageAccumulator({

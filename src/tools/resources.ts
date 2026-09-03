@@ -95,10 +95,10 @@ async function emptyStoreNextStep(db: Db): Promise<string> {
     const capNote =
       pending <= EXTRACT_CAP_EVENTS
         ? " A later MCP session start will take this leftover."
-        : ` More than ${EXTRACT_CAP_EVENTS} events wait; each run extracts that many oldest first, or run \`factmem consolidate --all\`.`;
+        : ` More than ${EXTRACT_CAP_EVENTS} events wait; each run extracts that many oldest first, or run \`facthouse consolidate --all\`.`;
     return (
       "Nothing captured yet. Conversation events are waiting — call the " +
-      "`consolidate` tool, or run `factmem consolidate` from the CLI." +
+      "`consolidate` tool, or run `facthouse consolidate` from the CLI." +
       capNote
     );
   }
@@ -106,12 +106,12 @@ async function emptyStoreNextStep(db: Db): Promise<string> {
     return (
       "Nothing captured yet. Events were processed but produced no facts — " +
       "heuristic extraction does not read transcripts. Use the claude CLI, then " +
-      "call `consolidate` (or `factmem consolidate`)."
+      "call `consolidate` (or `facthouse consolidate`)."
     );
   }
   return (
     "Nothing captured yet. If this store has a named source, run " +
-    "`factmem consolidate` from the CLI, or call `consolidate`."
+    "`facthouse consolidate` from the CLI, or call `consolidate`."
   );
 }
 
@@ -130,7 +130,7 @@ export async function buildProfile(db: Db): Promise<string> {
  * read at the start of a session.
  */
 export async function buildBriefing(db: Db): Promise<string> {
-  const parts: string[] = ["# FactMem Briefing"];
+  const parts: string[] = ["# Facthouse Briefing"];
 
   const key = await keyFacts(db, KEY_FACTS_LIMIT);
   parts.push(
@@ -178,7 +178,7 @@ export async function buildBriefing(db: Db): Promise<string> {
   const reclaim = (await getStats(db)).events.reclaimable;
   if (reclaim.events > 0) {
     parts.push(
-      `\n${reclaim.events} raw events (${formatDiskBudget(reclaim.bytes)} of content) can be reclaimed with \`factmem prune\`.`,
+      `\n${reclaim.events} raw events (${formatDiskBudget(reclaim.bytes)} of content) can be reclaimed with \`facthouse prune\`.`,
     );
   }
 

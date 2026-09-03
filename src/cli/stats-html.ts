@@ -1,5 +1,5 @@
 /**
- * Spend page for `factmem inspect`. Catch-up vs cost.
+ * Spend page for `facthouse inspect`. Catch-up vs cost.
  * Cost defaults to tokens (what providers bill and quota) when reported;
  * uses/time are alternatives. Grain then period on the chart.
  * More detail is Cost only: metric/filter rows plus the per-run table.
@@ -237,7 +237,7 @@ export function formatStatsHtml(stats: KnowledgeStats, generatedAt = new Date())
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>FactMem spend</title>
+<title>Facthouse spend</title>
 <link rel="icon" href="${ledgerFaviconHref()}"/>
 <style>
 ${ledgerSpendCss()}
@@ -257,7 +257,7 @@ ${ledgerSpendCss()}
 <div class="spend-brand">
   <span>${LEDGER_MARK_SVG}</span>
   <div>
-    <h1>FactMem</h1>
+    <h1>Facthouse</h1>
     <p>Spend</p>
   </div>
 </div>

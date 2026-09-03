@@ -203,10 +203,10 @@ describe("initDataDir", () => {
 
 describe("mcpConfigSnippet", () => {
   it("emits valid JSON with no env entry for the default location", () => {
-    const parsed = JSON.parse(mcpConfigSnippet("@factmem/mcp@1.2.3"));
-    const entry = parsed.mcpServers.factmem;
+    const parsed = JSON.parse(mcpConfigSnippet("@facthouse/mcp@1.2.3"));
+    const entry = parsed.mcpServers.facthouse;
     expect(entry.command).toBe("npx");
-    expect(entry.args).toEqual(["-y", "@factmem/mcp@1.2.3"]);
+    expect(entry.args).toEqual(["-y", "@facthouse/mcp@1.2.3"]);
     expect(entry.env).toBeUndefined();
   });
 
@@ -214,20 +214,20 @@ describe("mcpConfigSnippet", () => {
     // Raw interpolation of this path would emit unescaped backslashes and
     // produce a snippet that fails to parse when pasted into a client config.
     const winPath = "C:\\Users\\someone\\AppData\\Local\\openmemory";
-    const snippet = mcpConfigSnippet("@factmem/mcp@1.2.3", winPath);
+    const snippet = mcpConfigSnippet("@facthouse/mcp@1.2.3", winPath);
 
     const parsed = JSON.parse(snippet); // would throw on unescaped backslashes
-    expect(parsed.mcpServers.factmem.env.FACTMEM_DATA).toBe(winPath);
+    expect(parsed.mcpServers.facthouse.env.FACTHOUSE_DATA).toBe(winPath);
   });
 
   it("survives quotes in the path without breaking the JSON", () => {
     const nasty = '/tmp/we"ird/pa\\th';
-    const parsed = JSON.parse(mcpConfigSnippet("@factmem/mcp", nasty));
-    expect(parsed.mcpServers.factmem.env.FACTMEM_DATA).toBe(nasty);
+    const parsed = JSON.parse(mcpConfigSnippet("@facthouse/mcp", nasty));
+    expect(parsed.mcpServers.facthouse.env.FACTHOUSE_DATA).toBe(nasty);
   });
 
   it("indents every line for console output", () => {
-    const snippet = mcpConfigSnippet("@factmem/mcp", undefined, 4);
+    const snippet = mcpConfigSnippet("@facthouse/mcp", undefined, 4);
     for (const line of snippet.split("\n")) {
       expect(line.startsWith("    ")).toBe(true);
     }
@@ -235,51 +235,51 @@ describe("mcpConfigSnippet", () => {
 
   it("uses a distinct server name so two brains can share one mcp.json", () => {
     const personal = JSON.parse(
-      mcpConfigSnippet("@factmem/mcp", "/tmp/factmem-personal", 0, "factmem-personal"),
+      mcpConfigSnippet("@facthouse/mcp", "/tmp/facthouse-personal", 0, "facthouse-personal"),
     );
     const work = JSON.parse(
-      mcpConfigSnippet("@factmem/mcp", "/tmp/factmem-work", 0, "factmem-work"),
+      mcpConfigSnippet("@facthouse/mcp", "/tmp/facthouse-work", 0, "facthouse-work"),
     );
-    expect(Object.keys(personal.mcpServers)).toEqual(["factmem-personal"]);
-    expect(Object.keys(work.mcpServers)).toEqual(["factmem-work"]);
-    expect(personal.mcpServers["factmem-personal"].env.FACTMEM_DATA).toBe(
-      "/tmp/factmem-personal",
+    expect(Object.keys(personal.mcpServers)).toEqual(["facthouse-personal"]);
+    expect(Object.keys(work.mcpServers)).toEqual(["facthouse-work"]);
+    expect(personal.mcpServers["facthouse-personal"].env.FACTHOUSE_DATA).toBe(
+      "/tmp/facthouse-personal",
     );
-    expect(work.mcpServers["factmem-work"].env.FACTMEM_DATA).toBe(
-      "/tmp/factmem-work",
+    expect(work.mcpServers["facthouse-work"].env.FACTHOUSE_DATA).toBe(
+      "/tmp/facthouse-work",
     );
   });
 });
 
 describe("mcpServerName / mcpSnippetDataDir", () => {
-  it("omits env and uses factmem for the default directory", () => {
-    expect(mcpServerName(defaultDataDir())).toBe("factmem");
+  it("omits env and uses facthouse for the default directory", () => {
+    expect(mcpServerName(defaultDataDir())).toBe("facthouse");
     expect(mcpSnippetDataDir(defaultDataDir())).toBeUndefined();
   });
 
   it("derives names for two-brain folders and sets env", () => {
-    const personal = path.join(root, ".factmem-personal");
-    const work = path.join(root, ".factmem-work");
-    expect(mcpServerName(personal)).toBe("factmem-personal");
+    const personal = path.join(root, ".facthouse-personal");
+    const work = path.join(root, ".facthouse-work");
+    expect(mcpServerName(personal)).toBe("facthouse-personal");
     expect(mcpSnippetDataDir(personal)).toBe(personal);
-    expect(mcpServerName(work)).toBe("factmem-work");
+    expect(mcpServerName(work)).toBe("facthouse-work");
     expect(mcpSnippetDataDir(work)).toBe(work);
   });
 
   it("prefixes a custom basename", () => {
     const dir = path.join(root, "my-memory");
-    expect(mcpServerName(dir)).toBe("factmem-my-memory");
+    expect(mcpServerName(dir)).toBe("facthouse-my-memory");
     expect(mcpSnippetDataDir(dir)).toBe(dir);
   });
 
-  it("does not key a non-default factmem folder as the default store", () => {
-    const dir = path.join(tmpdir(), "factmem");
-    expect(mcpServerName(dir)).toBe("factmem-store");
+  it("does not key a non-default facthouse folder as the default store", () => {
+    const dir = path.join(tmpdir(), "facthouse");
+    expect(mcpServerName(dir)).toBe("facthouse-store");
     expect(mcpSnippetDataDir(dir)).toBe(dir);
   });
 
-  it("strips a leading dot so ~/.factmem-work is factmem-work", () => {
-    expect(mcpServerName("/tmp/.factmem-work")).toBe("factmem-work");
+  it("strips a leading dot so ~/.facthouse-work is facthouse-work", () => {
+    expect(mcpServerName("/tmp/.facthouse-work")).toBe("facthouse-work");
   });
 });
 
@@ -302,7 +302,7 @@ describe("providerStatusLines", () => {
     expect(text).toMatch(/no domain routing/i);
     // And both ways out.
     expect(text).toMatch(/CLAUDE_CLI_PATH/);
-    expect(text).toMatch(/FACTMEM_PROVIDER=heuristic/);
+    expect(text).toMatch(/FACTHOUSE_PROVIDER=heuristic/);
   });
 
   it("confirms rather than warns when the CLI answers", () => {
@@ -336,7 +336,7 @@ describe("sourcesStatusLines", () => {
     expect(text).toMatch(/copy is off/i);
     expect(text).toMatch(/pick copy/);
     expect(text).toMatch(/cwd/);
-    expect(text).toMatch(/factmem consolidate/);
+    expect(text).toMatch(/facthouse consolidate/);
     expect(text).not.toMatch(/more than 50/);
   });
 
@@ -345,7 +345,7 @@ describe("sourcesStatusLines", () => {
       { kind: "claude-code", home: "~/.claude", cwd: "C:\\dev\\app" },
     ]).join("\n");
     expect(text).toMatch(/1 source/);
-    expect(text).toMatch(/factmem consolidate/);
+    expect(text).toMatch(/facthouse consolidate/);
     expect(text).not.toMatch(/pull/);
     expect(text).toContain(INIT_PROMPTS.copyStorewide);
     expect(text).not.toMatch(/copy is off/i);

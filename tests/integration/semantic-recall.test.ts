@@ -20,7 +20,7 @@
  * "passing" tests that had silently skipped — and a printed warning is not a
  * safeguard, because the runner swallows console output from a file it skipped.
  * So the requirement is assertable instead: `npm run test:semantic` sets
- * OPENMEMORY_REQUIRE_SEMANTIC_EVAL=1, and the first block below then *fails*
+ * FACTHOUSE_REQUIRE_SEMANTIC_EVAL=1, and the first block below then *fails*
  * when no model is reachable rather than quietly verifying nothing. Run it
  * before claiming semantic search works.
  */
@@ -62,7 +62,7 @@ async function probeOllama(): Promise<string | null> {
 const unavailable = await probeOllama();
 
 /** Set when this run is expected to actually verify something. */
-const required = process.env.OPENMEMORY_REQUIRE_SEMANTIC_EVAL === "1";
+const required = process.env.FACTHOUSE_REQUIRE_SEMANTIC_EVAL === "1";
 
 describe.runIf(required)("the semantic eval is required in this run", () => {
   it("has a live embedding model to verify against", () => {
@@ -78,11 +78,11 @@ let clients: Client[] = [];
 async function connect(dataDir: string): Promise<Client> {
   const env: Record<string, string> = {};
   for (const [k, v] of Object.entries(process.env)) if (v !== undefined) env[k] = v;
-  env.OPENMEMORY_DATA = dataDir;
+  env.FACTHOUSE_DATA = dataDir;
   // Heuristic intelligence keeps this hermetic — the embedding provider is the
   // only live dependency under test, and mixing in a second one would make a
   // failure ambiguous.
-  env.OPENMEMORY_PROVIDER = "heuristic";
+  env.FACTHOUSE_PROVIDER = "heuristic";
 
   const transport = new StdioClientTransport({
     command: process.execPath,

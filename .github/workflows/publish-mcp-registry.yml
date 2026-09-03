@@ -1,6 +1,6 @@
 # Publish server.json to the official MCP Registry after npm is live.
 #
-# Do not trigger on tag push. Tags are created before @factmem/mcp is
+# Do not trigger on tag push. Tags are created before @facthouse/mcp is
 # resolvable, and the registry rejects a publish whose npm package does not
 # exist yet. "Publish to npm" already waits until the tarball is resolvable
 # and smoke-tests it; this workflow runs after that one succeeds.
@@ -10,13 +10,12 @@
 # for a real publish, so the first listing is that post-merge dispatch.
 #
 # Do not add a second npm publish here. Do not set environment: npm — that
-# environment is the Trusted Publisher binding for publish.yml. Do not add
-# @openmem/mcp as a second registry package; the linger tarball is the same
-# server.
+# environment is the Trusted Publisher binding for publish.yml. Do not
+# register @factmem/mcp or @openmem/mcp as extra registry packages.
 #
 # Auth is `mcp-publisher login github-oidc` (no PAT, no NPM_TOKEN). The
 # registry grants io.github.{repository_owner}/* from the OIDC
-# repository_owner claim, so io.github.gordonkjlee/factmem is in scope for
+# repository_owner claim, so io.github.gordonkjlee/facthouse is in scope for
 # this repo.
 
 name: Publish to MCP Registry
@@ -84,7 +83,7 @@ jobs:
         id: listed
         name: Already listed on the MCP Registry?
         run: |
-          SERVER_NAME="io.github.gordonkjlee/factmem"
+          SERVER_NAME="io.github.gordonkjlee/facthouse"
           VERSION="${{ steps.release.outputs.version }}"
           SEARCH_URL="https://registry.modelcontextprotocol.io/v0.1/servers?search=${SERVER_NAME}&version=${VERSION}"
           BODY=$(curl -fsS "$SEARCH_URL")
@@ -114,7 +113,7 @@ jobs:
           node-version: 22
 
       # Safety net only. release-please already bumps server.json via
-      # extra-files. Set .version and the @factmem/mcp package version from
+      # extra-files. Set .version and the @facthouse/mcp package version from
       # the tag if they drift. Do not touch name/title or add a package.
       - if: steps.release.outputs.found == 'true' && steps.listed.outputs.listed != 'true'
         name: Sync server.json version from the tag
@@ -122,13 +121,13 @@ jobs:
           VERSION="${{ steps.release.outputs.version }}"
           jq --arg v "$VERSION" '
             .version = $v
-            | .packages |= map(if .identifier == "@factmem/mcp" then .version = $v else . end)
+            | .packages |= map(if .identifier == "@facthouse/mcp" then .version = $v else . end)
           ' server.json > server.tmp && mv server.tmp server.json
           echo "server.json versions after sync:"
-          jq '{name, version, factmem: ([.packages[] | select(.identifier == "@factmem/mcp") | .version] | .[0])}' server.json
+          jq '{name, version, facthouse: ([.packages[] | select(.identifier == "@facthouse/mcp") | .version] | .[0])}' server.json
 
       - if: steps.release.outputs.found == 'true' && steps.listed.outputs.listed != 'true'
-        name: Wait until @factmem/mcp@${{ steps.release.outputs.version }} is on npm
+        name: Wait until @facthouse/mcp@${{ steps.release.outputs.version }} is on npm
         run: |
           VERSION="${{ steps.release.outputs.version }}"
           # "Publish to npm" already waits when it just published, but a
@@ -136,13 +135,13 @@ jobs:
           # registry's package-existence check will fail if we publish
           # during npm's scan window. Fail if the version never appears.
           MAX_WAIT=1200
-          echo "Waiting up to ${MAX_WAIT}s for @factmem/mcp@${VERSION}"
+          echo "Waiting up to ${MAX_WAIT}s for @facthouse/mcp@${VERSION}"
           DEADLINE=$((SECONDS + MAX_WAIT))
           ATTEMPT=0
           while [ "$SECONDS" -lt "$DEADLINE" ]; do
             ATTEMPT=$((ATTEMPT + 1))
-            if OUT=$(npm view "@factmem/mcp@${VERSION}" version 2>&1); then
-              echo "@factmem/mcp@${VERSION} is live on npm after ${SECONDS}s ($ATTEMPT attempt(s)): ${OUT}"
+            if OUT=$(npm view "@facthouse/mcp@${VERSION}" version 2>&1); then
+              echo "@facthouse/mcp@${VERSION} is live on npm after ${SECONDS}s ($ATTEMPT attempt(s)): ${OUT}"
               exit 0
             fi
             LEFT=$((DEADLINE - SECONDS))
@@ -156,7 +155,7 @@ jobs:
             fi
             sleep "$SLEEP"
           done
-          echo "::error::@factmem/mcp@${VERSION} is not resolvable from npm after ${SECONDS}s. Refusing to publish server.json for a package the registry cannot verify."
+          echo "::error::@facthouse/mcp@${VERSION} is not resolvable from npm after ${SECONDS}s. Refusing to publish server.json for a package the registry cannot verify."
           exit 1
 
       - if: steps.release.outputs.found == 'true' && steps.listed.outputs.listed != 'true'
@@ -196,7 +195,7 @@ jobs:
       - if: steps.release.outputs.found == 'true' && steps.listed.outputs.listed != 'true'
         name: Verify the server is listed
         run: |
-          SERVER_NAME="io.github.gordonkjlee/factmem"
+          SERVER_NAME="io.github.gordonkjlee/facthouse"
           VERSION="${{ steps.release.outputs.version }}"
           # Versioned search — unversioned search paginates oldest-first
           # (page 1 is the oldest 30) and would miss later releases.

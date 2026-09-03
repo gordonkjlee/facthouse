@@ -83,7 +83,7 @@ describe("README instruction layer for capture and identity", () => {
     expect(head).toContain(GITHUB_REPO);
     expect(head).toContain(NPM_PACKAGE);
     expect(head).toMatch(/mcp\.mem0\.ai/);
-    expect(head).toMatch(/abolotnov\/factmem/);
+    expect(head).not.toMatch(/abolotnov/);
   });
 
   it("does not describe the prune spare as a pronoun dictionary", () => {

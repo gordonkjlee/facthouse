@@ -31,9 +31,9 @@ describe("openStore", () => {
     expect(existsSync(path.join(dir, SQLITE_MEMORY_FILENAME))).toBe(true);
   });
 
-  it("ignores OPENMEMORY_POSTGRES_URL when the engine is sqlite", async () => {
+  it("ignores FACTHOUSE_POSTGRES_URL when the engine is sqlite", async () => {
     const db = await openStore(dir, defaultServerConfig(), {
-      OPENMEMORY_POSTGRES_URL: "postgres://127.0.0.1:1/none",
+      FACTHOUSE_POSTGRES_URL: "postgres://127.0.0.1:1/none",
     });
     try {
       expect(db.dialect).toBe("sqlite");
@@ -54,16 +54,16 @@ describe("openStore", () => {
     expect(existsSync(path.join(dir, SQLITE_MEMORY_FILENAME))).toBe(false);
   });
 
-  it("throws and does not create memory.db when OPENMEMORY_STORAGE is postgres without a URL", async () => {
+  it("throws and does not create memory.db when FACTHOUSE_STORAGE is postgres without a URL", async () => {
     await expect(
-      openStore(dir, defaultServerConfig(), { OPENMEMORY_STORAGE: "postgres" }),
+      openStore(dir, defaultServerConfig(), { FACTHOUSE_STORAGE: "postgres" }),
     ).rejects.toThrow(postgresMissingUrlMessage());
     expect(existsSync(path.join(dir, SQLITE_MEMORY_FILENAME))).toBe(false);
   });
 
   it("refuses an unknown provider without opening sqlite", async () => {
     await expect(
-      openStore(dir, defaultServerConfig(), { OPENMEMORY_STORAGE: "turso" }),
+      openStore(dir, defaultServerConfig(), { FACTHOUSE_STORAGE: "turso" }),
     ).rejects.toThrow(unsupportedStorageMessage("turso"));
     expect(existsSync(path.join(dir, SQLITE_MEMORY_FILENAME))).toBe(false);
   });
@@ -75,7 +75,7 @@ describe("openStore", () => {
     );
     await expect(
       openStore(dir, loadConfig(dir), {
-        OPENMEMORY_POSTGRES_URL: "mysql://127.0.0.1:3306/openmemory",
+        FACTHOUSE_POSTGRES_URL: "mysql://127.0.0.1:3306/openmemory",
       }),
     ).rejects.toThrow(postgresInvalidUrlMessage());
     expect(existsSync(path.join(dir, SQLITE_MEMORY_FILENAME))).toBe(false);
@@ -89,7 +89,7 @@ describe("openStore", () => {
     );
     await expect(
       openStore(dir, loadConfig(dir), {
-        OPENMEMORY_POSTGRES_URL: "postgres://127.0.0.1:1/openmemory",
+        FACTHOUSE_POSTGRES_URL: "postgres://127.0.0.1:1/openmemory",
       }),
     ).rejects.toThrow(/SQLite was not opened/);
     expect(existsSync(path.join(dir, SQLITE_MEMORY_FILENAME))).toBe(false);

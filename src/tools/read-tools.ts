@@ -325,7 +325,7 @@ export function registerReadTools(
       `extract, holds the watermark, and does not fall back to the heuristic.`,
     {},
     async () => {
-      // Shared with `factmem stats` so the tool and the CLI can't disagree.
+      // Shared with `facthouse stats` so the tool and the CLI can't disagree.
       return {
         content: [
           { type: "text" as const, text: JSON.stringify(await getStats(db)) },

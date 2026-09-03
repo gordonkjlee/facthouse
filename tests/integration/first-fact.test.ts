@@ -16,7 +16,7 @@
  *      `claude` CLI is common on machines that develop this repo, so a
  *      skipIf-when-missing would still run a multi-minute model call inside
  *      `npm test`. The live path runs only when
- *      OPENMEMORY_REQUIRE_FIRST_FACT_EVAL=1 (`npm run test:first-fact`) and
+ *      FACTHOUSE_REQUIRE_FIRST_FACT_EVAL=1 (`npm run test:first-fact`) and
  *      then *fails* when the CLI is missing rather than quietly verifying
  *      nothing.
  */
@@ -55,7 +55,7 @@ const QUERY = "kaleidoscope";
 const FACT = "Alex keeps a brass kaleidoscope on the desk at Acme.";
 const PROJECT_CWD = "C:\\dev\\app";
 
-const required = process.env.OPENMEMORY_REQUIRE_FIRST_FACT_EVAL === "1";
+const required = process.env.FACTHOUSE_REQUIRE_FIRST_FACT_EVAL === "1";
 
 function probeLiveCli(): string | null {
   if (!existsSync(SERVER) || !existsSync(CLI)) return "dist/ is not built";
@@ -211,9 +211,9 @@ describe.skipIf(!required || unavailable !== null)(
     ) {
       const env: Record<string, string | undefined> = withoutStoreEnv();
       // The README path uses the configured provider (cli). A developer who
-      // has OPENMEMORY_PROVIDER=heuristic in the shell must not silently
+      // has FACTHOUSE_PROVIDER=heuristic in the shell must not silently
       // convert this eval into the control that is supposed to miss.
-      env.OPENMEMORY_PROVIDER = "cli";
+      env.FACTHOUSE_PROVIDER = "cli";
       return spawnSync(process.execPath, [CLI, ...args], {
         encoding: "utf-8",
         env: env as NodeJS.ProcessEnv,

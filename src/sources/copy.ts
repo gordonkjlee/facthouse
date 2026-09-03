@@ -1,7 +1,7 @@
 /**
  * Copy named capture sources into session_events — the copy step.
  *
- * This is the single entry for client-agnostic capture. `factmem consolidate`
+ * This is the single entry for client-agnostic capture. `facthouse consolidate`
  * runs it as its first step; the MCP server calls the same function at
  * session start and, on a named-source store, again at the start of a
  * tool or resource read when the files have grown. Empty `sources` is a

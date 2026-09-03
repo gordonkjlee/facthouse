@@ -1,6 +1,6 @@
 /**
  * record CLI command — inserts one SessionEvent directly into the database.
- * Used by AI client hooks to pipe conversation messages to FactMem.
+ * Used by AI client hooks to pipe conversation messages to Facthouse.
  */
 
 import { mkdirSync } from "node:fs";
@@ -115,7 +115,7 @@ export async function recordEvent(args: RecordEventArgs): Promise<SessionEvent> 
  *
  * `source_tool: "cli"` records how the session came about, so a store seeded
  * from the command line is distinguishable from one an MCP client produced.
- * `project` is FACTMEM_PROJECT when set — the same env the MCP session
+ * `project` is FACTHOUSE_PROJECT when set — the same env the MCP session
  * uses — provenance, not a tenant.
  */
 async function resolveOwnSession(

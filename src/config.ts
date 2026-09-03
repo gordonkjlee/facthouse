@@ -37,7 +37,7 @@ export function mergeConfig<T>(base: T, override: unknown): T {
 /**
  * The complete default configuration — every knob the server understands, with
  * its shipped default. `loadConfig` merges the user's config.json over this,
- * and `factmem init` writes it out verbatim so the knobs are discoverable
+ * and `facthouse init` writes it out verbatim so the knobs are discoverable
  * (otherwise defaults are invisible and users can't find what's tunable).
  */
 export function defaultServerConfig(): ServerConfig {
@@ -78,7 +78,7 @@ export type StorageProvider = (typeof SUPPORTED_STORAGE_PROVIDERS)[number];
 export const POSTGRES_URL_ENV = envName("POSTGRES_URL");
 
 /**
- * Which engine the store asked for. `FACTMEM_STORAGE` (or `OPENMEMORY_STORAGE`)
+ * Which engine the store asked for. `FACTHOUSE_STORAGE` (or `FACTHOUSE_STORAGE`)
  * wins over `storage.provider`. Missing or empty is sqlite.
  */
 export function configuredStorageProvider(
@@ -262,7 +262,7 @@ export function loadConfig(dataDir: string): ServerConfig {
     parsed = JSON.parse(raw);
   } catch (err) {
     console.error(
-      `[factmem] Ignoring malformed ${CONFIG_FILENAME}: ${(err as Error).message}. Using defaults.`,
+      `[facthouse] Ignoring malformed ${CONFIG_FILENAME}: ${(err as Error).message}. Using defaults.`,
     );
     return base;
   }
@@ -274,7 +274,7 @@ export function loadConfig(dataDir: string): ServerConfig {
  * Read-time compatibility for renamed keys. `intelligence.cli.graduate_model`
  * became `integrate_model` when the pipeline vocabulary settled on copy /
  * extract / integrate; a store written by an earlier release keeps working
- * and is told once per process. `factmem settings` rewrites the key.
+ * and is told once per process. `facthouse settings` rewrites the key.
  */
 export function honourLegacyConfigKeys(parsed: unknown): unknown {
   if (!parsed || typeof parsed !== "object") return parsed;
@@ -286,8 +286,8 @@ export function honourLegacyConfigKeys(parsed: unknown): unknown {
     if (!legacyKeyNoticeShown) {
       legacyKeyNoticeShown = true;
       console.error(
-        `[factmem] ${CONFIG_FILENAME}: intelligence.cli.graduate_model is now ` +
-          `integrate_model. Still honoured; run factmem settings to rewrite it.`,
+        `[facthouse] ${CONFIG_FILENAME}: intelligence.cli.graduate_model is now ` +
+          `integrate_model. Still honoured; run facthouse settings to rewrite it.`,
       );
     }
   }

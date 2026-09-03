@@ -193,7 +193,7 @@ describe("createCliProvider — extractFactsFromEvents", () => {
     expect(result.facts[1].valid_from).toBeNull();
   });
 
-  it("spawns with --setting-sources user and OPENMEMORY_SUBPROCESS=1", async () => {
+  it("spawns with --setting-sources user and FACTHOUSE_SUBPROCESS=1", async () => {
     nextMockChildBehaviour = respondWith({
       is_error: false,
       result: "",
@@ -207,7 +207,7 @@ describe("createCliProvider — extractFactsFromEvents", () => {
     expect(lastSpawnArgs?.args).toContain("--setting-sources");
     const idx = lastSpawnArgs!.args.indexOf("--setting-sources");
     expect(lastSpawnArgs!.args[idx + 1]).toBe("user");
-    expect(lastSpawnArgs!.opts?.env?.OPENMEMORY_SUBPROCESS).toBe("1");
+    expect(lastSpawnArgs!.opts?.env?.FACTHOUSE_SUBPROCESS).toBe("1");
     // Prompt is stdin, not argv — the last argv element is the model, not the payload.
     expect(lastSpawnArgs!.args.at(-1)).toBe("haiku");
     expect(lastSpawnArgs!.args).not.toContain(lastStdin);

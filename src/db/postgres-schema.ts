@@ -1,5 +1,5 @@
 /**
- * Current FactMem schema as Postgres DDL.
+ * Current Facthouse schema as Postgres DDL.
  *
  * SQLite keeps its incremental PRAGMA migrations — that history is SQLite's.
  * A new Postgres store is created at the current version in one shot

@@ -32,7 +32,7 @@ const SERVER = path.resolve(
 const runnable = existsSync(CLI);
 
 /**
- * Run the built CLI. OPENMEMORY_* vars are stripped from the inherited
+ * Run the built CLI. FACTHOUSE_* vars are stripped from the inherited
  * environment so a developer's own settings can't influence assertions —
  * every test states the environment it means to test.
  */
@@ -43,7 +43,7 @@ function run(args: string[], extraEnv: Record<string, string> = {}) {
   // seconds per run, on a machine that may or may not have the CLI installed.
   // Tests that care about the probe set this themselves; the branches it picks
   // between are unit-tested in tests/cli/init.test.ts.
-  env.OPENMEMORY_PROVIDER = "heuristic";
+  env.FACTHOUSE_PROVIDER = "heuristic";
   Object.assign(env, extraEnv);
   return spawnSync(process.execPath, [CLI, ...args], {
     encoding: "utf-8",
@@ -94,14 +94,14 @@ describe.skipIf(!runnable)("cli entry — dispatch and usage", () => {
   it.each(["--help", "-h", "help"])("%s prints usage and exits 0", (flag) => {
     const r = run([flag]);
     expect(r.status).toBe(0);
-    expect(r.stdout).toMatch(/^Usage: factmem/);
+    expect(r.stdout).toMatch(/^Usage: facthouse/);
   });
 
   it("exits non-zero on an unknown subcommand and prints usage to stderr", () => {
     const r = run(["bogus-command"]);
     expect(r.status).toBe(1);
     // Node may print an ExperimentalWarning first; the usage block follows.
-    expect(r.stderr).toMatch(/^Usage: factmem/m);
+    expect(r.stderr).toMatch(/^Usage: facthouse/m);
     expect(r.stdout).toBe("");
   });
 });
@@ -121,9 +121,9 @@ describe.skipIf(!runnable)("cli entry — init argument precedence", () => {
     expect(existsSync(path.join(dir, "config.json"))).toBe(true);
   });
 
-  it("falls back to OPENMEMORY_DATA when no directory is given", () => {
+  it("falls back to FACTHOUSE_DATA when no directory is given", () => {
     const dir = path.join(root, "fromenv");
-    const r = run(["init"], { OPENMEMORY_DATA: dir });
+    const r = run(["init"], { FACTHOUSE_DATA: dir });
     expect(r.status).toBe(0);
     expect(existsSync(path.join(dir, "config.json"))).toBe(true);
   });
@@ -133,7 +133,7 @@ describe.skipIf(!runnable)("cli entry — init argument precedence", () => {
     const ignored = path.join(root, "ignored");
     const alsoIgnored = path.join(root, "also-ignored");
     const r = run(["init", wanted, "--data", ignored], {
-      OPENMEMORY_DATA: alsoIgnored,
+      FACTHOUSE_DATA: alsoIgnored,
     });
     expect(r.status).toBe(0);
     expect(existsSync(path.join(wanted, "config.json"))).toBe(true);
@@ -164,13 +164,13 @@ describe.skipIf(!runnable)("cli entry — init argument precedence", () => {
     expect(existsSync(path.join(dir, "memory.db"))).toBe(false);
   });
 
-  it("refuses OPENMEMORY_STORAGE=postgres even when config says sqlite", () => {
+  it("refuses FACTHOUSE_STORAGE=postgres even when config says sqlite", () => {
     const dir = path.join(root, "pg-env");
     const init = run(["init", dir]);
     expect(init.status).toBe(0);
     expect(existsSync(path.join(dir, "memory.db"))).toBe(true);
     const r = run(["search", "bookings", "--data", dir], {
-      OPENMEMORY_STORAGE: "postgres",
+      FACTHOUSE_STORAGE: "postgres",
     });
     expect(r.status).toBe(1);
     expect(r.stderr).toMatch(/postgres/);
@@ -185,7 +185,7 @@ describe.skipIf(!runnable)("cli entry — init argument precedence", () => {
       JSON.stringify({ storage: { provider: "postgres" } }),
     );
     const env: Record<string, string | undefined> = withoutStoreEnv();
-    env.OPENMEMORY_PROVIDER = "heuristic";
+    env.FACTHOUSE_PROVIDER = "heuristic";
     const r = spawnSync(process.execPath, [SERVER, "--data", dir], {
       encoding: "utf-8",
       env: env as NodeJS.ProcessEnv,
@@ -205,8 +205,8 @@ describe.skipIf(!runnable)("cli entry — init argument precedence", () => {
       JSON.stringify({ storage: { provider: "postgres" } }),
     );
     const env: Record<string, string | undefined> = withoutStoreEnv();
-    env.OPENMEMORY_PROVIDER = "heuristic";
-    env.OPENMEMORY_POSTGRES_URL = "postgres://127.0.0.1:1/openmemory";
+    env.FACTHOUSE_PROVIDER = "heuristic";
+    env.FACTHOUSE_POSTGRES_URL = "postgres://127.0.0.1:1/openmemory";
     const r = spawnSync(process.execPath, [SERVER, "--data", dir], {
       encoding: "utf-8",
       env: env as NodeJS.ProcessEnv,
@@ -228,7 +228,7 @@ describe.skipIf(!runnable)("cli entry — init reports the intelligence it will 
     // A path that cannot be spawned. Resolution short-circuits on this env var,
     // so the probe fails immediately instead of hunting the filesystem.
     const r = run(["init", dir], {
-      OPENMEMORY_PROVIDER: "cli",
+      FACTHOUSE_PROVIDER: "cli",
       CLAUDE_CLI_PATH: path.join(root, "definitely-not-installed"),
     });
 
@@ -296,8 +296,8 @@ describe.skipIf(!runnable)("cli entry — init output", () => {
     expect(r.status).toBe(0);
     expect(r.stdout).toMatch(/copy is off/i);
     expect(r.stdout).toMatch(/capture_fact is how facts get in/);
-    expect(r.stdout).toMatch(/factmem consolidate/);
-    expect(r.stdout).not.toMatch(/factmem pull/);
+    expect(r.stdout).toMatch(/facthouse consolidate/);
+    expect(r.stdout).not.toMatch(/facthouse pull/);
   });
 
   it("prints an MCP snippet that parses as JSON, with the data dir escaped", async () => {
@@ -315,9 +315,9 @@ describe.skipIf(!runnable)("cli entry — init output", () => {
     const entry = parsed.mcpServers[key];
     expect(entry).toBeDefined();
     expect(entry.command).toBe("npx");
-    expect(entry.env.FACTMEM_DATA).toBe(path.resolve(dir));
+    expect(entry.env.FACTHOUSE_DATA).toBe(path.resolve(dir));
     expect(parsed.mcpServers.openmemory).toBeUndefined();
-    expect(parsed.mcpServers.factmem).toBeUndefined();
+    expect(parsed.mcpServers.facthouse).toBeUndefined();
   });
 
   it("reports the config as preserved on re-run and reset with --force", () => {
@@ -332,7 +332,7 @@ describe.skipIf(!runnable)("cli entry — init output", () => {
     const second = run(["init", dir]);
     expect(second.status).toBe(0);
     expect(second.stdout).toMatch(/already exists/i);
-    expect(second.stdout).toMatch(/factmem settings/);
+    expect(second.stdout).toMatch(/facthouse settings/);
     // The user's edit survived.
     expect(JSON.parse(readFileSync(configPath, "utf-8")).consolidation.threshold).toBe(99);
 
@@ -355,7 +355,7 @@ describe.skipIf(!runnable)("cli entry — settings", () => {
     const dir = path.join(root, "settings-missing");
     const r = run(["settings", "--json", "--data", dir]);
     expect(r.status).toBe(1);
-    expect(r.stderr).toMatch(/Run factmem init first/);
+    expect(r.stderr).toMatch(/Run facthouse init first/);
     expect(existsSync(dir)).toBe(false);
   });
 
@@ -390,46 +390,46 @@ describe.skipIf(!runnable)("cli entry — settings", () => {
     const dir = path.join(root, "settings-outro");
     const r = run(["init", "--yes", dir]);
     expect(r.status).toBe(0);
-    expect(r.stdout).toMatch(/Later: factmem settings --data /);
+    expect(r.stdout).toMatch(/Later: facthouse settings --data /);
     expect(r.stdout).toContain(dir);
   });
 });
 
 describe.skipIf(!runnable)("cli entry — subprocess recursion guard", () => {
-  it("runs init normally under OPENMEMORY_SUBPROCESS=1 (it cannot recurse)", () => {
+  it("runs init normally under FACTHOUSE_SUBPROCESS=1 (it cannot recurse)", () => {
     // Regression: the guard used to exit before dispatch, so init exited 0
     // having created nothing — an explicit setup command silently no-opping.
     const dir = path.join(root, "guarded-init");
-    const r = run(["init", dir], { OPENMEMORY_SUBPROCESS: "1" });
+    const r = run(["init", dir], { FACTHOUSE_SUBPROCESS: "1" });
     expect(r.status).toBe(0);
     expect(existsSync(path.join(dir, "config.json"))).toBe(true);
     expect(existsSync(path.join(dir, "memory.db"))).toBe(true);
   });
 
-  it("skips record under OPENMEMORY_SUBPROCESS=1 without writing anything", () => {
+  it("skips record under FACTHOUSE_SUBPROCESS=1 without writing anything", () => {
     const dir = path.join(root, "guarded-log");
     const r = run(
       ["record", "--role", "user", "--content", "synthetic", "--data", dir],
-      { OPENMEMORY_SUBPROCESS: "1" },
+      { FACTHOUSE_SUBPROCESS: "1" },
     );
     expect(r.status).toBe(0);
     expect(existsSync(path.join(dir, "memory.db"))).toBe(false);
   });
 
-  it("skips settings under OPENMEMORY_SUBPROCESS=1", () => {
+  it("skips settings under FACTHOUSE_SUBPROCESS=1", () => {
     const dir = path.join(root, "guarded-settings");
     run(["init", dir]);
     const r = run(["settings", "--json", "--data", dir], {
-      OPENMEMORY_SUBPROCESS: "1",
+      FACTHOUSE_SUBPROCESS: "1",
     });
     expect(r.status).toBe(0);
     expect(r.stdout.trim()).toBe("");
   });
 
-  it("skips consolidate under OPENMEMORY_SUBPROCESS=1", () => {
+  it("skips consolidate under FACTHOUSE_SUBPROCESS=1", () => {
     const dir = path.join(root, "guarded-consolidate");
     run(["init", dir]);
-    const r = run(["consolidate", "--data", dir], { OPENMEMORY_SUBPROCESS: "1" });
+    const r = run(["consolidate", "--data", dir], { FACTHOUSE_SUBPROCESS: "1" });
     expect(r.status).toBe(0);
     // The guard exits before any consolidation result is printed.
     expect(r.stdout.trim()).toBe("");
@@ -542,7 +542,7 @@ describe.skipIf(!runnable)("cli entry — search and stats", () => {
     expect(existsSync(dest)).toBe(true);
     expect(r.stdout).toContain(dest);
     const html = readFileSync(dest, "utf8");
-    expect(html).toContain("FactMem inspect");
+    expect(html).toContain("Facthouse inspect");
     expect(html).toContain('id="q"');
     expect(html).toContain("Acme");
     expect(html).toContain('id="viewSpend"');
@@ -700,7 +700,7 @@ describe.skipIf(!runnable)("cli entry — search and stats", () => {
 
       expect(r.status).toBe(1);
       expect(r.stderr).toContain("No database at");
-      expect(r.stderr).toContain("factmem init");
+      expect(r.stderr).toContain("facthouse init");
       expect(r.stderr).not.toMatch(/SQLITE_|unable to open database/i);
     },
   );
@@ -762,7 +762,7 @@ describe.skipIf(!runnable)("cli entry — consolidate steps", () => {
     run(["init", dir]);
     const human = run(["consolidate", "--data", dir]);
     expect(human.status).toBe(0);
-    expect(human.stdout).toMatch(/FactMem consolidate/);
+    expect(human.stdout).toMatch(/Facthouse consolidate/);
     expect(human.stdout).toMatch(/Facts integrated/);
     expect(() => JSON.parse(human.stdout)).toThrow();
     const json = run(["consolidate", "--json", "--data", dir]);
@@ -826,7 +826,7 @@ describe.skipIf(!runnable)("cli entry — notify", () => {
     expect(r.status).toBe(0);
     expect(JSON.parse(r.stdout)).toEqual({ delivered: false, moment: "compaction" });
     expect(r.stderr).toMatch(/No MCP server is listening/);
-    expect(r.stderr).toMatch(/factmem consolidate/);
+    expect(r.stderr).toMatch(/facthouse consolidate/);
   });
 
   it("rejects a moment the server does not accept", () => {
@@ -847,7 +847,7 @@ describe.skipIf(!runnable)("cli entry — the 0.25 verbs are gone", () => {
     (...args) => {
       const r = run([...args, "--data", root]);
       expect(r.status).toBe(1);
-      expect(r.stderr).toMatch(/^Usage: factmem/m);
+      expect(r.stderr).toMatch(/^Usage: facthouse/m);
       expect(r.stderr).not.toMatch(/deprecated/);
     },
   );

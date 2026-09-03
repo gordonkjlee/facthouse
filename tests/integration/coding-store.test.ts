@@ -11,7 +11,7 @@
  *      in for the LLM. Heuristic extract is the control that must miss — if
  *      search hit events directly, the recording path would pass for the
  *      wrong reason.
- *   2. Live CLI (opt-in). `OPENMEMORY_REQUIRE_CODING_STORE_EVAL=1`
+ *   2. Live CLI (opt-in). `FACTHOUSE_REQUIRE_CODING_STORE_EVAL=1`
  *      (`npm run test:coding-store`) then *fails* when the CLI is missing
  *      rather than quietly verifying nothing. Discriminating rows: grain is
  *      searchable; a failing-join task does not integrate.
@@ -63,7 +63,7 @@ const PROJECT_CWD = "C:\\dev\\app";
 const GRAIN_FACT = "Bookings are the grain of the orders mart at Acme.";
 const IDENT_FACT = "The stg_orders relation is missing booked_at.";
 
-const required = process.env.OPENMEMORY_REQUIRE_CODING_STORE_EVAL === "1";
+const required = process.env.FACTHOUSE_REQUIRE_CODING_STORE_EVAL === "1";
 
 function probeLiveCli(): string | null {
   if (!existsSync(SERVER) || !existsSync(CLI)) return "dist/ is not built";
@@ -421,7 +421,7 @@ describe.skipIf(!required || unavailable !== null)(
   () => {
     function run(args: string[], extra: { timeout?: number } = {}) {
       const env: Record<string, string | undefined> = withoutStoreEnv();
-      env.OPENMEMORY_PROVIDER = "cli";
+      env.FACTHOUSE_PROVIDER = "cli";
       return spawnSync(process.execPath, [CLI, ...args], {
         encoding: "utf-8",
         env: env as NodeJS.ProcessEnv,

@@ -3,7 +3,7 @@
  *
  * Cross-tool tests prove two MCP clients on ONE directory share knowledge.
  * That is the product claim for a single store. This file is the other claim:
- * a second OPENMEMORY_DATA is a second memory, not a tenant column inside the
+ * a second FACTHOUSE_DATA is a second memory, not a tenant column inside the
  * first. A fact captured in one store must not appear in the other.
  *
  * Requires a build. Skips when dist is absent.
@@ -33,8 +33,8 @@ let clients: Client[] = [];
 async function connect(name: string, dataDir: string): Promise<Client> {
   const env: Record<string, string> = {};
   for (const [k, v] of Object.entries(process.env)) if (v !== undefined) env[k] = v;
-  env.OPENMEMORY_DATA = dataDir;
-  env.OPENMEMORY_PROVIDER = "heuristic";
+  env.FACTHOUSE_DATA = dataDir;
+  env.FACTHOUSE_PROVIDER = "heuristic";
 
   const transport = new StdioClientTransport({
     command: process.execPath,

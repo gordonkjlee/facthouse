@@ -2,7 +2,7 @@
  * init CLI command — prepares a data directory for use.
  *
  * The server creates its data dir and schema on first boot anyway, so init is
- * not required to run FactMem. What init adds is:
+ * not required to run Facthouse. What init adds is:
  *   1. A config.json written from the shipped defaults. Without it the defaults
  *      are invisible — users have no way to discover what's tunable (which
  *      intelligence provider runs, consolidation triggers, retention, ...).
@@ -54,12 +54,12 @@ import {
  * contains backslashes, which must be escaped to produce valid JSON. Emitting
  * the path raw yields a snippet that fails to parse when pasted.
  *
- * @param spec     npm package spec, e.g. "@factmem/mcp@0.3.0"
- * @param dataDir  when set, adds a FACTMEM_DATA env override (omit for the
+ * @param spec     npm package spec, e.g. "@facthouse/mcp@0.3.0"
+ * @param dataDir  when set, adds a FACTHOUSE_DATA env override (omit for the
  *                 default location, which needs no env entry)
  * @param indent   spaces to prefix each line with, for console output
  * @param name     MCP server key. A second store needs a second name —
- *                 two entries both called `factmem` overwrite each other.
+ *                 two entries both called `facthouse` overwrite each other.
  */
 export function mcpConfigSnippet(
   spec: string,
@@ -79,10 +79,10 @@ export function mcpConfigSnippet(
 export { DEFAULT_MCP_SERVER_NAME };
 
 /**
- * MCP server key for a data directory. The default store is `factmem`.
+ * MCP server key for a data directory. The default store is `facthouse`.
  * Any other directory gets a derived name so two snippets can share one
- * mcp.json. A non-default folder whose basename is `factmem` is
- * `factmem-store` so it cannot paste over the default key.
+ * mcp.json. A non-default folder whose basename is `facthouse` is
+ * `facthouse-store` so it cannot paste over the default key.
  */
 export function mcpServerName(
   dataDir: string,
@@ -105,7 +105,7 @@ export function mcpServerName(
 
 /**
  * Env is omitted only for the default directory, never because the name
- * equals "factmem".
+ * equals "facthouse".
  */
 export function mcpSnippetDataDir(
   dataDir: string,
@@ -324,7 +324,7 @@ export async function initDataDir(args: InitArgs): Promise<InitResult> {
   const seedDomains = effective.domains ?? [];
 
   // Create/migrate the database. applySchema is idempotent and versioned.
-  // Postgres: tables live at FACTMEM_POSTGRES_URL; memory.db is not created.
+  // Postgres: tables live at FACTHOUSE_POSTGRES_URL; memory.db is not created.
   const dbPath = sqliteMemoryPath(dataDir);
   const db = await openStore(dataDir, effective, env);
   let schemaVersion: number;

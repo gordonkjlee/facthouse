@@ -1,5 +1,5 @@
 /**
- * TTY walk-through for `factmem init`.
+ * TTY walk-through for `facthouse init`.
  *
  * Prompts live in init-knobs.ts. This file only asks them. Silent / --yes
  * never constructs readline and never calls question().
@@ -225,7 +225,7 @@ async function askSearch(io: InitIo, overlay: InitOverlay): Promise<void> {
 }
 
 /**
- * Extra knobs after More settings? Y, or the whole `factmem settings` walk.
+ * Extra knobs after More settings? Y, or the whole `facthouse settings` walk.
  * Walk MORE_SETTING_IDS — add a case here, not a question in index.ts.
  * Empty table: init writes URL/on_fail on empty; settings omits.
  */

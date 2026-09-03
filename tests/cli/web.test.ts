@@ -34,7 +34,7 @@ describe("parseInitWebPost", () => {
     });
     const parsed = parseInitWebPost(params, {
       processCwd: "C:\\tmp",
-      dataDir: "C:\\Users\\alex\\.factmem",
+      dataDir: "C:\\Users\\alex\\.facthouse",
     });
     expect(parsed.ok).toBe(true);
     if (!parsed.ok) return;
@@ -46,7 +46,7 @@ describe("parseInitWebPost", () => {
   it("record leaves sources unset", () => {
     const parsed = parseInitWebPost(new URLSearchParams({ capture: "record" }), {
       processCwd: "C:\\dev\\app",
-      dataDir: "C:\\Users\\alex\\.factmem",
+      dataDir: "C:\\Users\\alex\\.facthouse",
     });
     expect(parsed.ok).toBe(true);
     if (!parsed.ok) return;
@@ -123,7 +123,7 @@ describe("web hang-safety", () => {
     );
     const html = renderInitWebHtml({
       token: "t",
-      dataDir: "C:\\Users\\alex\\.factmem",
+      dataDir: "C:\\Users\\alex\\.facthouse",
       processCwd: "C:\\dev\\app",
     });
     expect(html).toMatch(/copy/);

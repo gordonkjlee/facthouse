@@ -1,18 +1,18 @@
 {
-  "name": "@factmem/mcp",
+  "name": "@facthouse/mcp",
   "version": "0.26.0",
-  "mcpName": "io.github.gordonkjlee/factmem",
-  "description": "A local memory engine any AI tool can use. You own the SQLite file.",
+  "mcpName": "io.github.gordonkjlee/facthouse",
+  "description": "A local memory engine any AI tool can use.",
   "type": "module",
   "license": "MIT",
   "author": "Gordon Lee",
   "repository": {
     "type": "git",
-    "url": "https://github.com/gordonkjlee/factmem"
+    "url": "https://github.com/gordonkjlee/facthouse"
   },
-  "homepage": "https://factmem.dev",
+  "homepage": "https://facthouse.dev",
   "keywords": [
-    "factmem",
+    "facthouse",
     "mcp",
     "mcp-server",
     "model-context-protocol",
@@ -24,10 +24,8 @@
   ],
   "bin": {
     "mcp": "dist/index.js",
-    "factmem": "dist/cli/index.js",
-    "openmemory": "dist/cli/index.js",
-    "mcp-server-factmem": "dist/index.js",
-    "mcp-server-openmemory": "dist/index.js"
+    "facthouse": "dist/cli/index.js",
+    "mcp-server-facthouse": "dist/index.js"
   },
   "files": [
     "dist"

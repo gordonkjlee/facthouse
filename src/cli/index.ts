@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * FactMem CLI entry point.
+ * Facthouse CLI entry point.
  *
  * Public verbs: init, settings, record, notify, consolidate, search, stats,
  * inspect, prune. The 0.25 verbs `pull`, `signal`, and `log-event` are gone;
@@ -133,8 +133,8 @@ async function main() {
   const subcommand = process.argv[2];
 
   // Recursion guard: any subprocess-based intelligence provider that
-  // re-invokes an MCP client should set FACTMEM_SUBPROCESS=1 (or the
-  // FACTMEM_SUBPROCESS compat alias) in the child's env. If a surviving
+  // re-invokes an MCP client should set FACTHOUSE_SUBPROCESS=1 (or the
+  // FACTHOUSE_SUBPROCESS compat alias) in the child's env. If a surviving
   // hook then re-enters this CLI, we must not log events, signal the
   // scheduler, or consolidate — each would feed back into an extraction loop.
   // Exit silently with success.
@@ -207,7 +207,7 @@ function usageText(): string {
     `Housekeeping`,
     `  prune           Reclaim raw events nothing can reach (dry run by default)`,
     ``,
-    `--data defaults to FACTMEM_DATA or ~/.factmem.`,
+    `--data defaults to FACTHOUSE_DATA or ~/.facthouse.`,
   ].join("\n");
 }
 
@@ -224,7 +224,7 @@ async function runInit() {
     strict: true,
   });
 
-  // Accept `factmem init ~/.factmem` (positional) as well as --data, so
+  // Accept `facthouse init ~/.facthouse` (positional) as well as --data, so
   // the documented form and the flag used by every other subcommand both work.
   const target =
     positionals[0] ??
@@ -477,7 +477,7 @@ async function withDb<T>(
     !existsSync(sqliteMemoryPath(dataDir))
   ) {
     console.error(
-      `No database at ${dataDir}. Run 'factmem init ${dataDir}' first, ` +
+      `No database at ${dataDir}. Run 'facthouse init ${dataDir}' first, ` +
         `or point at another directory with --data.`,
     );
     process.exit(1);
@@ -518,7 +518,7 @@ async function runSearchCmd() {
   const query = positionals.join(" ").trim();
   if (!query) {
     console.error(
-      `Usage: factmem search <query> [--domain <d>] [--limit <n>] [--as-of-system <t>] [--json]`,
+      `Usage: facthouse search <query> [--domain <d>] [--limit <n>] [--as-of-system <t>] [--json]`,
     );
     process.exit(1);
   }
@@ -552,7 +552,7 @@ async function runSearchCmd() {
   // unusable, rather than silently searching keyword-only — from the command
   // line there is a person to tell.
   const embedding = createEmbeddingProvider(config.embedding, {
-    onUnavailable: (reason) => console.error(`[factmem] ${reason}`),
+    onUnavailable: (reason) => console.error(`[facthouse] ${reason}`),
   });
   const response = await withDbAsync(dataDir, (db) =>
     runSearch(
@@ -747,7 +747,7 @@ interface ConsolidateStoreOpts {
  * Consolidate a store in this process with its configured provider. This is
  * the manual path: no MCP server is involved. A `sampling` selection has no
  * server to sample from and degrades to heuristic; `cli` spawns `claude -p`
- * directly. The FACTMEM_SUBPROCESS guard at the top of main() prevents
+ * directly. The FACTHOUSE_SUBPROCESS guard at the top of main() prevents
  * recursion when this runs inside a provider subprocess.
  */
 async function consolidateStore(
@@ -773,7 +773,7 @@ async function consolidateStore(
     resolveProviderType(config.intelligence.provider) === "heuristic"
   ) {
     console.error(
-      "[factmem] intelligence.provider is heuristic — it does not extract " +
+      "[facthouse] intelligence.provider is heuristic — it does not extract " +
         "facts from transcripts. capture_fact still works.",
     );
   }
@@ -783,11 +783,11 @@ async function consolidateStore(
   const provider = createIntelligenceProvider(config.intelligence, {
     vocabulary,
   });
-  // Embeddings are written here too, not only by the server. `factmem
+  // Embeddings are written here too, not only by the server. `facthouse
   // consolidate` is the documented way to process a store by hand, and a store
   // consolidated that way would otherwise never gain a vector.
   const embedding = createEmbeddingProvider(config.embedding, {
-    onUnavailable: (reason) => console.error(`[factmem] ${reason}`),
+    onUnavailable: (reason) => console.error(`[facthouse] ${reason}`),
   });
   return consolidateInProcess(dataDir, provider, config, embedding, steps, opts);
 }
@@ -817,16 +817,16 @@ export async function consolidateInProcess(
       extractLimit: opts.extractLimit,
     });
     if (result.skipped && result.skipReason) {
-      console.error(`[factmem] ${result.skipReason}`);
+      console.error(`[facthouse] ${result.skipReason}`);
     }
     if (result.extractionDegraded) {
       if (result.prefixCommitted) {
         console.error(
-          `[factmem] Extraction stopped after a failed call. Facts from earlier examined events were kept and the watermark advanced to ${result.examinedThrough}. Remaining events are still eligible. Re-run ${CLI_NAME} consolidate to continue.`,
+          `[facthouse] Extraction stopped after a failed call. Facts from earlier examined events were kept and the watermark advanced to ${result.examinedThrough}. Remaining events are still eligible. Re-run ${CLI_NAME} consolidate to continue.`,
         );
       } else {
         console.error(
-          `[factmem] Extraction could not run — events were not examined and the watermark was held. A zero factsIntegrated here is not a successful empty extract. Re-run ${CLI_NAME} consolidate when the CLI provider can run.`,
+          `[facthouse] Extraction could not run — events were not examined and the watermark was held. A zero factsIntegrated here is not a successful empty extract. Re-run ${CLI_NAME} consolidate when the CLI provider can run.`,
         );
       }
     }
@@ -837,7 +837,7 @@ export async function consolidateInProcess(
       result.eventsRemaining > 0
     ) {
       console.error(
-        `[factmem] ${result.eventsRemaining} event(s) still waiting to be extracted. ` +
+        `[facthouse] ${result.eventsRemaining} event(s) still waiting to be extracted. ` +
           `Run ${CLI_NAME} consolidate --all to take them all now, or --limit N for the oldest N.`,
       );
     }
@@ -889,7 +889,7 @@ async function notifyMoment(
   const delivered = await notifyServer(dataDir, moment);
   if (!delivered) {
     console.error(
-      `[factmem] No MCP server is listening for this store, so there is nothing ` +
+      `[facthouse] No MCP server is listening for this store, so there is nothing ` +
         `to notify. Run ${CLI_NAME} consolidate to process pending events now.`,
     );
   }

@@ -1,7 +1,7 @@
 /**
  * Live HTTP extract against a local OpenAI-compat host (Ollama by default).
  *
- * Opt-in: OPENMEMORY_REQUIRE_HTTP_INTEL_EVAL=1 (`npm run test:http-intelligence`).
+ * Opt-in: FACTHOUSE_REQUIRE_HTTP_INTEL_EVAL=1 (`npm run test:http-intelligence`).
  * Fail-closed: missing host or missing model is a failure, not a skip.
  */
 
@@ -11,7 +11,7 @@ import { HTTP_DEFAULT_BASE_URL } from "../../src/types/config.js";
 import { envValue } from "../../src/identity.js";
 import type { SessionEvent } from "../../src/types/data.js";
 
-const required = process.env.OPENMEMORY_REQUIRE_HTTP_INTEL_EVAL === "1";
+const required = process.env.FACTHOUSE_REQUIRE_HTTP_INTEL_EVAL === "1";
 const model = envValue("HTTP_MODEL") ?? "";
 const baseUrl = (envValue("HTTP_BASE_URL") ?? HTTP_DEFAULT_BASE_URL).replace(
   /\/+$/,
@@ -20,7 +20,7 @@ const baseUrl = (envValue("HTTP_BASE_URL") ?? HTTP_DEFAULT_BASE_URL).replace(
 
 async function probe(): Promise<string | null> {
   if (!model.trim()) {
-    return "FACTMEM_HTTP_MODEL (or OPENMEMORY_HTTP_MODEL) is not set";
+    return "FACTHOUSE_HTTP_MODEL (or FACTHOUSE_HTTP_MODEL) is not set";
   }
   try {
     const res = await fetch(`${baseUrl}/models`, {

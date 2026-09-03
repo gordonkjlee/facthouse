@@ -1,5 +1,5 @@
 /**
- * Data model types — the shape of records stored and returned by FactMem.
+ * Data model types — the shape of records stored and returned by Facthouse.
  *
  * DIKW here is an engineering abstraction (Ackoff 1989), not a memory-science model.
  * Organised by the DIKW hierarchy:
@@ -103,7 +103,7 @@ export interface SessionEvent {
    */
   speaker: string | null;
   metadata: Record<string, unknown> | null;
-  /** When FactMem wrote this row. */
+  /** When Facthouse wrote this row. */
   created_at: string;
   /**
    * When the turn was said. Pull copies Claude Code JSONL `timestamp` when

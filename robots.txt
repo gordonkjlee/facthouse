@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://factmem.dev/sitemap.xml
+Sitemap: https://facthouse.dev/sitemap.xml
