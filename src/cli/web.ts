@@ -1,5 +1,5 @@
 /**
- * Loopback HTML writer for `factmem init --web` and `factmem settings --web`.
+ * Loopback HTML writer for `facthouse init --web` and `facthouse settings --web`.
  *
  * Binds 127.0.0.1 only. Prints the URL. Does not open a browser.
  * `--yes` must refuse to call this.
@@ -49,7 +49,7 @@ export function originAllowed(
 function tokenOf(url: URL, req: IncomingMessage): string | null {
   const q = url.searchParams.get("token");
   if (q) return q;
-  const header = req.headers["x-factmem-token"];
+  const header = req.headers["x-facthouse-token"];
   if (typeof header === "string" && header.length > 0) return header;
   return null;
 }
@@ -236,7 +236,7 @@ export function renderInitWebHtml(opts: {
 }): string {
   const moreFields = MORE_SETTING_IDS.map((id) => moreFieldHtml(id)).join("\n  ");
   const inner = `
-<h1>FactMem setup</h1>
+<h1>Facthouse setup</h1>
 <p class="hint">${escapeHtml(INIT_PROMPTS.intro)}</p>
 <form method="post" action="?token=${encodeURIComponent(opts.token)}">
   <label>Data directory
@@ -297,7 +297,7 @@ export function renderSettingsWebHtml(opts: {
 }): string {
   const s = opts.shown;
   const inner = `
-<h1>FactMem settings</h1>
+<h1>Facthouse settings</h1>
 <p class="hint">Extra knobs only. Capture and search stay as they are.</p>
 <form method="post" action="?token=${encodeURIComponent(opts.token)}">
   ${MORE_SETTING_IDS.map((id) => moreFieldHtml(id, s)).join("\n  ")}

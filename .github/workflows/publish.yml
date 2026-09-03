@@ -68,8 +68,6 @@ jobs:
           # 403 over the in-flight version. dist-tag continues to work while
           # scanning; if it already names this version, do not republish.
           #
-          # Canonical and linger are independent. A local first publish of
-          # @factmem/mcp must not skip @openmem/mcp at the same version.
           accepted() {
             local pkg="$1"
             npm view "${pkg}@${VERSION}" version >/dev/null 2>&1 && return 0
@@ -78,20 +76,16 @@ jobs:
           resolvable() {
             npm view "$1@${VERSION}" version >/dev/null 2>&1
           }
-          FM_OK=false
-          OM_OK=false
-          accepted "@factmem/mcp" && FM_OK=true
-          accepted "@openmem/mcp" && OM_OK=true
-          if [ "$FM_OK" = "true" ] && [ "$OM_OK" = "true" ]; then
-            echo "$TAG already on npm as @factmem/mcp and @openmem/mcp"
+          if accepted "@facthouse/mcp"; then
+            echo "$TAG already on npm as @facthouse/mcp"
             echo "found=false" >> "$GITHUB_OUTPUT"
-            if resolvable "@factmem/mcp" && resolvable "@openmem/mcp"; then
+            if resolvable "@facthouse/mcp"; then
               echo "processing=false" >> "$GITHUB_OUTPUT"
             else
               echo "processing=true" >> "$GITHUB_OUTPUT"
             fi
           else
-            echo "$TAG missing on npm (factmem accepted=${FM_OK} openmem accepted=${OM_OK}) — publishing"
+            echo "$TAG missing on npm as @facthouse/mcp — publishing"
             echo "found=true" >> "$GITHUB_OUTPUT"
             echo "processing=false" >> "$GITHUB_OUTPUT"
           fi
@@ -150,23 +144,9 @@ jobs:
           echo "$LOG"
           if [ "$STATUS" -ne 0 ]; then
             if echo "$LOG" | grep -qi 'cannot publish over the previously published'; then
-              echo "npm already accepted @factmem/mcp at this version (live or still processing)."
+              echo "npm already accepted @facthouse/mcp at this version (live or still processing)."
             else
               exit "$STATUS"
-            fi
-          fi
-          # Linger: same tarball under @openmem/mcp so pinned mcp.json keeps working.
-          node -e "const fs=require('fs'); const p=JSON.parse(fs.readFileSync('package.json','utf8')); p.name='@openmem/mcp'; fs.writeFileSync('package.json', JSON.stringify(p, null, 2) + '\n');"
-          set +e
-          LOG2=$(npm publish --provenance --access public 2>&1)
-          STATUS2=$?
-          set -e
-          echo "$LOG2"
-          if [ "$STATUS2" -ne 0 ]; then
-            if echo "$LOG2" | grep -qi 'cannot publish over the previously published'; then
-              echo "npm already accepted @openmem/mcp at this version (live or still processing)."
-            else
-              exit "$STATUS2"
             fi
           fi
           echo "accepted=true" >> "$GITHUB_OUTPUT"
@@ -253,16 +233,16 @@ jobs:
           else
             MAX_WAIT=180
           fi
-          echo "Waiting up to ${MAX_WAIT}s for @factmem/mcp@${VERSION} (accepted=${ACCEPTED:-false} processing=${PROCESSING:-false})"
+          echo "Waiting up to ${MAX_WAIT}s for @facthouse/mcp@${VERSION} (accepted=${ACCEPTED:-false} processing=${PROCESSING:-false})"
           echo "max_wait=$MAX_WAIT" >> "$GITHUB_OUTPUT"
           DEADLINE=$((SECONDS + MAX_WAIT))
           ATTEMPT=0
           while [ "$SECONDS" -lt "$DEADLINE" ]; do
             ATTEMPT=$((ATTEMPT + 1))
-            if OUT=$(npm view "@factmem/mcp@${VERSION}" version 2>&1); then
+            if OUT=$(npm view "@facthouse/mcp@${VERSION}" version 2>&1); then
               echo "resolved=true" >> "$GITHUB_OUTPUT"
               echo "waited=$SECONDS" >> "$GITHUB_OUTPUT"
-              echo "@factmem/mcp@${VERSION} is live on npm after ${SECONDS}s ($ATTEMPT attempt(s))."
+              echo "@facthouse/mcp@${VERSION} is live on npm after ${SECONDS}s ($ATTEMPT attempt(s))."
               exit 0
             fi
             LEFT=$((DEADLINE - SECONDS))
@@ -292,20 +272,15 @@ jobs:
           SMOKE="$(mktemp -d)"
           cd "$SMOKE"
           npm init -y >/dev/null 2>&1
-          npm install "@factmem/mcp@${VERSION}" 2>&1 | tail -3
+          npm install "@facthouse/mcp@${VERSION}" 2>&1 | tail -3
 
           # The CLI must actually create a database. This is the exact call that
           # crashed with "Could not locate the bindings file" when the package
           # shipped without a usable native binary — an error no amount of
           # registry metadata would have revealed.
-          npx factmem init ./data
+          npx facthouse init ./data
           test -f ./data/memory.db || {
-            echo "::error::@factmem/mcp@${VERSION} installed but 'factmem init' produced no database. The published package is broken."
-            exit 1
-          }
-          npx openmemory init ./data-shim
-          test -f ./data-shim/memory.db || {
-            echo "::error::@factmem/mcp@${VERSION} installed but the openmemory CLI shim produced no database."
+            echo "::error::@facthouse/mcp@${VERSION} installed but 'facthouse init' produced no database. The published package is broken."
             exit 1
           }
           echo "Smoke test passed: installed from npm and created a database."
@@ -327,7 +302,7 @@ jobs:
           if [ "$RESOLVE" != "success" ]; then
             TITLE="Release ${TAG} did not become installable from npm"
             {
-              echo "The GitHub release **${TAG}** exists, but npm view @factmem/mcp@${VERSION} version was still empty after waiting **${WAITED:-?}s** (budget ${MAX_WAIT:-?}s)."
+              echo "The GitHub release **${TAG}** exists, but npm view @facthouse/mcp@${VERSION} version was still empty after waiting **${WAITED:-?}s** (budget ${MAX_WAIT:-?}s)."
               echo
               echo "Publish job result: ${PUBLISH_RESULT}. This run accepted a publish: ${ACCEPTED:-false}. Dist-tag showed an in-flight version: ${PROCESSING:-false}."
               echo
@@ -337,13 +312,13 @@ jobs:
               echo
               echo "Check, in order:"
               echo "1. Did the publish job run npm publish, or did it fail earlier (tests, install, auth)?"
-              echo "2. Is npm view @factmem/mcp@${VERSION} version empty *now*?"
+              echo "2. Is npm view @facthouse/mcp@${VERSION} version empty *now*?"
               echo "3. If publish succeeded and the version is still empty after 20 minutes, npm may be holding the package for review."
             } > "$BODY_FILE"
           else
             TITLE="Release ${TAG} is on npm but failed the install smoke test"
             {
-              echo "**${TAG}** resolves from npm, but a clean npm install @factmem/mcp@${VERSION} + factmem init did not produce a database. Users can download this release and it does not run."
+              echo "**${TAG}** resolves from npm, but a clean npm install @facthouse/mcp@${VERSION} + facthouse init did not produce a database. Users can download this release and it does not run."
               echo
               echo "Publish job result: ${PUBLISH_RESULT}."
               echo

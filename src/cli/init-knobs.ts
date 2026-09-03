@@ -1,5 +1,5 @@
 /**
- * The only knobs `factmem init` is allowed to ask about.
+ * The only knobs `facthouse init` is allowed to ask about.
  *
  * Silent values are expressions of DEFAULT_CONFIG / defaultDataDir(), not
  * copied literals. Prompt copy lives here so the wizard and tests cannot grow
@@ -431,8 +431,8 @@ export const INIT_SYNTHETIC = {
   claudeHome: "~/.claude",
   cursorHome: "~/.cursor",
   cwd: "C:\\dev\\app",
-  personalDir: "C:\\Users\\alex\\.factmem-personal",
-  workDir: "C:\\Users\\alex\\.factmem-work",
+  personalDir: "C:\\Users\\alex\\.facthouse-personal",
+  workDir: "C:\\Users\\alex\\.facthouse-work",
 } as const;
 
 /** Copy — never return DEFAULT_CONFIG.sources by reference. */
@@ -454,13 +454,13 @@ function supportedKindsList(): string {
 
 export const INIT_PROMPTS = {
   intro:
-    "FactMem setup. Press Enter to accept the default in [brackets].\n" +
+    "Facthouse setup. Press Enter to accept the default in [brackets].\n" +
     "One directory is one memory. Another store is another directory.",
   dataDir: (shown: string) => `Data directory [${shown}]: `,
   capture:
     "How should this store get conversations?  [copy]\n" +
     "  copy    recommended if Claude Code or Cursor writes a transcript here\n" +
-    "          — FactMem copies new lines into your file\n" +
+    "          — Facthouse copies new lines into your file\n" +
     "  record  any MCP client — the assistant calls capture_fact\n" +
     "          (Grok Build, Desktop, and anyone without a transcript file)\n" +
     "  [copy]: ",
@@ -559,16 +559,16 @@ export const INIT_PROMPTS = {
   copyStorewide:
     "On a copy store, capture_fact is a correction for every MCP client, not only the one that writes JSONL.",
   webExisting:
-    "config.json already exists — left unchanged; --web does not start a page. Run factmem settings --web for extra knobs, or --force to reset.",
+    "config.json already exists — left unchanged; --web does not start a page. Run facthouse settings --web for extra knobs, or --force to reset.",
   mcpVsCli:
     "The MCP JSON starts the server via npx and does not need a global install. " +
     `npm install -g puts ${CLI_NAME} on PATH for init, settings, stats, and inspect. ` +
-    `The same CLI without PATH is npx -y -p "@factmem/mcp" -- ${CLI_NAME} — pin the version; ` +
+    `The same CLI without PATH is npx -y -p "@facthouse/mcp" -- ${CLI_NAME} — pin the version; ` +
     "quote the package so PowerShell does not splat. " +
     "-p and -- stop an older global binary winning. " +
-    `npx -y @factmem/mcp with no -p / ${CLI_NAME} is the server; do not run it as a shell command for init, settings, or stats.`,
+    `npx -y @facthouse/mcp with no -p / ${CLI_NAME} is the server; do not run it as a shell command for init, settings, or stats.`,
   shellNote:
-    "These CLI commands work in bash, zsh, and PowerShell. Quote @factmem/mcp in PowerShell. " +
+    "These CLI commands work in bash, zsh, and PowerShell. Quote @facthouse/mcp in PowerShell. " +
     "Git Bash /c/... paths are not PowerShell; use C:/... and pass --data instead of cd or export. " +
     "~/ is expanded on every platform. WSL uses /mnt/c/....",
   webYesRefuse:
@@ -580,7 +580,7 @@ export const INIT_PROMPTS = {
 
 export const SETTINGS_PROMPTS = {
   intro: (dir: string) =>
-    `FactMem settings for ${dir}. Press Enter to keep the current value.`,
+    `Facthouse settings for ${dir}. Press Enter to keep the current value.`,
   missing: (dir: string) =>
     `No config.json at ${dir}. Run ${CLI_NAME} init first (this command does not create a store).`,
   malformed:

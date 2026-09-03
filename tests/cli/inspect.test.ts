@@ -217,7 +217,7 @@ describe("inspect graph HTML", () => {
     expect(html).toContain("Local extract");
     expect(html).toContain("Copy JSON");
     expect(html).toContain("Inspect does not save");
-    expect(html).toContain("factmem settings");
+    expect(html).toContain("facthouse settings");
     expect(html).not.toMatch(/TTY init/);
     expect(html).toContain("http://localhost:1234/v1");
     expect(html).not.toMatch(/writeFile|save config/i);

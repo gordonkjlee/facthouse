@@ -88,7 +88,7 @@ export function compilePatterns(
         patterns.push(new RegExp(source, "i"));
       } catch {
         console.error(
-          `[factmem] ignoring an invalid pattern for domain "${name}": ${source}`,
+          `[facthouse] ignoring an invalid pattern for domain "${name}": ${source}`,
         );
       }
     }

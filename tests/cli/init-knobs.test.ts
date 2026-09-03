@@ -63,7 +63,7 @@ describe("init knobs — one definition", () => {
     expect(readme).toContain(INIT_PROMPTS.copyStorewide);
     expect(INIT_PROMPTS.shellNote).toMatch(/C:\/\.\.\./);
     expect(INIT_PROMPTS.shellNote).toMatch(/~\/ is expanded/);
-    expect(readme).not.toMatch(/\$FACTMEM_DATA\b/);
+    expect(readme).not.toMatch(/\$FACTHOUSE_DATA\b/);
   });
 
   it("Unix-only path or env recipes have a following PowerShell fence", () => {
@@ -304,7 +304,7 @@ describe("init knobs — one definition", () => {
 
   it("scripted README init uses --yes, except a lone walk-through fence", () => {
     const readme = readmeText();
-    const initCall = /\b(?:om|factmem) init\b([^`\n]*)/g;
+    const initCall = /\b(?:om|facthouse) init\b([^`\n]*)/g;
     const fenceRe = /```(?:bash|powershell)\n([\s\S]*?)```/g;
     const fences: Array<{ start: number; end: number; body: string }> = [];
     for (const fence of readme.matchAll(fenceRe)) {
@@ -323,13 +323,13 @@ describe("init knobs — one definition", () => {
       const commands = liveLines(body);
       if (
         commands.length === 1 &&
-        /^(?:om|factmem) init\s*$/.test(commands[0] ?? "")
+        /^(?:om|facthouse) init\s*$/.test(commands[0] ?? "")
       ) {
         return true;
       }
       if (
         commands.length === 1 &&
-        /^npx -y -p "?@factmem\/mcp@\d+\.\d+\.\d+"? -- factmem init\s*$/.test(
+        /^npx -y -p "?@facthouse\/mcp@\d+\.\d+\.\d+"? -- facthouse init\s*$/.test(
           commands[0] ?? "",
         )
       ) {
@@ -337,8 +337,8 @@ describe("init knobs — one definition", () => {
       }
       return (
         commands.length === 2 &&
-        /^npm install -g @factmem\/mcp@\d+\.\d+\.\d+$/.test(commands[0] ?? "") &&
-        /^(?:om|factmem) init\s*$/.test(commands[1] ?? "")
+        /^npm install -g @facthouse\/mcp@\d+\.\d+\.\d+$/.test(commands[0] ?? "") &&
+        /^(?:om|facthouse) init\s*$/.test(commands[1] ?? "")
       );
     };
 
@@ -349,12 +349,12 @@ describe("init knobs — one definition", () => {
     expect(recipeB).toBeGreaterThanOrEqual(1);
 
     const installFence = fences.find((f) =>
-      liveLines(f.body).some((l) => /^npm install -g @factmem\/mcp@\d+\.\d+\.\d+$/.test(l)),
+      liveLines(f.body).some((l) => /^npm install -g @facthouse\/mcp@\d+\.\d+\.\d+$/.test(l)),
     );
     expect(installFence).toBeDefined();
     expect(liveLines(installFence?.body ?? "")).toEqual([
-      expect.stringMatching(/^npm install -g @factmem\/mcp@\d+\.\d+\.\d+$/),
-      "factmem init --yes",
+      expect.stringMatching(/^npm install -g @facthouse\/mcp@\d+\.\d+\.\d+$/),
+      "facthouse init --yes",
     ]);
 
     const quickStartAt = readme.indexOf("## Quick Start");
@@ -372,7 +372,7 @@ describe("init knobs — one definition", () => {
       expect(rest).not.toMatch(/^-y\b/);
     }
 
-    for (const m of readme.matchAll(/npx[^\n]*factmem init([^\n`]*)/g)) {
+    for (const m of readme.matchAll(/npx[^\n]*facthouse init([^\n`]*)/g)) {
       expect(m[1]).toMatch(/--yes\b/);
     }
   });
@@ -384,18 +384,18 @@ describe("init knobs — one definition", () => {
     expect(start).toBeGreaterThanOrEqual(0);
     const quick = readme.slice(start, next === -1 ? undefined : next);
     expect(quick).not.toMatch(/log-event/);
-    expect(quick).not.toMatch(/factmem record/);
+    expect(quick).not.toMatch(/facthouse record/);
     expect(quick).not.toMatch(/"hooks"/);
     expect(quick).not.toMatch(/embedding\.provider/);
     expect(quick).not.toMatch(/intelligence\.http/);
     expect(quick).not.toMatch(/11434/);
     expect(quick).not.toMatch(/ollama pull/);
-    expect(quick).not.toMatch(/factmem settings/);
-    expect(quick).not.toMatch(/factmem pull/);
+    expect(quick).not.toMatch(/facthouse settings/);
+    expect(quick).not.toMatch(/facthouse pull/);
     expect(quick).not.toMatch(/--web/);
     expect(quick).not.toMatch(/\bStop\b/);
     expect(quick).not.toMatch(/openmemory-personal/);
-    expect(quick).not.toMatch(/factmem-personal/);
+    expect(quick).not.toMatch(/facthouse-personal/);
     for (const fence of quick.matchAll(/```(?:bash|powershell|text|json)\n([\s\S]*?)```/g)) {
       expect(fence[1]).not.toMatch(/\bpull\b/);
     }
@@ -426,14 +426,14 @@ describe("init knobs — one definition", () => {
     expect(readme).not.toMatch(/Stop-hook pull/);
   });
 
-  it("later-editor copy names factmem settings, not TTY init as the later path", () => {
+  it("later-editor copy names facthouse settings, not TTY init as the later path", () => {
     const readme = readmeText();
-    expect(readme).toMatch(/#### `factmem settings`/);
-    expect(readme).toMatch(/later, `factmem settings`/i);
+    expect(readme).toMatch(/#### `facthouse settings`/);
+    expect(readme).toMatch(/later, `facthouse settings`/i);
     const start = readme.indexOf("## Quick Start");
     const next = readme.indexOf("\n## ", start + 1);
     const quick = readme.slice(start, next === -1 ? undefined : next);
-    expect(quick).not.toMatch(/factmem settings/);
+    expect(quick).not.toMatch(/facthouse settings/);
   });
 
   it("does not tell anyone to ollama pull", () => {

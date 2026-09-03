@@ -3,41 +3,35 @@
  * README tests, and publish smoke import from here. Do not copy these strings
  * into a second file.
  *
- * Compat aliases (OpenMemory / OPENMEMORY_* / @openmem/mcp / `.openmemory`)
- * are still read so existing stores, hooks, and mcp.json keep working. New
- * snippets and logs emit only the FactMem names.
+ * Facthouse is a hard cut. Previous names (FactMem, OpenMemory) are not
+ * read, not published, and not emitted. Existing stores stay where they
+ * are until the operator moves them.
  */
 
-export const PRODUCT_NAME = "FactMem";
-export const PRODUCT_SLUG = "factmem";
-export const CLI_NAME = "factmem";
-export const CLI_NAME_COMPAT = "openmemory";
-export const NPM_PACKAGE = "@factmem/mcp";
-export const NPM_PACKAGE_COMPAT = "@openmem/mcp";
-export const DEFAULT_MCP_SERVER_NAME = "factmem";
-export const GITHUB_REPO = "gordonkjlee/factmem";
-export const DEFAULT_DATA_DIRNAME = ".factmem";
-export const DEFAULT_DATA_DIRNAME_COMPAT = ".openmemory";
-export const ENV_PREFIX = "FACTMEM";
-export const ENV_PREFIX_COMPAT = "OPENMEMORY";
-export const LOG_PREFIX = "[factmem]";
-export const INSPECT_TITLE = "FactMem inspect";
-export const BRIEFING_HEADING = "# FactMem Briefing";
-export const WINDOWS_PIPE_PREFIX = "openmemory";
+export const PRODUCT_NAME = "Facthouse";
+export const PRODUCT_SLUG = "facthouse";
+export const CLI_NAME = "facthouse";
+export const NPM_PACKAGE = "@facthouse/mcp";
+export const DEFAULT_MCP_SERVER_NAME = "facthouse";
+export const GITHUB_REPO = "gordonkjlee/facthouse";
+export const DEFAULT_DATA_DIRNAME = ".facthouse";
+export const ENV_PREFIX = "FACTHOUSE";
+export const LOG_PREFIX = "[facthouse]";
+export const INSPECT_TITLE = "Facthouse inspect";
+export const BRIEFING_HEADING = "# Facthouse Briefing";
+export const WINDOWS_PIPE_PREFIX = "facthouse";
 
 export function envName(suffix: string, prefix: string = ENV_PREFIX): string {
   return `${prefix}_${suffix}`;
 }
 
-/** New prefix wins when both are set. Empty / whitespace is unset. */
+/** Empty / whitespace is unset. Only the Facthouse prefix is read. */
 export function envValue(
   suffix: string,
   env: NodeJS.ProcessEnv = process.env,
 ): string | undefined {
-  const neu = env[envName(suffix)]?.trim();
-  if (neu) return neu;
-  const old = env[envName(suffix, ENV_PREFIX_COMPAT)]?.trim();
-  if (old) return old;
+  const value = env[envName(suffix)]?.trim();
+  if (value) return value;
   return undefined;
 }
 
@@ -49,30 +43,25 @@ export function envIsSet(
   return envValue(suffix, env) === value;
 }
 
-/** npm spec for MCP snippets, e.g. `@factmem/mcp@0.23.0`. */
+/** npm spec for MCP snippets, e.g. `@facthouse/mcp@0.26.0`. */
 export function npmPackageSpec(version: string | null | undefined): string {
   return version ? `${NPM_PACKAGE}@${version}` : NPM_PACKAGE;
 }
 
-/** Env keys that select a store. Tests must strip both prefixes. */
+/** Env keys that select a store. Tests must strip this prefix. */
 export const STORE_ENV_KEYS: readonly string[] = [
   envName("DATA"),
-  envName("DATA", ENV_PREFIX_COMPAT),
   envName("SUBPROCESS"),
-  envName("SUBPROCESS", ENV_PREFIX_COMPAT),
   envName("STORAGE"),
-  envName("STORAGE", ENV_PREFIX_COMPAT),
   envName("POSTGRES_URL"),
-  envName("POSTGRES_URL", ENV_PREFIX_COMPAT),
 ];
 
-/** Set on the intelligence CLI child so both argv0s refuse to recurse. */
+/** Set on the intelligence CLI child so argv0 refuses to recurse. */
 export function subprocessGuardEnv(
   env: NodeJS.ProcessEnv = process.env,
 ): NodeJS.ProcessEnv {
   return {
     ...env,
     [envName("SUBPROCESS")]: "1",
-    [envName("SUBPROCESS", ENV_PREFIX_COMPAT)]: "1",
   };
 }

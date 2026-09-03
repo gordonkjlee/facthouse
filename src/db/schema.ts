@@ -677,7 +677,7 @@ async function applyV13(db: Db): Promise<void> {
 // ---------------------------------------------------------------------------
 // Schema version 14 — when a session event was said, vs when it was copied
 //
-// `created_at` is when FactMem wrote the row. Claude Code JSONL lines
+// `created_at` is when Facthouse wrote the row. Claude Code JSONL lines
 // already carry a top-level ISO `timestamp` for when the turn was recorded;
 // copy used to drop it, so a backfill looked like it all happened at copy time.
 // `occurred_at` is when the turn was said: JSONL `timestamp` on pull, or the

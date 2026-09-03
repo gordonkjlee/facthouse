@@ -39,10 +39,10 @@ let clients: Client[] = [];
 async function connect(name: string, dataDir: string): Promise<Client> {
   const env: Record<string, string> = {};
   for (const [k, v] of Object.entries(process.env)) if (v !== undefined) env[k] = v;
-  env.OPENMEMORY_DATA = dataDir;
+  env.FACTHOUSE_DATA = dataDir;
   // Heuristic keeps the test hermetic: the default provider shells out to the
   // `claude` CLI, which would make this depend on a subscription and a network.
-  env.OPENMEMORY_PROVIDER = "heuristic";
+  env.FACTHOUSE_PROVIDER = "heuristic";
 
   const transport = new StdioClientTransport({
     command: process.execPath,
@@ -114,8 +114,8 @@ beforeEach(() => {
   for (const [k, v] of Object.entries(withoutStoreEnv())) {
     if (v !== undefined) env[k] = v;
   }
-  env.FACTMEM_PROVIDER = "heuristic";
-  env.OPENMEMORY_PROVIDER = "heuristic";
+  env.FACTHOUSE_PROVIDER = "heuristic";
+  env.FACTHOUSE_PROVIDER = "heuristic";
   spawnSync(process.execPath, [CLI, "init", root, "--yes"], {
     encoding: "utf-8",
     timeout: 30_000,

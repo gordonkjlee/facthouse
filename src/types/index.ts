@@ -1,5 +1,5 @@
 /**
- * Barrel re-export for all FactMem types.
+ * Barrel re-export for all Facthouse types.
  */
 
 export * from "./config.js";

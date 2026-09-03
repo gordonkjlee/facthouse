@@ -25,7 +25,7 @@ export const EMBEDDING_PROVIDER_ENV = envName("EMBEDDING_PROVIDER");
 /**
  * Resolve the effective provider type. `none` is accepted explicitly so a
  * store with semantic search configured can be run without it — the same
- * escape hatch `FACTMEM_PROVIDER=heuristic` gives the intelligence layer.
+ * escape hatch `FACTHOUSE_PROVIDER=heuristic` gives the intelligence layer.
  */
 export function resolveEmbeddingProviderType(
   configured: EmbeddingProviderType | null,

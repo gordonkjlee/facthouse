@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * FactMem MCP Server
+ * Facthouse MCP Server
  *
  * AI memory engine exposed as an MCP server.
  * Structured knowledge with server-side intelligence. Any AI tool can query it via MCP.
@@ -102,7 +102,7 @@ async function main() {
   }
   db = database;
   await applySchema(database);
-  // Also here, not only in `factmem init` — init is optional, and a store the
+  // Also here, not only in `facthouse init` — init is optional, and a store the
   // server created on first boot needs the anchor just as much as one that was
   // set up ahead of time. Idempotent.
   await ensureSelfEntity(database);
@@ -141,8 +141,8 @@ async function main() {
 
   // Provider selector — heuristic is always the terminal fallback. Defaults to
   // the CLI provider: subprocess `claude -p` for real LLM consolidation
-  // via the user's own subscription. The FACTMEM_PROVIDER env var overrides
-  // the config.json choice (kill-switch, e.g. FACTMEM_PROVIDER=heuristic).
+  // via the user's own subscription. The FACTHOUSE_PROVIDER env var overrides
+  // the config.json choice (kill-switch, e.g. FACTHOUSE_PROVIDER=heuristic).
   const storeVocabulary = await loadStoreVocabulary(
     database,
     config.domains ?? [],
@@ -159,7 +159,7 @@ async function main() {
   // Built once at boot: resolution reads config and the environment, neither of
   // which changes mid-process.
   const embeddingProvider = createEmbeddingProvider(config.embedding, {
-    onUnavailable: (reason) => console.error(`[factmem] ${reason}`),
+    onUnavailable: (reason) => console.error(`[facthouse] ${reason}`),
   });
 
   // Named sources: copy new lines when a tool or resource is read if the
@@ -169,11 +169,11 @@ async function main() {
     sources: config.sources,
     onCopied: (copied) => {
       console.error(
-        `[factmem] Copied ${copied.events_inserted} event(s) from ${copied.files} source file(s).`,
+        `[facthouse] Copied ${copied.events_inserted} event(s) from ${copied.files} source file(s).`,
       );
     },
     onError: (err) => {
-      console.error(`[factmem] Source copy failed: ${err.message}`);
+      console.error(`[facthouse] Source copy failed: ${err.message}`);
     },
   });
   const beforeRead = async () => {
@@ -257,19 +257,19 @@ async function main() {
     if (triggerSet.has("threshold") || triggerSet.has("compaction")) {
       try {
         // A delivered moment is an explicit request from another process
-        // (a hook, `factmem notify`); `triggers` decides whether this server
+        // (a hook, `facthouse notify`); `triggers` decides whether this server
         // listens at all, not whether it honours what it was told.
         ipcListener = await startNotifyListener(dataDir, (moment) => {
           void sched.run(moment);
         });
         if (!ipcListener.bound) {
           console.error(
-            "[factmem] Another MCP server is handling notifications for this data dir.",
+            "[facthouse] Another MCP server is handling notifications for this data dir.",
           );
         }
       } catch (err) {
         console.error(
-          `[factmem] Could not start IPC listener: ${(err as Error).message}. ` +
+          `[facthouse] Could not start IPC listener: ${(err as Error).message}. ` +
             `Threshold / compaction triggers will not fire.`,
         );
       }
@@ -291,7 +291,7 @@ async function main() {
           result.eventsRemaining > 0
         ) {
           console.error(
-            `[factmem] ${result.eventsRemaining} event(s) still waiting to be extracted ` +
+            `[facthouse] ${result.eventsRemaining} event(s) still waiting to be extracted ` +
               `after this run's cap. Run ${CLI_NAME} consolidate --all, or let the ` +
               `next session start take the next batch.`,
           );

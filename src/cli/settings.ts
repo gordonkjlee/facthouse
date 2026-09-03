@@ -1,5 +1,5 @@
 /**
- * `factmem settings` — merge More knobs into an existing config.json.
+ * `facthouse settings` — merge More knobs into an existing config.json.
  *
  * Does not create a store, open a database, or reset the file. Missing or
  * malformed JSON is refused. `--json` / non-TTY dump and do not write.

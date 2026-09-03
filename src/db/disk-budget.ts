@@ -101,7 +101,7 @@ export function diskBudgetRefusedMessage(opts: {
     `Store is at its disk budget (${used} of ${cap}). More raw events were not written. ` +
     `${reclaim} ` +
     `To give space back to the operating system after a lower cap, run ` +
-    `factmem prune --apply --vacuum.`
+    `facthouse prune --apply --vacuum.`
   );
 }
 
@@ -140,7 +140,7 @@ export async function postgresStoreBytes(db: Db): Promise<number | null> {
     if (!postgresSizeWarned) {
       postgresSizeWarned = true;
       console.error(
-        "[factmem] Could not read Postgres database size; disk budget is not enforced.",
+        "[facthouse] Could not read Postgres database size; disk budget is not enforced.",
         err instanceof Error ? err.message : err,
       );
     }

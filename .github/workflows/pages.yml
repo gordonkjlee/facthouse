@@ -1,4 +1,4 @@
-# Rebuild factmem.dev from README.md on every push to main.
+# Rebuild facthouse.dev from README.md on every push to main.
 # Source of truth is the repo docs, not a separate marketing page.
 
 name: Pages
@@ -41,7 +41,7 @@ jobs:
           test -f _site/sitemap.xml
           test -f "_site/${INDEXNOW_KEY}.txt"
           test "$(tr -d '\n' < "_site/${INDEXNOW_KEY}.txt")" = "${INDEXNOW_KEY}"
-          test "$(tr -d '\n' < _site/CNAME)" = "factmem.dev"
+          test "$(tr -d '\n' < _site/CNAME)" = "facthouse.dev"
 
       - name: Pages builder tests
         run: python -m pytest .github/scripts/test_build_pages.py -q
@@ -68,7 +68,7 @@ jobs:
       cancel-in-progress: false
     env:
       # Public IndexNow host-verification key, not a credential.
-      # Served at https://factmem.dev/{key}.txt after deploy-pages.
+      # Served at https://facthouse.dev/{key}.txt after deploy-pages.
       INDEXNOW_KEY: a88a795220f4450e97a5f2486a4426f8
     steps:
       - id: deployment
@@ -81,7 +81,7 @@ jobs:
           status=$(curl -sS -o /tmp/indexnow-body -w "%{http_code}" \
             -X POST "https://api.indexnow.org/indexnow" \
             -H "Content-Type: application/json" \
-            -d "{\"host\":\"factmem.dev\",\"key\":\"${INDEXNOW_KEY}\",\"keyLocation\":\"https://factmem.dev/${INDEXNOW_KEY}.txt\",\"urlList\":[\"https://factmem.dev/\",\"https://factmem.dev/demo.html\"]}") || status="curl-failed"
+            -d "{\"host\":\"facthouse.dev\",\"key\":\"${INDEXNOW_KEY}\",\"keyLocation\":\"https://facthouse.dev/${INDEXNOW_KEY}.txt\",\"urlList\":[\"https://facthouse.dev/\",\"https://facthouse.dev/demo.html\"]}") || status="curl-failed"
           echo "IndexNow HTTP status: ${status}"
           cat /tmp/indexnow-body 2>/dev/null || true
           echo

@@ -1409,15 +1409,15 @@ describe("extract and integrate can run separately", () => {
 });
 
 describe("token budget gate", () => {
-  const prevProvider = process.env.OPENMEMORY_PROVIDER;
+  const prevProvider = process.env.FACTHOUSE_PROVIDER;
 
   beforeEach(() => {
-    delete process.env.OPENMEMORY_PROVIDER;
+    delete process.env.FACTHOUSE_PROVIDER;
   });
 
   afterEach(() => {
-    if (prevProvider === undefined) delete process.env.OPENMEMORY_PROVIDER;
-    else process.env.OPENMEMORY_PROVIDER = prevProvider;
+    if (prevProvider === undefined) delete process.env.FACTHOUSE_PROVIDER;
+    else process.env.FACTHOUSE_PROVIDER = prevProvider;
   });
 
   function extractingSpy() {

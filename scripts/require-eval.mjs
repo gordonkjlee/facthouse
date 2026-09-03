@@ -16,19 +16,19 @@ import { spawn } from "node:child_process";
 
 const EVALS = {
   "first-fact": {
-    env: "OPENMEMORY_REQUIRE_FIRST_FACT_EVAL",
+    env: "FACTHOUSE_REQUIRE_FIRST_FACT_EVAL",
     file: "tests/integration/first-fact.test.ts",
   },
   semantic: {
-    env: "OPENMEMORY_REQUIRE_SEMANTIC_EVAL",
+    env: "FACTHOUSE_REQUIRE_SEMANTIC_EVAL",
     file: "tests/integration/semantic-recall.test.ts",
   },
   "coding-store": {
-    env: "OPENMEMORY_REQUIRE_CODING_STORE_EVAL",
+    env: "FACTHOUSE_REQUIRE_CODING_STORE_EVAL",
     file: "tests/integration/coding-store.test.ts",
   },
   "http-intelligence": {
-    env: "OPENMEMORY_REQUIRE_HTTP_INTEL_EVAL",
+    env: "FACTHOUSE_REQUIRE_HTTP_INTEL_EVAL",
     file: "tests/integration/http-intelligence.test.ts",
   },
 };

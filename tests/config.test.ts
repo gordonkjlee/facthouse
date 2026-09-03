@@ -56,7 +56,7 @@ describe("storage provider", () => {
     expect(() => loadShippedStoreConfig(dir, {})).toThrow(postgresMissingUrlMessage());
   });
 
-  it("lets FACTMEM_STORAGE beat OPENMEMORY_STORAGE", () => {
+  it("ignores FACTMEM_STORAGE and OPENMEMORY_STORAGE", () => {
     writeFileSync(
       path.join(dir, "config.json"),
       JSON.stringify({ storage: { provider: "sqlite" } }),
@@ -64,18 +64,18 @@ describe("storage provider", () => {
     expect(
       configuredStorageProvider(loadConfig(dir), {
         FACTMEM_STORAGE: "postgres",
-        OPENMEMORY_STORAGE: "sqlite",
+        OPENMEMORY_STORAGE: "postgres",
       }),
-    ).toBe("postgres");
+    ).toBe("sqlite");
   });
 
-  it("lets OPENMEMORY_STORAGE override config.json", () => {
+  it("lets FACTHOUSE_STORAGE override config.json", () => {
     writeFileSync(
       path.join(dir, "config.json"),
       JSON.stringify({ storage: { provider: "sqlite" } }),
     );
     expect(
-      configuredStorageProvider(loadConfig(dir), { OPENMEMORY_STORAGE: "postgres" }),
+      configuredStorageProvider(loadConfig(dir), { FACTHOUSE_STORAGE: "postgres" }),
     ).toBe("postgres");
   });
 
@@ -108,7 +108,7 @@ describe("storage provider", () => {
       JSON.stringify({ storage: { provider: "postgres" } }),
     );
     const cfg = loadShippedStoreConfig(dir, {
-      OPENMEMORY_POSTGRES_URL: "postgres://USER:PASSWORD@127.0.0.1:5432/openmemory",
+      FACTHOUSE_POSTGRES_URL: "postgres://USER:PASSWORD@127.0.0.1:5432/openmemory",
     });
     expect(cfg.storage.provider).toBe("postgres");
     expect(existsSync(path.join(dir, "memory.db"))).toBe(false);
@@ -120,7 +120,7 @@ describe("storage provider", () => {
       JSON.stringify({ storage: { provider: "postgres" } }),
     );
     expect(() =>
-      loadShippedStoreConfig(dir, { OPENMEMORY_POSTGRES_URL: "https://example.invalid/db" }),
+      loadShippedStoreConfig(dir, { FACTHOUSE_POSTGRES_URL: "https://example.invalid/db" }),
     ).toThrow(postgresInvalidUrlMessage());
     expect(existsSync(path.join(dir, "memory.db"))).toBe(false);
   });

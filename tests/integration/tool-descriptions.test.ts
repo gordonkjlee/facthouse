@@ -53,8 +53,8 @@ beforeAll(async () => {
 
   const env: Record<string, string> = {};
   for (const [k, v] of Object.entries(process.env)) if (v !== undefined) env[k] = v;
-  env.OPENMEMORY_DATA = root;
-  env.OPENMEMORY_PROVIDER = "heuristic";
+  env.FACTHOUSE_DATA = root;
+  env.FACTHOUSE_PROVIDER = "heuristic";
 
   const transport = new StdioClientTransport({
     command: process.execPath,
@@ -247,8 +247,8 @@ describe.skipIf(!runnable)(
 
       const env: Record<string, string> = {};
       for (const [k, v] of Object.entries(process.env)) if (v !== undefined) env[k] = v;
-      env.OPENMEMORY_DATA = pullRoot;
-      env.OPENMEMORY_PROVIDER = "heuristic";
+      env.FACTHOUSE_DATA = pullRoot;
+      env.FACTHOUSE_PROVIDER = "heuristic";
 
       const transport = new StdioClientTransport({
         command: process.execPath,
@@ -300,8 +300,8 @@ describe.skipIf(!runnable)(
 
       const env: Record<string, string> = {};
       for (const [k, v] of Object.entries(process.env)) if (v !== undefined) env[k] = v;
-      env.OPENMEMORY_DATA = biRoot;
-      env.OPENMEMORY_PROVIDER = "heuristic";
+      env.FACTHOUSE_DATA = biRoot;
+      env.FACTHOUSE_PROVIDER = "heuristic";
 
       const transport = new StdioClientTransport({
         command: process.execPath,
@@ -400,35 +400,35 @@ describe.skipIf(!runnable)("the README names tools that exist", () => {
   });
 
   it("hook and CLI examples invoke the CLI, not the MCP server", () => {
-    // bin.mcp is first and is dist/index.js. `npx -y @factmem/mcp` therefore
+    // bin.mcp is first and is dist/index.js. `npx -y @facthouse/mcp` therefore
     // starts the stdio server and hangs a hook. The CLI is
-    // `npx -y -p @factmem/mcp factmem …`. MCP config uses command "npx"
+    // `npx -y -p @facthouse/mcp facthouse …`. MCP config uses command "npx"
     // with args; that is the server, on purpose.
     const md = readFileSync(README, "utf-8");
     const hookCmds = [...md.matchAll(/"command":\s*"([^"]+)"/g)].map((m) => m[1]);
     for (const cmd of hookCmds) {
       if (cmd === "npx") continue;
-      expect(cmd).toMatch(/\bfactmem\b/);
-      expect(cmd).not.toMatch(/^npx -y @factmem\/mcp(?:@[\w.-]+)?$/);
-      expect(cmd).not.toMatch(/^npx -y @factmem\/mcp(?:@[\w.-]+)? /);
+      expect(cmd).toMatch(/\bfacthouse\b/);
+      expect(cmd).not.toMatch(/^npx -y @facthouse\/mcp(?:@[\w.-]+)?$/);
+      expect(cmd).not.toMatch(/^npx -y @facthouse\/mcp(?:@[\w.-]+)? /);
     }
     for (const line of md.split("\n")) {
       const trimmed = line.trim();
       if (!trimmed.startsWith("npx ")) continue;
-      expect(trimmed).toMatch(/-p "@factmem\/mcp/);
-      expect(trimmed).toMatch(/\bfactmem\b/);
+      expect(trimmed).toMatch(/-p "@facthouse\/mcp/);
+      expect(trimmed).toMatch(/\bfacthouse\b/);
     }
   });
 
   it("PowerShell examples quote the scoped package so @ is not splat", () => {
-    // `@factmem/mcp` unquoted is PowerShell splatting $factmem. A tester
+    // `@facthouse/mcp` unquoted is PowerShell splatting $facthouse. A tester
     // pasting Quick Start then gets a bind error, not a memory store.
     const md = readFileSync(README, "utf-8");
     const blocks = [...md.matchAll(/```powershell\r?\n([\s\S]*?)```/gi)].map((m) => m[1]);
     expect(blocks.length).toBeGreaterThan(0);
     for (const block of blocks) {
-      expect(block).not.toMatch(/-p @factmem\//);
-      expect(block).toMatch(/-p "@factmem\/mcp/);
+      expect(block).not.toMatch(/-p @facthouse\//);
+      expect(block).toMatch(/-p "@facthouse\/mcp/);
     }
   });
 

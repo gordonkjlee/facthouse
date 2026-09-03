@@ -13,8 +13,8 @@ import build_pages
 ROOT = Path(__file__).resolve().parents[2]
 README_PITCH = (
     "A local memory engine any AI tool can use. "
-    "GitHub [`gordonkjlee/factmem`](https://github.com/gordonkjlee/factmem), "
-    "npm [`@factmem/mcp`](https://www.npmjs.com/package/@factmem/mcp)."
+    "GitHub [`gordonkjlee/facthouse`](https://github.com/gordonkjlee/facthouse), "
+    "npm [`@facthouse/mcp`](https://www.npmjs.com/package/@facthouse/mcp)."
 )
 
 
@@ -22,7 +22,7 @@ def test_rewrite_contributing_to_github():
     src = ROOT / "README.md"
     assert (
         build_pages.rewrite_url("CONTRIBUTING.md", src)
-        == "https://github.com/gordonkjlee/factmem/blob/main/CONTRIBUTING.md"
+        == "https://github.com/gordonkjlee/facthouse/blob/main/CONTRIBUTING.md"
     )
 
 
@@ -30,15 +30,15 @@ def test_rewrite_source_file_to_github():
     src = ROOT / "README.md"
     assert (
         build_pages.rewrite_url("src/cli/query.ts", src)
-        == "https://github.com/gordonkjlee/factmem/blob/main/src/cli/query.ts"
+        == "https://github.com/gordonkjlee/facthouse/blob/main/src/cli/query.ts"
     )
 
 
 def test_rewrite_leaves_external_and_anchors():
     src = ROOT / "README.md"
     assert build_pages.rewrite_url(
-        "https://www.npmjs.com/package/@factmem/mcp", src
-    ) == ("https://www.npmjs.com/package/@factmem/mcp")
+        "https://www.npmjs.com/package/@facthouse/mcp", src
+    ) == ("https://www.npmjs.com/package/@facthouse/mcp")
     assert build_pages.rewrite_url("#quick-start", src) == "#quick-start"
 
 
@@ -46,20 +46,21 @@ def test_builds_site_from_readme(tmp_path: Path):
     site = build_pages.build(tmp_path)
 
     index = (site / "index.html").read_text(encoding="utf-8")
-    assert "<title>FactMem</title>" in index
+    assert "<title>Facthouse</title>" in index
     assert "A local memory engine any AI tool can use." in index
-    assert "[`gordonkjlee/factmem`]" not in index
+    assert "[`gordonkjlee/facthouse`]" not in index
     version = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))["version"]
-    assert f"<code>npm install -g @factmem/mcp@{version}</code>" in index
-    assert "<code>npm install -g @factmem/mcp</code>" not in index
-    assert "https://github.com/gordonkjlee/factmem" in index
-    assert "https://www.npmjs.com/package/@factmem/mcp" in index
+    assert f"<code>npm install -g @facthouse/mcp@{version}</code>" in index
+    assert "<code>npm install -g @facthouse/mcp</code>" not in index
+    assert "https://github.com/gordonkjlee/facthouse" in index
+    assert "https://www.npmjs.com/package/@facthouse/mcp" in index
     assert "What you get" in index
-    assert "You own the SQLite file" in index
+    assert "You own the SQLite file" not in index
+    assert "You own the file" not in index
     assert "<table>" in index
     assert 'href="CONTRIBUTING.md"' not in index
     assert (
-        "https://github.com/gordonkjlee/factmem/blob/main/CONTRIBUTING.md"
+        "https://github.com/gordonkjlee/facthouse/blob/main/CONTRIBUTING.md"
         in index
     )
     assert 'src="assets/logo.png"' in index
@@ -70,7 +71,7 @@ def test_builds_site_from_readme(tmp_path: Path):
     assert "capture_fact" in demo
     assert "node:sqlite" not in demo
 
-    assert (site / "CNAME").read_text(encoding="utf-8") == "factmem.dev\n"
+    assert (site / "CNAME").read_text(encoding="utf-8") == "facthouse.dev\n"
     assert (site / ".nojekyll").is_file()
     assert (site / "assets" / "logo.png").is_file()
 
@@ -78,25 +79,25 @@ def test_builds_site_from_readme(tmp_path: Path):
     assert "User-agent: *" in robots
     assert "Allow: /" in robots
     assert "Disallow:" not in robots
-    assert "Sitemap: https://factmem.dev/sitemap.xml" in robots
+    assert "Sitemap: https://facthouse.dev/sitemap.xml" in robots
 
     sitemap = (site / "sitemap.xml").read_text(encoding="utf-8")
-    assert "<loc>https://factmem.dev</loc>" in sitemap
-    assert "<loc>https://factmem.dev/demo.html</loc>" in sitemap
-    assert "www.factmem.dev" not in sitemap
+    assert "<loc>https://facthouse.dev</loc>" in sitemap
+    assert "<loc>https://facthouse.dev/demo.html</loc>" in sitemap
+    assert "www.facthouse.dev" not in sitemap
     assert sitemap.count("<loc>") == 2
 
     key_name = f"{build_pages.INDEXNOW_KEY}.txt"
     assert (site / key_name).read_text(encoding="utf-8") == f"{build_pages.INDEXNOW_KEY}\n"
 
     assert ">gordonkjlee/openmemory<" not in index
-    assert ">gordonkjlee/factmem<" in index
+    assert ">gordonkjlee/facthouse<" in index
 
 
 def test_npm_global_install_command_matches_package_json():
     version = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))["version"]
     assert build_pages.npm_global_install_command() == (
-        f"npm install -g @factmem/mcp@{version}"
+        f"npm install -g @facthouse/mcp@{version}"
     )
 
 
@@ -111,20 +112,20 @@ def test_npm_global_install_command_refuses_empty_version(
 def test_pitch_helpers_keep_readme_lede():
     assert build_pages.pitch_plain(README_PITCH) == (
         "A local memory engine any AI tool can use. "
-        "GitHub gordonkjlee/factmem, "
-        "npm @factmem/mcp."
+        "GitHub gordonkjlee/facthouse, "
+        "npm @facthouse/mcp."
     )
     html = build_pages.pitch_html(README_PITCH)
     assert html.startswith("A local memory engine any AI tool can use.")
-    assert 'href="https://github.com/gordonkjlee/factmem"' in html
-    assert 'href="https://www.npmjs.com/package/@factmem/mcp"' in html
+    assert 'href="https://github.com/gordonkjlee/facthouse"' in html
+    assert 'href="https://www.npmjs.com/package/@facthouse/mcp"' in html
 
 
 def test_split_readme_uses_lede_and_keeps_image():
     pitch, rest = build_pages.split_readme((ROOT / "README.md").read_text(encoding="utf-8"))
     assert pitch == README_PITCH
     assert rest.startswith("<img ")
-    assert "# FactMem" not in rest.splitlines()[0]
+    assert "# Facthouse" not in rest.splitlines()[0]
     assert "# OpenMemory" not in rest.splitlines()[0]
     assert "## Quick Start" in rest
     assert "## What you get" in rest
@@ -163,16 +164,16 @@ def test_index_has_software_application_json_ld(tmp_path: Path):
     assert match, "missing JSON-LD script"
     body = match.group(1)
     data = json.loads(body)
-    assert data["name"] == "FactMem"
-    assert data["url"] == "https://factmem.dev"
+    assert data["name"] == "Facthouse"
+    assert data["url"] == "https://facthouse.dev"
     assert data["sameAs"] == [
-        "https://github.com/gordonkjlee/factmem",
-        "https://www.npmjs.com/package/@factmem/mcp",
+        "https://github.com/gordonkjlee/facthouse",
+        "https://www.npmjs.com/package/@facthouse/mcp",
     ]
     assert data["description"] == (
-        "A local memory engine any AI tool can use. You own the SQLite file."
+        "A local memory engine any AI tool can use."
     )
-    assert "www.factmem.dev" not in body
+    assert "www.facthouse.dev" not in body
     assert "openmemory" not in body.lower()
     assert "mem0" not in body.lower()
 

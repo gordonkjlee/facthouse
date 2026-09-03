@@ -118,7 +118,7 @@ describe("what prune refuses to remove", () => {
   });
 
   it("partitions dual-id rows by client id, matching conversationRef", async () => {
-    // Pull writes client only. MCP log_event with OPENMEMORY_CLIENT_SESSION
+    // Pull writes client only. MCP log_event with FACTHOUSE_CLIENT_SESSION
     // writes both. They are the same Claude chat, so they share a working-memory
     // window. mcp-first COALESCE would split them: pull by client, MCP by
     // connection. Client-first keeps them together.

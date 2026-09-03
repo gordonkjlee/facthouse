@@ -1,5 +1,5 @@
 /**
- * `factmem inspect` — sample D / I / K and write a local HTML app
+ * `facthouse inspect` — sample D / I / K and write a local HTML app
  * (graph + spend). Does not open a browser.
  */
 

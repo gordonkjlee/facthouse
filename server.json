@@ -1,17 +1,17 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
-  "name": "io.github.gordonkjlee/factmem",
-  "title": "FactMem",
-  "description": "A local memory engine. You own the SQLite file. Not Mem0's hosted OpenMemory MCP.",
+  "name": "io.github.gordonkjlee/facthouse",
+  "title": "Facthouse",
+  "description": "A local memory engine any AI tool can use. Not Mem0's hosted OpenMemory MCP.",
   "repository": {
-    "url": "https://github.com/gordonkjlee/factmem",
+    "url": "https://github.com/gordonkjlee/facthouse",
     "source": "github"
   },
   "version": "0.26.0",
   "packages": [
     {
       "registryType": "npm",
-      "identifier": "@factmem/mcp",
+      "identifier": "@facthouse/mcp",
       "version": "0.26.0",
       "transport": {
         "type": "stdio"

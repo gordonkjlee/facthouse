@@ -157,9 +157,9 @@ describe("patchConfigDocument", () => {
     );
   });
 
-  it("keep-on omitted map is identity, including under FACTMEM_PROVIDER=heuristic", () => {
-    const prev = process.env.FACTMEM_PROVIDER;
-    process.env.FACTMEM_PROVIDER = "heuristic";
+  it("keep-on omitted map is identity, including under FACTHOUSE_PROVIDER=heuristic", () => {
+    const prev = process.env.FACTHOUSE_PROVIDER;
+    process.env.FACTHOUSE_PROVIDER = "heuristic";
     try {
       for (const stages of [undefined, {}]) {
         const doc: Record<string, unknown> = {
@@ -176,8 +176,8 @@ describe("patchConfigDocument", () => {
         expect(JSON.stringify(next)).toBe(JSON.stringify(doc));
       }
     } finally {
-      if (prev === undefined) delete process.env.FACTMEM_PROVIDER;
-      else process.env.FACTMEM_PROVIDER = prev;
+      if (prev === undefined) delete process.env.FACTHOUSE_PROVIDER;
+      else process.env.FACTHOUSE_PROVIDER = prev;
     }
   });
 

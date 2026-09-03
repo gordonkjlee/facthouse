@@ -284,11 +284,11 @@ describe("provider selection", () => {
   });
 
   it("honours the env kill-switch in both directions", () => {
-    expect(resolveEmbeddingProviderType("voyage", { OPENMEMORY_EMBEDDING_PROVIDER: "none" }))
+    expect(resolveEmbeddingProviderType("voyage", { FACTHOUSE_EMBEDDING_PROVIDER: "none" }))
       .toBeNull();
-    expect(resolveEmbeddingProviderType(null, { OPENMEMORY_EMBEDDING_PROVIDER: "ollama" }))
+    expect(resolveEmbeddingProviderType(null, { FACTHOUSE_EMBEDDING_PROVIDER: "ollama" }))
       .toBe("ollama");
-    expect(resolveEmbeddingProviderType("voyage", { OPENMEMORY_EMBEDDING_PROVIDER: "nonsense" }))
+    expect(resolveEmbeddingProviderType("voyage", { FACTHOUSE_EMBEDDING_PROVIDER: "nonsense" }))
       .toBe("voyage");
   });
 });

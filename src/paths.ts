@@ -3,27 +3,21 @@
  *
  * One function for the default store path and one expander for user-typed
  * paths. The CLI, MCP server, and init snippet names must not each invent
- * `path.join(homedir(), ".factmem")`.
+ * `path.join(homedir(), ".facthouse")`.
  */
 
-import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
-import {
-  DEFAULT_DATA_DIRNAME,
-  DEFAULT_DATA_DIRNAME_COMPAT,
-  envValue,
-} from "./identity.js";
+import { DEFAULT_DATA_DIRNAME, envValue } from "./identity.js";
 
-export { DEFAULT_DATA_DIRNAME, DEFAULT_DATA_DIRNAME_COMPAT };
+export { DEFAULT_DATA_DIRNAME };
 
 export interface DefaultDataDirOpts {
   home?: string;
   env?: NodeJS.ProcessEnv;
-  exists?: (p: string) => boolean;
 }
 
-/** Absolute path of the new default (`~/.factmem`), ignoring an old store. */
+/** Absolute path of the default (`~/.facthouse`). */
 export function newInstallDataDir(home: string = homedir()): string {
   return path.join(home, DEFAULT_DATA_DIRNAME);
 }
@@ -31,20 +25,15 @@ export function newInstallDataDir(home: string = homedir()): string {
 /**
  * Default store directory when the user did not pass `--data` / a positional.
  *
- * Order: FACTMEM_DATA, OPENMEMORY_DATA, existing `~/.factmem`, existing
- * `~/.openmemory`, else `~/.factmem`. Never copies or moves a directory.
+ * Order: FACTHOUSE_DATA, else `~/.facthouse`. Does not look at `.factmem` or
+ * `.openmemory`. Never copies or moves a directory.
  */
 export function defaultDataDir(opts: DefaultDataDirOpts = {}): string {
   const home = opts.home ?? homedir();
   const env = opts.env ?? process.env;
-  const exists = opts.exists ?? existsSync;
   const fromEnv = envValue("DATA", env);
   if (fromEnv) return path.resolve(expandTilde(fromEnv));
-  const neu = path.join(home, DEFAULT_DATA_DIRNAME);
-  const old = path.join(home, DEFAULT_DATA_DIRNAME_COMPAT);
-  if (exists(neu)) return neu;
-  if (exists(old)) return old;
-  return neu;
+  return path.join(home, DEFAULT_DATA_DIRNAME);
 }
 
 /** `--data` flag default: env override or {@link defaultDataDir}. */

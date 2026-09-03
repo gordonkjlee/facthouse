@@ -2,7 +2,7 @@
  * Cross-process notification to the running MCP server.
  *
  * The MCP server holds a listener on a Unix domain socket (or Windows named
- * pipe). A separate short-lived process — `factmem notify`, `record`, a
+ * pipe). A separate short-lived process — `facthouse notify`, `record`, a
  * hook — connects, writes one byte naming the moment that happened, and
  * closes. The server's listener decodes the byte and calls onMoment with it.
  * What each moment runs is MOMENT_POLICY in src/intelligence/steps.ts; the
@@ -17,7 +17,7 @@
  *
  * Path format:
  *   Unix:    <dataDir>/.scheduler.sock
- *   Windows: \\.\pipe\openmemory-<sha1(dataDir).slice(0,16)>  (kernel-managed)
+ *   Windows: \\.\pipe\facthouse-<sha1(dataDir).slice(0,16)>  (kernel-managed)
  *
  * Why these specifically:
  *   - Unix sockets are cleaned up on normal shutdown; on crash the file

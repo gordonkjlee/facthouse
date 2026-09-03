@@ -174,7 +174,7 @@ function formatEpisodeSlices(episodes: EpisodeSlice[]): string[] {
  * instead; this is what a person reads at the terminal.
  */
 export function formatConsolidate(r: ConsolidationResult): string {
-  const lines: string[] = ["", "FactMem consolidate", ""];
+  const lines: string[] = ["", "Facthouse consolidate", ""];
   if (r.skipped) {
     // Copy runs before the lock, so a skipped run may still have copied.
     lines.push(`  Events copied      ${r.eventsCopied}`);
@@ -199,7 +199,7 @@ export function formatConsolidate(r: ConsolidationResult): string {
 }
 
 export function formatStats(stats: KnowledgeStats): string {
-  const lines: string[] = ["", "FactMem statistics", ""];
+  const lines: string[] = ["", "Facthouse statistics", ""];
 
   lines.push(`  Facts           ${stats.facts.active_latest} current`);
   // Superseded facts are kept deliberately — history is never deleted — so the
@@ -259,7 +259,7 @@ export function formatStats(stats: KnowledgeStats): string {
       lines.push(
         `    Reclaimable    ${reclaim.events} events  (${formatDiskBudget(reclaim.bytes)} of content)`,
       );
-      lines.push(`    Reclaim what nothing can reach:  factmem prune`);
+      lines.push(`    Reclaim what nothing can reach:  facthouse prune`);
     }
   }
 
@@ -390,11 +390,11 @@ export function formatPrune(
 
   if (applied && !vacuumed) {
     lines.push("  The file will not shrink until the database is rebuilt:");
-    lines.push("    factmem prune --apply --vacuum");
+    lines.push("    facthouse prune --apply --vacuum");
     lines.push("  (VACUUM rewrites the whole database and needs comparable free disk.)");
   } else if (!applied) {
     lines.push("  Nothing has been deleted. To do it:");
-    lines.push("    factmem prune --apply --vacuum");
+    lines.push("    facthouse prune --apply --vacuum");
   }
   lines.push("");
   return lines.join("\n");

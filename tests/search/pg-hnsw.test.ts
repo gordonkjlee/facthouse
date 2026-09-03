@@ -3,7 +3,7 @@
  *
  * Hermetic `npm test` skips this when the URL is unset or the extension is
  * missing (the stock `postgres:16` CI image has no pgvector). The dedicated
- * CI job sets OPENMEMORY_REQUIRE_PGVECTOR=1 so a missing extension fails.
+ * CI job sets FACTHOUSE_REQUIRE_PGVECTOR=1 so a missing extension fails.
  */
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
@@ -19,8 +19,8 @@ import { insertEmbeddings } from "../../src/db/embeddings.js";
 import { hasVectorExtension, sidecarIsCurrent } from "../../src/db/embeddings-hnsw.js";
 import { vectorSearch } from "../../src/search/vector.js";
 
-const liveUrl = process.env.OPENMEMORY_TEST_POSTGRES_URL?.trim();
-const requireExt = process.env.OPENMEMORY_REQUIRE_PGVECTOR === "1";
+const liveUrl = process.env.FACTHOUSE_TEST_POSTGRES_URL?.trim();
+const requireExt = process.env.FACTHOUSE_REQUIRE_PGVECTOR === "1";
 
 let dir: string;
 let db: Db | undefined;
@@ -42,7 +42,7 @@ afterEach(async () => {
 });
 
 describe("postgres HNSW (pgvector)", () => {
-  it.skipIf(!requireExt)("OPENMEMORY_TEST_POSTGRES_URL has the vector extension in CI", async () => {
+  it.skipIf(!requireExt)("FACTHOUSE_TEST_POSTGRES_URL has the vector extension in CI", async () => {
     expect(liveUrl).toBeTruthy();
   });
 
@@ -53,7 +53,7 @@ describe("postgres HNSW (pgvector)", () => {
         JSON.stringify({ storage: { provider: "postgres" } }),
       );
       db = await openStore(dir, loadConfig(dir), {
-        OPENMEMORY_POSTGRES_URL: liveUrl as string,
+        FACTHOUSE_POSTGRES_URL: liveUrl as string,
       });
       await applySchema(db);
       try {

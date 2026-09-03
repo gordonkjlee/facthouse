@@ -6,7 +6,7 @@
  * would look like a free successful extract.
  *
  * Shared by the CLI subprocess parser, the sampling path, persistence, and
- * `get_stats` / `factmem stats` so those surfaces cannot disagree.
+ * `get_stats` / `facthouse stats` so those surfaces cannot disagree.
  */
 
 export const INTELLIGENCE_STATS_LAST_N = 10;

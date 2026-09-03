@@ -101,8 +101,8 @@ describe("consolidation read helpers", () => {
 describe("memory://profile", () => {
   it("says so plainly when nothing is known", async () => {
     expect(await buildProfile(db)).toContain("Nothing captured yet");
-    expect(await buildProfile(db)).toMatch(/factmem consolidate/);
-    expect(await buildProfile(db)).not.toMatch(/factmem pull/);
+    expect(await buildProfile(db)).toMatch(/facthouse consolidate/);
+    expect(await buildProfile(db)).not.toMatch(/facthouse pull/);
   });
 
   it("tells you to consolidate when events are waiting", async () => {
@@ -114,9 +114,9 @@ describe("memory://profile", () => {
     const md = await buildProfile(db);
     expect(md).toContain("Nothing captured yet");
     expect(md).toMatch(/`consolidate`/);
-    expect(md).toMatch(/factmem consolidate/);
+    expect(md).toMatch(/facthouse consolidate/);
     expect(md).toMatch(/session start will take/);
-    expect(md).not.toMatch(/factmem pull/);
+    expect(md).not.toMatch(/facthouse pull/);
   });
 
   it("names the cap and --all after a large backfill", async () => {
@@ -148,7 +148,7 @@ describe("memory://profile", () => {
     ).run(new Date().toISOString());
     const md = await buildProfile(db);
     expect(md).toMatch(/heuristic/);
-    expect(md).not.toMatch(/factmem pull/);
+    expect(md).not.toMatch(/facthouse pull/);
   });
 
   it("renders key facts as markdown bullets", async () => {
@@ -188,7 +188,7 @@ describe("memory://briefing", () => {
     await consolidation("c1", "Learned about coffee.", ["Confirm meeting times"], "2026-01-01T00:00:00Z");
 
     const md = await buildBriefing(db);
-    expect(md).toContain("# FactMem Briefing");
+    expect(md).toContain("# Facthouse Briefing");
     expect(md).toContain("## Key facts");
     expect(md).toContain("The user is called Alex");
     expect(md).toContain("## Last consolidation");
@@ -239,7 +239,7 @@ describe("memory://briefing", () => {
     await advanceExtractMarksToCurrentMax(db);
     const md = await buildBriefing(db);
     expect(md).toMatch(/raw events/);
-    expect(md).toContain("factmem prune");
+    expect(md).toContain("facthouse prune");
   });
 });
 

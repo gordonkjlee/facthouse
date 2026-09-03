@@ -228,9 +228,9 @@ describe("recordEvent attributes every event to a session", () => {
     expect(event.mcp_session_id).toBeNull();
   });
 
-  it("records OPENMEMORY_PROJECT on the session as provenance", async () => {
-    const previous = process.env.OPENMEMORY_PROJECT;
-    process.env.OPENMEMORY_PROJECT = "atlas";
+  it("records FACTHOUSE_PROJECT on the session as provenance", async () => {
+    const previous = process.env.FACTHOUSE_PROJECT;
+    process.env.FACTHOUSE_PROJECT = "atlas";
     try {
       await recordEvent({
         role: "user",
@@ -250,8 +250,8 @@ describe("recordEvent attributes every event to a session", () => {
         await dbMod.closeDatabase(conn);
       }
     } finally {
-      if (previous === undefined) delete process.env.OPENMEMORY_PROJECT;
-      else process.env.OPENMEMORY_PROJECT = previous;
+      if (previous === undefined) delete process.env.FACTHOUSE_PROJECT;
+      else process.env.FACTHOUSE_PROJECT = previous;
     }
   });
 

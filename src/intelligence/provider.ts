@@ -3,7 +3,7 @@
  *
  * Maps the configured provider type to a concrete IntelligenceProvider,
  * honouring an environment kill-switch that overrides the config file
- * (config precedence: CLI/config file < FACTMEM_PROVIDER env var — the
+ * (config precedence: CLI/config file < FACTHOUSE_PROVIDER env var — the
  * server's three-layer config model, applied to provider selection).
  *
  * The heuristic provider is the universal terminal fallback: it has zero

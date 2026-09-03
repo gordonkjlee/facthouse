@@ -3,9 +3,9 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>FactMem — one-minute replay</title>
-  <meta name="description" content="A scripted replay of how FactMem stores a fact and finds it again. Synthetic names only.">
-  <link rel="canonical" href="https://factmem.dev/demo.html">
+  <title>Facthouse — one-minute replay</title>
+  <meta name="description" content="A scripted replay of how Facthouse stores a fact and finds it again. Synthetic names only.">
+  <link rel="canonical" href="https://facthouse.dev/demo.html">
   <link rel="icon" href="assets/logo.png" type="image/png">
   <style>
     :root {
@@ -65,12 +65,12 @@
     <header>
       <a class="brand" href="./">
         <img src="assets/logo.png" alt="">
-        FactMem
+        Facthouse
       </a>
       <nav>
         <a href="./">Home</a>
-        <a href="https://github.com/gordonkjlee/factmem">GitHub</a>
-        <a href="https://www.npmjs.com/package/@factmem/mcp">npm</a>
+        <a href="https://github.com/gordonkjlee/facthouse">GitHub</a>
+        <a href="https://www.npmjs.com/package/@facthouse/mcp">npm</a>
       </nav>
     </header>
     <h1>One minute, no install</h1>
@@ -82,7 +82,7 @@
     </menu>
     <p class="progress" id="progress"></p>
     <footer>
-      <a href="./">factmem.dev</a> · MIT
+      <a href="./">facthouse.dev</a> · MIT
     </footer>
   </div>
   <script>
@@ -90,7 +90,7 @@
       {
         who: "Alex, in chat",
         body: "I prefer dark mode in every editor.",
-        callout: "Two ways in. Copy: Claude Code or Cursor writes a transcript file; FactMem copies new lines. Record: any MCP client — the assistant calls capture_fact. This tape shows record."
+        callout: "Two ways in. Copy: Claude Code or Cursor writes a transcript file; Facthouse copies new lines. Record: any MCP client — the assistant calls capture_fact. This tape shows record."
       },
       {
         who: "The assistant",
@@ -105,7 +105,7 @@
       {
         who: "Search",
         body: "<span class=\"result\">results: “Alex prefers dark mode in every editor.”</span>",
-        callout: "Copy brings in what was said, extract turns it into facts, integrate fits them in: domains, entities, duplicates, contradictions. The file you own is still one SQLite database."
+        callout: "Copy brings in what was said, extract turns it into facts, integrate fits them in: domains, entities, duplicates, contradictions. Still one SQLite database."
       }
     ];
     var i = 0;

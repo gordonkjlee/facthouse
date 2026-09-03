@@ -24,10 +24,10 @@ except ImportError as exc:  # pragma: no cover - CI installs markdown
     ) from exc
 
 ROOT = Path(__file__).resolve().parents[2]
-DOMAIN = "factmem.dev"
+DOMAIN = "facthouse.dev"
 SITE_ORIGIN = f"https://{DOMAIN}"
-GITHUB = "https://github.com/gordonkjlee/factmem"
-NPM = "https://www.npmjs.com/package/@factmem/mcp"
+GITHUB = "https://github.com/gordonkjlee/facthouse"
+NPM = "https://www.npmjs.com/package/@facthouse/mcp"
 PITCH = "A local memory engine any AI tool can use."
 # Public IndexNow host-verification key (not a credential). Served at /{key}.txt.
 INDEXNOW_KEY = "a88a795220f4450e97a5f2486a4426f8"
@@ -39,7 +39,7 @@ PAGES = (
     {
         "source": "README.md",
         "output": "index.html",
-        "title": "FactMem",
+        "title": "Facthouse",
         "canonical": "/",
         "description": PITCH,
     },
@@ -160,13 +160,13 @@ def package_metadata() -> dict:
 def npm_global_install_command() -> str:
     """Pinned global install. One definition: package.json version.
 
-    An unpinned `npm install -g @factmem/mcp` is how a stale binary on PATH
-    shadows the README pin. The hero is the first command on factmem.dev.
+    An unpinned `npm install -g @facthouse/mcp` is how a stale binary on PATH
+    shadows the README pin. The hero is the first command on facthouse.dev.
     """
     version = package_metadata().get("version")
     if not isinstance(version, str) or not version.strip():
         raise SystemExit("package.json version is required for the install hero")
-    return f"npm install -g @factmem/mcp@{version.strip()}"
+    return f"npm install -g @facthouse/mcp@{version.strip()}"
 
 
 def software_application_ld() -> dict:
@@ -175,7 +175,7 @@ def software_application_ld() -> dict:
     data: dict = {
         "@context": "https://schema.org",
         "@type": "SoftwareApplication",
-        "name": "FactMem",
+        "name": "Facthouse",
         "applicationCategory": "DeveloperApplication",
         "url": SITE_ORIGIN,
         "description": pkg["description"],
@@ -203,7 +203,7 @@ def wrap_html(
     description: str,
     canonical: str,
     body: str,
-    heading: str | None = "FactMem",
+    heading: str | None = "Facthouse",
     pitch: str = PITCH,
 ) -> str:
     canon = SITE_ORIGIN if canonical == "/" else f"{SITE_ORIGIN}{canonical}"
@@ -301,7 +301,7 @@ def wrap_html(
     <header>
       <a class="brand" href="./">
         <img src="assets/logo.png" alt="">
-        FactMem
+        Facthouse
       </a>
       <nav>
         <a href="demo.html">Demo</a>
@@ -314,7 +314,7 @@ def wrap_html(
 {body}
     </main>
     <footer>
-      <a href="{GITHUB}">gordonkjlee/factmem</a> · MIT
+      <a href="{GITHUB}">gordonkjlee/facthouse</a> · MIT
     </footer>
   </div>
 </body>
@@ -383,7 +383,7 @@ def build(dest: Path | None = None) -> Path:
         description = page["description"]
         if page["source"] == "README.md":
             text = readme_rest
-            heading = "FactMem"
+            heading = "Facthouse"
             description = pitch_plain(pitch)
         body = rewrite_html(render_markdown(text), source)
         html = wrap_html(

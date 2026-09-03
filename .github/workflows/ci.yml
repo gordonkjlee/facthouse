@@ -14,12 +14,12 @@ jobs:
       matrix:
         node-version: [22, 24]
     env:
-      # Disposable CI database only. Production reads OPENMEMORY_POSTGRES_URL;
+      # Disposable CI database only. Production reads FACTHOUSE_POSTGRES_URL;
       # this variable is the live-test opt-in so sqlite tests cannot pick it up.
-      OPENMEMORY_TEST_POSTGRES_URL: postgres://openmemory:openmemory@localhost:5432/openmemory
+      FACTHOUSE_TEST_POSTGRES_URL: postgres://openmemory:openmemory@localhost:5432/openmemory
       # GitHub sets CI=true on every runner, including Windows (no Postgres
       # service). The live handshake must key off this flag, not CI.
-      OPENMEMORY_REQUIRE_POSTGRES: "1"
+      FACTHOUSE_REQUIRE_POSTGRES: "1"
     services:
       postgres:
         image: postgres:16
@@ -78,8 +78,8 @@ jobs:
     name: test pgvector HNSW (node 24)
     runs-on: ubuntu-latest
     env:
-      OPENMEMORY_TEST_POSTGRES_URL: postgres://openmemory:openmemory@localhost:5432/openmemory
-      OPENMEMORY_REQUIRE_PGVECTOR: "1"
+      FACTHOUSE_TEST_POSTGRES_URL: postgres://openmemory:openmemory@localhost:5432/openmemory
+      FACTHOUSE_REQUIRE_PGVECTOR: "1"
     services:
       postgres:
         image: pgvector/pgvector:pg16

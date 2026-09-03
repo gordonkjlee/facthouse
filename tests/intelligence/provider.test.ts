@@ -17,7 +17,7 @@ describe("resolveProviderType — env kill-switch", () => {
     expect(resolveProviderType("sampling", {})).toBe("sampling");
   });
 
-  it("lets OPENMEMORY_PROVIDER override the configured provider", () => {
+  it("lets FACTHOUSE_PROVIDER override the configured provider", () => {
     expect(resolveProviderType("cli", { [PROVIDER_ENV_VAR]: "heuristic" })).toBe(
       "heuristic",
     );
