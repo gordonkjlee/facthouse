@@ -18,6 +18,7 @@ const { insertEvent } = await import("../../src/db/sessions.js");
 const { consolidate } = await import("../../src/intelligence/consolidate.js");
 const { createHeuristicProvider } = await import("../../src/intelligence/heuristic.js");
 const { latestConversationSituation } = await import("../../src/db/consolidations.js");
+const { conversationExtractThrough } = await import("../../src/db/extract-watermarks.js");
 
 let db: Db;
 
@@ -304,6 +305,72 @@ describe("a failed later chunk keeps the honest prefix", () => {
     expect(staged).toHaveLength(1);
     expect(staged[0]!.consolidation_id).toBeNull();
     expect(await eventWatermark()).toBe(2);
+  });
+});
+
+describe("a failed first chunk holds the mark and still extracts a neighbour", () => {
+  it("does not watermark through an unread prefix of a multi-chunk conversation", async () => {
+    await seedConversation(4);
+    await insertEvent(db, {
+      client_session_id: "sess-bbb",
+      event_type: "message",
+      role: "user",
+      content: "Alex is allergic to shellfish.",
+    });
+    const timeouts: string[] = [];
+    const { provider, calls } = recording((_events, callIndex) => {
+      if (callIndex === 0) return { facts: [], degraded: true };
+      return {
+        facts: _events
+          .filter((e) => e.content)
+          .map((e) => ({
+            content: e.content as string,
+            domain_hint: "preferences",
+          })),
+        degraded: false,
+      };
+    });
+    const result = await consolidate(
+      db,
+      provider as never,
+      { extraction: { enabled: true, batch_size: 2 } as never },
+      null,
+      { copy: false, extract: true, integrate: false },
+      { onExtractTimeout: () => timeouts.push("timeout") },
+    );
+    expect(result.extractionDegraded).toBe(true);
+    expect(timeouts).toEqual([]);
+    expect(
+      await conversationExtractThrough(db, { kind: "client", id: "sess-aaa" }),
+    ).toBe(0);
+    expect(calls).toHaveLength(2);
+    expect(calls[1]!.contents.join(" ")).toContain("shellfish");
+    expect(
+      await conversationExtractThrough(db, { kind: "client", id: "sess-bbb" }),
+    ).toBeGreaterThan(0);
+  });
+
+  it("fires onExtractTimeout only when degradedKind is timeout", async () => {
+    await seedConversation(2);
+    const timeouts: string[] = [];
+    const { provider } = recording(() => ({
+      facts: [],
+      degraded: true,
+      degradedKind: "timeout",
+    }));
+    const result = await consolidate(
+      db,
+      provider as never,
+      { extraction: { enabled: true, batch_size: 2 } as never },
+      null,
+      { copy: false, extract: true, integrate: false },
+      { onExtractTimeout: () => timeouts.push("timeout") },
+    );
+    expect(result.extractionDegraded).toBe(true);
+    expect(timeouts).toEqual(["timeout"]);
+    expect(
+      await conversationExtractThrough(db, { kind: "client", id: "sess-aaa" }),
+    ).toBe(0);
   });
 });
 

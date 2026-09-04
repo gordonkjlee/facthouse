@@ -347,7 +347,11 @@ async function runInit() {
                   io.write(INIT_PROMPTS.extractProgress(done, total));
                 },
                 onExtractTimeout: () => {
-                  io.write(INIT_PROMPTS.extractTimedOut);
+                  io.write(
+                    INIT_PROMPTS.extractTimedOut(
+                      Math.round(CLI_HISTORIC_TIMEOUT_MS / 1000),
+                    ),
+                  );
                 },
               },
             );

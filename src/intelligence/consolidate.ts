@@ -151,9 +151,9 @@ export interface ConsolidateCaller {
    * extract can reach recent lines. Automatic consolidate does not set this.
    */
   extractSince?: Date;
-  /** Heartbeat while extract walks conversations. Init historic uses this. */
+  /** Counter after each examined chunk. Not a tick during the model call. */
   onExtractProgress?: (examined: number, total: number) => void;
-  /** A conversation extract timed out or otherwise degraded; the run continues. */
+  /** Fired only when extract degraded because the CLI subprocess timed out. */
   onExtractTimeout?: () => void;
 }
 
@@ -1601,7 +1601,7 @@ async function extractFactsFromEvents(
         }
         conversationDegraded = true;
         degraded = true;
-        onTimeout?.();
+        if (outcome.degradedKind === "timeout") onTimeout?.();
         onProgress?.(examinedLines, total);
         break;
       }
@@ -1643,7 +1643,7 @@ async function extractFactsFromEvents(
           }
           conversationDegraded = true;
           degraded = true;
-          onTimeout?.();
+          if (outcome.degradedKind === "timeout") onTimeout?.();
           onProgress?.(examinedLines, total);
           break;
         }

@@ -507,9 +507,10 @@ export const INIT_PROMPTS = {
     "  [N]: ",
   moreCliModel: (shown: string) => `Extract model  [${shown}]: `,
   moreCliIntegrateModel: (shown: string) => `Integrate model  [${shown}]: `,
-  moreCliTimeout: (shown: string) => `Per-stage timeout in ms  [${shown}]: `,
+  moreCliTimeout: (shown: string) =>
+    `Idle silence on the Claude CLI (ms)  [${shown}]: `,
   moreCliTimeoutInvalid:
-    "Timeout must be a whole number of milliseconds greater than 0.",
+    "Timeout must be a whole number of milliseconds greater than 0 (no pipe bytes before kill).",
   moreHttpExtract: (shownYn: "Y" | "N") =>
     `Local extract on an OpenAI-compatible host?  [${shownYn}]\n` +
     "  N  no — extract stays on the Claude CLI\n" +
@@ -571,11 +572,11 @@ export const INIT_PROMPTS = {
   copiedLines: (n: number) =>
     n === 0 ? "No new transcript lines." : `Copied ${n} line(s).`,
   extractingNow: (n: number) =>
-    `Extracting and integrating ${n} line(s) (model calls; can take several minutes).`,
+    `Extracting and integrating ${n} line(s) (model calls). A quiet gap is idle silence, not the whole job dying. Progress prints as conversations finish.`,
   extractProgress: (done: number, total: number) =>
     `Examined ${done} of ${total} line(s)…`,
-  extractTimedOut:
-    "A conversation timed out. That chunk stays eligible. Continuing with the rest.",
+  extractTimedOut: (idleSeconds: number) =>
+    `No output from the model for ${idleSeconds}s. That chunk was not examined and stays eligible.`,
   extractSkippedHeuristic:
     "Skipped extract — the heuristic does not read transcripts.",
   /** After the init offer ran extract + integrate. Same channel as the prompts. */

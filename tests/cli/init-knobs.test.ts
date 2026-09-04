@@ -236,6 +236,10 @@ describe("init knobs — one definition", () => {
     expect(INIT_PROMPTS.intro).not.toMatch(/two brains/i);
     expect(INIT_PROMPTS.intro).not.toMatch(/work and personal/i);
     expect(CLI_HISTORIC_TIMEOUT_MS).toBeGreaterThan(CLI_DEFAULT_TIMEOUT_MS);
+    expect(INIT_PROMPTS.extractTimedOut(180)).toMatch(/180s/);
+    expect(INIT_PROMPTS.extractTimedOut(180)).not.toMatch(/[Cc]ontinuing/);
+    expect(INIT_PROMPTS.moreCliTimeout("45000")).toMatch(/Idle silence/);
+    expect(INIT_PROMPTS.extractingNow(3)).not.toMatch(/several minutes/);
     expect(INIT_PROMPTS.homeMissing("~/.claude")).toContain("~/.claude");
     expect(INIT_PROMPTS.projectGroupMissing("~/.claude", "C:\\dev\\app", "C--dev-app")).toContain(
       "C--dev-app",
@@ -245,6 +249,7 @@ describe("init knobs — one definition", () => {
   it("CLI and MCP entry use defaultDataDir / resolveUserPath, not path.join(homedir()", () => {
     const cli = readFileSync(path.join(ROOT, "src/cli/run.ts"), "utf-8");
     const server = readFileSync(path.join(ROOT, "src/server.ts"), "utf-8");
+    expect(cli).toMatch(/timeoutMs:\s*CLI_HISTORIC_TIMEOUT_MS/);
     expect(cli).toMatch(/dataDirFromEnvOrDefault/);
     expect(cli).toMatch(/resolveUserPath/);
     expect(cli).not.toMatch(/path\.join\(homedir\(/);

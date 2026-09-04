@@ -107,7 +107,7 @@ export interface HttpProviderConfig {
    * model can be used for this run without pinning.
    */
   model?: string;
-  /** Per-stage timeout in ms. Falls back to CLI_DEFAULT_TIMEOUT_MS. */
+  /** Request wall-clock (ms). Falls back to the number CLI_DEFAULT_TIMEOUT_MS — not CLI idle silence. */
   timeout_ms?: number;
 }
 
@@ -166,9 +166,9 @@ export interface ExtractionConfig {
 export const CLI_DEFAULT_MODEL = "haiku";
 /** Default CLI model for the integrate step. One definition. Extract stays `CLI_DEFAULT_MODEL`. */
 export const CLI_DEFAULT_INTEGRATE_MODEL = "sonnet";
-/** Default per-stage subprocess timeout (ms). One definition. Automatic runs. */
+/** Default idle silence on the CLI subprocess pipes (ms). One definition. Automatic runs. */
 export const CLI_DEFAULT_TIMEOUT_MS = 45_000;
-/** Init historic extract/integrate only. Automatic session_start stays `CLI_DEFAULT_TIMEOUT_MS`. */
+/** Init historic extract/integrate idle overlay. Automatic session_start stays `CLI_DEFAULT_TIMEOUT_MS`. */
 export const CLI_HISTORIC_TIMEOUT_MS = 180_000;
 
 /** Options for the 'cli' provider (subprocess `claude -p`). All optional —
@@ -183,7 +183,7 @@ export interface CliProviderConfig {
    * Extract still uses `model` / `CLI_DEFAULT_MODEL`.
    */
   integrate_model?: string;
-  /** Per-stage subprocess timeout in ms. Default: CLI_DEFAULT_TIMEOUT_MS. */
+  /** Idle silence on the subprocess pipes before kill (ms). Default: CLI_DEFAULT_TIMEOUT_MS. */
   timeout_ms?: number;
   /** Emit provider debug logging to stderr. Default: false. */
   debug?: boolean;
