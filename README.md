@@ -23,22 +23,9 @@ facthouse init
 
 If npm install -g fails because a command named mcp already exists, remove that leftover command and retry.
 
+`facthouse init --web` is the same setup as a browser form — it prints a 127.0.0.1 URL and does not open a browser.
+
 Press Enter to accept each default (copy = Claude Code or Cursor session logs on disk; type record if the assistant should save facts). If you picked copy, init asks whether to copy existing logs, then whether to extract and integrate. Init prints an MCP snippet — paste it into the client and restart.
-
-To skip the wizard (record only — no transcript copy), paste this. The server creates `~/.facthouse` on first boot; you are not asked those questions.
-
-<!-- x-release-please-start-version -->
-```json
-{
-  "mcpServers": {
-    "facthouse": {
-      "command": "npx",
-      "args": ["-y", "@facthouse/mcp@0.28.1"]
-    }
-  }
-}
-```
-<!-- x-release-please-end -->
 
 In the client, state something durable in ordinary conversation — there is no remember command.
 
@@ -52,7 +39,7 @@ Two ways. Pick one per store.
 |---|---|---|
 | Who | Claude Code or Cursor (session logs on disk, under the client home) | Any MCP client (Grok, Desktop, …) |
 | How | Name a source; Facthouse copies new lines from those logs into the store | Empty `sources`; the assistant calls `capture_fact` |
-| First run | TTY walk-through, pick **copy**, set cwd; init asks whether to copy existing logs, then whether to extract and integrate | The paste above (already record) |
+| First run | TTY walk-through, pick **copy**, set cwd; init asks whether to copy existing logs, then whether to extract and integrate | TTY walk-through, pick **record** |
 
 On a copy store, capture_fact is a correction for every MCP client, not only the one that writes JSONL. Grok has no transcript adapter — do not put Claude Code on copy and Grok on the same store expecting Grok to record.
 
@@ -362,6 +349,23 @@ Choose one mechanism per store.
 **Alternative — record, no sources.** Leave `sources` empty. Pipe a client hook payload into `facthouse record` if you have one. MCP `log_event` / `capture_fact` keep working.
 
 Do not install record hooks on this store — both write the same rows. Facthouse does not detect or rewrite existing hook configs.
+
+### MCP-only record mode
+
+To skip the wizard (record only — no transcript copy), paste this. The server creates `~/.facthouse` on first boot; you are not asked those questions.
+
+<!-- x-release-please-start-version -->
+```json
+{
+  "mcpServers": {
+    "facthouse": {
+      "command": "npx",
+      "args": ["-y", "@facthouse/mcp@0.28.1"]
+    }
+  }
+}
+```
+<!-- x-release-please-end -->
 
 ### Hooks (after the first consolidate)
 

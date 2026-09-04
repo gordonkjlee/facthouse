@@ -412,8 +412,9 @@ describe("init knobs — one definition", () => {
       const fence = fences.find((f) => at >= f.start && at < f.end);
       if (fence && walkThroughFence(fence.body)) continue;
       const rest = m[1] ?? "";
-      // Prose / lede: `facthouse init` in backticks is the human walk-through.
-      if (!fence && rest.trim() === "") continue;
+      // Prose / lede: `facthouse init` and `facthouse init --web` are the
+      // human walk-through (TTY or the same questions as a browser form).
+      if (!fence && (rest.trim() === "" || /^\s*--web\b/.test(rest))) continue;
       expect(rest).toMatch(/(?:--yes|-y)\b/);
       expect(rest).not.toMatch(/^-y\b/);
     }
@@ -438,13 +439,26 @@ describe("init knobs — one definition", () => {
     expect(quick).not.toMatch(/ollama pull/);
     expect(quick).not.toMatch(/facthouse settings/);
     expect(quick).not.toMatch(/facthouse pull/);
-    expect(quick).not.toMatch(/--web/);
+    expect(quick).toMatch(/facthouse init --web/);
+    expect(quick).toMatch(/same setup as a browser form/);
+    expect(quick).not.toMatch(/skip the wizard/);
+    expect(quick).not.toMatch(/"mcpServers"/);
     expect(quick).not.toMatch(/\bStop\b/);
     expect(quick).not.toMatch(/openmemory-personal/);
     expect(quick).not.toMatch(/facthouse-personal/);
     for (const fence of quick.matchAll(/```(?:bash|powershell|text|json)\n([\s\S]*?)```/g)) {
       expect(fence[1]).not.toMatch(/\bpull\b/);
+      expect(fence[1]).not.toMatch(/"mcpServers"/);
     }
+    const advancedAt = readme.indexOf("## Advanced");
+    const advancedEnd = readme.indexOf("\n## ", advancedAt + 1);
+    const advanced = readme.slice(
+      advancedAt,
+      advancedEnd === -1 ? undefined : advancedEnd,
+    );
+    expect(advanced).toMatch(/### MCP-only record mode/);
+    expect(advanced).toMatch(/skip the wizard \(record only/);
+    expect(advanced).toMatch(/"mcpServers"/);
   });
 
   it("README states the extract cap with the one constant, in every sentence that names it", () => {

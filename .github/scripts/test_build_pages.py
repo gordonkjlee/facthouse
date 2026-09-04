@@ -68,6 +68,11 @@ def test_builds_site_from_readme(tmp_path: Path):
     assert "Install `@facthouse/mcp`" not in index
     assert "Install <code>@facthouse/mcp</code>" not in index
     assert "facthouse init" in index
+    quick_html = index.split("Quick Start", 1)[1].split("How conversations get in", 1)[0]
+    assert "facthouse init --web" in quick_html
+    assert "same setup as a browser form" in quick_html
+    assert "skip the wizard" not in quick_html
+    assert "mcpServers" not in quick_html
     assert "A local memory engine any AI tool can use." not in index
     assert "Wisdom" not in index
     assert "[`gordonkjlee/facthouse`]" not in index
