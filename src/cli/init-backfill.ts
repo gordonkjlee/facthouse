@@ -1,8 +1,8 @@
 /**
- * After a TTY copy init: offer copy, then extract + integrate if anything is unextracted.
+ * After a TTY copy init: offer copy, then extract + integrate.
  *
  * Not --yes, not record, not --web. Does not start the MCP server.
- * Copy fills D only (no model, no server). Consolidate is the slow CLI extract + integrate.
+ * Copy fills D only (no model). Extract and integrate spend model calls.
  */
 
 import { storeHasNamedSources } from "../tools/capture-fact-description.js";
@@ -19,12 +19,36 @@ export function shouldOfferInitBackfill(opts: {
   );
 }
 
+export type HistoricExtractChoice =
+  | { kind: "skip" }
+  | { kind: "all" }
+  | { kind: "limit"; n: number }
+  | { kind: "days"; days: number }
+  | { kind: "retry" };
+
+export function parseHistoricExtract(raw: string): HistoricExtractChoice {
+  const t = raw.trim().toLowerCase();
+  if (t === "" || t === "all") return { kind: "all" };
+  if (t === "n" || t === "no") return { kind: "skip" };
+  const days = /^([1-9]\d*)d$/.exec(t);
+  if (days) return { kind: "days", days: Number(days[1]) };
+  if (/^[1-9]\d*$/.test(t)) return { kind: "limit", n: Number.parseInt(t, 10) };
+  return { kind: "retry" };
+}
+
+export interface InitBackfillConsolidateOpts {
+  /** null = every remaining line; a number = oldest n. */
+  extractLimit: number | null;
+  /** When set, older lines are marked examined without a model call. */
+  extractSince?: Date;
+}
+
 export interface InitBackfillDeps {
   copy: (dataDir: string) => Promise<{ events_inserted: number }>;
   unextracted: (dataDir: string) => Promise<number>;
-  /** Extract (capped) and integrate. Returns the counts so the offer can report them. */
   consolidate: (
     dataDir: string,
+    opts: InitBackfillConsolidateOpts,
   ) => Promise<{ factsIntegrated: number; eventsRemaining: number } | undefined>;
   providerIsHeuristic: boolean;
 }
@@ -34,11 +58,11 @@ export async function offerInitBackfill(
   dataDir: string,
   deps: InitBackfillDeps,
 ): Promise<void> {
-  let historic = yesNo(await io.question(INIT_PROMPTS.historicNow), "yes");
-  while (historic === "retry") {
-    historic = yesNo(await io.question(INIT_PROMPTS.historicNow), "yes");
+  let copyNow = yesNo(await io.question(INIT_PROMPTS.historicCopy), "yes");
+  while (copyNow === "retry") {
+    copyNow = yesNo(await io.question(INIT_PROMPTS.historicCopy), "yes");
   }
-  if (historic !== "yes") return;
+  if (copyNow !== "yes") return;
 
   let inserted: number;
   try {
@@ -48,7 +72,7 @@ export async function offerInitBackfill(
     io.write(message);
     return;
   }
-  io.write(INIT_PROMPTS.copiedEvents(inserted));
+  io.write(INIT_PROMPTS.copiedLines(inserted));
   if (inserted === 0) return;
 
   const pending = await deps.unextracted(dataDir);
@@ -58,8 +82,24 @@ export async function offerInitBackfill(
     return;
   }
 
+  let extract = parseHistoricExtract(await io.question(INIT_PROMPTS.historicExtract));
+  while (extract.kind === "retry") {
+    extract = parseHistoricExtract(await io.question(INIT_PROMPTS.historicExtract));
+  }
+  if (extract.kind === "skip") return;
+
+  const opts: InitBackfillConsolidateOpts =
+    extract.kind === "all"
+      ? { extractLimit: null }
+      : extract.kind === "limit"
+        ? { extractLimit: extract.n }
+        : {
+            extractLimit: null,
+            extractSince: new Date(Date.now() - extract.days * 24 * 60 * 60 * 1000),
+          };
+
   try {
-    const result = await deps.consolidate(dataDir);
+    const result = await deps.consolidate(dataDir, opts);
     if (result) {
       io.write(INIT_PROMPTS.integrated(result.factsIntegrated, result.eventsRemaining));
     }

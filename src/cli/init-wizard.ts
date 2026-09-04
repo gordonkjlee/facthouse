@@ -63,6 +63,8 @@ export interface InitWizardDeps {
   cwd: () => string;
   exists: (absPath: string) => boolean;
   platform: () => NodeJS.Platform;
+  /** Client env for home defaults. Tests pass `{}`. */
+  env?: NodeJS.ProcessEnv;
   /** OpenAI-compat GET /v1/models. Omit in tests. */
   probeHttp?: (
     baseUrl: string,
@@ -73,6 +75,7 @@ export const defaultInitWizardDeps: InitWizardDeps = {
   cwd: () => process.cwd(),
   exists: existsSync,
   platform: () => process.platform,
+  env: process.env,
 };
 
 export interface InitWizardSeed {
@@ -178,7 +181,7 @@ async function askCapture(
     io.write(INIT_PROMPTS.unknownKind());
   }
 
-  const homeDefault = defaultHomeForKind(kind);
+  const homeDefault = defaultHomeForKind(kind, deps.env ?? {});
   const homeRaw = (await io.question(INIT_PROMPTS.home(homeDefault))).trim();
   const home = homeRaw === "" ? homeDefault : homeRaw;
   const homeAbs = resolveUserPath(home);
@@ -242,12 +245,16 @@ export async function askMoreSettings(
       if (yn === "no") return;
       break;
     }
+    await askSearch(io, overlay);
   }
 
   const shown = opts.shown;
   const initEmpty = opts.gate;
 
   for (const id of MORE_SETTING_IDS) {
+    if (initEmpty && (id === "cliTimeoutMs" || id === "httpExtractOnFail")) {
+      continue;
+    }
     switch (id) {
       case "cliModel": {
         const modelRaw = (
@@ -257,9 +264,7 @@ export async function askMoreSettings(
         break;
       }
       case "cliIntegrateModel": {
-        const shownIntegrate = opts.gate
-          ? (overlay.cliModel ?? shown.cliIntegrateModel)
-          : shown.cliIntegrateModel;
+        const shownIntegrate = shown.cliIntegrateModel;
         const raw = (
           await io.question(INIT_PROMPTS.moreCliIntegrateModel(shownIntegrate))
         ).trim();
@@ -393,7 +398,6 @@ export async function collectInitAnswers(
 
   const overlay: InitOverlay = {};
   const captureOutcome = await askCapture(io, deps, overlay);
-  await askSearch(io, overlay);
   await askMoreSettings(io, overlay, deps, {
     gate: true,
     shown: SHIPPED_MORE_SHOWN,

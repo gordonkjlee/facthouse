@@ -23,9 +23,11 @@ facthouse init
 ```
 <!-- x-release-please-end -->
 
-Press Enter to accept each default (copy if Claude Code or Cursor writes a transcript here; type record to decline). If you picked copy, init asks whether to process historic transcripts. Init prints an MCP snippet — paste it into the client and restart.
+If npm install -g fails because a command named mcp already exists, remove that leftover command and retry.
 
-To skip the wizard, paste this. The server creates `~/.facthouse` on first boot; you are not asked those questions.
+Press Enter to accept each default (copy = Claude Code or Cursor session logs on disk; type record if the assistant should save facts). If you picked copy, init asks whether to copy existing logs, then whether to extract and integrate. Init prints an MCP snippet — paste it into the client and restart.
+
+To skip the wizard (record only — no transcript copy), paste this. The server creates `~/.facthouse` on first boot; you are not asked those questions.
 
 <!-- x-release-please-start-version -->
 ```json
@@ -50,9 +52,9 @@ Two ways. Pick one per store.
 
 | | Copy from transcripts | The assistant records |
 |---|---|---|
-| Who | Claude Code or Cursor, when that client writes a JSONL file here | Any MCP client (Grok Build, Desktop, …) |
-| How | Name a source; Facthouse copies new lines into your file | Empty `sources`; the assistant calls `capture_fact` |
-| First run | TTY walk-through, pick **copy**, set cwd; init asks whether to process historic transcripts | The paste above (already record) |
+| Who | Claude Code or Cursor (session logs on disk, under the client home) | Any MCP client (Grok, Desktop, …) |
+| How | Name a source; Facthouse copies new lines from those logs into the store | Empty `sources`; the assistant calls `capture_fact` |
+| First run | TTY walk-through, pick **copy**, set cwd; init asks whether to copy existing logs, then whether to extract and integrate | The paste above (already record) |
 
 On a copy store, capture_fact is a correction for every MCP client, not only the one that writes JSONL. Grok has no transcript adapter — do not put Claude Code on copy and Grok on the same store expecting Grok to record.
 
@@ -60,7 +62,7 @@ On a copy store, capture_fact is a correction for every MCP client, not only the
 facthouse init
 ```
 
-Pick copy, set cwd. Init asks whether to process historic transcripts (Enter = yes): it copies existing lines, then extracts facts from the oldest 50 events. Decline if you want to do that later with `facthouse consolidate` (`--all` takes the whole backlog). After that, the server copies new lines when it handles a call.
+Pick copy, set cwd. Init asks whether to copy existing logs, then whether to extract and integrate (Enter = all copied lines). Decline extract to do that later with `facthouse consolidate` (`--all` takes the whole backlog). After that, the server copies new lines when it handles a call.
 
 Compact (optional): `facthouse notify compaction` — not a turn-end Stop hook.
 
@@ -84,7 +86,7 @@ One SQLite database. Three tables in it, not three databases:
 
 FTS5 (words) and optional embeddings (meaning) are indexes of **K**. They are not a second store. Semantic search is off unless you turn it on: `search "shellfish"` finds a shellfish fact, `search "food"` does not, until you choose an embedding model — a model is an opinion about what “similar” means.
 
-Two speeds. **Extract** turns new transcript lines into self-contained facts. **Integrate** fits them into what the store already knows: domains, entities, duplicates, contradictions, the graph. `consolidate` runs copy, extract, and integrate together — in the server at session start and at compaction, or by hand from the CLI. Extract is capped at 50 events per run, so a first backfill is never spent on the lot. The MCP server copies the raw log on a call; it does not extract then. Consolidation does not invent a sentence nobody said.
+Two speeds. **Extract** turns new transcript lines into self-contained facts. **Integrate** fits them into what the store already knows: domains, entities, duplicates, contradictions, the graph. `consolidate` runs copy, extract, and integrate together — in the server at session start and at compaction, or by hand from the CLI. Extract is capped at 50 lines per run, so a first backfill is never spent on the lot; each automatic run extracts facts from the oldest 50 lines. The MCP server copies the raw log on a call; it does not extract then. Consolidation does not invent a sentence nobody said.
 
 Storage needs Node. Intelligence needs a language model. By default that is the [Claude Code CLI](https://github.com/anthropics/claude-code) on your existing subscription. Without it, consolidation falls back to a built-in heuristic that **does not extract facts from transcripts**. `capture_fact` still stores facts, with no entities and no domain routing.
 
@@ -218,10 +220,10 @@ facthouse consolidate --all             # extract the whole backlog now
 facthouse consolidate --limit 200       # extract the oldest 200
 
 # Steps — named steps run, in order; none named means all three:
-#   -c, --copy       copy new transcript lines into events
-#   -e, --extract    turn new events into candidate facts (the model call)
+#   -c, --copy       copy new transcript lines into the store
+#   -e, --extract    turn new lines into candidate facts (the model call)
 #   -i, --integrate  classify, link, dedupe, supersede, embed
-# Extract is capped at 50 events per run so a first backfill is never spent on
+# Extract is capped at 50 lines per run so a first backfill is never spent on
 # the lot; the run says how many remain. --all lifts the cap, --limit N sets it.
 #   --json           print the result object instead of the summary
 #   --data           Data directory (default: ~/.facthouse or FACTHOUSE_DATA)
@@ -357,7 +359,7 @@ Choose one mechanism per store.
 }
 ```
 
-`home` is the client config dir (`~/.claude` or `~/.cursor` — path examples, not extra discovery). Cursor is `"kind": "cursor"` and `home/projects/*/agent-transcripts/**/*.jsonl` only — not Composer SQLite. Cursor encodes `C:\\dev\\app` as `c-dev-app` (Claude Code uses `C--dev-app`). A first backfill of more than 50 events takes several runs, or one `facthouse consolidate --all`.
+`home` is the client config dir (`~/.claude` or `~/.cursor` — path examples, not extra discovery). Cursor is `"kind": "cursor"` and `home/projects/*/agent-transcripts/**/*.jsonl` only — not Composer SQLite. Cursor encodes `C:\\dev\\app` as `c-dev-app` (Claude Code uses `C--dev-app`). A first backfill of more than 50 lines takes several runs, or one `facthouse consolidate --all`.
 
 **Alternative — record, no sources.** Leave `sources` empty. Pipe a client hook payload into `facthouse record` if you have one. MCP `log_event` / `capture_fact` keep working.
 

@@ -403,15 +403,13 @@ export function createFactManager(
       if (intelligence) {
         server.tool(
           "consolidate",
-          `Turn what has been captured into long-term knowledge. Copies new ` +
-            `lines from named sources, extracts candidate facts from them, and ` +
-            `integrates the pending facts: domains, entities, duplicates, ` +
-            `contradictions, the knowledge graph.\n\n` +
-            `Call this to integrate pending facts into long-term knowledge. Good ` +
-            `checkpoints: after capturing several facts, at a topic change, or ` +
+          `Copy, extract, and integrate. Copies new lines from named sources, ` +
+            `extracts candidate facts from them, and integrates pending facts: ` +
+            `domains, entities, duplicates, contradictions, the knowledge graph.\n\n` +
+            `Call this after capturing several facts, at a topic change, or ` +
             `before the conversation ends.\n\n` +
             `Extract is capped at ${EXTRACT_CAP_EVENTS} of the oldest unexamined ` +
-            `events per call; events_remaining in the result says how many wait. ` +
+            `lines per call; events_remaining in the result says how many wait. ` +
             `Pass all: true to take the whole backlog in one call, or limit: N ` +
             `for the oldest N.`,
           {
@@ -424,7 +422,7 @@ export function createFactManager(
               .int()
               .min(1)
               .optional()
-              .describe("Extract at most this many of the oldest unexamined events"),
+              .describe("Extract at most this many of the oldest unexamined lines"),
           },
           async ({ all, limit }) => {
             try {

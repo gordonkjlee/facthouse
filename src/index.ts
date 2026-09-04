@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 
+import "./suppress-sqlite-warning.js";
+
 /**
  * Facthouse MCP Server
  *
@@ -169,7 +171,7 @@ async function main() {
     sources: config.sources,
     onCopied: (copied) => {
       console.error(
-        `[facthouse] Copied ${copied.events_inserted} event(s) from ${copied.files} source file(s).`,
+        `[facthouse] Copied ${copied.events_inserted} line(s) from ${copied.files} source file(s).`,
       );
     },
     onError: (err) => {
@@ -291,7 +293,7 @@ async function main() {
           result.eventsRemaining > 0
         ) {
           console.error(
-            `[facthouse] ${result.eventsRemaining} event(s) still waiting to be extracted ` +
+            `[facthouse] ${result.eventsRemaining} line(s) still waiting to be extracted ` +
               `after this run's cap. Run ${CLI_NAME} consolidate --all, or let the ` +
               `next session start take the next batch.`,
           );

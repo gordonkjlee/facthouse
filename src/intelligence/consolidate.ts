@@ -141,10 +141,16 @@ export interface ConsolidateCaller {
    */
   copy?: () => Promise<{ events_inserted: number }>;
   /**
-   * How many of the oldest unexamined events extract may examine this run.
+   * How many of the oldest unexamined lines extract may examine this run.
    * Undefined means the default cap (EXTRACT_CAP_EVENTS); null lifts it.
    */
   extractLimit?: number | null;
+  /**
+   * Init historic window. Lines said (or copied, if untimed) before this
+   * instant are marked examined without a model call so a "last N days"
+   * extract can reach recent lines. Automatic consolidate does not set this.
+   */
+  extractSince?: Date;
 }
 
 export interface ConsolidationResult {
@@ -364,6 +370,7 @@ export async function consolidate(
         intelligence,
         config,
         extractLimit,
+        caller.extractSince,
       );
       extractionDegraded = extracted.degraded;
       extractPending = extracted.pending;
@@ -1447,11 +1454,18 @@ function isEligibleEvent(
   return (event.content?.length ?? 0) >= minContentLength;
 }
 
+function lineTimeMs(event: SessionEvent): number {
+  const raw = event.occurred_at ?? event.created_at;
+  const t = Date.parse(raw);
+  return Number.isFinite(t) ? t : Number.POSITIVE_INFINITY;
+}
+
 async function extractFactsFromEvents(
   db: Db,
   intelligence: IntelligenceProvider,
   config?: Partial<ServerConfig>,
   limit: number | null = null,
+  since?: Date,
 ): Promise<ExtractResult> {
   const empty: ExtractResult = {
     degraded: false,
@@ -1487,7 +1501,8 @@ async function extractFactsFromEvents(
   // Oldest conversations first, bounded by `limit` events across the run. A
   // per-conversation mark advances only through what this run examined, so a
   // truncated tail is simply the next run's work — never a claim to have read it.
-  let budget = limit ?? Number.POSITIVE_INFINITY;
+  let budget = since ? Number.POSITIVE_INFINITY : (limit ?? Number.POSITIVE_INFINITY);
+  const sinceMs = since?.getTime();
 
   for (const conv of conversations) {
     if (budget <= 0) break;
@@ -1501,9 +1516,16 @@ async function extractFactsFromEvents(
     const through = await conversationExtractThrough(db, ref);
     const loaded = await loadConversationEventsAfter(db, ref, through, budget);
     if (loaded.length === 0) continue;
-    budget -= loaded.length;
+    const inWindow = sinceMs === undefined
+      ? loaded
+      : loaded.filter((e) => lineTimeMs(e) >= sinceMs);
+    if (sinceMs === undefined) {
+      budget -= loaded.length;
+    } else {
+      budget -= inWindow.length;
+    }
 
-    const eligible = loaded.filter((e) =>
+    const eligible = inWindow.filter((e) =>
       isEligibleEvent(e, eventTypes, roles, minContentLength),
     );
     if (eligible.length === 0) {

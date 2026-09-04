@@ -93,7 +93,7 @@ describe("moments", () => {
     });
   });
 
-  it("the extract cap is the documented 50 events", () => {
+  it("the extract cap is the documented 50 lines", () => {
     expect(EXTRACT_CAP_EVENTS).toBe(50);
   });
 });

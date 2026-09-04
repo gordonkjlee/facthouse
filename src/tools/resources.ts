@@ -95,16 +95,16 @@ async function emptyStoreNextStep(db: Db): Promise<string> {
     const capNote =
       pending <= EXTRACT_CAP_EVENTS
         ? " A later MCP session start will take this leftover."
-        : ` More than ${EXTRACT_CAP_EVENTS} events wait; each run extracts that many oldest first, or run \`facthouse consolidate --all\`.`;
+        : ` More than ${EXTRACT_CAP_EVENTS} lines wait; each run extracts that many oldest first, or run \`facthouse consolidate --all\`.`;
     return (
-      "Nothing captured yet. Conversation events are waiting — call the " +
+      "Nothing captured yet. Copied lines are waiting — call the " +
       "`consolidate` tool, or run `facthouse consolidate` from the CLI." +
       capNote
     );
   }
   if ((await consolidationRunCount(db)) > 0) {
     return (
-      "Nothing captured yet. Events were processed but produced no facts — " +
+      "Nothing captured yet. Lines were processed but produced no facts — " +
       "heuristic extraction does not read transcripts. Use the claude CLI, then " +
       "call `consolidate` (or `facthouse consolidate`)."
     );
