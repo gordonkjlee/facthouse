@@ -405,6 +405,8 @@ describe("init knobs — one definition", () => {
       const fence = fences.find((f) => at >= f.start && at < f.end);
       if (fence && walkThroughFence(fence.body)) continue;
       const rest = m[1] ?? "";
+      // Prose / lede: `facthouse init` in backticks is the human walk-through.
+      if (!fence && rest.trim() === "") continue;
       expect(rest).toMatch(/(?:--yes|-y)\b/);
       expect(rest).not.toMatch(/^-y\b/);
     }

@@ -79,11 +79,21 @@ const README = readFileSync(
 
 describe("README instruction layer for capture and identity", () => {
   it("names this package in the opening", () => {
-    const head = README.split(/\r?\n/).slice(0, 8).join("\n");
-    expect(head).toContain(GITHUB_REPO);
+    const head = README.split(/\r?\n/).slice(0, 10).join("\n");
     expect(head).toContain(NPM_PACKAGE);
+    expect(head).toMatch(/facthouse init/);
+    expect(head).toMatch(/\*\*Data\*\*/);
+    expect(head).toMatch(/\*\*Information\*\*/);
+    expect(head).toMatch(/\*\*Knowledge\*\*/);
+    expect(head).toContain("→");
+    expect(head).toMatch(/neuroscience-inspired consolidation/);
+    expect(head).toMatch(/optional semantic search/);
+    expect(head).not.toMatch(/—/);
+    expect(head).not.toMatch(/Wisdom/);
+    expect(README).toContain(GITHUB_REPO);
     expect(README).not.toMatch(/mem0/i);
     expect(README).not.toMatch(/hosted ["']?OpenMemory/i);
+    expect(README).not.toMatch(/A local memory engine any AI tool can use/);
     expect(head).not.toMatch(/abolotnov/);
   });
 

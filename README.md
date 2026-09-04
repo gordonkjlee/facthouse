@@ -2,9 +2,9 @@
 
 <img src="brand/mascot-right.png" width="128" align="right" alt="Facthouse mascot">
 
-A local memory engine any AI tool can use. GitHub [`gordonkjlee/facthouse`](https://github.com/gordonkjlee/facthouse), npm [`@facthouse/mcp`](https://www.npmjs.com/package/@facthouse/mcp).
+Facthouse is a local memory engine for AI tools. Most “memory” products index chat logs. Facthouse takes agent activity - messages, tool use, and other MCP traffic - and applies neuroscience-inspired consolidation so it moves through **Data** (what happened in the session) → **Information** (extracted facts) → **Knowledge** (integrated beliefs on an entity graph). During this process, Facthouse links entities, drops duplicates, reconciles conflicts, and supersedes what is out of date. Vector embeddings add optional semantic search on top of that graph. The store is a SQLite file on your disk.
 
-Not a hosted plane. Not a vendor blob.
+Install `@facthouse/mcp`, run `facthouse init`, paste the snippet it prints, and restart your client.
 
 [![npm](https://img.shields.io/npm/v/@facthouse/mcp.svg)](https://www.npmjs.com/package/@facthouse/mcp)
 [![CI](https://github.com/gordonkjlee/facthouse/actions/workflows/ci.yml/badge.svg)](https://github.com/gordonkjlee/facthouse/actions/workflows/ci.yml)
