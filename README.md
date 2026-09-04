@@ -33,6 +33,8 @@ Paste this. Restart the client. The server creates `~/.facthouse` on first boot.
 
 In the client, state something durable in ordinary conversation — there is no remember command.
 
+The MCP paste starts the server. It does not put facthouse on PATH. To inspect the file from a terminal, see CLI below.
+
 That is the store. Transcript file (Claude Code or Cursor): next section. CLI: [below](#cli).
 
 ## How conversations get in
@@ -81,7 +83,7 @@ Storage needs Node. Intelligence needs a language model. By default that is the 
 
 ## MCP
 
-Works with Claude Code, Claude Desktop, and any MCP-compatible tool. Data is stored at `~/.facthouse` by default. That one directory is the whole install. To use a different path, add `"env": { "FACTHOUSE_DATA": "/absolute/path" }` to the MCP snippet. JSON accepts forward slashes on Windows.
+Works with Claude Code, Claude Desktop, and any MCP-compatible tool. Data is stored at `~/.facthouse` by default. That one directory is the whole install. To use a different path, add `"env": { "FACTHOUSE_DATA": "/absolute/path" }` to the MCP snippet. JSON accepts forward slashes on Windows. FACTHOUSE_DATA on an MCP snippet applies only to that server process. A terminal facthouse command needs --data, or FACTHOUSE_DATA in the environment that shell inherits. Hooks do not see mcp.json env.
 
 Cursor consumes tools but not resources until a later adapter exists — `search_knowledge` and `get_entity` still work there; call `get_session_context` at session start.
 
@@ -121,7 +123,7 @@ Both are read-only views over the same database the tools query. Clients that ne
 
 The MCP JSON starts the server via npx and does not need a global install. npm install -g puts facthouse on PATH for init, settings, stats, and inspect. The same CLI without PATH is npx -y -p "@facthouse/mcp" -- facthouse — pin the version; quote the package so PowerShell does not splat. -p and -- stop an older global binary winning. npx -y @facthouse/mcp with no -p / facthouse is the server; do not run it as a shell command for init, settings, or stats.
 
-These CLI commands work in bash, zsh, and PowerShell. Quote @facthouse/mcp in PowerShell. Git Bash /c/... paths are not PowerShell; use C:/... and pass --data instead of cd or export. ~/ is expanded on every platform. WSL uses /mnt/c/....
+These CLI commands work in bash, zsh, and PowerShell. Quote @facthouse/mcp in PowerShell. Git Bash /c/... paths are not PowerShell; use C:/... and pass --data instead of cd or export. ~/ is expanded on every platform. WSL uses /mnt/c/.... FACTHOUSE_DATA on an MCP snippet applies only to that server process. A terminal facthouse command needs --data, or FACTHOUSE_DATA in the environment that shell inherits. Hooks do not see mcp.json env.
 
 <!-- x-release-please-start-version -->
 ```bash
@@ -300,7 +302,7 @@ A non-default data directory prints a distinct MCP server name so two stores can
 ```
 <!-- x-release-please-end -->
 
-Point each store's `sources.cwd` (or hook `--data`) at that store only. Two directories do not isolate anything if both copy the same home.
+Point each store's `sources.cwd` (or hook `--data`) at that store only. Two directories do not isolate anything if both copy the same home. FACTHOUSE_DATA on an MCP snippet applies only to that server process. A terminal facthouse command needs --data, or FACTHOUSE_DATA in the environment that shell inherits. Hooks do not see mcp.json env.
 
 ### Postgres (optional)
 

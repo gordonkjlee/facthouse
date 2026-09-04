@@ -64,6 +64,10 @@ describe("init knobs — one definition", () => {
     expect(INIT_PROMPTS.shellNote).toMatch(/C:\/\.\.\./);
     expect(INIT_PROMPTS.shellNote).toMatch(/~\/ is expanded/);
     expect(readme).not.toMatch(/\$FACTHOUSE_DATA\b/);
+    expect(readme).toContain(INIT_PROMPTS.mcpPasteNoCli);
+    expect(quick).toContain(INIT_PROMPTS.mcpPasteNoCli);
+    expect(readme).toContain(INIT_PROMPTS.mcpEnvNotCli);
+    expect(quick).not.toContain(INIT_PROMPTS.mcpEnvNotCli);
   });
 
   it("Unix-only path or env recipes have a following PowerShell fence", () => {
@@ -148,6 +152,8 @@ describe("init knobs — one definition", () => {
         "homeMissing",
         "intro",
         "kind",
+        "mcpEnvNotCli",
+        "mcpPasteNoCli",
         "mcpVsCli",
         "mixCopyRecord",
         "shellNote",

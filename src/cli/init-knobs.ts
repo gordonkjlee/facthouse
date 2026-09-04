@@ -567,6 +567,15 @@ export const INIT_PROMPTS = {
     "quote the package so PowerShell does not splat. " +
     "-p and -- stop an older global binary winning. " +
     `npx -y @facthouse/mcp with no -p / ${CLI_NAME} is the server; do not run it as a shell command for init, settings, or stats.`,
+  /** Quick Start: MCP paste is not a shell install. */
+  mcpPasteNoCli:
+    `The MCP paste starts the server. It does not put ${CLI_NAME} on PATH. ` +
+    "To inspect the file from a terminal, see CLI below.",
+  /** MCP env does not apply to CLI or hooks. Do not write $FACTHOUSE_DATA (hang-safety). */
+  mcpEnvNotCli:
+    "FACTHOUSE_DATA on an MCP snippet applies only to that server process. " +
+    `A terminal ${CLI_NAME} command needs --data, or FACTHOUSE_DATA in the environment that shell inherits. ` +
+    "Hooks do not see mcp.json env.",
   shellNote:
     "These CLI commands work in bash, zsh, and PowerShell. Quote @facthouse/mcp in PowerShell. " +
     "Git Bash /c/... paths are not PowerShell; use C:/... and pass --data instead of cd or export. " +
