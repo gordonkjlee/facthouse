@@ -41,9 +41,9 @@ describe("SESSION_BOOTSTRAP_INSTRUCTIONS", () => {
 
   it("is the lead of get_session_context and the MCP initialize text", () => {
     expect(sessionContextDescription()).toContain(SESSION_BOOTSTRAP_INSTRUCTIONS);
-    expect(src("index.ts")).toMatch(/SESSION_BOOTSTRAP_INSTRUCTIONS/);
+    expect(src("server.ts")).toMatch(/SESSION_BOOTSTRAP_INSTRUCTIONS/);
     expect(src("tools/fact-manager.ts")).toMatch(/sessionContextDescription/);
-    expect(src("index.ts")).not.toMatch(/At the start of every conversation, before answering/);
+    expect(src("server.ts")).not.toMatch(/At the start of every conversation, before answering/);
     expect(src("tools/fact-manager.ts")).not.toMatch(
       /At the start of every conversation, before answering/,
     );

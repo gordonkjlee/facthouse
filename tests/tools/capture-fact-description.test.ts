@@ -68,7 +68,7 @@ describe("captureFactDescription", () => {
     expect(src("tools/fact-manager.ts")).not.toMatch(
       /when you need to correct the knowledge/,
     );
-    expect(src("index.ts")).toMatch(/sources:\s*config\.sources/);
+    expect(src("server.ts")).toMatch(/sources:\s*config\.sources/);
   });
 });
 

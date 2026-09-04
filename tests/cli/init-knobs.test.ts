@@ -72,6 +72,8 @@ describe("init knobs — one definition", () => {
     expect(readme).toContain(INIT_PROMPTS.mcpEnvNotCli);
     expect(quick).not.toContain(INIT_PROMPTS.mcpEnvNotCli);
     expect(quick).toContain(INIT_PROMPTS.mcpInstallClash);
+    expect(readme).toContain(INIT_PROMPTS.storeDir);
+    expect(quick).not.toContain(INIT_PROMPTS.storeDir);
   });
 
   it("Unix-only path or env recipes have a following PowerShell fence", () => {
@@ -142,6 +144,7 @@ describe("init knobs — one definition", () => {
         "historicCopy",
         "historicExtract",
         "copyStorewide",
+        "configMalformed",
         "copiedLines",
         "cwd",
         "cwdSkip",
@@ -167,6 +170,7 @@ describe("init knobs — one definition", () => {
         "quickStartNext",
         "mixCopyRecord",
         "shellNote",
+        "storeDir",
         "more",
         "webExisting",
         "webListening",
@@ -218,7 +222,10 @@ describe("init knobs — one definition", () => {
       "httpModel",
       "httpExtractOnFail",
     ]);
-    expect(INIT_PROMPTS.intro).toMatch(/Another store is another directory/);
+    expect(INIT_PROMPTS.intro).toContain(INIT_PROMPTS.storeDir);
+    expect(INIT_PROMPTS.storeDir).toMatch(/same path/i);
+    expect(INIT_PROMPTS.storeDir).toMatch(/second directory/i);
+    expect(INIT_PROMPTS.storeDir).not.toMatch(/\bmemory\b/i);
     expect(INIT_PROMPTS.intro).not.toMatch(/two brains/i);
     expect(INIT_PROMPTS.intro).not.toMatch(/work and personal/i);
     expect(INIT_PROMPTS.homeMissing("~/.claude")).toContain("~/.claude");
@@ -228,8 +235,8 @@ describe("init knobs — one definition", () => {
   });
 
   it("CLI and MCP entry use defaultDataDir / resolveUserPath, not path.join(homedir()", () => {
-    const cli = readFileSync(path.join(ROOT, "src/cli/index.ts"), "utf-8");
-    const server = readFileSync(path.join(ROOT, "src/index.ts"), "utf-8");
+    const cli = readFileSync(path.join(ROOT, "src/cli/run.ts"), "utf-8");
+    const server = readFileSync(path.join(ROOT, "src/server.ts"), "utf-8");
     expect(cli).toMatch(/dataDirFromEnvOrDefault/);
     expect(cli).toMatch(/resolveUserPath/);
     expect(cli).not.toMatch(/path\.join\(homedir\(/);

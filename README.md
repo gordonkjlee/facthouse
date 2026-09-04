@@ -132,7 +132,7 @@ Both are read-only views over the same database the tools query. Clients that ne
 
 The MCP JSON starts the server via npx and does not need a global install. npm install -g puts facthouse on PATH for init, settings, stats, and inspect. The same CLI without PATH is npx -y -p "@facthouse/mcp" -- facthouse — pin the version; quote the package so PowerShell does not splat. -p and -- stop an older global binary winning. npx -y @facthouse/mcp with no -p / facthouse is the server; do not run it as a shell command for init, settings, or stats. The MCP paste starts the server. It does not put facthouse on PATH. To inspect the file from a terminal, see CLI below.
 
-These CLI commands work in bash, zsh, and PowerShell. Quote @facthouse/mcp in PowerShell. Git Bash /c/... paths are not PowerShell; use C:/... and pass --data instead of cd or export. ~/ is expanded on every platform. WSL uses /mnt/c/.... FACTHOUSE_DATA on an MCP snippet applies only to that server process. A terminal facthouse command needs --data, or FACTHOUSE_DATA in the environment that shell inherits. Hooks do not see mcp.json env.
+These CLI commands work in bash, zsh, and PowerShell. Quote @facthouse/mcp in PowerShell. Git Bash /c/... paths are not PowerShell; use C:/... and pass --data instead of cd or export. In Git Bash, quote a backslash path or write C:/... — unquoted \ is an escape. ~/ is expanded on every platform. WSL uses /mnt/c/.... FACTHOUSE_DATA on an MCP snippet applies only to that server process. A terminal facthouse command needs --data, or FACTHOUSE_DATA in the environment that shell inherits. Hooks do not see mcp.json env.
 
 <!-- x-release-please-start-version -->
 ```bash
@@ -288,7 +288,7 @@ facthouse inspect --entity Helios --limit 20 --output ~/inspect.html
 
 ### Another store
 
-You do not need two installs. The default is one directory and one MCP server named `facthouse`. A second store is a second directory — not a filter on which client wrote the row. Work and personal is one reason to split, not a required setup.
+The store is this directory. Clients share it by using the same path. A second store is a second directory, not a second install. The default MCP server name is `facthouse`. Splitting is not a filter on which client wrote the row. Work and personal is one reason to split, not a required setup.
 
 A non-default data directory prints a distinct MCP server name so two stores can share one `mcp.json`. Init against each extra directory prints that snippet. Example:
 
