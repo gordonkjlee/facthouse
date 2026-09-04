@@ -78,12 +78,14 @@ export function tokenBudgetUsageLead(opts: {
   remaining: number;
   cap: number;
   resets_at: string | null;
+  /** Clock for the 36h "show the time" rule. Tests freeze this. */
+  now?: Date;
 }): { lead: string; detail: string } {
   const capName = billedCapName(opts.provider, opts.scale);
   const lead =
     `${formatTokenCount(opts.used)} used · ${formatTokenCount(opts.remaining)} remaining`;
   const reset = opts.resets_at
-    ? ` · resets ${formatResetAt(opts.resets_at)}`
+    ? ` · resets ${formatResetAt(opts.resets_at, opts.now)}`
     : "";
   return {
     lead,
