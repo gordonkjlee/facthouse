@@ -295,7 +295,8 @@ describe.skipIf(!runnable)("cli entry — init output", () => {
     expect(r.status).toBe(0);
     expect(r.stdout).toMatch(/copy is off/i);
     expect(r.stdout).toMatch(/capture_fact is how facts get in/);
-    expect(r.stdout).toMatch(/facthouse consolidate/);
+    expect(r.stdout).toContain(INIT_PROMPTS.copyRecipe);
+    expect(r.stdout).not.toMatch(/facthouse consolidate/);
     expect(r.stdout).not.toMatch(/facthouse pull/);
   });
 

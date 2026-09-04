@@ -334,9 +334,8 @@ describe("sourcesStatusLines", () => {
     const text = sourcesStatusLines([]).join("\n");
     expect(text).toMatch(/capture_fact is how facts get in/);
     expect(text).toMatch(/copy is off/i);
-    expect(text).toMatch(/pick copy/);
-    expect(text).toMatch(/cwd/);
-    expect(text).toMatch(/facthouse consolidate/);
+    expect(text).toContain(INIT_PROMPTS.copyRecipe);
+    expect(text).not.toMatch(/facthouse consolidate/);
     expect(text).not.toMatch(/more than 50/);
   });
 
