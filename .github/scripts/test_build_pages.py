@@ -11,10 +11,22 @@ import pytest
 import build_pages
 
 ROOT = Path(__file__).resolve().parents[2]
+SHORT_PITCH = (
+    "Local AI memory that consolidates - neuroscience-inspired "
+    "Data → Information → Knowledge in SQLite you own."
+)
 README_PITCH = (
-    "A local memory engine any AI tool can use. "
-    "GitHub [`gordonkjlee/facthouse`](https://github.com/gordonkjlee/facthouse), "
-    "npm [`@facthouse/mcp`](https://www.npmjs.com/package/@facthouse/mcp)."
+    "Facthouse is a local memory engine for AI tools. Most “memory” products "
+    "index chat logs. Facthouse takes agent activity - messages, tool use, "
+    "and other MCP traffic - and applies neuroscience-inspired consolidation "
+    "so it moves through **Data** (what happened in the session) → "
+    "**Information** (extracted facts) → **Knowledge** (integrated beliefs "
+    "on an entity graph). During this process, Facthouse links entities, "
+    "drops duplicates, reconciles conflicts, and supersedes what is out of "
+    "date. Vector embeddings add optional semantic search on top of that "
+    "graph. The store is a SQLite file on your disk.\n\n"
+    "Install `@facthouse/mcp`, run `facthouse init`, paste the snippet it "
+    "prints, and restart your client."
 )
 
 
@@ -47,7 +59,15 @@ def test_builds_site_from_readme(tmp_path: Path):
 
     index = (site / "index.html").read_text(encoding="utf-8")
     assert "<title>Facthouse</title>" in index
-    assert "A local memory engine any AI tool can use." in index
+    assert "Facthouse is a local memory engine for AI tools." in index
+    assert "neuroscience-inspired consolidation" in index
+    assert "<strong>Data</strong>" in index
+    assert "<strong>Information</strong>" in index
+    assert "<strong>Knowledge</strong>" in index
+    assert "→" in index
+    assert "facthouse init" in index
+    assert "A local memory engine any AI tool can use." not in index
+    assert "Wisdom" not in index
     assert "[`gordonkjlee/facthouse`]" not in index
     version = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))["version"]
     assert f"<code>npm install -g @facthouse/mcp@{version}</code>" in index
@@ -92,6 +112,9 @@ def test_builds_site_from_readme(tmp_path: Path):
 
     assert ">gordonkjlee/openmemory<" not in index
     assert ">gordonkjlee/facthouse<" in index
+    assert "mem0" not in index.lower()
+    assert "mcp.mem0.ai" not in index
+    assert f'content="{SHORT_PITCH}"' in index
 
 
 def test_npm_global_install_command_matches_package_json():
@@ -110,15 +133,30 @@ def test_npm_global_install_command_refuses_empty_version(
 
 
 def test_pitch_helpers_keep_readme_lede():
-    assert build_pages.pitch_plain(README_PITCH) == (
-        "A local memory engine any AI tool can use. "
-        "GitHub gordonkjlee/facthouse, "
-        "npm @facthouse/mcp."
-    )
+    plain = build_pages.pitch_plain(README_PITCH)
+    assert plain.startswith("Facthouse is a local memory engine for AI tools.")
+    assert "**" not in plain
+    assert "Data (what happened in the session) → Information" in plain
+    assert "@facthouse/mcp" in plain
+    assert "facthouse init" in plain
     html = build_pages.pitch_html(README_PITCH)
-    assert html.startswith("A local memory engine any AI tool can use.")
-    assert 'href="https://github.com/gordonkjlee/facthouse"' in html
-    assert 'href="https://www.npmjs.com/package/@facthouse/mcp"' in html
+    assert html.startswith("<p>Facthouse is a local memory engine for AI tools.")
+    assert "<strong>Data</strong>" in html
+    assert "<strong>Information</strong>" in html
+    assert "<strong>Knowledge</strong>" in html
+    assert "facthouse init" in html
+    assert "<strong>Data (what happened" not in html
+
+
+def test_listing_description_matches_package_and_registry():
+    pkg = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))
+    server = json.loads((ROOT / "server.json").read_text(encoding="utf-8"))
+    assert pkg["description"] == SHORT_PITCH
+    assert server["description"] == SHORT_PITCH
+    assert build_pages.PITCH == SHORT_PITCH
+    assert build_pages.listing_description() == SHORT_PITCH
+    assert "mem0" not in SHORT_PITCH.lower()
+    assert "Wisdom" not in SHORT_PITCH
 
 
 def test_split_readme_uses_lede_and_keeps_image():
@@ -170,9 +208,7 @@ def test_index_has_software_application_json_ld(tmp_path: Path):
         "https://github.com/gordonkjlee/facthouse",
         "https://www.npmjs.com/package/@facthouse/mcp",
     ]
-    assert data["description"] == (
-        "A local memory engine any AI tool can use."
-    )
+    assert data["description"] == SHORT_PITCH
     assert "www.facthouse.dev" not in body
     assert "openmemory" not in body.lower()
     assert "mem0" not in body.lower()

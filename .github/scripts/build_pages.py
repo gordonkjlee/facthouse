@@ -28,7 +28,12 @@ DOMAIN = "facthouse.dev"
 SITE_ORIGIN = f"https://{DOMAIN}"
 GITHUB = "https://github.com/gordonkjlee/facthouse"
 NPM = "https://www.npmjs.com/package/@facthouse/mcp"
-PITCH = "A local memory engine any AI tool can use."
+# Fallback / cramped-field hook. The landing chrome prefers the README lede.
+# Keep in sync with package.json and server.json description.
+PITCH = (
+    "Local AI memory that consolidates - neuroscience-inspired "
+    "Data → Information → Knowledge in SQLite you own."
+)
 # Public IndexNow host-verification key (not a credential). Served at /{key}.txt.
 INDEXNOW_KEY = "a88a795220f4450e97a5f2486a4426f8"
 MARKDOWN_EXTENSIONS = ("fenced_code", "tables")
@@ -111,17 +116,27 @@ def pitch_html(md: str) -> str:
 
 
 def pitch_plain(md: str) -> str:
-    """Same lede, without markdown, for meta description."""
+    """Same lede, without markdown, for assertions and fallbacks."""
     text = re.sub(r"\[`([^`]+)`\]\([^)]+\)", r"\1", md)
     text = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", text)
+    text = re.sub(r"\*\*([^*]+)\*\*", r"\1", text)
     return text.replace("`", "")
 
 
-def split_readme(text: str) -> tuple[str, str]:
-    """Take title/pitch from the README; return (pitch, remaining markdown).
+def _lede_stop(stripped: str) -> bool:
+    return (
+        stripped.startswith("#")
+        or stripped.startswith("[![")
+        or stripped.startswith("<img")
+        or stripped.startswith("<!--")
+    )
 
-    The landing chrome already prints the H1 and one-line pitch, so those
-    lines are not repeated in the article. The hero image stays.
+
+def split_readme(text: str) -> tuple[str, str]:
+    """Take title/lede from the README; return (pitch, remaining markdown).
+
+    The landing chrome already prints the H1 and lede, so those lines are
+    not repeated in the article. The hero image stays.
     """
     lines = text.splitlines()
     i = 0
@@ -142,15 +157,42 @@ def split_readme(text: str) -> tuple[str, str]:
         kept.extend(chunk)
         i += 1
 
-    while i < len(lines) and not lines[i].strip():
+    pitch_paras: list[str] = []
+    para: list[str] = []
+    while i < len(lines):
+        stripped = lines[i].strip()
+        if not stripped:
+            if para:
+                pitch_paras.append(" ".join(para))
+                para = []
+            i += 1
+            continue
+        if _lede_stop(stripped):
+            break
+        para.append(stripped)
         i += 1
-    pitch = PITCH
-    if i < len(lines) and not lines[i].startswith("#"):
-        pitch = lines[i].strip()
-        i += 1
+    if para:
+        pitch_paras.append(" ".join(para))
+    pitch = "\n\n".join(pitch_paras) if pitch_paras else PITCH
     kept.append("")
     kept.extend(lines[i:])
     return pitch, "\n".join(kept).strip() + "\n"
+
+
+def listing_description() -> str:
+    """Cramped-field hook from package.json (npm, registry, meta, JSON-LD)."""
+    desc = package_metadata().get("description")
+    if isinstance(desc, str) and desc.strip():
+        return desc.strip()
+    return PITCH
+
+
+def pitch_block(pitch: str) -> str:
+    """Landing chrome for one or more lede paragraphs."""
+    rendered = pitch_html(pitch)
+    if rendered.startswith("<p>") or "<p>" in rendered:
+        return f'<div class="pitch">{rendered}</div>'
+    return f'<p class="pitch">{rendered}</p>'
 
 
 def package_metadata() -> dict:
@@ -178,7 +220,7 @@ def software_application_ld() -> dict:
         "name": "Facthouse",
         "applicationCategory": "DeveloperApplication",
         "url": SITE_ORIGIN,
-        "description": pkg["description"],
+        "description": listing_description(),
         "sameAs": [GITHUB, NPM],
         "codeRepository": GITHUB,
         "license": "MIT",
@@ -213,7 +255,7 @@ def wrap_html(
     install = html.escape(npm_global_install_command(), quote=True)
     landing = (
         f'<section class="landing">\n'
-        f"      {title_html}<p class=\"pitch\">{pitch_html(pitch)}</p>\n"
+        f"      {title_html}{pitch_block(pitch)}\n"
         f"      <pre class=\"install\"><code>{install}</code></pre>\n"
         f"    </section>"
     )
@@ -265,6 +307,8 @@ def wrap_html(
     nav a {{ color: var(--slate); }}
     .landing h1 {{ font-size: 2rem; margin: 0 0 0.5rem; }}
     .pitch {{ margin: 0 0 0.75rem; color: var(--ink-soft); font-size: 1.05rem; }}
+    .pitch p {{ margin: 0 0 0.75rem; }}
+    .pitch p:last-child {{ margin-bottom: 0; }}
     .install {{
       margin: 0 0 1.5rem; padding: 0.65rem 0.85rem;
       background: var(--snow); border: 1px solid var(--line);
@@ -384,7 +428,7 @@ def build(dest: Path | None = None) -> Path:
         if page["source"] == "README.md":
             text = readme_rest
             heading = "Facthouse"
-            description = pitch_plain(pitch)
+            description = listing_description()
         body = rewrite_html(render_markdown(text), source)
         html = wrap_html(
             title=page["title"],

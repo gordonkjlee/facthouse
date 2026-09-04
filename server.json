@@ -2,7 +2,7 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.gordonkjlee/facthouse",
   "title": "Facthouse",
-  "description": "A local memory engine any AI tool can use. Not Mem0's hosted OpenMemory MCP.",
+  "description": "Local AI memory that consolidates - neuroscience-inspired Data → Information → Knowledge in SQLite you own.",
   "repository": {
     "url": "https://github.com/gordonkjlee/facthouse",
     "source": "github"
