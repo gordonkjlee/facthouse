@@ -4,7 +4,7 @@
 
 A local memory engine any AI tool can use. GitHub [`gordonkjlee/facthouse`](https://github.com/gordonkjlee/facthouse), npm [`@facthouse/mcp`](https://www.npmjs.com/package/@facthouse/mcp).
 
-Not a hosted plane. Not a vendor blob. Not Mem0's hosted "OpenMemory MCP" at [`mcp.mem0.ai`](https://mcp.mem0.ai).
+Not a hosted plane. Not a vendor blob.
 
 [![npm](https://img.shields.io/npm/v/@facthouse/mcp.svg)](https://www.npmjs.com/package/@facthouse/mcp)
 [![CI](https://github.com/gordonkjlee/facthouse/actions/workflows/ci.yml/badge.svg)](https://github.com/gordonkjlee/facthouse/actions/workflows/ci.yml)

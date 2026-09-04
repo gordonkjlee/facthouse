@@ -78,11 +78,12 @@ const README = readFileSync(
 );
 
 describe("README instruction layer for capture and identity", () => {
-  it("names this package in the opening, not Mem0's hosted MCP", () => {
+  it("names this package in the opening", () => {
     const head = README.split(/\r?\n/).slice(0, 8).join("\n");
     expect(head).toContain(GITHUB_REPO);
     expect(head).toContain(NPM_PACKAGE);
-    expect(head).toMatch(/mcp\.mem0\.ai/);
+    expect(README).not.toMatch(/mem0/i);
+    expect(README).not.toMatch(/hosted ["']?OpenMemory/i);
     expect(head).not.toMatch(/abolotnov/);
   });
 

@@ -92,6 +92,8 @@ def test_builds_site_from_readme(tmp_path: Path):
 
     assert ">gordonkjlee/openmemory<" not in index
     assert ">gordonkjlee/facthouse<" in index
+    assert "mem0" not in index.lower()
+    assert "mcp.mem0.ai" not in index
 
 
 def test_npm_global_install_command_matches_package_json():
