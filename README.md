@@ -16,7 +16,16 @@ It records, stores, and retrieves structured knowledge. Domain routing, entity e
 
 Needs Node 22.5 or 24+.
 
-Paste this. Restart the client. The server creates `~/.facthouse` on first boot.
+<!-- x-release-please-start-version -->
+```bash
+npm install -g @facthouse/mcp@0.27.1
+facthouse init
+```
+<!-- x-release-please-end -->
+
+Press Enter to accept each default (copy if Claude Code or Cursor writes a transcript here; type record to decline). If you picked copy, init asks whether to process historic transcripts. Init prints an MCP snippet — paste it into the client and restart.
+
+To skip the wizard, paste this. The server creates `~/.facthouse` on first boot; you are not asked those questions.
 
 <!-- x-release-please-start-version -->
 ```json
@@ -43,7 +52,7 @@ Two ways. Pick one per store.
 |---|---|---|
 | Who | Claude Code or Cursor, when that client writes a JSONL file here | Any MCP client (Grok Build, Desktop, …) |
 | How | Name a source; Facthouse copies new lines into your file | Empty `sources`; the assistant calls `capture_fact` |
-| First run | TTY walk-through, pick **copy**, set cwd, then `facthouse consolidate` | The paste above (already record) |
+| First run | TTY walk-through, pick **copy**, set cwd; init asks whether to process historic transcripts | The paste above (already record) |
 
 On a copy store, capture_fact is a correction for every MCP client, not only the one that writes JSONL. Grok has no transcript adapter — do not put Claude Code on copy and Grok on the same store expecting Grok to record.
 
@@ -51,7 +60,7 @@ On a copy store, capture_fact is a correction for every MCP client, not only the
 facthouse init
 ```
 
-Pick copy, set cwd, then `facthouse consolidate` once. It copies your transcripts, extracts facts from the oldest 50 events, and integrates them; `--all` takes the whole backlog. After that, the server copies new lines when it handles a call.
+Pick copy, set cwd. Init asks whether to process historic transcripts (Enter = yes): it copies existing lines, then extracts facts from the oldest 50 events. Decline if you want to do that later with `facthouse consolidate` (`--all` takes the whole backlog). After that, the server copies new lines when it handles a call.
 
 Compact (optional): `facthouse notify compaction` — not a turn-end Stop hook.
 
@@ -81,7 +90,7 @@ Storage needs Node. Intelligence needs a language model. By default that is the 
 
 ## MCP
 
-Works with Claude Code, Claude Desktop, and any MCP-compatible tool. Data is stored at `~/.facthouse` by default. That one directory is the whole install. To use a different path, add `"env": { "FACTHOUSE_DATA": "/absolute/path" }` to the MCP snippet. JSON accepts forward slashes on Windows.
+Works with Claude Code, Claude Desktop, and any MCP-compatible tool. Data is stored at `~/.facthouse` by default. That one directory is the whole install. To use a different path, add `"env": { "FACTHOUSE_DATA": "/absolute/path" }` to the MCP snippet. JSON accepts forward slashes on Windows. FACTHOUSE_DATA on an MCP snippet applies only to that server process. A terminal facthouse command needs --data, or FACTHOUSE_DATA in the environment that shell inherits. Hooks do not see mcp.json env.
 
 Cursor consumes tools but not resources until a later adapter exists — `search_knowledge` and `get_entity` still work there; call `get_session_context` at session start.
 
@@ -119,9 +128,9 @@ Both are read-only views over the same database the tools query. Clients that ne
 
 ## CLI
 
-The MCP JSON starts the server via npx and does not need a global install. npm install -g puts facthouse on PATH for init, settings, stats, and inspect. The same CLI without PATH is npx -y -p "@facthouse/mcp" -- facthouse — pin the version; quote the package so PowerShell does not splat. -p and -- stop an older global binary winning. npx -y @facthouse/mcp with no -p / facthouse is the server; do not run it as a shell command for init, settings, or stats.
+The MCP JSON starts the server via npx and does not need a global install. npm install -g puts facthouse on PATH for init, settings, stats, and inspect. The same CLI without PATH is npx -y -p "@facthouse/mcp" -- facthouse — pin the version; quote the package so PowerShell does not splat. -p and -- stop an older global binary winning. npx -y @facthouse/mcp with no -p / facthouse is the server; do not run it as a shell command for init, settings, or stats. The MCP paste starts the server. It does not put facthouse on PATH. To inspect the file from a terminal, see CLI below.
 
-These CLI commands work in bash, zsh, and PowerShell. Quote @facthouse/mcp in PowerShell. Git Bash /c/... paths are not PowerShell; use C:/... and pass --data instead of cd or export. ~/ is expanded on every platform. WSL uses /mnt/c/....
+These CLI commands work in bash, zsh, and PowerShell. Quote @facthouse/mcp in PowerShell. Git Bash /c/... paths are not PowerShell; use C:/... and pass --data instead of cd or export. ~/ is expanded on every platform. WSL uses /mnt/c/.... FACTHOUSE_DATA on an MCP snippet applies only to that server process. A terminal facthouse command needs --data, or FACTHOUSE_DATA in the environment that shell inherits. Hooks do not see mcp.json env.
 
 <!-- x-release-please-start-version -->
 ```bash
@@ -300,7 +309,7 @@ A non-default data directory prints a distinct MCP server name so two stores can
 ```
 <!-- x-release-please-end -->
 
-Point each store's `sources.cwd` (or hook `--data`) at that store only. Two directories do not isolate anything if both copy the same home.
+Point each store's `sources.cwd` (or hook `--data`) at that store only. Two directories do not isolate anything if both copy the same home. FACTHOUSE_DATA on an MCP snippet applies only to that server process. A terminal facthouse command needs --data, or FACTHOUSE_DATA in the environment that shell inherits. Hooks do not see mcp.json env.
 
 ### Postgres (optional)
 

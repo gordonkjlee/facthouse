@@ -536,8 +536,11 @@ export const INIT_PROMPTS = {
     `Note: no project group for cwd ${cwd} under ${home} (looked for ${encoded}).`,
   gitBashCwdHint: (cwd: string, encoded: string) =>
     `A POSIX-looking cwd ${cwd} on Windows is not the path Claude Code encodes (${encoded} vs ${INIT_SYNTHETIC.cwd} → C--dev-app). Store what the client used.`,
-  copyNow: "Copy transcripts now?  [Y]: ",
-  extractNow: `Extract the oldest ${EXTRACT_CAP_EVENTS} events and integrate now?  [Y]: `,
+  historicNow:
+    `Process historic transcripts now?  [Y]\n` +
+    `  Y  copy existing lines, then extract the oldest ${EXTRACT_CAP_EVENTS} events\n` +
+    `  N  skip — you can run ${CLI_NAME} consolidate later\n` +
+    `  [Y]: `,
   copiedEvents: (n: number) =>
     n === 0 ? "No new transcript lines." : `Copied ${n} event(s).`,
   extractSkippedHeuristic:
@@ -553,7 +556,7 @@ export const INIT_PROMPTS = {
     `Capture: copy is off — no cwd was given. capture_fact is how facts get in; re-run ${CLI_NAME} init --force on a terminal to name a source.`,
   /** The one sentence that says how a copy store starts. init prints it; README repeats it. */
   copyRecipe:
-    `${CLI_NAME} init on a terminal, pick copy, set cwd, then ${CLI_NAME} consolidate.`,
+    `${CLI_NAME} init on a terminal, pick copy, set cwd. Init asks whether to process historic transcripts.`,
   copyNext:
     `Run ${CLI_NAME} consolidate (oldest ${EXTRACT_CAP_EVENTS} events per run; --all for the lot).`,
   copyStorewide:
@@ -567,6 +570,20 @@ export const INIT_PROMPTS = {
     "quote the package so PowerShell does not splat. " +
     "-p and -- stop an older global binary winning. " +
     `npx -y @facthouse/mcp with no -p / ${CLI_NAME} is the server; do not run it as a shell command for init, settings, or stats.`,
+  /** Quick Start: MCP paste is not a shell install. */
+  mcpPasteNoCli:
+    `The MCP paste starts the server. It does not put ${CLI_NAME} on PATH. ` +
+    "To inspect the file from a terminal, see CLI below.",
+  /** Quick Start after `npm install -g` + TTY init. */
+  quickStartNext:
+    "Press Enter to accept each default (copy if Claude Code or Cursor writes a transcript here; type record to decline). " +
+    "If you picked copy, init asks whether to process historic transcripts. " +
+    "Init prints an MCP snippet — paste it into the client and restart.",
+  /** MCP env does not apply to CLI or hooks. Do not write $FACTHOUSE_DATA (hang-safety). */
+  mcpEnvNotCli:
+    "FACTHOUSE_DATA on an MCP snippet applies only to that server process. " +
+    `A terminal ${CLI_NAME} command needs --data, or FACTHOUSE_DATA in the environment that shell inherits. ` +
+    "Hooks do not see mcp.json env.",
   shellNote:
     "These CLI commands work in bash, zsh, and PowerShell. Quote @facthouse/mcp in PowerShell. " +
     "Git Bash /c/... paths are not PowerShell; use C:/... and pass --data instead of cd or export. " +

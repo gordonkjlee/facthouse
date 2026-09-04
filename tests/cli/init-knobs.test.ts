@@ -59,11 +59,17 @@ describe("init knobs — one definition", () => {
     expect(quick).not.toContain(INIT_PROMPTS.mcpVsCli);
     expect(readme).toContain(INIT_PROMPTS.shellNote);
     expect(quick).not.toContain(INIT_PROMPTS.shellNote);
-    expect(quick).not.toMatch(/npm install -g/);
+    expect(quick).toMatch(/npm install -g @facthouse\/mcp@\d+\.\d+\.\d+/);
     expect(readme).toContain(INIT_PROMPTS.copyStorewide);
     expect(INIT_PROMPTS.shellNote).toMatch(/C:\/\.\.\./);
     expect(INIT_PROMPTS.shellNote).toMatch(/~\/ is expanded/);
     expect(readme).not.toMatch(/\$FACTHOUSE_DATA\b/);
+    expect(readme).toContain(INIT_PROMPTS.mcpPasteNoCli);
+    expect(quick).not.toContain(INIT_PROMPTS.mcpPasteNoCli);
+    expect(readme).toContain(INIT_PROMPTS.quickStartNext);
+    expect(quick).toContain(INIT_PROMPTS.quickStartNext);
+    expect(readme).toContain(INIT_PROMPTS.mcpEnvNotCli);
+    expect(quick).not.toContain(INIT_PROMPTS.mcpEnvNotCli);
   });
 
   it("Unix-only path or env recipes have a following PowerShell fence", () => {
@@ -108,8 +114,7 @@ describe("init knobs — one definition", () => {
     expect(INIT_PROMPTS.moreCliIntegrateModel("haiku")).toBe(
       "Model to update long-term knowledge  [haiku]: ",
     );
-    expect(INIT_PROMPTS.copyNow).toMatch(/\[Y\]: $/);
-    expect(INIT_PROMPTS.extractNow).toMatch(/\[Y\]: $/);
+    expect(INIT_PROMPTS.historicNow).toMatch(/\[Y\]: $/);
   });
 
   it("kind prompt names every shipped kind and not grok", () => {
@@ -128,7 +133,7 @@ describe("init knobs — one definition", () => {
       [
         "capture",
         "captureDeclined",
-        "copyNow",
+        "historicNow",
         "copyStorewide",
         "copiedEvents",
         "cwd",
@@ -139,7 +144,7 @@ describe("init knobs — one definition", () => {
         "integrated",
         "dataDir",
         "embedding",
-        "extractNow",
+
         "extractSkippedHeuristic",
         "existingConfig",
         "forceHelp",
@@ -148,7 +153,10 @@ describe("init knobs — one definition", () => {
         "homeMissing",
         "intro",
         "kind",
+        "mcpEnvNotCli",
+        "mcpPasteNoCli",
         "mcpVsCli",
+        "quickStartNext",
         "mixCopyRecord",
         "shellNote",
         "more",
@@ -348,13 +356,26 @@ describe("init knobs — one definition", () => {
     }
     expect(recipeB).toBeGreaterThanOrEqual(1);
 
-    const installFence = fences.find((f) =>
-      liveLines(f.body).some((l) => /^npm install -g @facthouse\/mcp@\d+\.\d+\.\d+$/.test(l)),
+    const silentInstall = fences.find((f) =>
+      liveLines(f.body).some((l) =>
+        /^npm install -g @facthouse\/mcp@\d+\.\d+\.\d+$/.test(l),
+      ) && liveLines(f.body).some((l) => /init --yes\s*$/.test(l)),
     );
-    expect(installFence).toBeDefined();
-    expect(liveLines(installFence?.body ?? "")).toEqual([
+    expect(silentInstall).toBeDefined();
+    expect(liveLines(silentInstall?.body ?? "")).toEqual([
       expect.stringMatching(/^npm install -g @facthouse\/mcp@\d+\.\d+\.\d+$/),
       "facthouse init --yes",
+    ]);
+
+    const wizardInstall = fences.find((f) => walkThroughFence(f.body) &&
+      liveLines(f.body).some((l) =>
+        /^npm install -g @facthouse\/mcp@\d+\.\d+\.\d+$/.test(l),
+      ),
+    );
+    expect(wizardInstall).toBeDefined();
+    expect(liveLines(wizardInstall?.body ?? "")).toEqual([
+      expect.stringMatching(/^npm install -g @facthouse\/mcp@\d+\.\d+\.\d+$/),
+      "facthouse init",
     ]);
 
     const quickStartAt = readme.indexOf("## Quick Start");
@@ -413,7 +434,7 @@ describe("init knobs — one definition", () => {
   });
 
   it("init's copy recipe and the extract prompt name the cap once", () => {
-    expect(INIT_PROMPTS.extractNow).toContain(String(EXTRACT_CAP_EVENTS));
+    expect(INIT_PROMPTS.historicNow).toContain(String(EXTRACT_CAP_EVENTS));
     expect(INIT_PROMPTS.copyNext).toContain(String(EXTRACT_CAP_EVENTS));
     expect(INIT_PROMPTS.integrated(3, 7)).toContain(String(EXTRACT_CAP_EVENTS));
     expect(INIT_PROMPTS.integrated(3, 0)).not.toMatch(/remain/);
