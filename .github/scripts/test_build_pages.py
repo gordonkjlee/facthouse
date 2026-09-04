@@ -143,7 +143,8 @@ def test_pitch_helpers_keep_readme_lede():
     assert "facthouse init" not in plain
     assert "Install @facthouse/mcp" not in plain
     html = build_pages.pitch_html(README_PITCH)
-    assert html.startswith("<p>Facthouse is a local memory engine for AI tools.")
+    assert html.startswith("Facthouse is a local memory engine for AI tools.")
+    assert "<p>" not in html
     assert "<strong>Data</strong>" in html
     assert "<strong>Information</strong>" in html
     assert "<strong>Knowledge</strong>" in html
