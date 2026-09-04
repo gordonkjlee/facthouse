@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.27.1](https://github.com/gordonkjlee/facthouse/compare/v0.27.0...v0.27.1) (2026-09-04)
+
+
+### Bug Fixes
+
+* **intelligence:** freeze token-budget reset clock in tests ([#244](https://github.com/gordonkjlee/facthouse/issues/244)) ([91fc295](https://github.com/gordonkjlee/facthouse/commit/91fc2955af0c4afb43f93862d19f2d86a00ae10c))
+
 ## [0.27.0](https://github.com/gordonkjlee/factmem/compare/v0.26.0...v0.27.0) (2026-09-03)
 
 
