@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.27.0](https://github.com/gordonkjlee/factmem/compare/v0.26.0...v0.27.0) (2026-09-03)
+
+
+### ⚠ BREAKING CHANGES
+
+* @factmem/mcp and @openmem/mcp are not published from this cut. FACTMEM_* / OPENMEMORY_* and ~/.factmem / ~/.openmemory are ignored. Windows notify pipe is facthouse-.
+
+### Features
+
+* rebrand as Facthouse and drop linger ([#239](https://github.com/gordonkjlee/factmem/issues/239)) ([1aa54c1](https://github.com/gordonkjlee/factmem/commit/1aa54c16979f483f7432a1d0d06a24aee7326f96))
+
 ## [0.26.0](https://github.com/gordonkjlee/factmem/compare/v0.25.0...v0.26.0) (2026-09-02)
 
 
