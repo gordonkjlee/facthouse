@@ -24,8 +24,10 @@ import { ensureDomain } from "../db/domains.js";
 import { ensureSelfEntity } from "../db/entities.js";
 import {
   CONFIG_FILENAME,
+  ConfigDocumentError,
   defaultServerConfig,
   loadShippedStoreConfig,
+  readConfigDocument,
 } from "../config.js";
 import { probeCliProvider, type CliProbeResult } from "../intelligence/cli.js";
 import { createEmbeddingProvider } from "../embedding/provider.js";
@@ -317,8 +319,29 @@ export interface InitResult {
 /**
  * Create (or update) a data directory: database + schema + default config.
  */
+/** Existing `config.json` must parse, or init is lying. `--force` may replace. */
+export function assertExistingConfigReadable(dataDir: string, force: boolean): void {
+  if (force) return;
+  const configPath = path.join(dataDir, CONFIG_FILENAME);
+  if (!existsSync(configPath)) return;
+  try {
+    readConfigDocument(dataDir);
+  } catch (err) {
+    if (err instanceof ConfigDocumentError) {
+      throw new ConfigDocumentError(err.code, INIT_PROMPTS.configMalformed);
+    }
+    throw err;
+  }
+}
+
 export async function initDataDir(args: InitArgs): Promise<InitResult> {
   const { dataDir, force = false, overlay, env = process.env } = args;
+
+  // A file that does not parse is not "settings to preserve". Swallowing it
+  // prints a success card while the process runs shipped defaults. --force
+  // replaces; otherwise refuse, same as `facthouse settings`.
+  assertExistingConfigReadable(dataDir, force);
+  const configPath = path.join(dataDir, CONFIG_FILENAME);
 
   // Refuse an unknown engine or postgres without a URL *before* mkdir/open —
   // otherwise a postgres config still creates memory.db and we have failed open.
@@ -359,7 +382,6 @@ export async function initDataDir(args: InitArgs): Promise<InitResult> {
   }
 
   // Write defaults only when absent (or forced) — never clobber user settings.
-  const configPath = path.join(dataDir, CONFIG_FILENAME);
   const configExisted = existsSync(configPath);
   const wroteConfig = !configExisted || force;
   if (wroteConfig) {

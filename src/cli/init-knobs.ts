@@ -463,10 +463,16 @@ export function promptLabel(prompt: string): string {
   return first.split("  [")[0]!.replace(/\?$/, "").trim();
 }
 
+/** Isolation unit. Intro, done card, and README § Another store print this. */
+const STORE_DIR =
+  "The store is this directory. Clients share it by using the same path. " +
+  "A second store is a second directory, not a second install.";
+
 export const INIT_PROMPTS = {
+  storeDir: STORE_DIR,
   intro:
     "Facthouse setup. Press Enter to accept the default in [brackets].\n" +
-    "One directory is one memory. Another store is another directory.",
+    STORE_DIR,
   dataDir: (shown: string) => `Data directory [${shown}]: `,
   capture:
     "How do conversations get in?\n" +
@@ -537,6 +543,8 @@ export const INIT_PROMPTS = {
     "Replace config.json with shipped defaults (and, on a TTY, with the wizard answers). Does not merge with the previous file.",
   existingConfig:
     `already exists — left unchanged; run ${CLI_NAME} settings to change extra knobs, or --force to reset. Prompts run only when writing config.json.`,
+  configMalformed:
+    "config.json is malformed. Fix or restore it, or pass --force to replace it.",
   homeMissing: (stored: string) =>
     `Note: ${stored} does not exist yet. Copy will fail until the client has written it.`,
   projectGroupMissing: (home: string, cwd: string, encoded: string) =>
@@ -609,6 +617,7 @@ export const INIT_PROMPTS = {
   shellNote:
     "These CLI commands work in bash, zsh, and PowerShell. Quote @facthouse/mcp in PowerShell. " +
     "Git Bash /c/... paths are not PowerShell; use C:/... and pass --data instead of cd or export. " +
+    "In Git Bash, quote a backslash path or write C:/... — unquoted \\ is an escape. " +
     "~/ is expanded on every platform. WSL uses /mnt/c/....",
   webYesRefuse:
     "--yes does not start a local page. Re-run without --yes, or skip --web.",

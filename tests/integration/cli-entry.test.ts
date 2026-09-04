@@ -1,7 +1,7 @@
 /**
  * CLI entry-point integration tests.
  *
- * `src/cli/index.ts` runs main() on import, so its dispatch, recursion guard,
+ * `src/cli/run.ts` runs on import (loaded from `src/cli/index.ts`), so its dispatch, recursion guard,
  * argument precedence, and exit codes are unreachable from unit tests — the
  * only way to exercise them is to spawn the built CLI as a real subprocess.
  * Both bugs found in this area (a silently no-opping `init`, an unparseable
@@ -253,6 +253,33 @@ describe.skipIf(!runnable)("cli entry — init output", () => {
     expect(r.stderr).toMatch(/does not start a local page/);
   });
 
+  it("does not print Node's sqlite ExperimentalWarning", () => {
+    const r = run(["init", path.join(root, "no-sqlite-warn"), "--yes"]);
+    expect(r.status).toBe(0);
+    expect(r.stderr).not.toMatch(/ExperimentalWarning/);
+    expect(r.stdout).not.toMatch(/ExperimentalWarning/);
+  });
+
+  it("refuses init when config.json is malformed", () => {
+    const dir = path.join(root, "malformed-init");
+    mkdirSync(dir);
+    const configPath = path.join(dir, "config.json");
+    const garbage = `{ "storage": { "provider": "sqlite"' }\n`;
+    writeFileSync(configPath, garbage);
+    const r = run(["init", dir, "--yes"]);
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).toContain(INIT_PROMPTS.configMalformed);
+    expect(r.stdout).not.toMatch(/initialised/i);
+    expect(readFileSync(configPath, "utf-8")).toBe(garbage);
+  });
+
+  it("init --yes with forward slashes writes that directory", () => {
+    const dir = path.join(root, "slash-fwd");
+    const r = run(["init", dir.replace(/\\/g, "/"), "--yes"]);
+    expect(r.status).toBe(0);
+    expect(existsSync(path.join(dir, "config.json"))).toBe(true);
+  });
+
   it("honours --yes without printing prompt copy", () => {
     const dir = path.join(root, "yes-flag");
     const r = run(["init", dir, "--yes"]);
@@ -281,11 +308,11 @@ describe.skipIf(!runnable)("cli entry — init output", () => {
     expect(r.status).not.toBe(0);
   });
 
-  it("says one data directory is one memory", () => {
-    const dir = path.join(root, "one-brain");
+  it("says the store is this directory", () => {
+    const dir = path.join(root, "one-store");
     const r = run(["init", dir]);
     expect(r.status).toBe(0);
-    expect(r.stdout).toMatch(/one data directory is one memory/i);
+    expect(r.stdout).toContain(INIT_PROMPTS.storeDir);
     expect(r.stdout).not.toContain(INIT_PROMPTS.intro);
     expect(r.stdout).not.toContain(INIT_PROMPTS.capture);
   });

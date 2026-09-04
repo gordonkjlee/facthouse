@@ -99,6 +99,26 @@ describe("initDataDir", () => {
     expect(existsSync(path.join(dataDir, "memory.db"))).toBe(false);
   });
 
+  it("refuses a malformed existing config rather than preserving garbage", async () => {
+    const dataDir = path.join(root, "bad-json");
+    mkdirSync(dataDir, { recursive: true });
+    const configPath = path.join(dataDir, CONFIG_FILENAME);
+    const garbage = `{ "storage": { "provider": "sqlite"' }\n`;
+    writeFileSync(configPath, garbage, "utf-8");
+    await expect(initDataDir({ dataDir })).rejects.toThrow(INIT_PROMPTS.configMalformed);
+    expect(readFileSync(configPath, "utf-8")).toBe(garbage);
+  });
+
+  it("--force replaces a malformed config", async () => {
+    const dataDir = path.join(root, "bad-json-force");
+    mkdirSync(dataDir, { recursive: true });
+    const configPath = path.join(dataDir, CONFIG_FILENAME);
+    writeFileSync(configPath, "{ not json", "utf-8");
+    const forced = await initDataDir({ dataDir, force: true });
+    expect(forced.wroteConfig).toBe(true);
+    expect(JSON.parse(readFileSync(configPath, "utf-8"))).toEqual(defaultServerConfig());
+  });
+
   it("is idempotent — a second run preserves an edited config", async () => {
     const dataDir = path.join(root, "again");
     await initDataDir({ dataDir });
