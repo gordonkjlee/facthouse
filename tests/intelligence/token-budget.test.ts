@@ -138,11 +138,20 @@ describe("formatTokenCount", () => {
         remaining: 7_976_000,
         cap: 10_000_000,
         resets_at: reset,
+        now: NOW,
       }),
     ).toEqual({
       lead: "2.02M used · 7.98M remaining",
-      detail: `10M CLI weekly cap · resets ${formatResetAt(reset, NOW)}`,
+      detail: "10M CLI weekly cap · resets 5 Sept",
     });
+  });
+
+  it("shows the UTC clock only when reset is within 36 hours", () => {
+    const reset = "2026-09-05T12:00:00.000Z";
+    expect(formatResetAt(reset, NOW)).toBe("5 Sept");
+    expect(formatResetAt(reset, new Date("2026-09-04T09:07:00.000Z"))).toBe(
+      "5 Sept, 12:00",
+    );
   });
 });
 
