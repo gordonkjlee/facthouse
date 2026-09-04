@@ -23,7 +23,7 @@ facthouse init
 ```
 <!-- x-release-please-end -->
 
-Press Enter to accept each default (copy if Claude Code or Cursor writes a transcript here; type record to decline). Init prints an MCP snippet — paste it into the client and restart.
+Press Enter to accept each default (copy if Claude Code or Cursor writes a transcript here; type record to decline). If you picked copy, init asks whether to process historic transcripts. Init prints an MCP snippet — paste it into the client and restart.
 
 To skip the wizard, paste this. The server creates `~/.facthouse` on first boot; you are not asked those questions.
 
@@ -52,7 +52,7 @@ Two ways. Pick one per store.
 |---|---|---|
 | Who | Claude Code or Cursor, when that client writes a JSONL file here | Any MCP client (Grok Build, Desktop, …) |
 | How | Name a source; Facthouse copies new lines into your file | Empty `sources`; the assistant calls `capture_fact` |
-| First run | TTY walk-through, pick **copy**, set cwd, then `facthouse consolidate` | The paste above (already record) |
+| First run | TTY walk-through, pick **copy**, set cwd; init asks whether to process historic transcripts | The paste above (already record) |
 
 On a copy store, capture_fact is a correction for every MCP client, not only the one that writes JSONL. Grok has no transcript adapter — do not put Claude Code on copy and Grok on the same store expecting Grok to record.
 
@@ -60,7 +60,7 @@ On a copy store, capture_fact is a correction for every MCP client, not only the
 facthouse init
 ```
 
-Pick copy, set cwd, then `facthouse consolidate` once. It copies your transcripts, extracts facts from the oldest 50 events, and integrates them; `--all` takes the whole backlog. After that, the server copies new lines when it handles a call.
+Pick copy, set cwd. Init asks whether to process historic transcripts (Enter = yes): it copies existing lines, then extracts facts from the oldest 50 events. Decline if you want to do that later with `facthouse consolidate` (`--all` takes the whole backlog). After that, the server copies new lines when it handles a call.
 
 Compact (optional): `facthouse notify compaction` — not a turn-end Stop hook.
 

@@ -63,8 +63,8 @@ describe("shouldOfferInitBackfill", () => {
 });
 
 describe("offerInitBackfill", () => {
-  it("Enter copies, then asks extract when events are unextracted", async () => {
-    const io = fakeIo(["", ""]);
+  it("Enter copies and extracts when events are unextracted", async () => {
+    const io = fakeIo([""]);
     const pulled: string[] = [];
     const consolidated: string[] = [];
     await offerInitBackfill(io, "/tmp/store", {
@@ -76,16 +76,16 @@ describe("offerInitBackfill", () => {
       unextracted: async () => 3,
       consolidate: async (dir) => {
         consolidated.push(dir);
+        return { factsIntegrated: 1, eventsRemaining: 0 };
       },
     });
-    expect(io.prompts[0]).toBe(INIT_PROMPTS.copyNow);
-    expect(io.prompts[1]).toBe(INIT_PROMPTS.extractNow);
+    expect(io.prompts).toEqual([INIT_PROMPTS.historicNow]);
     expect(pulled).toEqual(["/tmp/store"]);
     expect(consolidated).toEqual(["/tmp/store"]);
     expect(io.writes).toContain(INIT_PROMPTS.copiedEvents(3));
   });
 
-  it("N on copy does not copy", async () => {
+  it("N does not copy", async () => {
     const io = fakeIo(["n"]);
     let pulled = false;
     await offerInitBackfill(io, "/tmp/store", {
@@ -100,7 +100,7 @@ describe("offerInitBackfill", () => {
       },
     });
     expect(pulled).toBe(false);
-    expect(io.prompts).toEqual([INIT_PROMPTS.copyNow]);
+    expect(io.prompts).toEqual([INIT_PROMPTS.historicNow]);
   });
 
   it("skips extract when copy inserted nothing", async () => {
@@ -115,7 +115,7 @@ describe("offerInitBackfill", () => {
       },
     });
     expect(io.writes).toContain(INIT_PROMPTS.copiedEvents(0));
-    expect(io.prompts).toEqual([INIT_PROMPTS.copyNow]);
+    expect(io.prompts).toEqual([INIT_PROMPTS.historicNow]);
     expect(consolidated).toBe(false);
   });
 
@@ -131,12 +131,12 @@ describe("offerInitBackfill", () => {
       },
     });
     expect(io.writes).toContain(INIT_PROMPTS.extractSkippedHeuristic);
-    expect(io.prompts).toEqual([INIT_PROMPTS.copyNow]);
+    expect(io.prompts).toEqual([INIT_PROMPTS.historicNow]);
     expect(consolidated).toBe(false);
   });
 
   it("reports what integrate did and what remains, on the prompt channel", async () => {
-    const io = fakeIo(["", ""]);
+    const io = fakeIo([""]);
     await offerInitBackfill(io, "/tmp/store", {
       providerIsHeuristic: false,
       copy: async () => ({ events_inserted: 60 }),
@@ -145,19 +145,5 @@ describe("offerInitBackfill", () => {
     });
     expect(io.writes).toContain(INIT_PROMPTS.integrated(4, 10));
     expect(io.writes.at(-1)).toMatch(/10 event\(s\) remain/);
-  });
-
-  it("N on extract does not consolidate", async () => {
-    const io = fakeIo(["y", "n"]);
-    let consolidated = false;
-    await offerInitBackfill(io, "/tmp/store", {
-      providerIsHeuristic: false,
-      copy: async () => ({ events_inserted: 2 }),
-      unextracted: async () => 2,
-      consolidate: async () => {
-        consolidated = true;
-      },
-    });
-    expect(consolidated).toBe(false);
   });
 });

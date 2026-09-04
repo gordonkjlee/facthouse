@@ -261,8 +261,7 @@ describe.skipIf(!runnable)("cli entry — init output", () => {
     expect(r.stdout).not.toContain(INIT_PROMPTS.capture);
     expect(r.stdout).not.toContain(INIT_PROMPTS.embedding);
     expect(r.stdout).not.toContain(INIT_PROMPTS.more);
-    expect(r.stdout).not.toContain(INIT_PROMPTS.copyNow);
-    expect(r.stdout).not.toContain(INIT_PROMPTS.extractNow);
+    expect(r.stdout).not.toContain(INIT_PROMPTS.historicNow);
   });
 
   it("prints global vs npx advice after the MCP snippet", () => {

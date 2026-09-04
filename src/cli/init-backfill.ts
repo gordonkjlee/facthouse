@@ -34,11 +34,11 @@ export async function offerInitBackfill(
   dataDir: string,
   deps: InitBackfillDeps,
 ): Promise<void> {
-  let copy = yesNo(await io.question(INIT_PROMPTS.copyNow), "yes");
-  while (copy === "retry") {
-    copy = yesNo(await io.question(INIT_PROMPTS.copyNow), "yes");
+  let historic = yesNo(await io.question(INIT_PROMPTS.historicNow), "yes");
+  while (historic === "retry") {
+    historic = yesNo(await io.question(INIT_PROMPTS.historicNow), "yes");
   }
-  if (copy !== "yes") return;
+  if (historic !== "yes") return;
 
   let inserted: number;
   try {
@@ -57,12 +57,6 @@ export async function offerInitBackfill(
     io.write(INIT_PROMPTS.extractSkippedHeuristic);
     return;
   }
-
-  let extract = yesNo(await io.question(INIT_PROMPTS.extractNow), "yes");
-  while (extract === "retry") {
-    extract = yesNo(await io.question(INIT_PROMPTS.extractNow), "yes");
-  }
-  if (extract !== "yes") return;
 
   try {
     const result = await deps.consolidate(dataDir);

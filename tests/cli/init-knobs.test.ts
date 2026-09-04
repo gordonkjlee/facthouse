@@ -114,8 +114,7 @@ describe("init knobs — one definition", () => {
     expect(INIT_PROMPTS.moreCliIntegrateModel("haiku")).toBe(
       "Model to update long-term knowledge  [haiku]: ",
     );
-    expect(INIT_PROMPTS.copyNow).toMatch(/\[Y\]: $/);
-    expect(INIT_PROMPTS.extractNow).toMatch(/\[Y\]: $/);
+    expect(INIT_PROMPTS.historicNow).toMatch(/\[Y\]: $/);
   });
 
   it("kind prompt names every shipped kind and not grok", () => {
@@ -134,7 +133,7 @@ describe("init knobs — one definition", () => {
       [
         "capture",
         "captureDeclined",
-        "copyNow",
+        "historicNow",
         "copyStorewide",
         "copiedEvents",
         "cwd",
@@ -145,7 +144,7 @@ describe("init knobs — one definition", () => {
         "integrated",
         "dataDir",
         "embedding",
-        "extractNow",
+
         "extractSkippedHeuristic",
         "existingConfig",
         "forceHelp",
@@ -435,7 +434,7 @@ describe("init knobs — one definition", () => {
   });
 
   it("init's copy recipe and the extract prompt name the cap once", () => {
-    expect(INIT_PROMPTS.extractNow).toContain(String(EXTRACT_CAP_EVENTS));
+    expect(INIT_PROMPTS.historicNow).toContain(String(EXTRACT_CAP_EVENTS));
     expect(INIT_PROMPTS.copyNext).toContain(String(EXTRACT_CAP_EVENTS));
     expect(INIT_PROMPTS.integrated(3, 7)).toContain(String(EXTRACT_CAP_EVENTS));
     expect(INIT_PROMPTS.integrated(3, 0)).not.toMatch(/remain/);
