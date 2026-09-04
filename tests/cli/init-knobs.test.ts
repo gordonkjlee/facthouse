@@ -169,6 +169,7 @@ describe("init knobs — one definition", () => {
         "mcpVsCli",
         "quickStartNext",
         "mixCopyRecord",
+        "notAPath",
         "shellNote",
         "storeDir",
         "more",

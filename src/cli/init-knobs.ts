@@ -491,6 +491,8 @@ export const INIT_PROMPTS = {
     `Which project folder are the logs for?  [${shown}]: `,
   cwdSkip:
     "A project folder is required to add a source. Leaving copy off (sources stays empty).",
+  notAPath:
+    "That is not a directory path. Use C:/..., ~/..., or ./... (or Enter for the default).",
   embedding:
     "Semantic search  [off]\n" +
     '  off     keyword only — "shellfish" finds a shellfish fact, "food" does not\n' +

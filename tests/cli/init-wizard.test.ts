@@ -195,6 +195,21 @@ describe("collectInitAnswers", () => {
     expect(result.writeConfig).toBe(true);
   });
 
+  it("re-prompts a sentence in place of a data directory", async () => {
+    const unlocked: InitWizardSeed = { ...seed, dataDirLocked: false };
+    const io = fakeIo(["please put it next to the repo", "", "record", "n"]);
+    const result = await collectInitAnswers(io, unlocked, deps());
+    expect(io.writes).toContain(INIT_PROMPTS.notAPath);
+    expect(result.dataDir).toBe(unlocked.dataDir);
+  });
+
+  it("re-prompts a sentence in place of logs home", async () => {
+    const io = fakeIo(["copy", "", "not a path at all", "", "", "n"]);
+    const result = await collectInitAnswers(io, seed, deps());
+    expect(io.writes).toContain(INIT_PROMPTS.notAPath);
+    expect(result.overlay.sources?.[0]?.home).toBe("~/.claude");
+  });
+
   it("unlocked path with an existing chosen config asks only the directory", async () => {
     const typed = "/tmp/chosen-store";
     const resolved = resolveUserPath(typed);
