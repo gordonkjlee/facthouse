@@ -16,7 +16,16 @@ It records, stores, and retrieves structured knowledge. Domain routing, entity e
 
 Needs Node 22.5 or 24+.
 
-Paste this. Restart the client. The server creates `~/.facthouse` on first boot.
+<!-- x-release-please-start-version -->
+```bash
+npm install -g @facthouse/mcp@0.27.1
+facthouse init
+```
+<!-- x-release-please-end -->
+
+Press Enter to accept each default (copy if Claude Code or Cursor writes a transcript here; type record to decline). Init prints an MCP snippet — paste it into the client and restart.
+
+To skip the wizard, paste this. The server creates `~/.facthouse` on first boot; you are not asked those questions.
 
 <!-- x-release-please-start-version -->
 ```json
@@ -32,8 +41,6 @@ Paste this. Restart the client. The server creates `~/.facthouse` on first boot.
 <!-- x-release-please-end -->
 
 In the client, state something durable in ordinary conversation — there is no remember command.
-
-The MCP paste starts the server. It does not put facthouse on PATH. To inspect the file from a terminal, see CLI below.
 
 That is the store. Transcript file (Claude Code or Cursor): next section. CLI: [below](#cli).
 
@@ -121,7 +128,7 @@ Both are read-only views over the same database the tools query. Clients that ne
 
 ## CLI
 
-The MCP JSON starts the server via npx and does not need a global install. npm install -g puts facthouse on PATH for init, settings, stats, and inspect. The same CLI without PATH is npx -y -p "@facthouse/mcp" -- facthouse — pin the version; quote the package so PowerShell does not splat. -p and -- stop an older global binary winning. npx -y @facthouse/mcp with no -p / facthouse is the server; do not run it as a shell command for init, settings, or stats.
+The MCP JSON starts the server via npx and does not need a global install. npm install -g puts facthouse on PATH for init, settings, stats, and inspect. The same CLI without PATH is npx -y -p "@facthouse/mcp" -- facthouse — pin the version; quote the package so PowerShell does not splat. -p and -- stop an older global binary winning. npx -y @facthouse/mcp with no -p / facthouse is the server; do not run it as a shell command for init, settings, or stats. The MCP paste starts the server. It does not put facthouse on PATH. To inspect the file from a terminal, see CLI below.
 
 These CLI commands work in bash, zsh, and PowerShell. Quote @facthouse/mcp in PowerShell. Git Bash /c/... paths are not PowerShell; use C:/... and pass --data instead of cd or export. ~/ is expanded on every platform. WSL uses /mnt/c/.... FACTHOUSE_DATA on an MCP snippet applies only to that server process. A terminal facthouse command needs --data, or FACTHOUSE_DATA in the environment that shell inherits. Hooks do not see mcp.json env.
 

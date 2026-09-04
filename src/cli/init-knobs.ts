@@ -571,6 +571,10 @@ export const INIT_PROMPTS = {
   mcpPasteNoCli:
     `The MCP paste starts the server. It does not put ${CLI_NAME} on PATH. ` +
     "To inspect the file from a terminal, see CLI below.",
+  /** Quick Start after `npm install -g` + TTY init. */
+  quickStartNext:
+    "Press Enter to accept each default (copy if Claude Code or Cursor writes a transcript here; type record to decline). " +
+    "Init prints an MCP snippet — paste it into the client and restart.",
   /** MCP env does not apply to CLI or hooks. Do not write $FACTHOUSE_DATA (hang-safety). */
   mcpEnvNotCli:
     "FACTHOUSE_DATA on an MCP snippet applies only to that server process. " +

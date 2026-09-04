@@ -59,13 +59,15 @@ describe("init knobs — one definition", () => {
     expect(quick).not.toContain(INIT_PROMPTS.mcpVsCli);
     expect(readme).toContain(INIT_PROMPTS.shellNote);
     expect(quick).not.toContain(INIT_PROMPTS.shellNote);
-    expect(quick).not.toMatch(/npm install -g/);
+    expect(quick).toMatch(/npm install -g @facthouse\/mcp@\d+\.\d+\.\d+/);
     expect(readme).toContain(INIT_PROMPTS.copyStorewide);
     expect(INIT_PROMPTS.shellNote).toMatch(/C:\/\.\.\./);
     expect(INIT_PROMPTS.shellNote).toMatch(/~\/ is expanded/);
     expect(readme).not.toMatch(/\$FACTHOUSE_DATA\b/);
     expect(readme).toContain(INIT_PROMPTS.mcpPasteNoCli);
-    expect(quick).toContain(INIT_PROMPTS.mcpPasteNoCli);
+    expect(quick).not.toContain(INIT_PROMPTS.mcpPasteNoCli);
+    expect(readme).toContain(INIT_PROMPTS.quickStartNext);
+    expect(quick).toContain(INIT_PROMPTS.quickStartNext);
     expect(readme).toContain(INIT_PROMPTS.mcpEnvNotCli);
     expect(quick).not.toContain(INIT_PROMPTS.mcpEnvNotCli);
   });
@@ -155,6 +157,7 @@ describe("init knobs — one definition", () => {
         "mcpEnvNotCli",
         "mcpPasteNoCli",
         "mcpVsCli",
+        "quickStartNext",
         "mixCopyRecord",
         "shellNote",
         "more",
@@ -354,13 +357,26 @@ describe("init knobs — one definition", () => {
     }
     expect(recipeB).toBeGreaterThanOrEqual(1);
 
-    const installFence = fences.find((f) =>
-      liveLines(f.body).some((l) => /^npm install -g @facthouse\/mcp@\d+\.\d+\.\d+$/.test(l)),
+    const silentInstall = fences.find((f) =>
+      liveLines(f.body).some((l) =>
+        /^npm install -g @facthouse\/mcp@\d+\.\d+\.\d+$/.test(l),
+      ) && liveLines(f.body).some((l) => /init --yes\s*$/.test(l)),
     );
-    expect(installFence).toBeDefined();
-    expect(liveLines(installFence?.body ?? "")).toEqual([
+    expect(silentInstall).toBeDefined();
+    expect(liveLines(silentInstall?.body ?? "")).toEqual([
       expect.stringMatching(/^npm install -g @facthouse\/mcp@\d+\.\d+\.\d+$/),
       "facthouse init --yes",
+    ]);
+
+    const wizardInstall = fences.find((f) => walkThroughFence(f.body) &&
+      liveLines(f.body).some((l) =>
+        /^npm install -g @facthouse\/mcp@\d+\.\d+\.\d+$/.test(l),
+      ),
+    );
+    expect(wizardInstall).toBeDefined();
+    expect(liveLines(wizardInstall?.body ?? "")).toEqual([
+      expect.stringMatching(/^npm install -g @facthouse\/mcp@\d+\.\d+\.\d+$/),
+      "facthouse init",
     ]);
 
     const quickStartAt = readme.indexOf("## Quick Start");
