@@ -1,6 +1,6 @@
 {
   "name": "@facthouse/mcp",
-  "version": "0.28.0",
+  "version": "0.28.1",
   "mcpName": "io.github.gordonkjlee/facthouse",
   "description": "A local memory engine any AI tool can use.",
   "type": "module",

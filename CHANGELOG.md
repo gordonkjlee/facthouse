@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.28.1](https://github.com/gordonkjlee/facthouse/compare/v0.28.0...v0.28.1) (2026-09-04)
+
+
+### Bug Fixes
+
+* **cli:** honest init on config, warning, and copy ([#250](https://github.com/gordonkjlee/facthouse/issues/250)) ([1518e8d](https://github.com/gordonkjlee/facthouse/commit/1518e8ddd98104fc3ab8cf5ca98ce033f9bc7b66))
+
 ## [0.28.0](https://github.com/gordonkjlee/facthouse/compare/v0.27.1...v0.28.0) (2026-09-04)
 
 
