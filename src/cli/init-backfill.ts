@@ -64,6 +64,7 @@ export async function offerInitBackfill(
   }
   if (copyNow !== "yes") return;
 
+  io.write(INIT_PROMPTS.copyingNow);
   let inserted: number;
   try {
     inserted = (await deps.copy(dataDir)).events_inserted;
@@ -98,6 +99,7 @@ export async function offerInitBackfill(
             extractSince: new Date(Date.now() - extract.days * 24 * 60 * 60 * 1000),
           };
 
+  io.write(INIT_PROMPTS.extractingNow(pending));
   try {
     const result = await deps.consolidate(dataDir, opts);
     if (result) {

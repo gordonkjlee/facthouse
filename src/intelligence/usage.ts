@@ -99,7 +99,7 @@ export function addOptional(
 }
 
 /**
- * Map a CLI `--output-format json` envelope's `usage` object.
+ * Map a CLI result envelope's `usage` object (`stream-json` type:result, or a json envelope).
  * Cache-creation and cache-read tokens are billed/quota'd, so they fold into
  * input. `total_cost_usd` is ignored.
  */

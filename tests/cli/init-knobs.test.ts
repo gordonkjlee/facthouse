@@ -12,6 +12,8 @@ import { defaultServerConfig } from "../../src/config.js";
 import {
   INIT_KNOB_IDS,
   MORE_SETTING_IDS,
+  CLI_DEFAULT_TIMEOUT_MS,
+  CLI_HISTORIC_TIMEOUT_MS,
   INIT_PROMPTS,
   INIT_SYNTHETIC,
   SETTINGS_PROMPTS,
@@ -146,6 +148,7 @@ describe("init knobs — one definition", () => {
         "copyStorewide",
         "configMalformed",
         "copiedLines",
+        "copyingNow",
         "cwd",
         "cwdSkip",
         "cwdSkipped",
@@ -155,7 +158,10 @@ describe("init knobs — one definition", () => {
         "dataDir",
         "embedding",
 
+        "extractProgress",
         "extractSkippedHeuristic",
+        "extractTimedOut",
+        "extractingNow",
         "existingConfig",
         "forceHelp",
         "gitBashCwdHint",
@@ -169,6 +175,7 @@ describe("init knobs — one definition", () => {
         "mcpVsCli",
         "quickStartNext",
         "mixCopyRecord",
+        "notAPath",
         "shellNote",
         "storeDir",
         "more",
@@ -228,6 +235,11 @@ describe("init knobs — one definition", () => {
     expect(INIT_PROMPTS.storeDir).not.toMatch(/\bmemory\b/i);
     expect(INIT_PROMPTS.intro).not.toMatch(/two brains/i);
     expect(INIT_PROMPTS.intro).not.toMatch(/work and personal/i);
+    expect(CLI_HISTORIC_TIMEOUT_MS).toBeGreaterThan(CLI_DEFAULT_TIMEOUT_MS);
+    expect(INIT_PROMPTS.extractTimedOut(180)).toMatch(/180s/);
+    expect(INIT_PROMPTS.extractTimedOut(180)).not.toMatch(/[Cc]ontinuing/);
+    expect(INIT_PROMPTS.moreCliTimeout("45000")).toMatch(/Idle silence/);
+    expect(INIT_PROMPTS.extractingNow(3)).not.toMatch(/several minutes/);
     expect(INIT_PROMPTS.homeMissing("~/.claude")).toContain("~/.claude");
     expect(INIT_PROMPTS.projectGroupMissing("~/.claude", "C:\\dev\\app", "C--dev-app")).toContain(
       "C--dev-app",
@@ -237,6 +249,7 @@ describe("init knobs — one definition", () => {
   it("CLI and MCP entry use defaultDataDir / resolveUserPath, not path.join(homedir()", () => {
     const cli = readFileSync(path.join(ROOT, "src/cli/run.ts"), "utf-8");
     const server = readFileSync(path.join(ROOT, "src/server.ts"), "utf-8");
+    expect(cli).toMatch(/timeoutMs:\s*CLI_HISTORIC_TIMEOUT_MS/);
     expect(cli).toMatch(/dataDirFromEnvOrDefault/);
     expect(cli).toMatch(/resolveUserPath/);
     expect(cli).not.toMatch(/path\.join\(homedir\(/);

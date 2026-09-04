@@ -151,6 +151,10 @@ export interface ConsolidateCaller {
    * extract can reach recent lines. Automatic consolidate does not set this.
    */
   extractSince?: Date;
+  /** Counter after each examined chunk. Not a tick during the model call. */
+  onExtractProgress?: (examined: number, total: number) => void;
+  /** Fired only when extract degraded because the CLI subprocess timed out. */
+  onExtractTimeout?: () => void;
 }
 
 export interface ConsolidationResult {
@@ -371,6 +375,8 @@ export async function consolidate(
         config,
         extractLimit,
         caller.extractSince,
+        caller.onExtractProgress,
+        caller.onExtractTimeout,
       );
       extractionDegraded = extracted.degraded;
       extractPending = extracted.pending;
@@ -1466,6 +1472,8 @@ async function extractFactsFromEvents(
   config?: Partial<ServerConfig>,
   limit: number | null = null,
   since?: Date,
+  onProgress?: (examined: number, total: number) => void,
+  onTimeout?: () => void,
 ): Promise<ExtractResult> {
   const empty: ExtractResult = {
     degraded: false,
@@ -1490,6 +1498,8 @@ async function extractFactsFromEvents(
 
   const conversations = await listUnexaminedConversations(db);
   if (conversations.length === 0) return empty;
+  const total = await unexaminedEventCount(db);
+  let examinedLines = 0;
 
   const vocabulary = await loadStoreVocabulary(db, config?.domains ?? []);
   const entityTypes = await listEntityTypes(db);
@@ -1534,6 +1544,8 @@ async function extractFactsFromEvents(
         await setConversationExtractThrough(db, ref, maxLoaded);
         advanced = true;
       }
+      examinedLines += loaded.length;
+      onProgress?.(examinedLines, total);
       continue;
     }
 
@@ -1589,6 +1601,8 @@ async function extractFactsFromEvents(
         }
         conversationDegraded = true;
         degraded = true;
+        if (outcome.degradedKind === "timeout") onTimeout?.();
+        onProgress?.(examinedLines, total);
         break;
       }
       if (needsReread(outcome)) {
@@ -1629,6 +1643,8 @@ async function extractFactsFromEvents(
           }
           conversationDegraded = true;
           degraded = true;
+          if (outcome.degradedKind === "timeout") onTimeout?.();
+          onProgress?.(examinedLines, total);
           break;
         }
         if (needsReread(outcome)) {
@@ -1662,6 +1678,8 @@ async function extractFactsFromEvents(
         closedGist: built.closedGist,
       });
       earlierThisRun.push(...chunk);
+      examinedLines += chunk.length;
+      onProgress?.(examinedLines, total);
     }
 
     if (!conversationDegraded) {

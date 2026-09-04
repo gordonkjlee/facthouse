@@ -1,8 +1,8 @@
 /**
  * CLI-subprocess intelligence provider.
  *
- * Spawns `claude -p --output-format json --json-schema ...` for each semantic
- * stage of consolidation. Uses the user's existing Claude subscription via
+ * Spawns `claude -p --output-format stream-json --json-schema ...` for each
+ * semantic stage of consolidation. Uses the user's existing Claude subscription via
  * OAuth, so no API key is needed — the subprocess inherits the parent's
  * environment and claude's keychain/file-based credentials resolve naturally.
  *
@@ -64,7 +64,7 @@ export interface CliProviderOpts {
   command?: string[];
   /** Model alias (passed via --model). Default: CLI_DEFAULT_MODEL. */
   model?: string;
-  /** Per-stage timeout in ms. Default: CLI_DEFAULT_TIMEOUT_MS. */
+  /** Idle silence on the subprocess pipes before kill. Default: CLI_DEFAULT_TIMEOUT_MS. */
   timeoutMs?: number;
   /** Cwd for subprocess. Default: OS tempdir (out of project scope). */
   cwd?: string;
@@ -107,7 +107,7 @@ if (typeof process !== "undefined") {
 // ---------------------------------------------------------------------------
 
 interface SubprocessResult {
-  /** Full parsed envelope from --output-format json. */
+  /** Parsed result envelope from stream-json (or a single JSON object in tests). */
   envelope: Record<string, unknown>;
   /** The schema-validated structured output, or null if unavailable. */
   structured: unknown;
@@ -120,6 +120,8 @@ interface SubprocessFailure {
   exitCode?: number | null;
   stderr?: string;
   elapsedMs?: number;
+  /** Which watchdog fired. Only set when `error` is `timeout`. */
+  watchdog?: "idle" | "hard";
 }
 
 /** Transient extract failures that are retried once. Not spawn/parse/is-error. */
@@ -128,6 +130,40 @@ export const CLI_EXTRACT_RETRIES = 1; // exactly one retry; two attempts total
 export const CLI_FAILURE_SLICE = 300; // same cap as invokeClaude's stderr slice
 /** Max wait after SIGKILL before the timeout result is returned. Join, not backoff. */
 export const CLI_TIMEOUT_JOIN_MS = 2_000;
+/** Absolute ceiling per stage, even if the stream keeps ticking. Idle is `timeoutMs`. */
+export const CLI_HARD_TIMEOUT_MS = 15 * 60 * 1000;
+
+/**
+ * Parse `claude -p --output-format stream-json` (NDJSON) or a single JSON
+ * envelope (`--output-format json`, tests). Prefer the last `type: result`
+ * line; otherwise the last object with `structured_output`.
+ */
+export function parseClaudeCliStdout(stdout: string): Record<string, unknown> {
+  const lines = stdout.split(/\r?\n/).map((l) => l.trim()).filter((l) => l.length > 0);
+  let lastResult: Record<string, unknown> | undefined;
+  let lastStructured: Record<string, unknown> | undefined;
+  for (const line of lines) {
+    let obj: unknown;
+    try {
+      obj = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    if (obj === null || typeof obj !== "object" || Array.isArray(obj)) continue;
+    const rec = obj as Record<string, unknown>;
+    if (rec.type === "result") lastResult = rec;
+    if (rec.structured_output !== undefined && rec.structured_output !== null) {
+      lastStructured = rec;
+    }
+  }
+  if (lastResult) return lastResult;
+  if (lastStructured) return lastStructured;
+  const whole = JSON.parse(stdout) as unknown;
+  if (whole === null || typeof whole !== "object" || Array.isArray(whole)) {
+    throw new SyntaxError("claude stdout is not a JSON object");
+  }
+  return whole as Record<string, unknown>;
+}
 
 function formatStageFailure(
   stageName: string,
@@ -145,7 +181,14 @@ function formatStageFailure(
     bits.push(`exit=${result.exitCode == null ? "null" : String(result.exitCode)}`);
     bits.push(`stderr=${JSON.stringify((result.stderr ?? "").slice(0, CLI_FAILURE_SLICE))}`);
   } else if (result.error === "timeout") {
-    if (extra?.timeoutMs != null) bits.push(`after=${extra.timeoutMs}ms`);
+    if (result.watchdog === "hard") {
+      bits.push(`hard=${CLI_HARD_TIMEOUT_MS}ms`);
+    } else if (extra?.timeoutMs != null) {
+      bits.push(`idle=${extra.timeoutMs}ms`);
+    }
+    if (typeof result.elapsedMs === "number") {
+      bits.push(`elapsed=${result.elapsedMs}ms`);
+    }
     if (result.stderr) bits.push(`stderr=${JSON.stringify(result.stderr.slice(0, CLI_FAILURE_SLICE))}`);
   } else if (result.detail) {
     bits.push(`detail=${JSON.stringify(result.detail.slice(0, CLI_FAILURE_SLICE))}`);
@@ -170,7 +213,10 @@ async function invokeClaude(
     ...command.slice(1),
     "-p",
     "--output-format",
-    "json",
+    "stream-json",
+    "--verbose",
+    // Documented trio with -p. Does not flush a block-buffered pipe.
+    "--include-partial-messages",
     "--json-schema",
     JSON.stringify(schema),
     "--setting-sources",
@@ -209,12 +255,25 @@ async function invokeClaude(
     let stdout = "";
     let stderr = "";
     let timedOut = false;
+    let timeoutWatchdog: "idle" | "hard" | undefined;
+    let idleTimer: ReturnType<typeof setTimeout> | undefined;
+    let hardTimer: ReturnType<typeof setTimeout> | undefined;
     let joinTimer: ReturnType<typeof setTimeout> | undefined;
-    const timer = setTimeout(() => {
+    const clearWatchdogs = () => {
+      if (idleTimer) clearTimeout(idleTimer);
+      if (hardTimer) clearTimeout(hardTimer);
+      if (joinTimer) clearTimeout(joinTimer);
+    };
+    const fireTimeout = (watchdog: "idle" | "hard") => {
       // Kill immediately and wait for close (or the join cap) before
       // resolving. SIGTERM-and-return used to let the retry spawn overlap
-      // a live child.
+      // a live child. Idle and hard share this path; the second must not
+      // arm another join.
+      if (timedOut || resolved) return;
       timedOut = true;
+      timeoutWatchdog = watchdog;
+      if (idleTimer) clearTimeout(idleTimer);
+      if (hardTimer) clearTimeout(hardTimer);
       try {
         child.kill("SIGKILL");
       } catch {
@@ -224,34 +283,55 @@ async function invokeClaude(
         finish({
           error: "timeout",
           stderr: stderr.slice(0, CLI_FAILURE_SLICE),
+          watchdog: timeoutWatchdog,
         });
       }, CLI_TIMEOUT_JOIN_MS);
-    }, opts.timeoutMs);
+    };
+    const armIdle = () => {
+      if (resolved || timedOut) return;
+      if (idleTimer) clearTimeout(idleTimer);
+      idleTimer = setTimeout(() => fireTimeout("idle"), opts.timeoutMs);
+    };
+    armIdle();
+    hardTimer = setTimeout(
+      () => fireTimeout("hard"),
+      Math.max(CLI_HARD_TIMEOUT_MS, opts.timeoutMs),
+    );
 
-    child.stdout?.on("data", (d) => (stdout += d.toString()));
-    child.stderr?.on("data", (d) => (stderr += d.toString()));
+    // Spawn and stdin-end are not silence. Windows CreateProcess plus a
+    // large extract prompt used to count against the idle window, so the
+    // first chunk died before the first stream-json line.
+    child.on("spawn", armIdle);
+    child.stdout?.on("data", (d) => {
+      stdout += d.toString();
+      armIdle();
+    });
+    child.stderr?.on("data", (d) => {
+      stderr += d.toString();
+      armIdle();
+    });
     child.stdin?.on("error", () => {
       // EPIPE if the child exits before consuming the prompt; close/error
       // handlers below settle the result.
     });
     child.on("error", (err) => {
-      clearTimeout(timer);
-      if (joinTimer) clearTimeout(joinTimer);
+      clearWatchdogs();
       if (timedOut) {
         return finish({
           error: "timeout",
           stderr: stderr.slice(0, CLI_FAILURE_SLICE),
+          watchdog: timeoutWatchdog,
         });
       }
       finish({ error: "spawn-error", detail: err.message });
     });
     child.on("close", (code) => {
-      clearTimeout(timer);
-      if (joinTimer) clearTimeout(joinTimer);
+      clearWatchdogs();
       if (timedOut) {
         return finish({
           error: "timeout",
           stderr: stderr.slice(0, CLI_FAILURE_SLICE),
+          watchdog: timeoutWatchdog,
         });
       }
       if (code !== 0) {
@@ -263,7 +343,7 @@ async function invokeClaude(
       }
       let envelope: Record<string, unknown>;
       try {
-        envelope = JSON.parse(stdout);
+        envelope = parseClaudeCliStdout(stdout);
       } catch (err) {
         return finish({ error: "parse-error", detail: (err as Error).message });
       }
@@ -288,7 +368,7 @@ async function invokeClaude(
     });
 
     try {
-      child.stdin?.end(prompt, "utf8");
+      child.stdin?.end(prompt, "utf8", armIdle);
     } catch {
       // Child already closed stdin; close/error handlers settle the result.
     }
@@ -628,10 +708,9 @@ export function createCliProvider(
     // Resolved lazily below — kept here only to satisfy the Required shape.
     command: [],
     model: userOpts.model ?? CLI_DEFAULT_MODEL,
-    // 45s covers the heavier stage 1 (nested schema + entity resolution).
-    // Measured: simple prompts 8–15s; stage 1 with full schema 20–35s
-    // observed. Budget is per stage, not total — 4 stages × 45s = up to 3
-    // minutes worst case, which is still a background job.
+    // Idle silence, not wall-clock. A live stream-json child can run for
+    // minutes; CLI_HARD_TIMEOUT_MS is the ceiling. 45s with no spawn, no
+    // stdin-end, and no pipe bytes still means hung.
     timeoutMs: userOpts.timeoutMs ?? CLI_DEFAULT_TIMEOUT_MS,
     cwd: userOpts.cwd ?? tmpdir(),
     maxCandidates: userOpts.maxCandidates ?? 50,
@@ -674,6 +753,8 @@ export function createCliProvider(
     });
   }
 
+  let lastStageError: SubprocessFailure["error"] | null = null;
+
   /** Standardised stage runner. Returns null on failure so callers can fall back. */
   async function runStage<T>(
     stageName: string,
@@ -690,9 +771,11 @@ export function createCliProvider(
     const prompt = `${systemPrompt}\n\nINPUT:\n${JSON.stringify(userPayload)}`;
     const attempt = () => invokeClaude(prompt, schema, getCommand(), opts);
 
+    lastStageError = null;
     let result = await attempt();
     recordAttempt(stageName, result);
     if ("error" in result) {
+      lastStageError = result.error;
       const retryable =
         retryTransient &&
         (CLI_EXTRACT_RETRY_KINDS as readonly string[]).includes(result.error);
@@ -704,11 +787,13 @@ export function createCliProvider(
         result = await attempt();
         recordAttempt(stageName, result);
         if ("error" in result) {
+          lastStageError = result.error;
           console.error(formatStageFailure(stageName, result, "retry", {
             timeoutMs: result.error === "timeout" ? opts.timeoutMs : undefined,
           }));
           return null;
         }
+        lastStageError = null;
         log(`${stageName} retry ok in ${result.elapsedMs}ms`);
         return result.structured as T;
       }
@@ -789,7 +874,11 @@ export function createCliProvider(
           longTermMemory,
           extras,
         );
-        return { facts: fell.facts, degraded: true };
+        return {
+          facts: fell.facts,
+          degraded: true,
+          degradedKind: lastStageError === "timeout" ? "timeout" : "other",
+        };
       }
 
       const extracted: ExtractedFact[] = result.facts.map((f) => ({

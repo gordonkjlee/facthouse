@@ -114,7 +114,12 @@ describe("offerInitBackfill", () => {
     ]);
     expect(pulled).toEqual(["/tmp/store"]);
     expect(consolidated).toEqual([{ dir: "/tmp/store", limit: null }]);
+    expect(io.writes).toContain(INIT_PROMPTS.copyingNow);
     expect(io.writes).toContain(INIT_PROMPTS.copiedLines(3));
+    expect(io.writes).toContain(INIT_PROMPTS.extractingNow(3));
+    expect(io.writes.indexOf(INIT_PROMPTS.copyingNow)).toBeLessThan(
+      io.writes.indexOf(INIT_PROMPTS.copiedLines(3)),
+    );
   });
 
   it("N on copy does not copy", async () => {
@@ -147,7 +152,9 @@ describe("offerInitBackfill", () => {
         return { factsIntegrated: 0, eventsRemaining: 9 };
       },
     });
+    expect(io.writes).toContain(INIT_PROMPTS.copyingNow);
     expect(io.writes).toContain(INIT_PROMPTS.copiedLines(9));
+    expect(io.writes).not.toContain(INIT_PROMPTS.extractingNow(9));
     expect(consolidated).toBe(false);
     expect(io.prompts).toEqual([
       INIT_PROMPTS.historicCopy,

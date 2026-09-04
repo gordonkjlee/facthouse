@@ -13,6 +13,7 @@ import {
   CLI_DEFAULT_MODEL,
   CLI_DEFAULT_INTEGRATE_MODEL,
   CLI_DEFAULT_TIMEOUT_MS,
+  CLI_HISTORIC_TIMEOUT_MS,
   HTTP_DEFAULT_BASE_URL,
   HTTP_WELL_KNOWN_BASE_URLS,
   type IntelligenceConfig,
@@ -491,6 +492,8 @@ export const INIT_PROMPTS = {
     `Which project folder are the logs for?  [${shown}]: `,
   cwdSkip:
     "A project folder is required to add a source. Leaving copy off (sources stays empty).",
+  notAPath:
+    "That is not a directory path. Use C:/..., ~/..., or ./... (or Enter for the default).",
   embedding:
     "Semantic search  [off]\n" +
     '  off     keyword only — "shellfish" finds a shellfish fact, "food" does not\n' +
@@ -504,9 +507,10 @@ export const INIT_PROMPTS = {
     "  [N]: ",
   moreCliModel: (shown: string) => `Extract model  [${shown}]: `,
   moreCliIntegrateModel: (shown: string) => `Integrate model  [${shown}]: `,
-  moreCliTimeout: (shown: string) => `Per-stage timeout in ms  [${shown}]: `,
+  moreCliTimeout: (shown: string) =>
+    `Idle silence on the Claude CLI (ms)  [${shown}]: `,
   moreCliTimeoutInvalid:
-    "Timeout must be a whole number of milliseconds greater than 0.",
+    "Timeout must be a whole number of milliseconds greater than 0 (no pipe bytes before kill).",
   moreHttpExtract: (shownYn: "Y" | "N") =>
     `Local extract on an OpenAI-compatible host?  [${shownYn}]\n` +
     "  N  no — extract stays on the Claude CLI\n" +
@@ -564,8 +568,15 @@ export const INIT_PROMPTS = {
     "  <n>    oldest n lines\n" +
     "  N      not now\n" +
     "  [all]: ",
+  copyingNow: "Copying transcripts…",
   copiedLines: (n: number) =>
     n === 0 ? "No new transcript lines." : `Copied ${n} line(s).`,
+  extractingNow: (n: number) =>
+    `Extracting and integrating ${n} line(s) (model calls). A quiet gap is idle silence, not the whole job dying. Progress prints as conversations finish.`,
+  extractProgress: (done: number, total: number) =>
+    `Examined ${done} of ${total} line(s)…`,
+  extractTimedOut: (idleSeconds: number) =>
+    `No output from the model for ${idleSeconds}s. That chunk was not examined and stays eligible.`,
   extractSkippedHeuristic:
     "Skipped extract — the heuristic does not read transcripts.",
   /** After the init offer ran extract + integrate. Same channel as the prompts. */
@@ -648,5 +659,6 @@ export {
   CLI_DEFAULT_MODEL,
   CLI_DEFAULT_INTEGRATE_MODEL,
   CLI_DEFAULT_TIMEOUT_MS,
+  CLI_HISTORIC_TIMEOUT_MS,
   HTTP_DEFAULT_BASE_URL,
 };

@@ -60,6 +60,11 @@ export interface ExtractionOutcome {
   /** The configured extractor could not run, and this is a fallback result. */
   degraded: boolean;
   /**
+   * Why extract degraded. Only `"timeout"` fires `onExtractTimeout`.
+   * Other kinds still hold the watermark; they are not skip-marked.
+   */
+  degradedKind?: "timeout" | "other";
+  /**
    * 0–1, optional. Absent + !degraded means confident — the heuristic empty
    * extract must not trigger a reread or the watermark would never move.
    * Below EXTRACT_REREAD_CONFIDENCE the caller may show a short reminder.

@@ -43,6 +43,19 @@ describe("parseInitWebPost", () => {
     ]);
   });
 
+  it("refuses a sentence as the data directory", () => {
+    const parsed = parseInitWebPost(
+      new URLSearchParams({
+        dataDir: "please put it next to the repo",
+        capture: "record",
+      }),
+      { processCwd: "C:\\dev\\app", dataDir: "C:\\Users\\alex\\.facthouse" },
+    );
+    expect(parsed.ok).toBe(false);
+    if (parsed.ok) return;
+    expect(parsed.error).toBe(INIT_PROMPTS.notAPath);
+  });
+
   it("record leaves sources unset", () => {
     const parsed = parseInitWebPost(new URLSearchParams({ capture: "record" }), {
       processCwd: "C:\\dev\\app",

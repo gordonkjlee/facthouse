@@ -78,7 +78,11 @@ import { loadStoreVocabulary } from "../db/domains.js";
 import { createEmbeddingProvider } from "../embedding/provider.js";
 import type { IntelligenceProvider } from "../intelligence/types.js";
 import type { EmbeddingProvider } from "../embedding/types.js";
-import { DEFAULT_CONFIG, type ServerConfig } from "../types/config.js";
+import {
+  CLI_HISTORIC_TIMEOUT_MS,
+  DEFAULT_CONFIG,
+  type ServerConfig,
+} from "../types/config.js";
 import type { SessionEvent } from "../types/data.js";
 import {
   CONFIG_FILENAME,
@@ -322,7 +326,8 @@ async function runInit() {
         })
       ) {
         const provider = resolveProviderType(written.intelligence.provider);
-        await offerInitBackfill(bindInitIo(rl), result.dataDir, {
+        const io = bindInitIo(rl);
+        await offerInitBackfill(io, result.dataDir, {
           providerIsHeuristic: provider === "heuristic",
           copy: async (dir) => {
             const cfg = loadConfig(dir);
@@ -337,6 +342,17 @@ async function runInit() {
                 print: false,
                 extractLimit: opts.extractLimit,
                 extractSince: opts.extractSince,
+                timeoutMs: CLI_HISTORIC_TIMEOUT_MS,
+                onExtractProgress: (done, total) => {
+                  io.write(INIT_PROMPTS.extractProgress(done, total));
+                },
+                onExtractTimeout: () => {
+                  io.write(
+                    INIT_PROMPTS.extractTimedOut(
+                      Math.round(CLI_HISTORIC_TIMEOUT_MS / 1000),
+                    ),
+                  );
+                },
               },
             );
             return r
@@ -746,6 +762,10 @@ interface ConsolidateStoreOpts {
   json?: boolean;
   /** Print nothing on success (the init offer prints its own lines). */
   print?: boolean;
+  /** Override `intelligence.cli.timeout_ms` for this run only. */
+  timeoutMs?: number;
+  onExtractProgress?: (examined: number, total: number) => void;
+  onExtractTimeout?: () => void;
 }
 
 /**
@@ -785,7 +805,11 @@ async function consolidateStore(
   const vocabulary = await withDb(dataDir, (db) =>
     loadStoreVocabulary(db, config.domains ?? []),
   );
-  const provider = createIntelligenceProvider(config.intelligence, {
+  const intelligence = { ...config.intelligence };
+  if (opts.timeoutMs != null) {
+    intelligence.cli = { ...intelligence.cli, timeout_ms: opts.timeoutMs };
+  }
+  const provider = createIntelligenceProvider(intelligence, {
     vocabulary,
   });
   // Embeddings are written here too, not only by the server. `facthouse
@@ -821,6 +845,8 @@ export async function consolidateInProcess(
       copy: () => copySources(db, config.sources),
       extractLimit: opts.extractLimit,
       extractSince: opts.extractSince,
+      onExtractProgress: opts.onExtractProgress,
+      onExtractTimeout: opts.onExtractTimeout,
     });
     if (result.skipped && result.skipReason) {
       console.error(`[facthouse] ${result.skipReason}`);

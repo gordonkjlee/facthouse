@@ -56,3 +56,32 @@ export function expandTilde(p: string): string {
 export function resolveUserPath(p: string): string {
   return path.resolve(expandTilde(p));
 }
+
+/**
+ * Typed init answers must look like a filesystem path, not a sentence.
+ * Empty means the caller should keep the default.
+ */
+export function looksLikeUserPath(raw: string): boolean {
+  const t = raw.trim();
+  if (t === "") return true;
+  if (/^[A-Za-z]:([\\/]|$)/.test(t)) return true;
+  if (
+    t.startsWith("~") ||
+    t.startsWith(".") ||
+    t.startsWith("/") ||
+    t.startsWith("\\")
+  ) {
+    return true;
+  }
+  return t.includes("/") || t.includes("\\");
+}
+
+/** Path-shaped, or a single segment that already exists after resolve. */
+export function acceptTypedPath(
+  raw: string,
+  exists: (absPath: string) => boolean,
+): boolean {
+  const t = raw.trim();
+  if (looksLikeUserPath(t)) return true;
+  return exists(resolveUserPath(t));
+}

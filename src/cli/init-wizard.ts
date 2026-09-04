@@ -8,7 +8,7 @@
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { CONFIG_FILENAME } from "../config.js";
-import { expandTilde, resolveUserPath } from "../paths.js";
+import { acceptTypedPath, expandTilde, resolveUserPath } from "../paths.js";
 import {
   isCaptureSourceKind,
   type CaptureSourceKind,
@@ -182,13 +182,34 @@ async function askCapture(
   }
 
   const homeDefault = defaultHomeForKind(kind, deps.env ?? {});
-  const homeRaw = (await io.question(INIT_PROMPTS.home(homeDefault))).trim();
-  const home = homeRaw === "" ? homeDefault : homeRaw;
+  let home = homeDefault;
+  for (;;) {
+    const homeRaw = (await io.question(INIT_PROMPTS.home(homeDefault))).trim();
+    if (homeRaw === "") break;
+    if (!acceptTypedPath(homeRaw, deps.exists)) {
+      io.write(INIT_PROMPTS.notAPath);
+      continue;
+    }
+    home = homeRaw;
+    break;
+  }
   const homeAbs = resolveUserPath(home);
   const homeOk = deps.exists(homeAbs);
   if (!homeOk) io.write(INIT_PROMPTS.homeMissing(home));
 
-  const cwdRaw = (await io.question(INIT_PROMPTS.cwd(deps.cwd()))).trim();
+  let cwdRaw = "";
+  for (;;) {
+    cwdRaw = (await io.question(INIT_PROMPTS.cwd(deps.cwd()))).trim();
+    if (
+      cwdRaw === "" ||
+      cwdRaw === "-" ||
+      cwdRaw.toLowerCase() === "skip" ||
+      acceptTypedPath(cwdRaw, deps.exists)
+    ) {
+      break;
+    }
+    io.write(INIT_PROMPTS.notAPath);
+  }
   const stored = storeCwdAnswer(cwdRaw, deps.cwd());
   if (stored === "skip") {
     io.write(INIT_PROMPTS.cwdSkip);
@@ -380,8 +401,19 @@ export async function collectInitAnswers(
 
   let dataDir = seed.dataDir;
   if (!seed.dataDirLocked) {
-    const raw = (await io.question(INIT_PROMPTS.dataDir(seed.dataDir))).trim();
-    dataDir = raw === "" ? seed.dataDir : resolveUserPath(raw);
+    for (;;) {
+      const raw = (await io.question(INIT_PROMPTS.dataDir(seed.dataDir))).trim();
+      if (raw === "") {
+        dataDir = seed.dataDir;
+        break;
+      }
+      if (!acceptTypedPath(raw, deps.exists)) {
+        io.write(INIT_PROMPTS.notAPath);
+        continue;
+      }
+      dataDir = resolveUserPath(raw);
+      break;
+    }
   }
 
   const chosenExists = deps.exists(path.join(dataDir, CONFIG_FILENAME));

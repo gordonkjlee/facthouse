@@ -99,7 +99,9 @@ function moreDumpLines(shown: MoreShown): string[] {
         );
         break;
       case "cliTimeoutMs":
-        lines.push(`Per-stage timeout in ms: ${shown.cliTimeoutMs}`);
+        lines.push(
+          `${promptLabel(INIT_PROMPTS.moreCliTimeout(""))}: ${shown.cliTimeoutMs}`,
+        );
         break;
       case "httpExtract":
         lines.push(`Local extract: ${shown.httpExtract ? "yes" : "no"}`);

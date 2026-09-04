@@ -6,6 +6,7 @@
  */
 
 import { randomBytes } from "node:crypto";
+import { existsSync } from "node:fs";
 import { createServer, type IncomingMessage } from "node:http";
 import {
   HTTP_DEFAULT_BASE_URL,
@@ -26,10 +27,9 @@ import {
   type InitWizardResult,
   type InitWizardSeed,
 } from "./init-wizard.js";
-import { existsSync } from "node:fs";
 import path from "node:path";
 import { CONFIG_FILENAME } from "../config.js";
-import { resolveUserPath } from "../paths.js";
+import { acceptTypedPath, resolveUserPath } from "../paths.js";
 import { ledgerInspectCss } from "./inspect-theme.js";
 import { CLI_NAME } from "../identity.js";
 
@@ -314,6 +314,9 @@ export function parseInitWebPost(
   opts: { processCwd: string; dataDir: string },
 ): { ok: true; dataDir: string; overlay: InitOverlay } | { ok: false; error: string } {
   const dataDirRaw = (params.get("dataDir") ?? "").trim();
+  if (dataDirRaw !== "" && !acceptTypedPath(dataDirRaw, existsSync)) {
+    return { ok: false, error: INIT_PROMPTS.notAPath };
+  }
   const dataDir = resolveUserPath(dataDirRaw === "" ? opts.dataDir : dataDirRaw);
   const choice = copyOrRecord(params.get("capture") ?? "copy");
   if (choice === "retry") return { ok: false, error: "Type copy or record." };
@@ -334,9 +337,21 @@ export function parseInitWebPost(
   if (!isCaptureSourceKind(kindRaw)) {
     return { ok: false, error: INIT_PROMPTS.unknownKind() };
   }
-  const home =
-    (params.get("home") ?? "").trim() || defaultHomeForKind(kindRaw, process.env);
-  const stored = storeCwdAnswer(params.get("cwd") ?? "", opts.processCwd);
+  const homeRaw = (params.get("home") ?? "").trim();
+  if (homeRaw !== "" && !acceptTypedPath(homeRaw, existsSync)) {
+    return { ok: false, error: INIT_PROMPTS.notAPath };
+  }
+  const home = homeRaw || defaultHomeForKind(kindRaw, process.env);
+  const cwdRaw = (params.get("cwd") ?? "").trim();
+  if (
+    cwdRaw !== "" &&
+    cwdRaw !== "-" &&
+    cwdRaw.toLowerCase() !== "skip" &&
+    !acceptTypedPath(cwdRaw, existsSync)
+  ) {
+    return { ok: false, error: INIT_PROMPTS.notAPath };
+  }
+  const stored = storeCwdAnswer(cwdRaw, opts.processCwd);
   if (stored === "skip") {
     return { ok: false, error: INIT_PROMPTS.cwdSkip };
   }
