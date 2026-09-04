@@ -230,7 +230,11 @@ export async function embeddingStatusLines(
 
 export function appendCaptureRecipe(
   sources: unknown,
-  opts: { captureAskedAndEmpty?: boolean; captureSkippedCwd?: boolean } = {},
+  opts: {
+    captureAskedAndEmpty?: boolean;
+    captureSkippedCwd?: boolean;
+    dataDir?: string;
+  } = {},
 ): string[] {
   if (opts.captureSkippedCwd) {
     return [INIT_PROMPTS.cwdSkipped];
@@ -238,7 +242,7 @@ export function appendCaptureRecipe(
   if (opts.captureAskedAndEmpty) {
     return [INIT_PROMPTS.captureDeclined];
   }
-  const status = sourcesStatusLines(sources);
+  const status = sourcesStatusLines(sources, opts.dataDir);
   try {
     if (resolveSources(sources).length > 0) {
       return [...status, INIT_PROMPTS.mixCopyRecord];
@@ -257,7 +261,10 @@ export function appendCaptureRecipe(
  * `capture_fact` until a source is named — that is the sentence a silent
  * `--yes` run must print, or it reads like copy is required.
  */
-export function sourcesStatusLines(sources: unknown): string[] {
+export function sourcesStatusLines(
+  sources: unknown,
+  dataDir?: string,
+): string[] {
   let n: number;
   try {
     n = resolveSources(sources).length;
@@ -272,7 +279,7 @@ export function sourcesStatusLines(sources: unknown): string[] {
     ];
   }
   return [
-    `Capture: ${n} source${n === 1 ? "" : "s"}. ${INIT_PROMPTS.copyNext}`,
+    `Capture: ${n} source${n === 1 ? "" : "s"}. ${INIT_PROMPTS.copyNext(dataDir)}`,
     INIT_PROMPTS.copyStorewide,
   ];
 }

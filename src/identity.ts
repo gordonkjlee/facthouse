@@ -48,6 +48,21 @@ export function npmPackageSpec(version: string | null | undefined): string {
   return version ? `${NPM_PACKAGE}@${version}` : NPM_PACKAGE;
 }
 
+/**
+ * Path-free CLI. The MCP paste does not put the bin on PATH. Quote the
+ * package so PowerShell does not splat. Pin `spec` in snippets.
+ */
+export function pathFreeCli(argv: string, spec: string = NPM_PACKAGE): string {
+  const rest = argv.trim() ? ` ${argv.trim()}` : "";
+  return `npx -y -p "${spec}" -- ${CLI_NAME}${rest}`;
+}
+
+/** `--data` value for a terminal: forward slashes, quoted if it has spaces. */
+export function cliDataArg(dataDir: string): string {
+  const normalised = dataDir.replace(/\\/g, "/");
+  return /\s/.test(normalised) ? `"${normalised}"` : normalised;
+}
+
 /** Env keys that select a store. Tests must strip this prefix. */
 export const STORE_ENV_KEYS: readonly string[] = [
   envName("DATA"),

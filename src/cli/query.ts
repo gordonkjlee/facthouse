@@ -177,12 +177,12 @@ export function formatConsolidate(r: ConsolidationResult): string {
   const lines: string[] = ["", "Facthouse consolidate", ""];
   if (r.skipped) {
     // Copy runs before the lock, so a skipped run may still have copied.
-    lines.push(`  Events copied      ${r.eventsCopied}`);
+    lines.push(`  Lines copied       ${r.eventsCopied}`);
     lines.push(`  Skipped            ${r.skipReason ?? "nothing to do"}`);
-    lines.push(`  Events remaining   ${r.eventsRemaining}`);
+    lines.push(`  Lines remaining    ${r.eventsRemaining}`);
     return lines.join("\n");
   }
-  lines.push(`  Events copied      ${r.eventsCopied}`);
+  lines.push(`  Lines copied       ${r.eventsCopied}`);
   lines.push(`  Candidates in      ${r.factsIn}`);
   lines.push(`  Facts integrated   ${r.factsIntegrated}`);
   if (r.factsRejected > 0) lines.push(`  Rejected           ${r.factsRejected}`);
@@ -190,7 +190,7 @@ export function formatConsolidate(r: ConsolidationResult): string {
     `  Entities           ${r.entitiesCreated} created, ${r.entitiesLinked} linked`,
   );
   if (r.supersessions > 0) lines.push(`  Supersessions      ${r.supersessions}`);
-  lines.push(`  Events remaining   ${r.eventsRemaining}`);
+  lines.push(`  Lines remaining    ${r.eventsRemaining}`);
   if (r.extractionDegraded) {
     lines.push(`  Extraction         degraded — see the message above`);
   }

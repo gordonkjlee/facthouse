@@ -344,7 +344,7 @@ describe("sourcesStatusLines", () => {
       { kind: "claude-code", home: "~/.claude", cwd: "C:\\dev\\app" },
     ]).join("\n");
     expect(text).toMatch(/1 source/);
-    expect(text).toMatch(/facthouse consolidate/);
+    expect(text).toContain(INIT_PROMPTS.copyNext());
     expect(text).not.toMatch(/pull/);
     expect(text).toContain(INIT_PROMPTS.copyStorewide);
     expect(text).not.toMatch(/copy is off/i);

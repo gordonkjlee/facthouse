@@ -18,10 +18,12 @@ import {
 } from "../config.js";
 import type { ServerConfig } from "../types/config.js";
 import {
+  INIT_PROMPTS,
   MORE_SETTING_IDS,
   SETTINGS_PROMPTS,
   moreShownFromConfig,
   patchConfigDocument,
+  promptLabel,
   type MoreOverlay,
   type MoreShown,
   type OverlayWrittenPath,
@@ -87,10 +89,14 @@ function moreDumpLines(shown: MoreShown): string[] {
   for (const id of MORE_SETTING_IDS) {
     switch (id) {
       case "cliModel":
-        lines.push(`Model to extract facts from messages: ${shown.cliModel}`);
+        lines.push(
+          `${promptLabel(INIT_PROMPTS.moreCliModel(""))}: ${shown.cliModel}`,
+        );
         break;
       case "cliIntegrateModel":
-        lines.push(`Model to update long-term knowledge: ${shown.cliIntegrateModel}`);
+        lines.push(
+          `${promptLabel(INIT_PROMPTS.moreCliIntegrateModel(""))}: ${shown.cliIntegrateModel}`,
+        );
         break;
       case "cliTimeoutMs":
         lines.push(`Per-stage timeout in ms: ${shown.cliTimeoutMs}`);

@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 
+import "../suppress-sqlite-warning.js";
+
 /**
  * Facthouse CLI entry point.
  *
@@ -42,11 +44,12 @@ import { collectInitWebAnswers } from "./web.js";
 import {
   CLI_NAME,
   PRODUCT_NAME,
+  cliDataArg,
   envIsSet,
   envValue,
   npmPackageSpec,
 } from "../identity.js";
-import { dataDirFromEnvOrDefault, defaultDataDir, resolveUserPath } from "../paths.js";
+import { dataDirFromEnvOrDefault, resolveUserPath } from "../paths.js";
 import {
   runSearch,
   formatSearch,
@@ -195,9 +198,9 @@ function usageText(): string {
     `                  (${NOTIFIABLE_MOMENTS.join(", ")})`,
     ``,
     `Consolidate`,
-    `  consolidate     Copy lines, extract facts, integrate them (spends model calls)`,
+    `  consolidate     Copy, extract, and integrate (spends model calls)`,
     `                  -c --copy  -e --extract  -i --integrate   run only these steps`,
-    `                  -a --all   extract past the cap      -l --limit N  oldest N`,
+    `                  -a --all   extract every remaining line   -l --limit N  oldest N`,
     ``,
     `Read`,
     `  search <q>      Search integrated knowledge (--domain, --limit, --json)`,
@@ -313,6 +316,7 @@ async function runInit() {
   const captureLines = appendCaptureRecipe(written.sources, {
     captureAskedAndEmpty: wizard.captureAskedAndEmpty,
     captureSkippedCwd: wizard.captureSkippedCwd,
+    dataDir: result.dataDir,
   });
 
   const lines = [
@@ -369,11 +373,15 @@ async function runInit() {
           unextracted: (dir) => withDb(dir, (db) => unexaminedEventCount(db)),
           // The offer already copied; extract (capped) and integrate. The
           // offer prints the counts itself, on the same channel as its prompts.
-          consolidate: async (dir) => {
+          consolidate: async (dir, opts) => {
             const r = await consolidateStore(
               dir,
               { copy: false, extract: true, integrate: true },
-              { print: false },
+              {
+                print: false,
+                extractLimit: opts.extractLimit,
+                extractSince: opts.extractSince,
+              },
             );
             return r
               ? { factsIntegrated: r.factsIntegrated, eventsRemaining: r.eventsRemaining }
@@ -390,9 +398,8 @@ async function runInit() {
   const outro = [...captureLines, ``];
   if (result.wroteConfig) {
     const later =
-      result.dataDir === defaultDataDir()
-        ? `Later: ${CLI_NAME} settings  (extra knobs; does not reset this file)`
-        : `Later: ${CLI_NAME} settings --data ${result.dataDir}  (extra knobs; does not reset this file)`;
+      `Later: ${CLI_NAME} settings --data ${cliDataArg(result.dataDir)}  ` +
+      `(extra knobs; does not reset this file)`;
     outro.push(later, ``);
   }
   console.log(outro.join("\n"));
@@ -735,8 +742,10 @@ async function runConsolidate() {
 }
 
 interface ConsolidateStoreOpts {
-  /** undefined: default cap; null: no cap; number: that many oldest events. */
+  /** undefined: default cap; null: no cap; number: that many oldest lines. */
   extractLimit?: number | null;
+  /** Init historic window. See ConsolidateCaller.extractSince. */
+  extractSince?: Date;
   /** Print the result object instead of the human summary. */
   json?: boolean;
   /** Print nothing on success (the init offer prints its own lines). */
@@ -815,6 +824,7 @@ export async function consolidateInProcess(
       project: envValue("PROJECT") ?? null,
       copy: () => copySources(db, config.sources),
       extractLimit: opts.extractLimit,
+      extractSince: opts.extractSince,
     });
     if (result.skipped && result.skipReason) {
       console.error(`[facthouse] ${result.skipReason}`);
@@ -837,7 +847,7 @@ export async function consolidateInProcess(
       result.eventsRemaining > 0
     ) {
       console.error(
-        `[facthouse] ${result.eventsRemaining} event(s) still waiting to be extracted. ` +
+        `[facthouse] ${result.eventsRemaining} line(s) still waiting to be extracted. ` +
           `Run ${CLI_NAME} consolidate --all to take them all now, or --limit N for the oldest N.`,
       );
     }

@@ -103,18 +103,22 @@ describe("init knobs — one definition", () => {
     expect(INIT_PROMPTS.capture).toMatch(/\[copy\]/);
     expect(INIT_PROMPTS.capture).toMatch(/\bcopy\b/);
     expect(INIT_PROMPTS.capture).toMatch(/\brecord\b/);
-    expect(INIT_PROMPTS.capture).toMatch(/Grok Build/);
+    expect(INIT_PROMPTS.capture).toMatch(/\bGrok\b/);
+    expect(INIT_PROMPTS.capture).not.toMatch(/\bhere\b/);
     expect(INIT_PROMPTS.capture).toMatch(/\[copy\]: $/);
     expect(INIT_PROMPTS.kind).toMatch(/\[claude-code\]: $/);
+    expect(INIT_PROMPTS.home("~/.claude")).toMatch(/not the project/);
+    expect(INIT_PROMPTS.cwd("C:\\dev\\app")).toMatch(/project folder/);
     expect(INIT_PROMPTS.embedding).toMatch(/\[off\]: $/);
     expect(INIT_PROMPTS.more).toMatch(/\[N\]: $/);
-    expect(INIT_PROMPTS.moreCliModel("haiku")).toBe(
-      "Model to extract facts from messages  [haiku]: ",
-    );
+    expect(INIT_PROMPTS.moreCliModel("haiku")).toBe("Extract model  [haiku]: ");
     expect(INIT_PROMPTS.moreCliIntegrateModel("haiku")).toBe(
-      "Model to update long-term knowledge  [haiku]: ",
+      "Integrate model  [haiku]: ",
     );
-    expect(INIT_PROMPTS.historicNow).toMatch(/\[Y\]: $/);
+    expect(INIT_PROMPTS.historicCopy).toMatch(/\[Y\]: $/);
+    expect(INIT_PROMPTS.historicCopy).toMatch(/\n  N  /);
+    expect(INIT_PROMPTS.historicExtract).toMatch(/\[all\]: $/);
+    expect(INIT_PROMPTS.historicExtract).toMatch(/\n  N  /);
   });
 
   it("kind prompt names every shipped kind and not grok", () => {
@@ -133,9 +137,10 @@ describe("init knobs — one definition", () => {
       [
         "capture",
         "captureDeclined",
-        "historicNow",
+        "historicCopy",
+        "historicExtract",
         "copyStorewide",
-        "copiedEvents",
+        "copiedLines",
         "cwd",
         "cwdSkip",
         "cwdSkipped",
@@ -247,7 +252,7 @@ describe("init knobs — one definition", () => {
     });
     expect(next.intelligence.cli?.model).toBe("sonnet");
     expect(next.intelligence.cli?.timeout_ms).toBe(180_000);
-    expect(next.intelligence.cli?.integrate_model).toBeUndefined();
+    expect(next.intelligence.cli?.integrate_model).toBe("sonnet");
     expect(next.intelligence.provider).toBe("cli");
     const split = applyInitOverlay(defaultServerConfig(), {
       cliModel: "haiku",
@@ -274,7 +279,8 @@ describe("init knobs — one definition", () => {
       on_fail: "none",
     });
     const recommended = applyInitOverlay(defaultServerConfig(), {});
-    expect(recommended.intelligence.cli?.model).toBeUndefined();
+    expect(recommended.intelligence.cli?.model).toBe("haiku");
+    expect(recommended.intelligence.cli?.integrate_model).toBe("sonnet");
     expect(recommended.intelligence.cli?.timeout_ms).toBeUndefined();
   });
 
@@ -427,16 +433,18 @@ describe("init knobs — one definition", () => {
     const cap = String(EXTRACT_CAP_EVENTS);
     // Each sentence that teaches the cap must carry the same number the
     // engine enforces; a change to EXTRACT_CAP_EVENTS must fail here.
-    expect(readme).toContain(`extracts facts from the oldest ${cap} events`);
-    expect(readme).toContain(`Extract is capped at ${cap} events per run`);
-    expect(readme).toContain(`A first backfill of more than ${cap} events`);
+    expect(readme).toContain(`extracts facts from the oldest ${cap} lines`);
+    expect(readme).toContain(`Extract is capped at ${cap} lines per run`);
+    expect(readme).toContain(`A first backfill of more than ${cap} lines`);
     expect(readme).toContain(INIT_PROMPTS.mixCopyRecord);
   });
 
   it("init's copy recipe and the extract prompt name the cap once", () => {
-    expect(INIT_PROMPTS.historicNow).toContain(String(EXTRACT_CAP_EVENTS));
-    expect(INIT_PROMPTS.copyNext).toContain(String(EXTRACT_CAP_EVENTS));
-    expect(INIT_PROMPTS.integrated(3, 7)).toContain(String(EXTRACT_CAP_EVENTS));
+    expect(INIT_PROMPTS.historicExtract).not.toContain(String(EXTRACT_CAP_EVENTS));
+    expect(INIT_PROMPTS.copyNext()).toContain(String(EXTRACT_CAP_EVENTS));
+    expect(INIT_PROMPTS.copyNext()).toMatch(new RegExp(`^Run ${"facthouse"} consolidate`));
+    expect(INIT_PROMPTS.copyNext("C:/dev/app/.facthouse")).toContain("--data");
+    expect(INIT_PROMPTS.integrated(3, 7)).toMatch(/7 line\(s\) remain/);
     expect(INIT_PROMPTS.integrated(3, 0)).not.toMatch(/remain/);
   });
 

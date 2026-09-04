@@ -10,6 +10,7 @@ import { createServer, type IncomingMessage } from "node:http";
 import {
   HTTP_DEFAULT_BASE_URL,
   INIT_PROMPTS,
+  promptLabel,
   MORE_SETTING_IDS,
   defaultHomeForKind,
   type InitOverlay,
@@ -186,12 +187,6 @@ ${inner}
 </html>`;
 }
 
-/** The prompt's first line, before the default in brackets: one label, one source. */
-function promptLabel(prompt: string): string {
-  const first = prompt.split("\n")[0] ?? prompt;
-  return first.split("  [")[0]!.replace(/\?$/, "").trim();
-}
-
 /**
  * One More-knob field for both pages. Labels come from INIT_PROMPTS so the
  * terminal and the page cannot drift; `shown` fills current values (settings).
@@ -254,7 +249,7 @@ export function renderInitWebHtml(opts: {
           <option value="cursor">cursor</option>
         </select>
       </label>
-      <label>Client config dir (home)
+      <label>${escapeHtml(promptLabel(INIT_PROMPTS.home("")))}
         <input name="home" placeholder="~/.claude" autocomplete="off">
       </label>
       <label>${escapeHtml(promptLabel(INIT_PROMPTS.cwd("")))}

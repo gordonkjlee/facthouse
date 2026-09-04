@@ -263,7 +263,7 @@ describe("collectInitAnswers", () => {
     expect(result.overlay.httpExtractOnFail).toBe("none");
   });
 
-  it("More can set a heavier model for long-term knowledge", async () => {
+  it("More can set a heavier integrate model", async () => {
     const io = fakeIo(["record", "off", "y", "", "sonnet", "", "n"]);
     const result = await collectInitAnswers(io, seed, deps());
     expect(result.overlay.cliModel).toBeUndefined();

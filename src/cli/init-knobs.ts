@@ -11,6 +11,7 @@ import {
   DEFAULT_CONFIG,
   CAPTURE_SOURCE_KINDS,
   CLI_DEFAULT_MODEL,
+  CLI_DEFAULT_INTEGRATE_MODEL,
   CLI_DEFAULT_TIMEOUT_MS,
   HTTP_DEFAULT_BASE_URL,
   HTTP_WELL_KNOWN_BASE_URLS,
@@ -24,7 +25,7 @@ import type {
   EmbeddingProviderType,
   ServerConfig,
 } from "../types/config.js";
-import { CLI_NAME } from "../identity.js";
+import { CLI_NAME, cliDataArg, pathFreeCli } from "../identity.js";
 import { EXTRACT_CAP_EVENTS } from "../intelligence/steps.js";
 import { defaultServerConfig, mergeConfig } from "../config.js";
 import { httpBaseUrlOf, httpIsOptedIn, httpModelOf } from "../intelligence/http.js";
@@ -46,7 +47,7 @@ export type InitKnobId = (typeof INIT_KNOB_IDS)[number];
  */
 export interface MoreOverlay {
   cliModel?: string;
-  /** CLI model for summarise / reconcile / supersede. Omit to use cliModel. */
+  /** CLI model for the integrate step. Omit to use cliModel. */
   cliIntegrateModel?: string;
   cliTimeoutMs?: number;
   /** Y on local OpenAI-compat extract. */
@@ -110,7 +111,7 @@ export interface MoreShown {
 /** Init More walk only. Enable-default on_fail is cli, not resolved CLI none. */
 export const SHIPPED_MORE_SHOWN: MoreShown = {
   cliModel: CLI_DEFAULT_MODEL,
-  cliIntegrateModel: CLI_DEFAULT_MODEL,
+  cliIntegrateModel: CLI_DEFAULT_INTEGRATE_MODEL,
   cliTimeoutMs: CLI_DEFAULT_TIMEOUT_MS,
   httpExtract: false,
   httpBaseUrl: HTTP_DEFAULT_BASE_URL,
@@ -413,9 +414,7 @@ export function moreShownFromConfig(
   const shown: MoreShown = {
     cliModel: config.intelligence.cli?.model ?? CLI_DEFAULT_MODEL,
     cliIntegrateModel:
-      config.intelligence.cli?.integrate_model ??
-      config.intelligence.cli?.model ??
-      CLI_DEFAULT_MODEL,
+      config.intelligence.cli?.integrate_model ?? CLI_DEFAULT_INTEGRATE_MODEL,
     cliTimeoutMs: config.intelligence.cli?.timeout_ms ?? CLI_DEFAULT_TIMEOUT_MS,
     httpExtract:
       resolveStageProviderType(config.intelligence, "extract", env) === "http",
@@ -452,28 +451,32 @@ function supportedKindsList(): string {
   return CAPTURE_SOURCE_KINDS.map((k) => `"${k}"`).join(" and ");
 }
 
+/** First line of an INIT_PROMPTS string, before the default in brackets. */
+export function promptLabel(prompt: string): string {
+  const first = prompt.split("\n")[0] ?? prompt;
+  return first.split("  [")[0]!.replace(/\?$/, "").trim();
+}
+
 export const INIT_PROMPTS = {
   intro:
     "Facthouse setup. Press Enter to accept the default in [brackets].\n" +
     "One directory is one memory. Another store is another directory.",
   dataDir: (shown: string) => `Data directory [${shown}]: `,
   capture:
-    "How should this store get conversations?  [copy]\n" +
-    "  copy    recommended if Claude Code or Cursor writes a transcript here\n" +
-    "          — Facthouse copies new lines into your file\n" +
-    "  record  any MCP client — the assistant calls capture_fact\n" +
-    "          (Grok Build, Desktop, and anyone without a transcript file)\n" +
+    "How do conversations get in?  [copy]\n" +
+    "  copy    session logs on disk (Claude Code or Cursor)\n" +
+    "  record  the assistant saves facts as you talk (Grok, Desktop, …)\n" +
     "  [copy]: ",
   kind:
-    "Source kind  [claude-code]\n" +
-    "  claude-code  Claude Code session JSONL\n" +
-    "  cursor       Cursor Agent JSONL\n" +
+    "Which client writes those logs?  [claude-code]\n" +
+    "  claude-code  Claude Code\n" +
+    "  cursor       Cursor\n" +
     "  [claude-code]: ",
   unknownKind: () => `This version supports ${supportedKindsList()}.`,
-  home: (shown: string) => `Client config dir (home)  [${shown}]: `,
+  home: (shown: string) =>
+    `Where those logs live (client home, not the project)  [${shown}]: `,
   cwd: (shown: string) =>
-    "Project directory (cwd) — required; a bare home walks every project group\n" +
-    `  [${shown}]: `,
+    `Which project folder are the logs for?  [${shown}]: `,
   cwdSkip:
     "cwd is required to add a source. Leaving copy off (sources stays empty).",
   embedding:
@@ -487,10 +490,8 @@ export const INIT_PROMPTS = {
     "  N  recommended — leave extra knobs at shipped defaults\n" +
     "  Y  set extra knobs (CLI model, timeout, optional local extract)\n" +
     "  [N]: ",
-  moreCliModel: (shown: string) =>
-    `Model to extract facts from messages  [${shown}]: `,
-  moreCliIntegrateModel: (shown: string) =>
-    `Model to update long-term knowledge  [${shown}]: `,
+  moreCliModel: (shown: string) => `Extract model  [${shown}]: `,
+  moreCliIntegrateModel: (shown: string) => `Integrate model  [${shown}]: `,
   moreCliTimeout: (shown: string) => `Per-stage timeout in ms  [${shown}]: `,
   moreCliTimeoutInvalid:
     "Timeout must be a whole number of milliseconds greater than 0.",
@@ -536,19 +537,27 @@ export const INIT_PROMPTS = {
     `Note: no project group for cwd ${cwd} under ${home} (looked for ${encoded}).`,
   gitBashCwdHint: (cwd: string, encoded: string) =>
     `A POSIX-looking cwd ${cwd} on Windows is not the path Claude Code encodes (${encoded} vs ${INIT_SYNTHETIC.cwd} → C--dev-app). Store what the client used.`,
-  historicNow:
-    `Process historic transcripts now?  [Y]\n` +
-    `  Y  copy existing lines, then extract the oldest ${EXTRACT_CAP_EVENTS} events\n` +
-    `  N  skip — you can run ${CLI_NAME} consolidate later\n` +
-    `  [Y]: `,
-  copiedEvents: (n: number) =>
-    n === 0 ? "No new transcript lines." : `Copied ${n} event(s).`,
+  historicCopy:
+    "Copy existing logs now?  [Y]\n" +
+    "  Y  yes\n" +
+    "  N  not now\n" +
+    "  [Y]: ",
+  historicExtract:
+    "Extract and integrate now?  [all]\n" +
+    "  all    every copied line (model calls; may take a while)\n" +
+    "  7d     last 7 days (older lines are skipped)\n" +
+    "  30d    last 30 days (older lines are skipped)\n" +
+    "  <n>    oldest n lines\n" +
+    "  N      not now\n" +
+    "  [all]: ",
+  copiedLines: (n: number) =>
+    n === 0 ? "No new transcript lines." : `Copied ${n} line(s).`,
   extractSkippedHeuristic:
     "Skipped extract — the heuristic does not read transcripts.",
   /** After the init offer ran extract + integrate. Same channel as the prompts. */
   integrated: (facts: number, remaining: number) =>
     remaining > 0
-      ? `Integrated ${facts} fact(s). ${remaining} event(s) remain — ${CLI_NAME} consolidate takes the next ${EXTRACT_CAP_EVENTS}; --all takes the lot.`
+      ? `Integrated ${facts} fact(s). ${remaining} line(s) remain — ${CLI_NAME} consolidate --all takes the lot.`
       : `Integrated ${facts} fact(s).`,
   captureDeclined:
     `Capture: copy is off (record). capture_fact is how facts get in; a client hook can pipe into ${CLI_NAME} record.`,
@@ -556,9 +565,14 @@ export const INIT_PROMPTS = {
     `Capture: copy is off — no cwd was given. capture_fact is how facts get in; re-run ${CLI_NAME} init --force on a terminal to name a source.`,
   /** The one sentence that says how a copy store starts. init prints it; README repeats it. */
   copyRecipe:
-    `${CLI_NAME} init on a terminal, pick copy, set cwd. Init asks whether to process historic transcripts.`,
-  copyNext:
-    `Run ${CLI_NAME} consolidate (oldest ${EXTRACT_CAP_EVENTS} events per run; --all for the lot).`,
+    `${CLI_NAME} init on a terminal, pick copy, set cwd. Init asks whether to copy existing logs, then whether to extract and integrate.`,
+  copyNext: (dataDir?: string) => {
+    const extra = dataDir ? ` --data ${cliDataArg(dataDir)}` : "";
+    return (
+      `Run ${CLI_NAME} consolidate${extra} ` +
+      `(oldest ${EXTRACT_CAP_EVENTS} lines per run; --all takes the lot).`
+    );
+  },
   copyStorewide:
     "On a copy store, capture_fact is a correction for every MCP client, not only the one that writes JSONL.",
   webExisting:
@@ -566,7 +580,7 @@ export const INIT_PROMPTS = {
   mcpVsCli:
     "The MCP JSON starts the server via npx and does not need a global install. " +
     `npm install -g puts ${CLI_NAME} on PATH for init, settings, stats, and inspect. ` +
-    `The same CLI without PATH is npx -y -p "@facthouse/mcp" -- ${CLI_NAME} — pin the version; ` +
+    `The same CLI without PATH is ${pathFreeCli("")} — pin the version; ` +
     "quote the package so PowerShell does not splat. " +
     "-p and -- stop an older global binary winning. " +
     `npx -y @facthouse/mcp with no -p / ${CLI_NAME} is the server; do not run it as a shell command for init, settings, or stats.`,
@@ -576,8 +590,8 @@ export const INIT_PROMPTS = {
     "To inspect the file from a terminal, see CLI below.",
   /** Quick Start after `npm install -g` + TTY init. */
   quickStartNext:
-    "Press Enter to accept each default (copy if Claude Code or Cursor writes a transcript here; type record to decline). " +
-    "If you picked copy, init asks whether to process historic transcripts. " +
+    "Press Enter to accept each default (copy = Claude Code or Cursor session logs on disk; type record if the assistant should save facts). " +
+    "If you picked copy, init asks whether to copy existing logs, then whether to extract and integrate. " +
     "Init prints an MCP snippet — paste it into the client and restart.",
   /** MCP env does not apply to CLI or hooks. Do not write $FACTHOUSE_DATA (hang-safety). */
   mcpEnvNotCli:
@@ -613,4 +627,9 @@ export const SETTINGS_PROMPTS = {
     `Could not write ${configPath} (permission denied).`,
 } as const;
 
-export { CLI_DEFAULT_MODEL, CLI_DEFAULT_TIMEOUT_MS, HTTP_DEFAULT_BASE_URL };
+export {
+  CLI_DEFAULT_MODEL,
+  CLI_DEFAULT_INTEGRATE_MODEL,
+  CLI_DEFAULT_TIMEOUT_MS,
+  HTTP_DEFAULT_BASE_URL,
+};

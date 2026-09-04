@@ -13,6 +13,8 @@ import {
   envName,
   envValue,
   npmPackageSpec,
+  pathFreeCli,
+  cliDataArg,
   subprocessGuardEnv,
 } from "../src/identity.js";
 import { defaultDataDir, newInstallDataDir } from "../src/paths.js";
@@ -37,6 +39,15 @@ describe("identity", () => {
     expect(npmPackageSpec("1.2.3")).toBe(`${NPM_PACKAGE}@1.2.3`);
     expect(npmPackageSpec(null)).toBe(NPM_PACKAGE);
     expect(NPM_PACKAGE).toBe("@facthouse/mcp");
+  });
+
+  it("path-free CLI quotes the package and names the bin", () => {
+    expect(pathFreeCli("")).toBe(`npx -y -p "${NPM_PACKAGE}" -- ${CLI_NAME}`);
+    expect(pathFreeCli("consolidate --all")).toBe(
+      `npx -y -p "${NPM_PACKAGE}" -- ${CLI_NAME} consolidate --all`,
+    );
+    expect(cliDataArg("C:\\dev\\app\\.facthouse")).toBe("C:/dev/app/.facthouse");
+    expect(cliDataArg("C:/Users/alex/My Store")).toBe('"C:/Users/alex/My Store"');
   });
 
   it("reads only FACTHOUSE_", () => {
