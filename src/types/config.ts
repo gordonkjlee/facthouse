@@ -166,8 +166,10 @@ export interface ExtractionConfig {
 export const CLI_DEFAULT_MODEL = "haiku";
 /** Default CLI model for the integrate step. One definition. Extract stays `CLI_DEFAULT_MODEL`. */
 export const CLI_DEFAULT_INTEGRATE_MODEL = "sonnet";
-/** Default per-stage subprocess timeout (ms). One definition. */
+/** Default per-stage subprocess timeout (ms). One definition. Automatic runs. */
 export const CLI_DEFAULT_TIMEOUT_MS = 45_000;
+/** Init historic extract/integrate only. Automatic session_start stays `CLI_DEFAULT_TIMEOUT_MS`. */
+export const CLI_HISTORIC_TIMEOUT_MS = 180_000;
 
 /** Options for the 'cli' provider (subprocess `claude -p`). All optional —
  *  sensible defaults are applied by createCliProvider. */

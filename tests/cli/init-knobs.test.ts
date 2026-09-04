@@ -12,6 +12,8 @@ import { defaultServerConfig } from "../../src/config.js";
 import {
   INIT_KNOB_IDS,
   MORE_SETTING_IDS,
+  CLI_DEFAULT_TIMEOUT_MS,
+  CLI_HISTORIC_TIMEOUT_MS,
   INIT_PROMPTS,
   INIT_SYNTHETIC,
   SETTINGS_PROMPTS,
@@ -146,6 +148,7 @@ describe("init knobs — one definition", () => {
         "copyStorewide",
         "configMalformed",
         "copiedLines",
+        "copyingNow",
         "cwd",
         "cwdSkip",
         "cwdSkipped",
@@ -155,7 +158,10 @@ describe("init knobs — one definition", () => {
         "dataDir",
         "embedding",
 
+        "extractProgress",
         "extractSkippedHeuristic",
+        "extractTimedOut",
+        "extractingNow",
         "existingConfig",
         "forceHelp",
         "gitBashCwdHint",
@@ -229,6 +235,7 @@ describe("init knobs — one definition", () => {
     expect(INIT_PROMPTS.storeDir).not.toMatch(/\bmemory\b/i);
     expect(INIT_PROMPTS.intro).not.toMatch(/two brains/i);
     expect(INIT_PROMPTS.intro).not.toMatch(/work and personal/i);
+    expect(CLI_HISTORIC_TIMEOUT_MS).toBeGreaterThan(CLI_DEFAULT_TIMEOUT_MS);
     expect(INIT_PROMPTS.homeMissing("~/.claude")).toContain("~/.claude");
     expect(INIT_PROMPTS.projectGroupMissing("~/.claude", "C:\\dev\\app", "C--dev-app")).toContain(
       "C--dev-app",

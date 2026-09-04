@@ -13,6 +13,7 @@ import {
   CLI_DEFAULT_MODEL,
   CLI_DEFAULT_INTEGRATE_MODEL,
   CLI_DEFAULT_TIMEOUT_MS,
+  CLI_HISTORIC_TIMEOUT_MS,
   HTTP_DEFAULT_BASE_URL,
   HTTP_WELL_KNOWN_BASE_URLS,
   type IntelligenceConfig,
@@ -566,8 +567,15 @@ export const INIT_PROMPTS = {
     "  <n>    oldest n lines\n" +
     "  N      not now\n" +
     "  [all]: ",
+  copyingNow: "Copying transcripts…",
   copiedLines: (n: number) =>
     n === 0 ? "No new transcript lines." : `Copied ${n} line(s).`,
+  extractingNow: (n: number) =>
+    `Extracting and integrating ${n} line(s) (model calls; can take several minutes).`,
+  extractProgress: (done: number, total: number) =>
+    `Examined ${done} of ${total} line(s)…`,
+  extractTimedOut:
+    "A conversation timed out. That chunk stays eligible. Continuing with the rest.",
   extractSkippedHeuristic:
     "Skipped extract — the heuristic does not read transcripts.",
   /** After the init offer ran extract + integrate. Same channel as the prompts. */
@@ -650,5 +658,6 @@ export {
   CLI_DEFAULT_MODEL,
   CLI_DEFAULT_INTEGRATE_MODEL,
   CLI_DEFAULT_TIMEOUT_MS,
+  CLI_HISTORIC_TIMEOUT_MS,
   HTTP_DEFAULT_BASE_URL,
 };
