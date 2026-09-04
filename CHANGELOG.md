@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.28.0](https://github.com/gordonkjlee/facthouse/compare/v0.27.1...v0.28.0) (2026-09-04)
+
+
+### Features
+
+* **cli:** first-run extract-all and sonnet integrate ([#248](https://github.com/gordonkjlee/facthouse/issues/248)) ([2ab81e9](https://github.com/gordonkjlee/facthouse/commit/2ab81e980d4978146c28822c398494a2b6951358))
+* **cli:** make TTY init the first-run wizard ([#246](https://github.com/gordonkjlee/facthouse/issues/246)) ([cc04e10](https://github.com/gordonkjlee/facthouse/commit/cc04e1069cf9e9d32ddf2d435ff9586f1d5802fd))
+
 ## [0.27.1](https://github.com/gordonkjlee/facthouse/compare/v0.27.0...v0.27.1) (2026-09-04)
 
 
