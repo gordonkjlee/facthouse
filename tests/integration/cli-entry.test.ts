@@ -264,15 +264,16 @@ describe.skipIf(!runnable)("cli entry — init output", () => {
     expect(r.stdout).not.toContain(INIT_PROMPTS.historicCopy);
   });
 
-  it("prints global vs npx advice after the MCP snippet", () => {
+  it("prints paste-is-not-CLI after the MCP snippet", () => {
     const dir = path.join(root, "npx-advice");
     const r = run(["init", dir, "--yes"]);
     expect(r.status).toBe(0);
-    expect(r.stdout).toContain(INIT_PROMPTS.mcpVsCli);
+    expect(r.stdout).toContain(INIT_PROMPTS.mcpPasteNoCli);
     const snippetAt = r.stdout.indexOf('"mcpServers"');
-    const adviceAt = r.stdout.indexOf(INIT_PROMPTS.mcpVsCli);
+    const adviceAt = r.stdout.indexOf(INIT_PROMPTS.mcpPasteNoCli);
     expect(snippetAt).toBeGreaterThanOrEqual(0);
     expect(adviceAt).toBeGreaterThan(snippetAt);
+    expect(r.stdout).not.toContain(INIT_PROMPTS.mcpVsCli);
   });
 
   it("rejects --pull rather than hanging init on a first backfill", () => {

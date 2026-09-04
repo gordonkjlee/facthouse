@@ -23,9 +23,11 @@ facthouse init
 ```
 <!-- x-release-please-end -->
 
+If npm install -g fails because a command named mcp already exists, remove that leftover command and retry.
+
 Press Enter to accept each default (copy = Claude Code or Cursor session logs on disk; type record if the assistant should save facts). If you picked copy, init asks whether to copy existing logs, then whether to extract and integrate. Init prints an MCP snippet — paste it into the client and restart.
 
-To skip the wizard, paste this. The server creates `~/.facthouse` on first boot; you are not asked those questions.
+To skip the wizard (record only — no transcript copy), paste this. The server creates `~/.facthouse` on first boot; you are not asked those questions.
 
 <!-- x-release-please-start-version -->
 ```json

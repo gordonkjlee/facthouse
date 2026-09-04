@@ -234,6 +234,8 @@ export function appendCaptureRecipe(
     captureAskedAndEmpty?: boolean;
     captureSkippedCwd?: boolean;
     dataDir?: string;
+    /** First-run done card: next command only, no mix/record warnings. */
+    brief?: boolean;
   } = {},
 ): string[] {
   if (opts.captureSkippedCwd) {
@@ -242,7 +244,8 @@ export function appendCaptureRecipe(
   if (opts.captureAskedAndEmpty) {
     return [INIT_PROMPTS.captureDeclined];
   }
-  const status = sourcesStatusLines(sources, opts.dataDir);
+  const status = sourcesStatusLines(sources, opts.dataDir, opts.brief);
+  if (opts.brief) return status;
   try {
     if (resolveSources(sources).length > 0) {
       return [...status, INIT_PROMPTS.mixCopyRecord];
@@ -264,6 +267,7 @@ export function appendCaptureRecipe(
 export function sourcesStatusLines(
   sources: unknown,
   dataDir?: string,
+  brief?: boolean,
 ): string[] {
   let n: number;
   try {
@@ -278,10 +282,9 @@ export function sourcesStatusLines(
       `Transcripts: ${INIT_PROMPTS.copyRecipe}`,
     ];
   }
-  return [
-    `Capture: ${n} source${n === 1 ? "" : "s"}. ${INIT_PROMPTS.copyNext(dataDir)}`,
-    INIT_PROMPTS.copyStorewide,
-  ];
+  const next = `Capture: ${n} source${n === 1 ? "" : "s"}. ${INIT_PROMPTS.copyNext(dataDir)}`;
+  if (brief) return [next];
+  return [next, INIT_PROMPTS.copyStorewide];
 }
 
 export interface InitArgs {

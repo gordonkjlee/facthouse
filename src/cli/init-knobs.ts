@@ -36,7 +36,7 @@ import {
 } from "../intelligence/stage-router.js";
 
 /** Topics init is allowed to ask about on the recommended path. */
-export const INIT_KNOB_IDS = ["dataDir", "sources", "embedding", "more"] as const;
+export const INIT_KNOB_IDS = ["dataDir", "sources", "more"] as const;
 export type InitKnobId = (typeof INIT_KNOB_IDS)[number];
 
 /**
@@ -443,8 +443,14 @@ export function silentEmbeddingProvider(): EmbeddingProviderType | null {
   return DEFAULT_CONFIG.embedding.provider;
 }
 
-export function defaultHomeForKind(kind: CaptureSourceKind): string {
-  return kind === "cursor" ? INIT_SYNTHETIC.cursorHome : INIT_SYNTHETIC.claudeHome;
+export function defaultHomeForKind(
+  kind: CaptureSourceKind,
+  env: NodeJS.ProcessEnv = {},
+): string {
+  if (kind === "cursor") return INIT_SYNTHETIC.cursorHome;
+  const fromEnv = env.CLAUDE_CONFIG_DIR?.trim();
+  if (fromEnv) return fromEnv;
+  return INIT_SYNTHETIC.claudeHome;
 }
 
 function supportedKindsList(): string {
@@ -463,7 +469,7 @@ export const INIT_PROMPTS = {
     "One directory is one memory. Another store is another directory.",
   dataDir: (shown: string) => `Data directory [${shown}]: `,
   capture:
-    "How do conversations get in?  [copy]\n" +
+    "How do conversations get in?\n" +
     "  copy    session logs on disk (Claude Code or Cursor)\n" +
     "  record  the assistant saves facts as you talk (Grok, Desktop, …)\n" +
     "  [copy]: ",
@@ -478,7 +484,7 @@ export const INIT_PROMPTS = {
   cwd: (shown: string) =>
     `Which project folder are the logs for?  [${shown}]: `,
   cwdSkip:
-    "cwd is required to add a source. Leaving copy off (sources stays empty).",
+    "A project folder is required to add a source. Leaving copy off (sources stays empty).",
   embedding:
     "Semantic search  [off]\n" +
     '  off     keyword only — "shellfish" finds a shellfish fact, "food" does not\n' +
@@ -488,7 +494,7 @@ export const INIT_PROMPTS = {
   more:
     "More settings?  [N]\n" +
     "  N  recommended — leave extra knobs at shipped defaults\n" +
-    "  Y  set extra knobs (CLI model, timeout, optional local extract)\n" +
+    "  Y  semantic search, models, optional local extract\n" +
     "  [N]: ",
   moreCliModel: (shown: string) => `Extract model  [${shown}]: `,
   moreCliIntegrateModel: (shown: string) => `Integrate model  [${shown}]: `,
@@ -588,6 +594,8 @@ export const INIT_PROMPTS = {
   mcpPasteNoCli:
     `The MCP paste starts the server. It does not put ${CLI_NAME} on PATH. ` +
     "To inspect the file from a terminal, see CLI below.",
+  mcpInstallClash:
+    "If npm install -g fails because a command named mcp already exists, remove that leftover command and retry.",
   /** Quick Start after `npm install -g` + TTY init. */
   quickStartNext:
     "Press Enter to accept each default (copy = Claude Code or Cursor session logs on disk; type record if the assistant should save facts). " +

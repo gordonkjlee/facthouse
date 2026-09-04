@@ -21,6 +21,7 @@ import {
   silentEmbeddingProvider,
   silentSources,
   applyMoreOverlayToIntelligence,
+  defaultHomeForKind,
 } from "../../src/cli/init-knobs.js";
 
 const ROOT = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
@@ -70,6 +71,7 @@ describe("init knobs — one definition", () => {
     expect(quick).toContain(INIT_PROMPTS.quickStartNext);
     expect(readme).toContain(INIT_PROMPTS.mcpEnvNotCli);
     expect(quick).not.toContain(INIT_PROMPTS.mcpEnvNotCli);
+    expect(quick).toContain(INIT_PROMPTS.mcpInstallClash);
   });
 
   it("Unix-only path or env recipes have a following PowerShell fence", () => {
@@ -159,6 +161,7 @@ describe("init knobs — one definition", () => {
         "intro",
         "kind",
         "mcpEnvNotCli",
+        "mcpInstallClash",
         "mcpPasteNoCli",
         "mcpVsCli",
         "quickStartNext",
@@ -198,7 +201,14 @@ describe("init knobs — one definition", () => {
     expect(moreShownFromConfig(defaultServerConfig(), {}).httpExtractOnFail).toBe(
       "none",
     );
-    expect(INIT_KNOB_IDS).toEqual(["dataDir", "sources", "embedding", "more"]);
+    expect(INIT_KNOB_IDS).toEqual(["dataDir", "sources", "more"]);
+    expect(defaultHomeForKind("claude-code")).toBe("~/.claude");
+    expect(
+      defaultHomeForKind("claude-code", {
+        CLAUDE_CONFIG_DIR: "C:/Users/alex/.claude-work",
+      }),
+    ).toBe("C:/Users/alex/.claude-work");
+    expect(defaultHomeForKind("cursor")).toBe("~/.cursor");
     expect(MORE_SETTING_IDS).toEqual([
       "cliModel",
       "cliIntegrateModel",

@@ -334,7 +334,8 @@ export function parseInitWebPost(
   if (!isCaptureSourceKind(kindRaw)) {
     return { ok: false, error: INIT_PROMPTS.unknownKind() };
   }
-  const home = (params.get("home") ?? "").trim() || defaultHomeForKind(kindRaw);
+  const home =
+    (params.get("home") ?? "").trim() || defaultHomeForKind(kindRaw, process.env);
   const stored = storeCwdAnswer(params.get("cwd") ?? "", opts.processCwd);
   if (stored === "skip") {
     return { ok: false, error: INIT_PROMPTS.cwdSkip };
