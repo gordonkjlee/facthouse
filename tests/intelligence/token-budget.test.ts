@@ -138,11 +138,44 @@ describe("formatTokenCount", () => {
         remaining: 7_976_000,
         cap: 10_000_000,
         resets_at: reset,
+        now: NOW,
       }),
     ).toEqual({
       lead: "2.02M used · 7.98M remaining",
-      detail: `10M CLI weekly cap · resets ${formatResetAt(reset, NOW)}`,
+      detail: "10M CLI weekly cap · resets 5 Sept",
     });
+  });
+
+  it("adds the clock to the reset when it is within 36 hours", () => {
+    const reset = "2026-09-05T12:00:00.000Z";
+    expect(
+      tokenBudgetUsageLead({
+        provider: "cli",
+        scale: "week",
+        used: 2_024_000,
+        remaining: 7_976_000,
+        cap: 10_000_000,
+        resets_at: reset,
+        now: new Date("2026-09-04T12:00:00.000Z"),
+      }),
+    ).toEqual({
+      lead: "2.02M used · 7.98M remaining",
+      detail: "10M CLI weekly cap · resets 5 Sept, 12:00",
+    });
+  });
+});
+
+describe("formatResetAt", () => {
+  const reset = "2026-09-05T12:00:00.000Z";
+
+  it("is day and month when the reset is more than 36 hours away", () => {
+    expect(formatResetAt(reset, NOW)).toBe("5 Sept");
+  });
+
+  it("adds the UTC clock when the reset is within 36 hours", () => {
+    expect(formatResetAt(reset, new Date("2026-09-04T12:00:00.000Z"))).toBe(
+      "5 Sept, 12:00",
+    );
   });
 });
 
