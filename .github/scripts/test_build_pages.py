@@ -24,9 +24,7 @@ README_PITCH = (
     "on an entity graph). During this process, Facthouse links entities, "
     "drops duplicates, reconciles conflicts, and supersedes what is out of "
     "date. Vector embeddings add optional semantic search on top of that "
-    "graph. The store is a SQLite file on your disk.\n\n"
-    "Install `@facthouse/mcp`, run `facthouse init`, paste the snippet it "
-    "prints, and restart your client."
+    "graph. The store is a SQLite file on your disk."
 )
 
 
@@ -65,6 +63,10 @@ def test_builds_site_from_readme(tmp_path: Path):
     assert "<strong>Information</strong>" in index
     assert "<strong>Knowledge</strong>" in index
     assert "→" in index
+    assert "The store is a SQLite file on your disk." in index
+    assert "paste the snippet it prints" not in index
+    assert "Install `@facthouse/mcp`" not in index
+    assert "Install <code>@facthouse/mcp</code>" not in index
     assert "facthouse init" in index
     assert "A local memory engine any AI tool can use." not in index
     assert "Wisdom" not in index
@@ -137,14 +139,16 @@ def test_pitch_helpers_keep_readme_lede():
     assert plain.startswith("Facthouse is a local memory engine for AI tools.")
     assert "**" not in plain
     assert "Data (what happened in the session) → Information" in plain
-    assert "@facthouse/mcp" in plain
-    assert "facthouse init" in plain
+    assert "The store is a SQLite file on your disk." in plain
+    assert "facthouse init" not in plain
+    assert "Install @facthouse/mcp" not in plain
     html = build_pages.pitch_html(README_PITCH)
-    assert html.startswith("<p>Facthouse is a local memory engine for AI tools.")
+    assert html.startswith("Facthouse is a local memory engine for AI tools.")
+    assert "<p>" not in html
     assert "<strong>Data</strong>" in html
     assert "<strong>Information</strong>" in html
     assert "<strong>Knowledge</strong>" in html
-    assert "facthouse init" in html
+    assert "facthouse init" not in html
     assert "<strong>Data (what happened" not in html
 
 
@@ -162,6 +166,9 @@ def test_listing_description_matches_package_and_registry():
 def test_split_readme_uses_lede_and_keeps_image():
     pitch, rest = build_pages.split_readme((ROOT / "README.md").read_text(encoding="utf-8"))
     assert pitch == README_PITCH
+    assert pitch.endswith("The store is a SQLite file on your disk.")
+    assert "facthouse init" not in pitch
+    assert "Install `@facthouse/mcp`" not in pitch
     assert rest.startswith("<img ")
     assert "# Facthouse" not in rest.splitlines()[0]
     assert "# OpenMemory" not in rest.splitlines()[0]
