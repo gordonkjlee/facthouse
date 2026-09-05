@@ -257,7 +257,6 @@ async function invokeClaude(
     let timedOut = false;
     let timeoutWatchdog: "idle" | "hard" | undefined;
     let idleTimer: ReturnType<typeof setTimeout> | undefined;
-    let hardTimer: ReturnType<typeof setTimeout> | undefined;
     let joinTimer: ReturnType<typeof setTimeout> | undefined;
     const clearWatchdogs = () => {
       if (idleTimer) clearTimeout(idleTimer);
@@ -293,7 +292,7 @@ async function invokeClaude(
       idleTimer = setTimeout(() => fireTimeout("idle"), opts.timeoutMs);
     };
     armIdle();
-    hardTimer = setTimeout(
+    const hardTimer = setTimeout(
       () => fireTimeout("hard"),
       Math.max(CLI_HARD_TIMEOUT_MS, opts.timeoutMs),
     );

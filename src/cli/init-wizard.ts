@@ -22,6 +22,7 @@ import {
   MORE_SETTING_IDS,
   SHIPPED_MORE_SHOWN,
   defaultHomeForKind,
+  walksOnInitMore,
   type InitOverlay,
   type MoreShown,
 } from "./init-knobs.js";
@@ -197,7 +198,7 @@ async function askCapture(
   const homeOk = deps.exists(homeAbs);
   if (!homeOk) io.write(INIT_PROMPTS.homeMissing(home));
 
-  let cwdRaw = "";
+  let cwdRaw: string;
   for (;;) {
     cwdRaw = (await io.question(INIT_PROMPTS.cwd(deps.cwd()))).trim();
     if (
@@ -273,7 +274,7 @@ export async function askMoreSettings(
   const initEmpty = opts.gate;
 
   for (const id of MORE_SETTING_IDS) {
-    if (initEmpty && (id === "cliTimeoutMs" || id === "httpExtractOnFail")) {
+    if (initEmpty && !walksOnInitMore(id)) {
       continue;
     }
     switch (id) {

@@ -69,6 +69,11 @@ export const MORE_SETTING_IDS = [
 ] as const satisfies readonly (keyof MoreOverlay)[];
 export type MoreSettingId = (typeof MORE_SETTING_IDS)[number];
 
+/** TTY init More Y still skips these; init --web must too. */
+export function walksOnInitMore(id: MoreSettingId): boolean {
+  return id !== "cliTimeoutMs" && id !== "httpExtractOnFail";
+}
+
 type _EveryMoreKeyListed = Exclude<keyof MoreOverlay, MoreSettingId> extends never
   ? true
   : never;
