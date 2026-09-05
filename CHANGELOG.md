@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.29.0](https://github.com/gordonkjlee/facthouse/compare/v0.28.1...v0.29.0) (2026-09-05)
+
+
+### Features
+
+* **cli:** one HTML kit, two verb-honest web modes ([#256](https://github.com/gordonkjlee/facthouse/issues/256)) ([c929ce5](https://github.com/gordonkjlee/facthouse/commit/c929ce5a97bb30820859fbc30f3c39a769f76579))
+
+
+### Bug Fixes
+
+* **intelligence:** idle stream-json timeout for consolidate ([#254](https://github.com/gordonkjlee/facthouse/issues/254)) ([32556cf](https://github.com/gordonkjlee/facthouse/commit/32556cfb564ce81677da61a992512bab01767f9d))
+
 ## [0.28.1](https://github.com/gordonkjlee/facthouse/compare/v0.28.0...v0.28.1) (2026-09-04)
 
 
