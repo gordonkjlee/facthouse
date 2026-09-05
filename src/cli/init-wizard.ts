@@ -198,7 +198,7 @@ async function askCapture(
   const homeOk = deps.exists(homeAbs);
   if (!homeOk) io.write(INIT_PROMPTS.homeMissing(home));
 
-  let cwdRaw = "";
+  let cwdRaw: string;
   for (;;) {
     cwdRaw = (await io.question(INIT_PROMPTS.cwd(deps.cwd()))).trim();
     if (
