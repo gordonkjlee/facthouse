@@ -28,9 +28,13 @@ DOMAIN = "facthouse.dev"
 SITE_ORIGIN = f"https://{DOMAIN}"
 GITHUB = "https://github.com/gordonkjlee/facthouse"
 NPM = "https://www.npmjs.com/package/@facthouse/mcp"
-# One description: the 10-second lockup. Keep in sync with package.json and
-# server.json. MCP Registry server.json description maxLength is 100 characters.
-PITCH = "A local memory engine any AI tool can use."
+# Fallback / cramped-field hook. The landing chrome prefers the README lede.
+# Keep in sync with package.json and server.json description.
+# MCP Registry server.json description maxLength is 100 characters.
+PITCH = (
+    "Local AI memory: neuroscience-inspired "
+    "Data→Information→Knowledge in SQLite you own."
+)
 # Public IndexNow host-verification key (not a credential). Served at /{key}.txt.
 INDEXNOW_KEY = "a88a795220f4450e97a5f2486a4426f8"
 MARKDOWN_EXTENSIONS = ("fenced_code", "tables")

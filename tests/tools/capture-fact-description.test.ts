@@ -81,16 +81,19 @@ describe("README instruction layer for capture and identity", () => {
   it("names this package in the opening", () => {
     const head = README.split(/\r?\n/).slice(0, 10).join("\n");
     expect(head).toContain(NPM_PACKAGE);
-    expect(head).toContain("A local memory engine any AI tool can use.");
+    expect(head).toMatch(/The store is a SQLite file on your disk\./);
     expect(head).not.toMatch(/mem0/i);
     expect(head).not.toMatch(/mcp\.[a-z0-9-]+\.ai/i);
     expect(head).not.toMatch(/hosted OpenMemory/i);
     expect(head).not.toMatch(/facthouse init/);
     expect(head).not.toMatch(/paste the snippet it prints/);
-    expect(head).not.toMatch(/neuroscience/i);
-    expect(head).not.toMatch(/\*\*Data\*\*/);
-    expect(head).not.toMatch(/\*\*Information\*\*/);
-    expect(head).not.toMatch(/\*\*Knowledge\*\*/);
+    expect(head).toMatch(/neuroscience-inspired consolidation/);
+    expect(head).toMatch(/\*\*Data\*\*/);
+    expect(head).toMatch(/\*\*Information\*\*/);
+    expect(head).toMatch(/\*\*Knowledge\*\*/);
+    expect(head).toContain("→");
+    expect(head).toMatch(/optional semantic search/);
+    expect(head).not.toMatch(/A local memory engine any AI tool can use/);
     expect(head).not.toMatch(/—/);
     expect(head).not.toMatch(/Wisdom/);
     expect(README).toMatch(/## Quick Start[\s\S]*facthouse init/);
@@ -98,6 +101,7 @@ describe("README instruction layer for capture and identity", () => {
     expect(README).not.toMatch(/mem0/i);
     expect(README).not.toMatch(/mcp\.[a-z0-9-]+\.ai/i);
     expect(README).not.toMatch(/hosted OpenMemory/i);
+    expect(README).not.toMatch(/A local memory engine any AI tool can use/);
     expect(head).not.toMatch(/abolotnov/);
     expect(README).not.toMatch(/hosted plane/i);
     expect(README).not.toMatch(/vendor blob/i);
