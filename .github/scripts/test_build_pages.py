@@ -12,10 +12,18 @@ import build_pages
 
 ROOT = Path(__file__).resolve().parents[2]
 SHORT_PITCH = "A local memory engine any AI tool can use."
-README_PITCH = (
-    "A local memory engine any AI tool can use.\n\n"
-    "Not Mem0's hosted OpenMemory MCP at mcp.mem0.ai."
+README_PITCH = SHORT_PITCH
+# Rival hosted-MCP wording must not appear on public surfaces. Tests fail
+# if a disambiguation sentence naming a competitor or mcp.*.ai URL returns.
+_RIVAL_COPY = re.compile(
+    r"mem0|mcp\.[a-z0-9-]+\.ai|hosted openmemory",
+    re.IGNORECASE,
 )
+
+
+def assert_no_rival_copy(text: str, label: str) -> None:
+    match = _RIVAL_COPY.search(text)
+    assert match is None, f"{label} names a rival product: {match.group(0)!r}"
 
 
 def test_rewrite_contributing_to_github():
@@ -48,7 +56,7 @@ def test_builds_site_from_readme(tmp_path: Path):
     index = (site / "index.html").read_text(encoding="utf-8")
     assert "<title>Facthouse</title>" in index
     assert "A local memory engine any AI tool can use." in index
-    assert "mcp.mem0.ai" in index
+    assert_no_rival_copy(index, "built site index")
     assert "neuroscience" not in index.lower()
     assert "SQLite you own" not in index
     assert "<strong>Data</strong>" in index
@@ -88,6 +96,7 @@ def test_builds_site_from_readme(tmp_path: Path):
     demo = (site / "demo.html").read_text(encoding="utf-8")
     assert "Alex" in demo
     assert "superseded" in demo
+    assert_no_rival_copy(demo, "demo.html")
     assert "Install @facthouse/mcp" in demo
     assert "index.html#quick-start" in demo
     assert 'id="quick-start"' in index
@@ -136,15 +145,30 @@ def test_npm_global_install_command_refuses_empty_version(
 
 def test_pitch_helpers_keep_readme_lede():
     plain = build_pages.pitch_plain(README_PITCH)
-    assert plain.startswith("A local memory engine any AI tool can use.")
-    assert "mcp.mem0.ai" in plain
+    assert plain == SHORT_PITCH
+    assert_no_rival_copy(plain, "pitch_plain")
     assert "**" not in plain
     assert "facthouse init" not in plain
     assert "Install @facthouse/mcp" not in plain
     html = build_pages.pitch_html(README_PITCH)
     assert "A local memory engine any AI tool can use." in html
-    assert "mcp.mem0.ai" in html
+    assert_no_rival_copy(html, "pitch_html")
     assert "facthouse init" not in html
+
+
+def test_public_surfaces_have_no_rival_disambiguation():
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    pkg = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))
+    server = json.loads((ROOT / "server.json").read_text(encoding="utf-8"))
+    demo = (ROOT / "site" / "demo.html").read_text(encoding="utf-8")
+    assert_no_rival_copy(readme, "README.md")
+    assert_no_rival_copy(SHORT_PITCH, "SHORT_PITCH")
+    assert_no_rival_copy(pkg["description"], "package.json description")
+    assert_no_rival_copy(server["description"], "server.json description")
+    assert_no_rival_copy(demo, "site/demo.html")
+    assert SHORT_PITCH in readme
+    assert pkg["description"] == SHORT_PITCH
+    assert server["description"] == SHORT_PITCH
 
 
 def test_listing_description_matches_package_and_registry():
@@ -157,7 +181,10 @@ def test_listing_description_matches_package_and_registry():
     # MCP Registry server.schema.json description maxLength is 100.
     assert len(SHORT_PITCH) <= 100
     assert SHORT_PITCH == "A local memory engine any AI tool can use."
-    assert "mem0" not in SHORT_PITCH.lower()
+    assert len(SHORT_PITCH) == 42
+    assert_no_rival_copy(SHORT_PITCH, "SHORT_PITCH")
+    assert_no_rival_copy(pkg["description"], "package.json description")
+    assert_no_rival_copy(server["description"], "server.json description")
     assert "neuroscience" not in SHORT_PITCH.lower()
     assert "Wisdom" not in SHORT_PITCH
     assert "you own" not in SHORT_PITCH.lower()
@@ -166,8 +193,8 @@ def test_listing_description_matches_package_and_registry():
 def test_split_readme_uses_lede_and_keeps_image():
     pitch, rest = build_pages.split_readme((ROOT / "README.md").read_text(encoding="utf-8"))
     assert pitch == README_PITCH
-    assert pitch.startswith("A local memory engine any AI tool can use.")
-    assert "mcp.mem0.ai" in pitch
+    assert pitch == SHORT_PITCH
+    assert_no_rival_copy(pitch, "README lede")
     assert "facthouse init" not in pitch
     assert "Install `@facthouse/mcp`" not in pitch
     assert rest.startswith("<img ")
