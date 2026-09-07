@@ -82,7 +82,9 @@ describe("README instruction layer for capture and identity", () => {
     const head = README.split(/\r?\n/).slice(0, 10).join("\n");
     expect(head).toContain(NPM_PACKAGE);
     expect(head).toContain("A local memory engine any AI tool can use.");
-    expect(head).toMatch(/mcp\.mem0\.ai/);
+    expect(head).not.toMatch(/mem0/i);
+    expect(head).not.toMatch(/mcp\.[a-z0-9-]+\.ai/i);
+    expect(head).not.toMatch(/hosted OpenMemory/i);
     expect(head).not.toMatch(/facthouse init/);
     expect(head).not.toMatch(/paste the snippet it prints/);
     expect(head).not.toMatch(/neuroscience/i);
@@ -93,7 +95,9 @@ describe("README instruction layer for capture and identity", () => {
     expect(head).not.toMatch(/Wisdom/);
     expect(README).toMatch(/## Quick Start[\s\S]*facthouse init/);
     expect(README).toContain(GITHUB_REPO);
-    expect(README).toMatch(/hosted OpenMemory MCP at mcp\.mem0\.ai/);
+    expect(README).not.toMatch(/mem0/i);
+    expect(README).not.toMatch(/mcp\.[a-z0-9-]+\.ai/i);
+    expect(README).not.toMatch(/hosted OpenMemory/i);
     expect(head).not.toMatch(/abolotnov/);
     expect(README).not.toMatch(/hosted plane/i);
     expect(README).not.toMatch(/vendor blob/i);

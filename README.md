@@ -4,8 +4,6 @@
 
 A local memory engine any AI tool can use.
 
-Not Mem0's hosted OpenMemory MCP at mcp.mem0.ai.
-
 [![npm](https://img.shields.io/npm/v/@facthouse/mcp.svg)](https://www.npmjs.com/package/@facthouse/mcp)
 [![CI](https://github.com/gordonkjlee/facthouse/actions/workflows/ci.yml/badge.svg)](https://github.com/gordonkjlee/facthouse/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/github/license/gordonkjlee/facthouse)](LICENSE)
