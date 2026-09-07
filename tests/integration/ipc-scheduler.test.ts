@@ -96,7 +96,7 @@ describe("notify → scheduler integration", () => {
         "threshold",
       );
     } finally {
-      listener.close();
+      await listener.close();
       scheduler.stop();
     }
   });
@@ -114,7 +114,7 @@ describe("notify → scheduler integration", () => {
       await new Promise((r) => setTimeout(r, 100));
       expect(runConsolidate).not.toHaveBeenCalled();
     } finally {
-      listener.close();
+      await listener.close();
       scheduler.stop();
     }
   });
@@ -137,7 +137,7 @@ describe("notify → scheduler integration", () => {
         "compaction",
       );
     } finally {
-      listener.close();
+      await listener.close();
       scheduler.stop();
     }
   });
