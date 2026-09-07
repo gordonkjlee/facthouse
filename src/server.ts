@@ -78,7 +78,7 @@ let shuttingDown = false;
 async function shutdown(): Promise<void> {
   if (shuttingDown) return;
   shuttingDown = true;
-  ipcListener?.close();
+  if (ipcListener) await ipcListener.close();
   if (scheduler && triggers.has("shutdown")) {
     await scheduler.run("shutdown").catch(() => undefined);
   }

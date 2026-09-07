@@ -18,8 +18,8 @@ beforeEach(() => {
   dir = mkdtempSync(path.join(tmpdir(), "om-ipc-"));
 });
 
-afterEach(() => {
-  for (const l of listeners) l.close();
+afterEach(async () => {
+  await Promise.all(listeners.map((l) => l.close()));
   listeners.length = 0;
   try {
     rmSync(dir, { recursive: true, force: true });
@@ -130,6 +130,19 @@ describe("notify IPC", () => {
     const second = await startNotifyListener(dir, () => {});
     listeners.push(second);
     expect(second.bound).toBe(false);
+  });
+
+  it("close waits until the bind is gone so the next listen can succeed", async () => {
+    const first = await startNotifyListener(dir, () => {});
+    expect(first.bound).toBe(true);
+    expect(await isServerListening(dir)).toBe(true);
+    await first.close();
+    expect(first.bound).toBe(false);
+    expect(await isServerListening(dir)).toBe(false);
+
+    const again = await startNotifyListener(dir, () => {});
+    listeners.push(again);
+    expect(again.bound).toBe(true);
   });
 
   it("survives an onMoment callback that throws", async () => {

@@ -37,8 +37,12 @@ import type { NotifiableMoment } from "../intelligence/steps.js";
 // Unix socket stale handling is test-then-bind below.
 
 export interface NotifyListener {
-  /** Stop accepting new connections and release the socket/pipe. */
-  close(): void;
+  /**
+   * Stop accepting new connections and release the socket/pipe.
+   * Resolves when the kernel has dropped the bind — on Windows a second
+   * listen on the same pipe name races if this is not awaited.
+   */
+  close(): Promise<void>;
   /** True if the listener is bound (i.e. this process owns the pipe). */
   readonly bound: boolean;
 }
@@ -164,7 +168,7 @@ export async function startNotifyListener(
       // is stale and safe to unlink.
       const alive = await probeListener(socketPath);
       if (alive) {
-        return { close: () => {}, bound: false };
+        return { close: async () => {}, bound: false };
       }
       try {
         unlinkSync(socketPath);
@@ -175,25 +179,33 @@ export async function startNotifyListener(
     } else {
       // Windows: EADDRINUSE means another process holds the pipe. Nothing
       // to clean up; this server won't be the listener.
-      return { close: () => {}, bound: false };
+      return { close: async () => {}, bound: false };
     }
   }
 
   server.unref();
 
   let closed = false;
+  let closing: Promise<void> | null = null;
   return {
     close() {
-      if (closed) return;
-      closed = true;
-      server.close();
-      if (isUnix) {
-        try {
-          unlinkSync(socketPath);
-        } catch {
-          /* ignore */
-        }
-      }
+      // Coalesce: a second close() while the first is in flight must wait
+      // for the bind to drop, not resolve immediately.
+      if (closing) return closing;
+      closing = new Promise((resolve) => {
+        server.close(() => {
+          closed = true;
+          if (isUnix) {
+            try {
+              unlinkSync(socketPath);
+            } catch {
+              /* ignore */
+            }
+          }
+          resolve();
+        });
+      });
+      return closing;
     },
     get bound() {
       return !closed;
