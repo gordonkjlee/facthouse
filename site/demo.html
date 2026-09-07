@@ -3,67 +3,215 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Facthouse — a fact lands, then it changes</title>
-  <meta name="description" content="A scripted replay: store a preference, retrieve it, then supersede it. Synthetic names only.">
+  <title>Facthouse — how a fact becomes knowledge</title>
+  <meta name="description" content="A scripted replay: copy a conversation into Data, extract Information, integrate Knowledge, then supersede a preference. Synthetic names only.">
   <link rel="canonical" href="https://facthouse.dev/demo.html">
   <link rel="icon" href="assets/logo.png" type="image/png">
   <style>
+    /* from src/cli/inspect-theme.ts LEDGER.dark */
     :root {
-      --ink: #1C1917;
-      --ink-soft: #44403C;
-      --paper: #F4EFE6;
-      --snow: #FFFCF7;
-      --slate: #5C6B73;
-      --ochre: #C4841D;
-      --line: #E6DCCF;
-      font-family: ui-sans-serif, system-ui, sans-serif;
-      color: var(--ink);
-      line-height: 1.55;
+      --bg: #10130f;
+      --panel: #181c16;
+      --text: #e8e4d8;
+      --muted: #9a9486;
+      --line: #2a3126;
+      --gold: #c4a35a;
+      --warn: #d08b6a;
+      --mark: #1e261c;
+      --shell: #556344;
+      --supersede: #c97b9a;
+      --pane-h: 32rem;
+      --thumb: #556344;
+      --thumb-hover: #c4a35a;
     }
     * { box-sizing: border-box; }
-    html, body { margin: 0; background: var(--paper); }
-    .wrap { max-width: 44rem; margin: 0 auto; padding: 1.25rem 1.15rem 3rem; }
+    /* Thin Ledger bars. Kill Windows arrow buttons. */
+    .scroll {
+      overflow-x: hidden;
+      overflow-y: auto;
+      scrollbar-width: thin;
+      scrollbar-color: var(--thumb) transparent;
+    }
+    .scroll::-webkit-scrollbar { width: 8px; }
+    .scroll::-webkit-scrollbar-button { display: none; width: 0; height: 0; }
+    .scroll::-webkit-scrollbar-track { background: transparent; }
+    .scroll::-webkit-scrollbar-thumb {
+      background-color: var(--thumb);
+      background-clip: padding-box;
+      border: 2px solid transparent;
+      border-radius: 8px;
+    }
+    .scroll::-webkit-scrollbar-thumb:hover { background-color: var(--thumb-hover); }
+    .scroll::-webkit-scrollbar-corner { background: transparent; }
+    html, body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font: 15px/1.45 "Segoe UI", ui-sans-serif, system-ui, sans-serif;
+    }
+    :focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+    .wrap { max-width: 72rem; margin: 0 auto; padding: 1.1rem 1.15rem 2.5rem; }
     header {
       display: flex; flex-wrap: wrap; gap: 0.75rem 1.25rem;
       align-items: center; justify-content: space-between;
       padding-bottom: 1rem; border-bottom: 1px solid var(--line);
-      margin-bottom: 1.25rem;
+      margin-bottom: 1.1rem;
     }
     .brand {
-      display: flex; align-items: center; gap: 0.5rem;
-      color: var(--ink); text-decoration: none; font-weight: 700;
+      display: flex; align-items: center; gap: 0.55rem;
+      color: var(--text); text-decoration: none; font-weight: 650;
     }
-    .brand img { width: 1.75rem; height: 1.75rem; display: block; }
+    .brand img {
+      width: 1.75rem; height: 1.75rem; display: block; border-radius: 6px;
+      box-shadow: 0 0 0 1px var(--line);
+    }
     nav { display: flex; gap: 1rem; }
-    nav a { color: var(--slate); }
-    h1 { font-size: 1.85rem; margin: 0 0 0.5rem; }
-    .lede { color: var(--ink-soft); margin: 0 0 1.25rem; }
-    .stage {
-      background: var(--snow); border: 1px solid var(--line);
-      border-radius: 0.4rem; padding: 1rem 1.1rem; min-height: 12rem;
+    nav a { color: var(--muted); text-decoration: none; }
+    nav a:hover { color: var(--gold); }
+    h1 { font-size: 1.65rem; font-weight: 650; letter-spacing: -0.02em; margin: 0 0 0.35rem; }
+    .lede { color: var(--muted); margin: 0 0 1.15rem; }
+    .lab {
+      display: grid;
+      grid-template-columns: minmax(0, 1.4fr) minmax(14rem, 0.7fr);
+      gap: 0.75rem;
+      align-items: start;
     }
-    .who { font-size: 0.8rem; letter-spacing: 0.04em; text-transform: uppercase; color: var(--slate); }
-    .bubble { margin: 0.4rem 0 0; }
-    .callout {
-      margin-top: 1rem; padding: 0.65rem 0.85rem;
-      border-left: 3px solid var(--ochre); color: var(--ink-soft);
+    @media (max-width: 52rem) {
+      .lab { grid-template-columns: 1fr; }
     }
-    .result { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 0.88rem; }
-    menu { display: flex; gap: 0.75rem; padding: 0; margin: 1.25rem 0 0; list-style: none; }
-    button {
-      background: var(--ochre); color: var(--snow); border: 0;
-      padding: 0.5rem 0.95rem; border-radius: 0.3rem; font-weight: 600; cursor: pointer;
+    .stage { display: flex; flex-direction: column; min-width: 0; }
+    .term {
+      background: #0b0d0a;
+      border: 2px solid var(--gold);
+      border-radius: 10px;
+      height: var(--pane-h);
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 0 0 1px var(--mark), 0 14px 44px rgba(0, 0, 0, 0.4);
+      overflow: hidden;
     }
-    button.ghost { background: transparent; color: var(--slate); border: 1px solid var(--line); }
-    button:disabled { opacity: 0.45; cursor: not-allowed; }
-    a.cta {
-      display: inline-block; margin-top: 0.85rem;
-      background: var(--ochre); color: var(--snow); text-decoration: none;
-      padding: 0.5rem 0.95rem; border-radius: 0.3rem; font-weight: 600;
+    .term-bar {
+      display: flex; align-items: baseline; justify-content: space-between;
+      gap: 0.75rem;
+      padding: 0.5rem 0.95rem 0.45rem;
+      border-bottom: 1px solid #3a3424;
+      font: 0.68rem/1.3 ui-monospace, "Cascadia Code", Consolas, monospace;
+      letter-spacing: 0.1em; text-transform: uppercase;
+      color: var(--gold);
+      flex: 0 0 auto;
     }
-    .progress { color: var(--slate); font-size: 0.85rem; margin-top: 0.75rem; }
-    footer { margin-top: 2.5rem; padding-top: 1rem; border-top: 1px solid var(--line); color: var(--slate); font-size: 0.85rem; }
-    footer a { color: var(--slate); }
+    .term-bar .sub { color: var(--muted); letter-spacing: 0.04em; text-transform: none; }
+    .term-scroll {
+      flex: 1 1 auto;
+      min-height: 0;
+      padding: 1rem 1.1rem 1.1rem;
+      font: 15px/1.55 ui-monospace, "Cascadia Code", Consolas, monospace;
+    }
+    .turn { margin: 0 0 0.85rem; }
+    .turn.user { color: var(--text); }
+    .turn.user .prompt { color: var(--gold); }
+    .turn.assistant { color: var(--text); }
+    .turn.skip { color: var(--muted); font-style: italic; }
+    .turn.tool { color: var(--gold); font-size: 0.9em; opacity: 0.9; }
+    .spin {
+      color: var(--gold);
+      letter-spacing: 0.06em;
+      font-weight: 650;
+    }
+    .block {
+      display: inline-block; width: 0.7em; height: 1.1em;
+      background: var(--gold); vertical-align: -0.18em; margin-left: 0.08rem;
+    }
+    aside.callout {
+      flex: 0 0 auto;
+      background: var(--panel);
+      border-top: 1px solid #3a3424;
+      border-left: 3px solid var(--gold);
+      padding: 0.7rem 0.95rem 0.8rem;
+    }
+    aside.callout strong { color: var(--text); font-weight: 650; display: block; margin-bottom: 0.2rem; }
+    aside.callout p { margin: 0; color: var(--muted); font-size: 0.92rem; }
+    menu.nav {
+      display: flex; flex-wrap: wrap; gap: 0.7rem; align-items: center;
+      padding: 0; margin: 0.85rem 0 0; list-style: none;
+    }
+    button.next {
+      background: var(--gold); color: var(--mark); border: 0;
+      padding: 0.85rem 1.8rem; border-radius: 10px;
+      font: inherit; font-size: 1.05rem; font-weight: 700;
+      cursor: pointer; min-width: 10rem;
+      white-space: nowrap;
+    }
+    button.next:hover { filter: brightness(1.08); }
+    button.next:disabled { opacity: 0.4; cursor: not-allowed; filter: none; }
+    button.back {
+      background: var(--panel); color: var(--text);
+      border: 1px solid var(--line);
+      padding: 0.85rem 1.35rem; border-radius: 10px;
+      font: inherit; font-size: 1.05rem; font-weight: 650; cursor: pointer;
+    }
+    button.back:hover { border-color: var(--gold); color: var(--gold); }
+    button.back:disabled { opacity: 0.4; cursor: not-allowed; }
+    .progress { color: var(--muted); font-size: 0.85rem; }
+    .store {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      display: flex; flex-direction: column;
+      height: var(--pane-h);
+      overflow: hidden;
+    }
+    .pane-label {
+      font-size: 0.68rem; letter-spacing: 0.1em; text-transform: uppercase;
+      color: var(--muted); padding: 0.5rem 0.85rem 0.4rem;
+      border-bottom: 1px solid var(--line);
+      flex: 0 0 auto;
+    }
+    .store-body {
+      flex: 1 1 auto;
+      min-height: 0;
+    }
+    .cols {
+      display: grid; grid-template-columns: 1fr 1fr 1fr;
+      align-items: start;
+      min-height: 100%;
+    }
+    .col {
+      padding: 0 0.55rem 0.7rem;
+      border-right: 1px solid var(--line);
+      min-width: 0;
+    }
+    .col:last-child { border-right: 0; }
+    .col h2 {
+      position: sticky; top: 0; z-index: 1;
+      background: var(--panel);
+      font-size: 0.68rem; letter-spacing: 0.08em; text-transform: uppercase;
+      color: var(--muted); margin: 0 0 0.4rem; font-weight: 650;
+      padding: 0.5rem 0 0.4rem;
+      border-bottom: 1px solid var(--line);
+    }
+    .col h2 b { color: var(--muted); font-weight: 650; }
+    .empty { color: var(--line); font-size: 0.8rem; }
+    .row {
+      background: var(--bg); border: 1px solid var(--line);
+      border-radius: 5px; padding: 0.35rem 0.45rem; margin: 0 0 0.35rem;
+      font-size: 0.78rem; color: var(--text);
+    }
+    .row .meta {
+      display: block; color: var(--muted); font-size: 0.68rem;
+      margin-top: 0.18rem; letter-spacing: 0.02em;
+    }
+    .row .links {
+      display: block; color: var(--muted); font-size: 0.68rem; margin-top: 0.12rem;
+    }
+    .row.gone { opacity: 0.55; }
+    .row.gone .meta, .row.gone .links { color: var(--supersede); }
+    footer {
+      margin-top: 2rem; padding-top: 1rem; border-top: 1px solid var(--line);
+      color: var(--muted); font-size: 0.85rem;
+    }
+    footer a { color: var(--muted); }
+    noscript { display: block; color: var(--warn); margin: 0 0 1rem; }
   </style>
 </head>
 <body>
@@ -79,78 +227,372 @@
         <a href="https://www.npmjs.com/package/@facthouse/mcp">npm</a>
       </nav>
     </header>
-    <h1>A fact lands, then it changes</h1>
+    <h1>How a fact becomes knowledge</h1>
     <p class="lede">A taped session. Names are invented. Nothing here is a live store.</p>
-    <div class="stage" id="stage"></div>
-    <menu>
-      <li><button type="button" class="ghost" id="back">Back</button></li>
-      <li><button type="button" id="next">Next</button></li>
-    </menu>
-    <p class="progress" id="progress"></p>
+    <noscript>This replay needs a browser with JavaScript.</noscript>
+    <div class="lab">
+      <div class="stage">
+        <section class="term" aria-label="Terminal">
+          <div class="term-bar">
+            <span>Terminal</span>
+            <span class="sub">your agent CLI · Claude Code, Cursor, etc.</span>
+          </div>
+          <div class="term-scroll scroll" id="term"></div>
+          <aside class="callout" id="callout" aria-live="polite"></aside>
+        </section>
+        <menu class="nav">
+          <li><button type="button" class="back" id="back">Back</button></li>
+          <li><button type="button" class="next" id="next">Next</button></li>
+          <li class="progress" id="progress"></li>
+        </menu>
+      </div>
+      <section class="store" aria-label="Store">
+        <div class="pane-label">Store · one SQLite file</div>
+        <div class="store-body scroll">
+          <div class="cols">
+            <div class="col" id="col-d"></div>
+            <div class="col" id="col-i"></div>
+            <div class="col" id="col-k"></div>
+          </div>
+        </div>
+      </section>
+    </div>
     <footer>
       <a href="./">facthouse.dev</a> · MIT
     </footer>
   </div>
   <script>
+    var SAID = "I'm Alex. I prefer tea. My partner Robin hates coriander.";
+    var SAID_PREFER = "No, I prefer coffee.";
+    var ASK = "What do I prefer to drink?";
+    var ACK_TEA = "Tea it is when I make suggestions.";
+    var ACK_SCHOOL = "Half three.";
+    var ACK_DRY = "Robin said it's done.";
+    var ACK_PREFER = "Coffee as the default, then.";
+    function ev(text, side) {
+      return { text: text, meta: "copied · " + side };
+    }
+    var D1 = [ev(SAID, "user"), ev(ACK_TEA, "assistant")];
+    var D2 = D1.concat([
+      ev("what time is school pickup?", "user"),
+      ev(ACK_SCHOOL, "assistant"),
+      ev("did Robin get the dry cleaning?", "user"),
+      ev(ACK_DRY, "assistant")
+    ]);
+    var ANSWER_TEA = "You prefer tea.";
+    var ANSWER_COFFEE = "You prefer coffee.";
+    var D3 = D2.concat([ev(ASK, "user"), ev(ANSWER_TEA, "assistant")]);
+    var D4 = D3.concat([ev(SAID_PREFER, "user"), ev(ACK_PREFER, "assistant")]);
+    var D5 = D4.concat([ev(ASK, "user"), ev(ANSWER_COFFEE, "assistant")]);
+    var I_NAME = { text: "The user is called Alex.", meta: "profile · confidence 0.7" };
+    var I_TEA = { text: "The user prefers tea.", meta: "preferences · confidence 0.7" };
+    var I_COFFEE = { text: "The user prefers coffee.", meta: "preferences · confidence 0.7" };
+    var I_ROBIN = { text: "Robin hates coriander.", meta: "people · confidence 0.7" };
+    var K_NAME = { text: "Alex is the user's name.", meta: "profile · current · confidence 0.7" };
+    var K_TEA = { text: "Alex prefers tea.", meta: "preferences · current · confidence 0.7" };
+    var K_TEA_OLD = { text: "Alex prefers tea.", meta: "preferences · superseded · confidence 0.7", gone: true };
+    var K_COFFEE = { text: "Alex prefers coffee.", meta: "preferences · current · confidence 0.7" };
+    var K_ROBIN = {
+      text: "Robin hates coriander.",
+      meta: "people · current · confidence 0.7",
+      links: "Robin · person · subject · partner of you"
+    };
+    var INTRO = {
+      lead: "Your agent CLI — Claude Code, Cursor, etc.",
+      body: "Not a Facthouse prompt. Talk as usual. Data lands now; consolidate comes later."
+    };
     var STEPS = [
       {
-        who: "Alex, in chat",
-        body: "I prefer dark mode in every editor.",
-        callout: "A durable sentence in ordinary conversation is enough. There is no remember command."
+        lines: [
+          { who: "user", text: SAID },
+          { who: "assistant", text: ACK_TEA }
+        ],
+        lead: "Copied into Data.",
+        body: "Both sides of the log. Extract has not run.",
+        d: D1, i: [], k: []
       },
       {
-        who: "Later, Alex",
-        body: "What editor theme do I prefer?",
-        callout: "Search looks at integrated facts, not the chat log."
+        lines: [
+          { who: "user", text: "what time is school pickup?" },
+          { who: "assistant", text: ACK_SCHOOL },
+          { who: "user", text: "did Robin get the dry cleaning?" },
+          { who: "assistant", text: ACK_DRY }
+        ],
+        lead: "Still only Data.",
+        body: "Assistant lines are copied too. Pickup stays a current task.",
+        d: D2, i: [], k: []
       },
       {
-        who: "Search",
-        body: "<span class=\"result\">results: “Alex prefers dark mode in every editor.”</span>",
-        callout: "The preference is knowledge now. It will come back in the next session."
+        lines: [{ who: "skip", text: "several turns later" }],
+        thenThink: true,
+        laterLead: "Several turns later.",
+        laterBody: "Then consolidate.",
+        lead: "Later: consolidate.",
+        body: "Name, tea, and Robin. School pickup stays in Data.",
+        d: D2, i: [I_NAME, I_TEA, I_ROBIN], k: [K_NAME, K_TEA, K_ROBIN]
       },
       {
-        who: "Alex, months later",
-        body: "I use light mode now. Dark mode was a mistake.",
-        callout: "A later sentence can replace an earlier one. The old fact is not deleted."
+        lines: [
+          { who: "user", text: ASK },
+          { who: "tool", text: "search_knowledge" },
+          { who: "assistant", text: ANSWER_TEA }
+        ],
+        lead: "Queried the store.",
+        body: "The question is still Data. Search reads Knowledge.",
+        d: D3, i: [I_NAME, I_TEA, I_ROBIN], k: [K_NAME, K_TEA, K_ROBIN]
       },
       {
-        who: "Search",
-        body: "<span class=\"result\">current: “Alex prefers light mode in every editor.”<br>superseded: “Alex prefers dark mode in every editor.”</span>",
-        callout: "Facts are superseded, not deleted. That is the difference from a chat-log index.",
-        cta: true
+        lines: [
+          { who: "user", text: SAID_PREFER },
+          { who: "assistant", text: ACK_PREFER }
+        ],
+        lead: "A preference change.",
+        body: "Copied. Knowledge still says tea until consolidate.",
+        d: D4, i: [I_NAME, I_TEA, I_ROBIN], k: [K_NAME, K_TEA, K_ROBIN]
+      },
+      {
+        lines: [{ who: "skip", text: "several turns later" }],
+        thenThink: true,
+        laterLead: "Several turns later.",
+        laterBody: "Then consolidate.",
+        lead: "Supersede, don't delete.",
+        body: "Name stands. Old preference stays, tagged superseded.",
+        d: D4, i: [I_NAME, I_TEA, I_ROBIN, I_COFFEE], k: [K_NAME, K_COFFEE, K_ROBIN, K_TEA_OLD]
+      },
+      {
+        lines: [
+          { who: "user", text: ASK },
+          { who: "tool", text: "search_knowledge" },
+          { who: "assistant", text: ANSWER_COFFEE }
+        ],
+        lead: "That's the loop.",
+        body: "Data is the log. Knowledge is what you'd be asked.",
+        d: D5, i: [I_NAME, I_TEA, I_ROBIN, I_COFFEE], k: [K_NAME, K_COFFEE, K_ROBIN, K_TEA_OLD]
       }
     ];
-    var i = 0;
-    var stage = document.getElementById("stage");
-    var progress = document.getElementById("progress");
-    var next = document.getElementById("next");
-    var back = document.getElementById("back");
-    function show() {
-      var s = STEPS[i];
-      var html = "<div class=\"who\">" + s.who + "</div><p class=\"bubble\">" + s.body + "</p><p class=\"callout\">" + s.callout + "</p>";
-      if (s.cta) {
-        html += "<p><a class=\"cta\" href=\"index.html#quick-start\">Install @facthouse/mcp</a></p>";
+
+    var done = 0;
+    var busy = false;
+    var live = [];
+    var blinkOn = true;
+
+    var calloutEl = document.getElementById("callout");
+    var termEl = document.getElementById("term");
+    var backEl = document.getElementById("back");
+    var nextEl = document.getElementById("next");
+    var progressEl = document.getElementById("progress");
+
+    function esc(s) {
+      return String(s)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
+    }
+
+    function colHtml(letter, name, rows) {
+      var h = "<h2><b>" + letter + "</b> " + name + "</h2>";
+      if (!rows || !rows.length) return h + "<p class=\"empty\">nothing yet</p>";
+      return h + rows.map(function (r) {
+        var cls = "row" + (r.gone ? " gone" : "");
+        var links = r.links
+          ? "<span class=\"links\">" + esc(r.links) + "</span>"
+          : "";
+        return "<div class=\"" + cls + "\">" + esc(r.text) +
+          "<span class=\"meta\">" + esc(r.meta) + "</span>" + links + "</div>";
+      }).join("");
+    }
+
+    function storeOf(n) {
+      if (n <= 0) return { d: [], i: [], k: [] };
+      var st = STEPS[n - 1];
+      return { d: st.d, i: st.i, k: st.k };
+    }
+
+    function paintStore(n) {
+      var st = storeOf(n);
+      document.getElementById("col-d").innerHTML = colHtml("D", "data", st.d);
+      document.getElementById("col-i").innerHTML = colHtml("I", "information", st.i);
+      document.getElementById("col-k").innerHTML = colHtml("K", "knowledge", st.k);
+    }
+
+    function turnHtml(m, partial) {
+      var text = partial != null ? partial : m.text;
+      if (m.who === "skip") {
+        return "<div class=\"turn skip\">" + esc(text) + "</div>";
       }
-      stage.innerHTML = html;
-      progress.textContent = (i + 1) + " / " + STEPS.length;
-      back.disabled = i === 0;
-      if (i === STEPS.length - 1) {
-        next.textContent = "Replay";
-        next.className = "ghost";
+      if (m.who === "tool") {
+        return "<div class=\"turn tool\">Facthouse · " + esc(text) + "</div>";
+      }
+      if (m.who === "user") {
+        return "<div class=\"turn user\"><span class=\"prompt\">&gt; </span>" +
+          esc(text) + "</div>";
+      }
+      return "<div class=\"turn assistant\">" + esc(text) + "</div>";
+    }
+
+    function promptLine(partial) {
+      return "<div class=\"turn user\"><span class=\"prompt\">&gt; </span>" +
+        esc(partial || "") + "<span class=\"block\"></span></div>";
+    }
+
+    function renderTerm(opts) {
+      opts = opts || {};
+      var html = live.map(function (m) { return turnHtml(m); }).join("");
+      if (opts.partial) html += opts.partial;
+      else if (opts.spinning) html += "<div class=\"turn spin\">consolidating</div>";
+      else html += promptLine("");
+      termEl.innerHTML = html;
+      termEl.scrollTop = termEl.scrollHeight;
+    }
+
+    var INSTALL = "index.html#quick-start";
+    var INSTALL_DOC = "index.html";
+
+    function atEnd() {
+      return done === STEPS.length;
+    }
+
+    function warmInstall() {
+      if (document.getElementById("warm-install")) return;
+      var link = document.createElement("link");
+      link.id = "warm-install";
+      link.rel = "prefetch";
+      link.href = INSTALL_DOC;
+      document.head.appendChild(link);
+      var spec = document.createElement("script");
+      spec.type = "speculationrules";
+      spec.textContent = JSON.stringify({
+        prefetch: [{ source: "list", urls: [INSTALL_DOC] }],
+        prerender: [{ source: "list", urls: [INSTALL_DOC] }]
+      });
+      document.head.appendChild(spec);
+    }
+
+    function paintCallout(step) {
+      calloutEl.innerHTML =
+        "<strong>" + esc(step.lead) + "</strong><p>" + esc(step.body) + "</p>";
+    }
+
+    function syncNav() {
+      var end = atEnd();
+      nextEl.textContent = end ? "Install @facthouse/mcp" : "Next";
+      nextEl.disabled = busy;
+      backEl.disabled = busy || done === 0;
+      progressEl.textContent = end ? "done" : done + " / " + STEPS.length;
+    }
+
+    function setBusy(on) {
+      busy = on;
+      syncNav();
+    }
+
+    function paint() {
+      live = [];
+      for (var i = 0; i < done; i++) {
+        var add = STEPS[i].lines || [];
+        for (var j = 0; j < add.length; j++) live.push(add[j]);
+      }
+      paintStore(done);
+      renderTerm();
+      if (done === 0) paintCallout(INTRO);
+      else paintCallout(STEPS[done - 1]);
+      setBusy(false);
+    }
+
+    function wait(ms) {
+      return new Promise(function (resolve) { setTimeout(resolve, ms); });
+    }
+
+    function typeInto(m) {
+      return new Promise(function (resolve) {
+        if (m.who === "skip" || m.who === "tool") {
+          live.push(m);
+          renderTerm();
+          resolve();
+          return;
+        }
+        var i = 0;
+        var speed = m.who === "user" ? 18 : 12;
+        function frame() {
+          var shown = m.text.slice(0, i);
+          if (m.who === "user") renderTerm({ partial: promptLine(shown) });
+          else renderTerm({ partial: turnHtml(m, shown) + "<span class=\"block\"></span>" });
+          if (i < m.text.length) {
+            i += 1;
+            setTimeout(frame, speed);
+          } else {
+            setTimeout(function () {
+              live.push(m);
+              renderTerm();
+              resolve();
+            }, speed);
+          }
+        }
+        frame();
+      });
+    }
+
+    async function playStep(step) {
+      if (step.laterLead) {
+        paintCallout({ lead: step.laterLead, body: step.laterBody });
       } else {
-        next.textContent = "Next";
-        next.className = "";
+        paintCallout(step);
+      }
+      var lines = step.lines || [];
+      for (var i = 0; i < lines.length; i++) {
+        if (lines[i].who === "assistant") await wait(700);
+        if (lines[i].who === "tool") await wait(400);
+        if (lines[i].who === "skip") await wait(400);
+        await typeInto(lines[i]);
+        if (lines[i].who === "user") await wait(500);
+        if (lines[i].who === "tool") await wait(500);
+      }
+      if (step.thenThink) {
+        await wait(500);
+        paintCallout(step);
+        renderTerm({ spinning: true });
+        await wait(2500);
       }
     }
-    next.addEventListener("click", function () {
-      i = i === STEPS.length - 1 ? 0 : i + 1;
-      show();
+
+    nextEl.addEventListener("click", function () {
+      if (busy) return;
+      if (atEnd()) {
+        window.location.href = INSTALL;
+        return;
+      }
+      if (done === STEPS.length - 1) warmInstall();
+      setBusy(true);
+      var step = STEPS[done];
+      playStep(step).then(function () {
+        done += 1;
+        paintStore(done);
+        renderTerm();
+        paintCallout(step);
+        setBusy(false);
+      });
     });
-    back.addEventListener("click", function () {
-      if (i > 0) i -= 1;
-      show();
+    backEl.addEventListener("click", function () {
+      if (busy || done === 0) return;
+      done -= 1;
+      paint();
     });
-    show();
+    document.addEventListener("keydown", function (e) {
+      if (busy) return;
+      if (e.key === "Enter" || e.key === "ArrowRight") {
+        e.preventDefault();
+        nextEl.click();
+      } else if (e.key === "ArrowLeft") {
+        e.preventDefault();
+        backEl.click();
+      }
+    });
+    setInterval(function () {
+      blinkOn = !blinkOn;
+      var el = termEl.querySelector(".block");
+      if (el) el.style.opacity = blinkOn ? "1" : "0";
+    }, 530);
+    paint();
   </script>
 </body>
 </html>
