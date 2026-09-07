@@ -11,8 +11,21 @@ import pytest
 import build_pages
 
 ROOT = Path(__file__).resolve().parents[2]
-SHORT_PITCH = "A local memory engine any AI tool can use."
-README_PITCH = SHORT_PITCH
+SHORT_PITCH = (
+    "Local AI memory: neuroscience-inspired "
+    "Data→Information→Knowledge in SQLite you own."
+)
+README_PITCH = (
+    "Facthouse is a local memory engine for AI tools. Most “memory” products "
+    "index chat logs. Facthouse takes agent activity - messages, tool use, "
+    "and other MCP traffic - and applies neuroscience-inspired consolidation "
+    "so it moves through **Data** (what happened in the session) → "
+    "**Information** (extracted facts) → **Knowledge** (integrated beliefs "
+    "on an entity graph). During this process, Facthouse links entities, "
+    "drops duplicates, reconciles conflicts, and supersedes what is out of "
+    "date. Vector embeddings add optional semantic search on top of that "
+    "graph. The store is a SQLite file on your disk."
+)
 # Rival hosted-MCP wording must not appear on public surfaces. Tests fail
 # if a disambiguation sentence naming a competitor or mcp.*.ai URL returns.
 _RIVAL_COPY = re.compile(
@@ -55,14 +68,18 @@ def test_builds_site_from_readme(tmp_path: Path):
 
     index = (site / "index.html").read_text(encoding="utf-8")
     assert "<title>Facthouse</title>" in index
-    assert "A local memory engine any AI tool can use." in index
+    assert "Facthouse is a local memory engine for AI tools." in index
     assert_no_rival_copy(index, "built site index")
-    assert "neuroscience" not in index.lower()
-    assert "SQLite you own" not in index
+    assert "neuroscience-inspired consolidation" in index
     assert "<strong>Data</strong>" in index
     assert "<strong>Information</strong>" in index
     assert "<strong>Knowledge</strong>" in index
     assert "→" in index
+    assert "(what happened in the session)" in index
+    assert "(extracted facts)" in index
+    assert "(integrated beliefs on an entity graph)" in index
+    assert "The store is a SQLite file on your disk." in index
+    assert "A local memory engine any AI tool can use." not in index
     assert "paste the snippet it prints" not in index
     assert "Install `@facthouse/mcp`" not in index
     assert "Install <code>@facthouse/mcp</code>" not in index
@@ -145,15 +162,22 @@ def test_npm_global_install_command_refuses_empty_version(
 
 def test_pitch_helpers_keep_readme_lede():
     plain = build_pages.pitch_plain(README_PITCH)
-    assert plain == SHORT_PITCH
+    assert plain.startswith("Facthouse is a local memory engine for AI tools.")
     assert_no_rival_copy(plain, "pitch_plain")
     assert "**" not in plain
+    assert "Data (what happened in the session) → Information" in plain
+    assert "The store is a SQLite file on your disk." in plain
     assert "facthouse init" not in plain
     assert "Install @facthouse/mcp" not in plain
     html = build_pages.pitch_html(README_PITCH)
-    assert "A local memory engine any AI tool can use." in html
+    assert html.startswith("Facthouse is a local memory engine for AI tools.")
     assert_no_rival_copy(html, "pitch_html")
+    assert "<p>" not in html
+    assert "<strong>Data</strong>" in html
+    assert "<strong>Information</strong>" in html
+    assert "<strong>Knowledge</strong>" in html
     assert "facthouse init" not in html
+    assert "<strong>Data (what happened" not in html
 
 
 def test_public_surfaces_have_no_rival_disambiguation():
@@ -166,7 +190,9 @@ def test_public_surfaces_have_no_rival_disambiguation():
     assert_no_rival_copy(pkg["description"], "package.json description")
     assert_no_rival_copy(server["description"], "server.json description")
     assert_no_rival_copy(demo, "site/demo.html")
-    assert SHORT_PITCH in readme
+    assert README_PITCH in readme
+    assert "The store is a SQLite file on your disk." in readme
+    assert "A local memory engine any AI tool can use." not in readme
     assert pkg["description"] == SHORT_PITCH
     assert server["description"] == SHORT_PITCH
 
@@ -179,21 +205,25 @@ def test_listing_description_matches_package_and_registry():
     assert build_pages.PITCH == SHORT_PITCH
     assert build_pages.listing_description() == SHORT_PITCH
     # MCP Registry server.schema.json description maxLength is 100.
+    assert SHORT_PITCH == (
+        "Local AI memory: neuroscience-inspired "
+        "Data→Information→Knowledge in SQLite you own."
+    )
+    assert len(SHORT_PITCH) == 84
     assert len(SHORT_PITCH) <= 100
-    assert SHORT_PITCH == "A local memory engine any AI tool can use."
-    assert len(SHORT_PITCH) == 42
     assert_no_rival_copy(SHORT_PITCH, "SHORT_PITCH")
     assert_no_rival_copy(pkg["description"], "package.json description")
     assert_no_rival_copy(server["description"], "server.json description")
-    assert "neuroscience" not in SHORT_PITCH.lower()
+    assert "neuroscience" in SHORT_PITCH.lower()
+    assert "you own" in SHORT_PITCH.lower()
     assert "Wisdom" not in SHORT_PITCH
-    assert "you own" not in SHORT_PITCH.lower()
 
 
 def test_split_readme_uses_lede_and_keeps_image():
     pitch, rest = build_pages.split_readme((ROOT / "README.md").read_text(encoding="utf-8"))
     assert pitch == README_PITCH
-    assert pitch == SHORT_PITCH
+    assert pitch != SHORT_PITCH
+    assert pitch.endswith("The store is a SQLite file on your disk.")
     assert_no_rival_copy(pitch, "README lede")
     assert "facthouse init" not in pitch
     assert "Install `@facthouse/mcp`" not in pitch
