@@ -504,7 +504,7 @@ describe("init knobs — one definition", () => {
     const cap = String(EXTRACT_CAP_EVENTS);
     // Each sentence that teaches the cap must carry the same number the
     // engine enforces; a change to EXTRACT_CAP_EVENTS must fail here.
-    expect(readme).toContain(`extracts facts from the oldest ${cap} lines`);
+    expect(readme).toContain(`when extract runs, it takes the oldest ${cap} lines`);
     expect(readme).toContain(`Extract is capped at ${cap} lines per run`);
     expect(readme).toContain(`A first backfill of more than ${cap} lines`);
     expect(readme).toContain(

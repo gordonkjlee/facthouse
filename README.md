@@ -51,7 +51,7 @@ One SQLite database. Three tables in it, not three databases: **Data** (what hap
 
 FTS5 (words) and optional embeddings (meaning) are indexes of **K**. They are not a second store. Semantic search is off unless you turn it on: `search "shellfish"` finds a shellfish fact, `search "food"` does not, until you choose an embedding model — a model is an opinion about what “similar” means.
 
-Two speeds. **Copy** tails named transcripts into Data. **Extract** turns new transcript lines into self-contained facts (D→I). **Integrate** fits them into what the store already knows: domains, entities, duplicates, contradictions, the graph (I→K). `consolidate` is the umbrella: copy, extract, and integrate together. Extract is capped at 50 lines per run, so a first backfill is never spent on the lot; each automatic run extracts facts from the oldest 50 lines. Consolidation does not invent a sentence nobody said.
+Two speeds. **Copy** tails named transcripts into Data. **Extract** turns new transcript lines into self-contained facts (D→I). **Integrate** fits them into what the store already knows: domains, entities, duplicates, contradictions, the graph (I→K). `consolidate` is the umbrella: copy, extract, and integrate together. Extract is capped at 50 lines per run, so a first backfill is never spent on the lot; when extract runs, it takes the oldest 50 lines. Consolidation does not invent a sentence nobody said.
 
 A hook cannot call MCP tools — those exist only on the assistant’s connection — and it must not wait for a model pass. So it does not invoke `consolidate`. It runs `facthouse notify …`, which tells the **already-running** server that a moment happened and returns at once. `consolidate` is the pipeline verb (MCP tool or CLI); the caller waits. `notify compaction` is that verb asked of the live server, asynchronously. `notify threshold` is a different policy (extract only, if due).
 
@@ -575,7 +575,7 @@ When the facthouse MCP server is available:
 - Before answering questions this store might already know, call search_knowledge
 - To find out everything known about a particular person, project, or thing, call get_entity
 - Call capture_fact only to correct or add something copy or extraction missed
-- When context is getting long, call consolidate (or rely on PreCompact `facthouse notify compaction`)
+- When context is getting long, call consolidate
 ```
 
 Cursor and Windsurf consume tools but not resources, so `memory://profile` will not load on its own there. Cursor conversations themselves are copied with `kind: "cursor"` (JSONL under `~/.cursor/projects/`, not the SQLite composer store).
