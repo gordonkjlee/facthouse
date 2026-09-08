@@ -18,6 +18,7 @@ import {
   mcpConfigSnippet,
   mcpServerName,
   mcpSnippetDataDir,
+  precompactHookJson,
   providerStatusLines,
   embeddingStatusLines,
   appendCaptureRecipe,
@@ -322,6 +323,18 @@ async function runInit() {
 
   const written = loadConfig(result.dataDir);
 
+  console.log(
+    [
+      ``,
+      INIT_PROMPTS.mcpPaste,
+      ``,
+      snippet,
+      ``,
+      INIT_PROMPTS.mcpPasteNoCli,
+      ``,
+    ].join("\n"),
+  );
+
   const canAskHistoric = stdinCanAskHistoric({
     usedTtyWizard: Boolean(rl),
     web,
@@ -468,11 +481,11 @@ async function runInit() {
         : ` (${INIT_PROMPTS.existingConfig})`
     }`,
     ``,
-    INIT_PROMPTS.mcpPaste,
+    INIT_PROMPTS.mcpRestart,
     ``,
-    snippet,
+    INIT_PROMPTS.compactionHookLead,
     ``,
-    INIT_PROMPTS.mcpPasteNoCli,
+    precompactHookJson(spec, path.resolve(result.dataDir)),
     ``,
     INIT_PROMPTS.storeDir,
     ``,

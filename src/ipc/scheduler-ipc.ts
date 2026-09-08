@@ -10,7 +10,7 @@
  *
  * Protocol:
  *   'e' (0x65) → threshold  — events arrived; extract if the count is due
- *   'c' (0x63) → compaction — the client window is about to collapse; run
+ *   'c' (0x63) → compaction — the client is about to compact; run
  *                             consolidate now, asynchronously
  *   't' / 'f'  → the 0.25 spellings of the same two, accepted until the
  *                `signal` alias is removed

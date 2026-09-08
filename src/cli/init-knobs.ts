@@ -654,9 +654,9 @@ export const INIT_PROMPTS = {
     "quote the package so PowerShell does not splat. " +
     "-p and -- stop an older global binary winning. " +
     `npx -y @facthouse/mcp with no -p / ${CLI_NAME} is the server; do not run it as a shell command for init, settings, or stats.`,
-  /** Done card: add this server, then the snippet. Files for every MCP host. */
+  /** Printed as soon as the store exists, before historic copy/extract. */
   mcpPaste:
-    "Add this server to the client's MCP config, then restart the client.\n" +
+    "Add this server to the client's MCP config now. Copy and extract may still run.\n" +
     "  Claude Code     .mcp.json in the project directory (not the data directory)\n" +
     "  Cursor          .cursor/mcp.json\n" +
     "  Claude Desktop  claude_desktop_config.json\n" +
@@ -665,13 +665,17 @@ export const INIT_PROMPTS = {
   mcpPasteNoCli:
     `The MCP paste starts the server. It does not put ${CLI_NAME} on PATH. ` +
     "To inspect the file from a terminal, see CLI below.",
+  mcpRestart:
+    "Restart the client if you already added the snippet.",
+  compactionHookLead:
+    "Recommended PreCompact hook — paste into Claude Code `.claude/settings.json` (we do not install it). Notifies the running server when the client is about to compact; returns at once. `--data` is required; hooks do not see mcp.json env:",
   mcpInstallClash:
     "If npm install -g fails because a command named mcp already exists, remove that leftover command and retry.",
   /** Quick Start after `npm install -g` + TTY init. */
   quickStartNext:
     "Press Enter to accept each default (copy = Claude Code or Cursor session logs on disk; type record if the assistant should save facts). " +
     "If you picked copy, init asks whether to copy existing logs, then whether to extract and integrate. " +
-    "Init prints an MCP snippet — add it to the client's MCP config and restart.",
+    "Init prints an MCP snippet as soon as the store is written — add it to the client's MCP config while copy/extract run. Restart the client when init finishes.",
   /** MCP env does not apply to CLI or hooks. Do not write $FACTHOUSE_DATA (hang-safety). */
   mcpEnvNotCli:
     "FACTHOUSE_DATA on an MCP snippet applies only to that server process. " +

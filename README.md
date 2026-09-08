@@ -25,7 +25,7 @@ If npm install -g fails because a command named mcp already exists, remove that 
 
 `facthouse init --web` is the same setup as a browser form — it prints a 127.0.0.1 URL and does not open a browser.
 
-Press Enter to accept each default (copy = Claude Code or Cursor session logs on disk; type record if the assistant should save facts). If you picked copy, init asks whether to copy existing logs, then whether to extract and integrate. Init prints an MCP snippet — add it to the client's MCP config and restart.
+Press Enter to accept each default (copy = Claude Code or Cursor session logs on disk; type record if the assistant should save facts). If you picked copy, init asks whether to copy existing logs, then whether to extract and integrate. Init prints an MCP snippet as soon as the store is written — add it to the client's MCP config while copy/extract run. Restart the client when init finishes.
 
 In the client, state something durable in ordinary conversation — there is no remember command.
 
@@ -51,7 +51,27 @@ One SQLite database. Three tables in it, not three databases: **Data** (what hap
 
 FTS5 (words) and optional embeddings (meaning) are indexes of **K**. They are not a second store. Semantic search is off unless you turn it on: `search "shellfish"` finds a shellfish fact, `search "food"` does not, until you choose an embedding model — a model is an opinion about what “similar” means.
 
-Two speeds. **Extract** turns new transcript lines into self-contained facts. **Integrate** fits them into what the store already knows: domains, entities, duplicates, contradictions, the graph. `consolidate` runs copy, extract, and integrate together — in the server at session start and at compaction, or by hand from the CLI. Extract is capped at 50 lines per run, so a first backfill is never spent on the lot; each automatic run extracts facts from the oldest 50 lines. The MCP server copies the raw log on a call; it does not extract then. Consolidation does not invent a sentence nobody said.
+Two speeds. **Copy** tails named transcripts into Data. **Extract** turns new transcript lines into self-contained facts (D→I). **Integrate** fits them into what the store already knows: domains, entities, duplicates, contradictions, the graph (I→K). `consolidate` is the umbrella: copy, extract, and integrate together. Extract is capped at 50 lines per run, so a first backfill is never spent on the lot; when extract runs, it takes the oldest 50 lines. Consolidation does not invent a sentence nobody said.
+
+A hook cannot call MCP tools — those exist only on the assistant’s connection — and it must not wait for a model pass. So it does not invoke `consolidate`. It runs `facthouse notify …`, which tells the **already-running** server that a moment happened and returns at once. `consolidate` is the pipeline verb (MCP tool or CLI); the caller waits. `notify compaction` is that verb asked of the live server, asynchronously. `notify threshold` is a different policy (extract only, if due).
+
+**Automatic**
+
+| When | Copy | Extract (D→I) | Integrate (I→K) |
+|------|------|---------------|-----------------|
+| Facthouse MCP server starts | yes | yes (cap 50) | yes |
+| A Facthouse tool or resource is called | yes, if sources named and JSONL grew | no | no |
+| Facthouse MCP process exits | no | no | yes |
+
+**Callable**
+
+| Call | From | Copy | Extract (D→I) | Integrate (I→K) |
+|------|------|------|---------------|-----------------|
+| `consolidate` | MCP tool or CLI. Caller waits. | yes | yes (cap 50) | yes |
+| `facthouse notify compaction` | Other process (recommended PreCompact; we do not install). Does not wait. | yes | yes (cap 50) | yes |
+| `facthouse notify threshold` | Other process. Does not wait. Not a copy-store hook. | no | yes, if due (cap 50) | no |
+
+On a default copy store with no extra hooks, only the automatic table runs: Facthouse starts (all three), copy on each Facthouse tool or resource call if named sources grew, and integrate on a clean process exit. Closing a chat window may skip the exit row; the next start still consolidates. Due on threshold means at least 10 unexamined lines and two minutes since the last gated run. `consolidate --all` lifts the extract cap. Compaction is recommended PreCompact (`notify compaction`): same three steps as `consolidate`, on the running server, without waiting. We do not install the hook. Not a Stop hook. `record` wakes threshold extract on a record store — do not install record hooks on a copy store.
 
 Storage needs Node. Intelligence needs a language model. By default that is the [Claude Code CLI](https://github.com/anthropics/claude-code) on your existing subscription. Without it, consolidation falls back to a built-in heuristic that **does not extract facts from transcripts**. `capture_fact` still stores facts, with no entities and no domain routing.
 
@@ -71,9 +91,9 @@ On a copy store, capture_fact is a correction for every MCP client, not only the
 facthouse init
 ```
 
-Pick copy, set cwd. Init asks whether to copy existing logs, then whether to extract and integrate (Enter = all copied lines; a selection of 500 or more asks you to type the choice again). Decline extract to do that later with `facthouse consolidate` (`--all` takes remaining unexamined lines, not ones skipped as outside a 7-day or 30-day window). After that, the server copies new lines when it handles a call.
+Pick copy, set cwd. Init asks whether to copy existing logs, then whether to extract and integrate (Enter = all copied lines; a selection of 500 or more asks you to type the choice again). Decline extract to do that later with `facthouse consolidate` (`--all` takes remaining unexamined lines, not ones skipped as outside a 7-day or 30-day window). After that, the server copies new lines when it handles a Facthouse call. Extract and integrate follow the table in [How it works](#how-it-works).
 
-Compact (optional): `facthouse notify compaction` — not a turn-end Stop hook.
+Compact (recommended): `facthouse notify compaction` — we do not install the hook. Not a turn-end Stop hook.
 
 ## MCP
 
@@ -221,7 +241,7 @@ Honours the configured provider (by default `claude -p`). Empty `sources` makes 
 Tell the running MCP server that a moment happened. The server decides what to run and does it in the background, so a hook returns at once:
 
 ```bash
-facthouse notify compaction   # the client window is about to collapse: copy, extract, integrate now
+facthouse notify compaction   # client about to compact: copy new JSONL, extract, integrate (does not wait)
 facthouse notify threshold    # events arrived: extract if the threshold is due
 
 # Options:
@@ -367,7 +387,9 @@ To skip the wizard (record only — no transcript copy), paste this. The server 
 ```
 <!-- x-release-please-end -->
 
-### Hooks (after the first consolidate)
+### Hooks
+
+PreCompact `notify compaction` is the useful one: when the client is about to compact, a short-lived hook tells the **running** server, and the hook returns at once. The server copies new JSONL lines, then extracts and integrates — compaction does not delete the transcript, and the hook does not photocopy the live window. Init prints this JSON with `--data` filled in. Paste into Claude Code `.claude/settings.json` (user or project). We do not install it. Do not install a Stop hook. Do not install record hooks on this store — both write the same rows.
 
 `mcp.json` `env` is **not** visible to hooks. Pass the same `--data` (or set `FACTHOUSE_DATA` in the environment the client itself inherits). The command must invoke the CLI (`facthouse`), never the server binary. `npx -y @facthouse/mcp` with no `-p` / `facthouse` starts the MCP **server** and hangs a hook. Pin the package version, quote it if the hook runs PowerShell, and put `--` before `facthouse` so a globally installed older binary on PATH cannot win.
 
@@ -524,7 +546,7 @@ Create `.claude/rules/facthouse.md` in your project (or `~/.claude/rules/facthou
 # Facthouse
 
 - Conversations are copied from the named Claude Code source (first backfill: `facthouse consolidate` on the CLI)
-- Do not install record hooks on this store
+- Do not install record hooks on this store — both write the same rows.
 - Identity context loads automatically from the `memory://profile` resource — no tool call needed
 - Before answering questions this store might already know, call `search_knowledge`
 - Call `capture_fact` only to correct or add something that is not in the transcript
@@ -553,7 +575,7 @@ When the facthouse MCP server is available:
 - Before answering questions this store might already know, call search_knowledge
 - To find out everything known about a particular person, project, or thing, call get_entity
 - Call capture_fact only to correct or add something copy or extraction missed
-- When context is getting long, call consolidate to process pending facts before they are lost
+- When context is getting long, call consolidate
 ```
 
 Cursor and Windsurf consume tools but not resources, so `memory://profile` will not load on its own there. Cursor conversations themselves are copied with `kind: "cursor"` (JSONL under `~/.cursor/projects/`, not the SQLite composer store).
