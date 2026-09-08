@@ -19,6 +19,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { INIT_PROMPTS } from "../../src/cli/init-knobs.js";
 import { PRODUCT_NAME } from "../../src/identity.js";
+import { CLI_STORE_DEFAULT_HELP } from "../../src/paths.js";
 import { withoutStoreEnv } from "../helpers/cli-env.js";
 
 const CLI = path.resolve(
@@ -37,7 +38,11 @@ const runnable = existsSync(CLI);
  * environment so a developer's own settings can't influence assertions —
  * every test states the environment it means to test.
  */
-function run(args: string[], extraEnv: Record<string, string> = {}) {
+function run(
+  args: string[],
+  extraEnv: Record<string, string> = {},
+  cwd?: string,
+) {
   const env: Record<string, string | undefined> = withoutStoreEnv();
   // Default to the provider that costs nothing to report on. `init` probes for
   // the claude CLI when `cli` is selected, and that probe spawns subprocesses —
@@ -50,6 +55,7 @@ function run(args: string[], extraEnv: Record<string, string> = {}) {
     encoding: "utf-8",
     env: env as NodeJS.ProcessEnv,
     timeout: 30_000,
+    cwd,
   });
 }
 
@@ -90,6 +96,7 @@ describe.skipIf(!runnable)("cli entry — dispatch and usage", () => {
     // Hidden aliases are not advertised.
     expect(r.stdout).not.toMatch(/^  (pull|signal)\b/m);
     expect(r.stdout).not.toMatch(/\b(tick|flush|graduate)\b/);
+    expect(r.stdout).toContain(`--data defaults to ${CLI_STORE_DEFAULT_HELP}.`);
   });
 
   it.each(["--help", "-h", "help"])("%s prints usage and exits 0", (flag) => {
@@ -583,6 +590,29 @@ describe.skipIf(!runnable)("cli entry — search and stats", () => {
     expect(parsed.package_version.length).toBeGreaterThan(0);
     expect(parsed.intelligence.last_24h.calls).toBe(0);
     expect(parsed.intelligence.recent).toEqual([]);
+  });
+
+  it("inspect without --data uses a .facthouse store walking up from cwd", async () => {
+    const app = path.join(root, "walk-app");
+    const store = path.join(app, ".facthouse");
+    const nested = path.join(app, "src");
+    const fakeHome = path.join(root, "walk-home");
+    mkdirSync(nested, { recursive: true });
+    mkdirSync(fakeHome, { recursive: true });
+    await seed(store);
+
+    const r = run(
+      ["inspect", "--graph"],
+      { HOME: fakeHome, USERPROFILE: fakeHome },
+      nested,
+    );
+    expect(r.status).toBe(0);
+    const dest = path.join(store, "inspect.html");
+    expect(existsSync(dest)).toBe(true);
+    expect(r.stdout).toContain(dest);
+    expect(
+      existsSync(path.join(fakeHome, ".facthouse", "inspect.html")),
+    ).toBe(false);
   });
 
   it("inspect --graph writes inspect.html under the data dir and does not dump cwd", async () => {

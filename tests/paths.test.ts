@@ -1,5 +1,12 @@
 import { describe, it, expect } from "vitest";
-import { acceptTypedPath, looksLikeUserPath } from "../src/paths.js";
+import path from "node:path";
+import {
+  acceptTypedPath,
+  cliStoreDir,
+  defaultDataDir,
+  findNearestFacthouseStore,
+  looksLikeUserPath,
+} from "../src/paths.js";
 
 describe("looksLikeUserPath", () => {
   it("accepts empty, drives, tildes, dots, and separators", () => {
@@ -23,5 +30,106 @@ describe("acceptTypedPath", () => {
     expect(acceptTypedPath("app", () => false)).toBe(false);
     expect(acceptTypedPath("app", () => true)).toBe(true);
     expect(acceptTypedPath("./app", () => false)).toBe(true);
+  });
+});
+
+describe("findNearestFacthouseStore", () => {
+  const app = path.join("C:", "dev", "app");
+  const store = path.join(app, ".facthouse");
+  const nested = path.join(app, "src");
+  const marker = path.join(store, "config.json");
+  const exists = (p: string) => p === marker || p === store;
+
+  it("finds .facthouse in cwd", () => {
+    expect(findNearestFacthouseStore(app, exists)).toBe(store);
+  });
+
+  it("walks up from a nested folder", () => {
+    expect(findNearestFacthouseStore(nested, exists)).toBe(store);
+  });
+
+  it("uses cwd when it is the store directory", () => {
+    expect(findNearestFacthouseStore(store, exists)).toBe(store);
+  });
+
+  it("returns undefined when none exists", () => {
+    expect(findNearestFacthouseStore(app, () => false)).toBeUndefined();
+  });
+
+  it("prefers the nearer store when a parent also has one", () => {
+    const parentStore = path.join(path.dirname(app), ".facthouse");
+    const parentMarker = path.join(parentStore, "config.json");
+    const existsBoth = (p: string) => p === marker || p === parentMarker;
+    expect(findNearestFacthouseStore(app, existsBoth)).toBe(store);
+  });
+
+  it("skips a .facthouse directory that has no config.json", () => {
+    expect(findNearestFacthouseStore(app, (p) => p === store)).toBeUndefined();
+  });
+
+  it("does not treat a custom store folder as a walk-up hit", () => {
+    const customMarker = path.join(app, "memory", "config.json");
+    expect(
+      findNearestFacthouseStore(app, (p) => p === customMarker),
+    ).toBeUndefined();
+  });
+});
+
+describe("cliStoreDir", () => {
+  const home = path.join("C:", "Users", "alex");
+  const app = path.join("C:", "dev", "app");
+  const store = path.join(app, ".facthouse");
+  const marker = path.join(store, "config.json");
+  const exists = (p: string) => p === marker;
+
+  it("prefers FACTHOUSE_DATA over a project store", () => {
+    expect(
+      defaultDataDir({
+        home,
+        cwd: app,
+        exists,
+        walkUp: true,
+        env: { FACTHOUSE_DATA: "C:/tmp/explicit" },
+      }),
+    ).toBe(path.resolve("C:/tmp/explicit"));
+  });
+
+  it("uses the project store when env is unset", () => {
+    expect(
+      defaultDataDir({
+        home,
+        cwd: app,
+        exists,
+        walkUp: true,
+        env: {},
+      }),
+    ).toBe(store);
+  });
+
+  it("falls back to ~/.facthouse when walk-up finds nothing", () => {
+    expect(
+      defaultDataDir({
+        home,
+        cwd: app,
+        exists: () => false,
+        walkUp: true,
+        env: {},
+      }),
+    ).toBe(path.join(home, ".facthouse"));
+  });
+
+  it("does not walk up when walkUp is unset (MCP)", () => {
+    expect(
+      defaultDataDir({
+        home,
+        cwd: app,
+        exists,
+        env: {},
+      }),
+    ).toBe(path.join(home, ".facthouse"));
+  });
+
+  it("cliStoreDir walks up", () => {
+    expect(cliStoreDir({}, app, exists)).toBe(store);
   });
 });

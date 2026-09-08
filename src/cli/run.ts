@@ -48,7 +48,11 @@ import {
   envValue,
   npmPackageSpec,
 } from "../identity.js";
-import { dataDirFromEnvOrDefault, resolveUserPath } from "../paths.js";
+import {
+  CLI_STORE_DEFAULT_HELP,
+  cliStoreDir,
+  resolveUserPath,
+} from "../paths.js";
 import {
   runSearch,
   formatSearch,
@@ -218,7 +222,7 @@ function usageText(): string {
     `Housekeeping`,
     `  prune           Reclaim raw events nothing can reach (dry run by default)`,
     ``,
-    `--data defaults to FACTHOUSE_DATA or ~/.facthouse.`,
+    `--data defaults to ${CLI_STORE_DEFAULT_HELP}.`,
   ].join("\n");
 }
 
@@ -240,7 +244,7 @@ async function runInit() {
   const target =
     positionals[0] ??
     (values.data as string | undefined) ??
-    dataDirFromEnvOrDefault();
+    cliStoreDir();
   // Normalise to an absolute, platform-native path so every path we print (and
   // embed in the MCP snippet) is consistent regardless of how it was typed.
   const dataDir = resolveUserPath(target);
@@ -524,7 +528,7 @@ async function runSettingsCmd() {
   const target =
     positionals[0] ??
     (values.data as string | undefined) ??
-    dataDirFromEnvOrDefault();
+    cliStoreDir();
   const dataDir = resolveUserPath(target);
   const json = Boolean(values.json);
   const web = Boolean(values.web);
@@ -616,7 +620,7 @@ async function runSearchCmd() {
   const { values, positionals } = parseArgs({
     args: process.argv.slice(3),
     options: {
-      data: { type: "string", default: dataDirFromEnvOrDefault() },
+      data: { type: "string", default: cliStoreDir() },
       domain: { type: "string" },
       limit: { type: "string" },
       "as-of-system": { type: "string" },
@@ -700,7 +704,7 @@ async function runStatsCmd() {
   const { values } = parseArgs({
     args: process.argv.slice(3),
     options: {
-      data: { type: "string", default: dataDirFromEnvOrDefault() },
+      data: { type: "string", default: cliStoreDir() },
       json: { type: "boolean", default: false },
     },
     strict: true,
@@ -718,7 +722,7 @@ async function runInspectCmd() {
   const { values } = parseArgs({
     args: process.argv.slice(3),
     options: {
-      data: { type: "string", default: dataDirFromEnvOrDefault() },
+      data: { type: "string", default: cliStoreDir() },
       layer: { type: "string" },
       limit: { type: "string" },
       json: { type: "boolean", default: false },
@@ -768,7 +772,7 @@ async function runPruneCmd() {
   const { values } = parseArgs({
     args: process.argv.slice(3),
     options: {
-      data: { type: "string", default: dataDirFromEnvOrDefault() },
+      data: { type: "string", default: cliStoreDir() },
       apply: { type: "boolean", default: false },
       vacuum: { type: "boolean", default: false },
       json: { type: "boolean", default: false },
@@ -815,7 +819,7 @@ async function runConsolidate() {
   const { values } = parseArgs({
     args: process.argv.slice(3),
     options: {
-      data: { type: "string", default: dataDirFromEnvOrDefault() },
+      data: { type: "string", default: cliStoreDir() },
       copy: { type: "boolean", default: false, short: "c" },
       extract: { type: "boolean", default: false, short: "e" },
       integrate: { type: "boolean", default: false, short: "i" },
@@ -1048,7 +1052,7 @@ async function runNotify() {
   const { values } = parseArgs({
     args: process.argv.slice(4),
     options: {
-      data: { type: "string", default: dataDirFromEnvOrDefault() },
+      data: { type: "string", default: cliStoreDir() },
     },
     strict: true,
   });
@@ -1087,7 +1091,7 @@ async function runRecord() {
       content: { type: "string" },
       "session-id": { type: "string" },
       speaker: { type: "string" },
-      data: { type: "string", default: dataDirFromEnvOrDefault() },
+      data: { type: "string", default: cliStoreDir() },
     },
     strict: true,
   });
