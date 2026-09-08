@@ -243,18 +243,25 @@ async function invokeClaude(
   return new Promise((resolve) => {
     let resolved = false;
     const started = Date.now();
-    let onAbort: (() => void) | undefined;
+    let child: import("node:child_process").ChildProcess | undefined;
+    const onAbort = () => {
+      try {
+        child?.kill("SIGKILL");
+      } catch {
+        /* ignore */
+      }
+      finish({ error: "aborted" });
+    };
     const finish = (value: SubprocessResult | SubprocessFailure) => {
       if (resolved) return;
       resolved = true;
-      if (onAbort) opts.abort?.removeEventListener("abort", onAbort);
+      opts.abort?.removeEventListener("abort", onAbort);
       if (typeof value.elapsedMs !== "number") {
         (value as SubprocessFailure).elapsedMs = Date.now() - started;
       }
       resolve(value);
     };
 
-    let child: import("node:child_process").ChildProcess;
     try {
       child = spawn(cmd, args, {
         cwd: opts.cwd,
@@ -275,14 +282,6 @@ async function invokeClaude(
       }
       return finish({ error: "aborted" });
     }
-    onAbort = () => {
-      try {
-        child.kill("SIGKILL");
-      } catch {
-        /* ignore */
-      }
-      finish({ error: "aborted" });
-    };
     opts.abort?.addEventListener("abort", onAbort, { once: true });
 
     let stdout = "";
