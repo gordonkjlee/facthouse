@@ -34,7 +34,9 @@ describe("acceptTypedPath", () => {
 });
 
 describe("findNearestFacthouseStore", () => {
-  const app = path.join("C:", "dev", "app");
+  // Absolute on every platform. `path.join("C:", …)` is relative on POSIX, so
+  // path.resolve(cwd) inside the walker would not match the exists stub.
+  const app = path.resolve("/tmp/facthouse-walk/app");
   const store = path.join(app, ".facthouse");
   const nested = path.join(app, "src");
   const marker = path.join(store, "config.json");
@@ -76,8 +78,8 @@ describe("findNearestFacthouseStore", () => {
 });
 
 describe("cliStoreDir", () => {
-  const home = path.join("C:", "Users", "alex");
-  const app = path.join("C:", "dev", "app");
+  const home = path.resolve("/tmp/facthouse-walk-home");
+  const app = path.resolve("/tmp/facthouse-walk/app");
   const store = path.join(app, ".facthouse");
   const marker = path.join(store, "config.json");
   const exists = (p: string) => p === marker;
