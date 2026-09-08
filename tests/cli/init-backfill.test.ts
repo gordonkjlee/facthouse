@@ -6,6 +6,7 @@ import {
   stdinCanAskHistoric,
 } from "../../src/cli/init-backfill.js";
 import { INIT_PROMPTS, INIT_SYNTHETIC } from "../../src/cli/init-knobs.js";
+import { HISTORIC_CONFIRM_LINES } from "../../src/intelligence/steps.js";
 import type { InitIo } from "../../src/cli/init-wizard.js";
 
 function fakeIo(answers: string[]): InitIo & { prompts: string[]; writes: string[] } {
@@ -16,7 +17,7 @@ function fakeIo(answers: string[]): InitIo & { prompts: string[]; writes: string
     isTTY: true,
     prompts,
     writes,
-    async question(prompt: string) {
+    async question(prompt: string, _opts?: { signal?: AbortSignal }) {
       prompts.push(prompt);
       if (i >= answers.length) throw new Error(`unexpected question: ${prompt}`);
       return answers[i++];
@@ -26,6 +27,14 @@ function fakeIo(answers: string[]): InitIo & { prompts: string[]; writes: string
     },
   };
 }
+
+const defaultSelection = async (
+  _dir: string,
+  choice: { kind: string; n?: number; days?: number },
+) => ({
+  chosenCount: choice.kind === "limit" ? (choice.n ?? 0) : 3,
+  truncatedChars: 120,
+});
 
 const copySource = [
   { kind: "claude-code" as const, home: INIT_SYNTHETIC.claudeHome, cwd: INIT_SYNTHETIC.cwd },
@@ -132,6 +141,7 @@ describe("offerInitBackfill", () => {
       [];
     await offerInitBackfill(io, "/tmp/store", {
       providerIsHeuristic: false,
+      selection: defaultSelection,
       copy: async (dir) => {
         pulled.push(dir);
         return { events_inserted: 3 };
@@ -144,7 +154,7 @@ describe("offerInitBackfill", () => {
     });
     expect(io.prompts).toEqual([
       INIT_PROMPTS.historicCopy,
-      INIT_PROMPTS.historicExtract,
+      INIT_PROMPTS.historicExtract(3),
     ]);
     expect(pulled).toEqual(["/tmp/store"]);
     expect(consolidated).toEqual([{ dir: "/tmp/store", limit: null }]);
@@ -161,6 +171,7 @@ describe("offerInitBackfill", () => {
     let pulled = false;
     await offerInitBackfill(io, "/tmp/store", {
       providerIsHeuristic: false,
+      selection: defaultSelection,
       copy: async () => {
         pulled = true;
         return { events_inserted: 1 };
@@ -179,6 +190,7 @@ describe("offerInitBackfill", () => {
     let consolidated = false;
     await offerInitBackfill(io, "/tmp/store", {
       providerIsHeuristic: false,
+      selection: defaultSelection,
       copy: async () => ({ events_inserted: 9 }),
       unextracted: async () => 9,
       consolidate: async () => {
@@ -192,7 +204,7 @@ describe("offerInitBackfill", () => {
     expect(consolidated).toBe(false);
     expect(io.prompts).toEqual([
       INIT_PROMPTS.historicCopy,
-      INIT_PROMPTS.historicExtract,
+      INIT_PROMPTS.historicExtract(9),
     ]);
   });
 
@@ -201,6 +213,7 @@ describe("offerInitBackfill", () => {
     let limit: number | null | undefined;
     await offerInitBackfill(io, "/tmp/store", {
       providerIsHeuristic: false,
+      selection: defaultSelection,
       copy: async () => ({ events_inserted: 200 }),
       unextracted: async () => 200,
       consolidate: async (_dir, opts) => {
@@ -218,6 +231,7 @@ describe("offerInitBackfill", () => {
     const before = Date.now();
     await offerInitBackfill(io, "/tmp/store", {
       providerIsHeuristic: false,
+      selection: defaultSelection,
       copy: async () => ({ events_inserted: 200 }),
       unextracted: async () => 200,
       consolidate: async (_dir, opts) => {
@@ -239,6 +253,7 @@ describe("offerInitBackfill", () => {
     let consolidated = false;
     await offerInitBackfill(io, "/tmp/store", {
       providerIsHeuristic: false,
+      selection: defaultSelection,
       copy: async () => ({ events_inserted: 0 }),
       unextracted: async () => 0,
       consolidate: async () => {
@@ -255,6 +270,7 @@ describe("offerInitBackfill", () => {
     let consolidated = false;
     await offerInitBackfill(io, "/tmp/store", {
       providerIsHeuristic: true,
+      selection: defaultSelection,
       copy: async () => ({ events_inserted: 9 }),
       unextracted: async () => 9,
       consolidate: async () => {
@@ -266,10 +282,132 @@ describe("offerInitBackfill", () => {
     expect(consolidated).toBe(false);
   });
 
+  it("asks to type all again when the selection is 500 or more", async () => {
+    const io = fakeIo(["", "", "all"]);
+    let ran = false;
+    await offerInitBackfill(io, "/tmp/store", {
+      providerIsHeuristic: false,
+      selection: async () => ({
+        chosenCount: HISTORIC_CONFIRM_LINES,
+        truncatedChars: 800_000,
+      }),
+      copy: async () => ({ events_inserted: HISTORIC_CONFIRM_LINES }),
+      unextracted: async () => HISTORIC_CONFIRM_LINES,
+      consolidate: async () => {
+        ran = true;
+        return { factsIntegrated: 1, eventsRemaining: 0 };
+      },
+    });
+    expect(io.prompts[2]).toMatch(/Type all again/);
+    expect(io.prompts[2]).toMatch(/sent to extract/);
+    expect(ran).toBe(true);
+  });
+
+  it("empty Enter on confirm does not start the job", async () => {
+    const io = fakeIo(["", "", "", "all"]);
+    let ran = false;
+    await offerInitBackfill(io, "/tmp/store", {
+      providerIsHeuristic: false,
+      selection: async () => ({
+        chosenCount: HISTORIC_CONFIRM_LINES,
+        truncatedChars: 800_000,
+      }),
+      copy: async () => ({ events_inserted: HISTORIC_CONFIRM_LINES }),
+      unextracted: async () => HISTORIC_CONFIRM_LINES,
+      consolidate: async () => {
+        ran = true;
+        return { factsIntegrated: 1, eventsRemaining: 0 };
+      },
+    });
+    expect(io.prompts.filter((p) => /Type all again/.test(p))).toHaveLength(2);
+    expect(ran).toBe(true);
+  });
+
+  it("switching from all to 7d then typing 7d runs 7d", async () => {
+    const io = fakeIo(["", "all", "7d", "7d"]);
+    let since: Date | undefined;
+    let limit: number | null | undefined;
+    await offerInitBackfill(io, "/tmp/store", {
+      providerIsHeuristic: false,
+      selection: async () => ({
+        chosenCount: HISTORIC_CONFIRM_LINES,
+        truncatedChars: 800_000,
+      }),
+      copy: async () => ({ events_inserted: HISTORIC_CONFIRM_LINES }),
+      unextracted: async () => HISTORIC_CONFIRM_LINES,
+      consolidate: async (_dir, opts) => {
+        since = opts.extractSince;
+        limit = opts.extractLimit;
+        return { factsIntegrated: 1, eventsRemaining: 0 };
+      },
+    });
+    expect(limit).toBeNull();
+    expect(since).toBeInstanceOf(Date);
+  });
+
+  it("switching from 7d to all then typing all runs all", async () => {
+    const io = fakeIo(["", "7d", "all", "all"]);
+    let since: Date | undefined;
+    let limit: number | null | undefined;
+    await offerInitBackfill(io, "/tmp/store", {
+      providerIsHeuristic: false,
+      selection: async () => ({
+        chosenCount: HISTORIC_CONFIRM_LINES,
+        truncatedChars: 800_000,
+      }),
+      copy: async () => ({ events_inserted: HISTORIC_CONFIRM_LINES }),
+      unextracted: async () => HISTORIC_CONFIRM_LINES,
+      consolidate: async (_dir, opts) => {
+        since = opts.extractSince;
+        limit = opts.extractLimit;
+        return { factsIntegrated: 1, eventsRemaining: 0 };
+      },
+    });
+    expect(limit).toBeNull();
+    expect(since).toBeUndefined();
+  });
+
+  it("writes skipReason and not a fake integrated 0", async () => {
+    const io = fakeIo(["", "all"]);
+    await offerInitBackfill(io, "/tmp/store", {
+      providerIsHeuristic: false,
+      selection: defaultSelection,
+      copy: async () => ({ events_inserted: 60 }),
+      unextracted: async () => 60,
+      consolidate: async () => ({
+        factsIntegrated: 0,
+        eventsRemaining: 60,
+        skipped: true,
+        skipReason: "Spend envelope exhausted.",
+      }),
+    });
+    expect(io.writes).toContain("Spend envelope exhausted.");
+    expect(io.writes.some((w) => /Integrated 0/.test(w))).toBe(false);
+  });
+
+  it("held extract degrade does not print integrated as success", async () => {
+    const io = fakeIo(["", "all"]);
+    await offerInitBackfill(io, "/tmp/store", {
+      providerIsHeuristic: false,
+      selection: defaultSelection,
+      copy: async () => ({ events_inserted: 9 }),
+      unextracted: async () => 9,
+      consolidate: async () => ({
+        factsIntegrated: 0,
+        eventsRemaining: 9,
+        extractionDegraded: true,
+        prefixCommitted: false,
+      }),
+    });
+    expect(io.writes).toContain(INIT_PROMPTS.extractDegradedHeld);
+    expect(io.writes.some((w) => w.startsWith("Integrated "))).toBe(false);
+  });
+
   it("reports what integrate did and what remains, on the prompt channel", async () => {
     const io = fakeIo(["", "all"]);
     await offerInitBackfill(io, "/tmp/store", {
       providerIsHeuristic: false,
+      selection: defaultSelection,
       copy: async () => ({ events_inserted: 60 }),
       unextracted: async () => 60,
       consolidate: async () => ({ factsIntegrated: 4, eventsRemaining: 10 }),

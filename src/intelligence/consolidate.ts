@@ -40,7 +40,10 @@ import {
   EXTRACT_REREAD_CONFIDENCE,
   EXTRACT_REREAD_WINDOW,
   capReferents,
+  packEventsForExtract,
 } from "./extract-prompt.js";
+import { lineTimeMs } from "./line-time.js";
+import { ConsolidateAbortError, throwIfAborted } from "./abort.js";
 import { relatedFactsForExtract } from "./related-k.js";
 import {
   latestConversationSituation,
@@ -53,6 +56,7 @@ import { attachBackingSources } from "./backing.js";
 import {
   claimForConsolidation,
   getClaimedFacts,
+  getUnconsolidatedFacts,
   insertSessionFact,
   linkFactSource,
   primaryEventForFact,
@@ -146,13 +150,19 @@ export interface ConsolidateCaller {
    */
   extractLimit?: number | null;
   /**
-   * Init historic window. Lines said (or copied, if untimed) before this
-   * instant are marked examined without a model call so a "last N days"
-   * extract can reach recent lines. Automatic consolidate does not set this.
+   * Init historic window. Lines before this instant (said-at, else Cursor
+   * file mtime, else copy time) are marked examined without a model call.
+   * Automatic consolidate does not set this.
    */
   extractSince?: Date;
+  abort?: AbortSignal;
+  /** Override progress denominator (historic chosenCount). */
+  progressTotal?: number;
   /** Counter after each examined chunk. Not a tick during the model call. */
   onExtractProgress?: (examined: number, total: number) => void;
+  onModelChunk?: (lines: number, durationMs: number) => void;
+  onIntegrateStart?: (pendingI: number) => void;
+  onIntegrateProgress?: (done: number, total: number) => void;
   /** Fired only when extract degraded because the CLI subprocess timed out. */
   onExtractTimeout?: () => void;
 }
@@ -187,6 +197,8 @@ export interface ConsolidationResult {
   examinedThrough: number;
   /** True when a later extract call failed but an honest prefix was kept. */
   prefixCommitted?: boolean;
+  /** User Ctrl+C / abort. Integrate did not claim, or was unclaimed. */
+  aborted?: boolean;
   /**
    * Billed intelligence for this run. Absent when nothing was billed (heuristic,
    * skip-if-busy, or a provider that does not report). Token keys are omitted
@@ -377,6 +389,9 @@ export async function consolidate(
         caller.extractSince,
         caller.onExtractProgress,
         caller.onExtractTimeout,
+        caller.abort,
+        caller.progressTotal,
+        caller.onModelChunk,
       );
       extractionDegraded = extracted.degraded;
       extractPending = extracted.pending;
@@ -392,6 +407,8 @@ export async function consolidate(
     const effectiveWatermark = await extractWatermark(db);
 
     if (integrateNow) {
+      throwIfAborted(caller.abort);
+      caller.onIntegrateStart?.((await getUnconsolidatedFacts(db)).length);
       await claimForConsolidation(db, consolidationId);
     }
     const sessionFacts = integrateNow
@@ -478,6 +495,7 @@ export async function consolidate(
         domain: f.domain_hint!,
         subdomain: f.subdomain_hint ?? null,
       }));
+    throwIfAborted(caller.abort);
     const explicitClassified = needsClassification.length
       ? await intelligence.classifyFacts(needsClassification)
       : [];
@@ -515,6 +533,7 @@ export async function consolidate(
       }
       needsEntityExtraction.push(sf);
     }
+    throwIfAborted(caller.abort);
     if (needsEntityExtraction.length > 0) {
       const extracted = await intelligence.extractEntities(needsEntityExtraction);
       for (const [id, ents] of extracted.entries()) {
@@ -555,7 +574,9 @@ export async function consolidate(
     // twin yet), producing duplicate rows in the facts table.
     const seenBatchContent = new Set<string>();
 
+    let integrateDone = 0;
     for (const cf of classified) {
+      throwIfAborted(caller.abort);
       const sessionFact = sessionFactMap.get(cf.id);
       if (!sessionFact) continue;
 
@@ -569,6 +590,8 @@ export async function consolidate(
 
       const domainFacts = await getDomainFacts(cf.domain);
       const decision = await intelligence.reconcile(sessionFact, domainFacts);
+      integrateDone += 1;
+      caller.onIntegrateProgress?.(integrateDone, classified.length);
 
       if (decision.kind === "noop") {
         rejected++;
@@ -1371,15 +1394,6 @@ function truncateForPrompt(
   }));
 }
 
-function chunkEvents(events: SessionEvent[], batchSize: number): SessionEvent[][] {
-  const size = Math.max(1, batchSize);
-  const chunks: SessionEvent[][] = [];
-  for (let i = 0; i < events.length; i += size) {
-    chunks.push(events.slice(i, i + size));
-  }
-  return chunks;
-}
-
 function lastSeq(events: SessionEvent[]): number | null {
   if (events.length === 0) return null;
   return Math.max(...events.map((e) => e.sequence));
@@ -1460,12 +1474,6 @@ function isEligibleEvent(
   return (event.content?.length ?? 0) >= minContentLength;
 }
 
-function lineTimeMs(event: SessionEvent): number {
-  const raw = event.occurred_at ?? event.created_at;
-  const t = Date.parse(raw);
-  return Number.isFinite(t) ? t : Number.POSITIVE_INFINITY;
-}
-
 async function extractFactsFromEvents(
   db: Db,
   intelligence: IntelligenceProvider,
@@ -1474,6 +1482,9 @@ async function extractFactsFromEvents(
   since?: Date,
   onProgress?: (examined: number, total: number) => void,
   onTimeout?: () => void,
+  abort?: AbortSignal,
+  progressTotal?: number,
+  onModelChunk?: (lines: number, durationMs: number) => void,
 ): Promise<ExtractResult> {
   const empty: ExtractResult = {
     degraded: false,
@@ -1498,8 +1509,12 @@ async function extractFactsFromEvents(
 
   const conversations = await listUnexaminedConversations(db);
   if (conversations.length === 0) return empty;
-  const total = await unexaminedEventCount(db);
+  const counted = await unexaminedEventCount(db);
+  const total =
+    progressTotal ??
+    (limit == null ? counted : Math.min(limit, counted));
   let examinedLines = 0;
+  onProgress?.(0, total);
 
   const vocabulary = await loadStoreVocabulary(db, config?.domains ?? []);
   const entityTypes = await listEntityTypes(db);
@@ -1515,10 +1530,13 @@ async function extractFactsFromEvents(
   const sinceMs = since?.getTime();
 
   for (const conv of conversations) {
+    throwIfAborted(abort);
     if (budget <= 0) break;
     if (conv.kind === "unkeyed") {
       await setConversationExtractThrough(db, conv, conv.minSequence);
       advanced = true;
+      examinedLines += 1;
+      onProgress?.(examinedLines, total);
       continue;
     }
 
@@ -1544,14 +1562,17 @@ async function extractFactsFromEvents(
         await setConversationExtractThrough(db, ref, maxLoaded);
         advanced = true;
       }
-      examinedLines += loaded.length;
-      onProgress?.(examinedLines, total);
+      // Wholly-old skip (inWindow empty) does not move the chosen-work counter.
+      if (inWindow.length > 0) {
+        examinedLines += inWindow.length;
+        onProgress?.(examinedLines, total);
+      }
       continue;
     }
 
     const thisPending: ExtractPending[] = [];
     const truncated = truncateForPrompt(eligible, maxContentLength);
-    const chunks = chunkEvents(truncated, batchSize);
+    const chunks = packEventsForExtract(truncated, batchSize, maxContentLength);
     let prior = await latestConversationSituation(db, ref.id);
     const priorSummary = await latestSessionSummary(db, ref.id);
     const dbEvidence = truncateForPrompt(
@@ -1560,9 +1581,11 @@ async function extractFactsFromEvents(
     );
     const earlierThisRun: SessionEvent[] = [];
     let conversationDegraded = false;
+    const work = [...chunks];
 
-    for (let i = 0; i < chunks.length; i++) {
-      const chunk = chunks[i]!;
+    while (work.length > 0) {
+      throwIfAborted(abort);
+      const chunk = work.shift()!;
       const evidence =
         earlierThisRun.length > 0
           ? truncateForPrompt(
@@ -1578,8 +1601,10 @@ async function extractFactsFromEvents(
         relatedFacts,
         vocabulary,
         entityTypes,
+        abort,
       };
 
+      const started = Date.now();
       let outcome = await intelligence.extractFactsFromEvents(
         chunk,
         evidence,
@@ -1587,8 +1612,19 @@ async function extractFactsFromEvents(
         relatedFacts,
         extras,
       );
+      throwIfAborted(abort);
+      if (outcome.aborted) throw new ConsolidateAbortError();
+      if (
+        outcome.degraded &&
+        outcome.degradedKind === "overflow" &&
+        chunk.length > 1
+      ) {
+        const mid = Math.ceil(chunk.length / 2);
+        work.unshift(chunk.slice(0, mid), chunk.slice(mid));
+        continue;
+      }
       if (outcome.degraded) {
-        const remaining = [...chunk, ...chunks.slice(i + 1).flat()];
+        const remaining = [...chunk, ...work.flat()];
         const examined = thisPending.flatMap((p) => p.group.events);
         if (prefixIsHonest(examined, remaining)) {
           await persistPending(db, thisPending);
@@ -1629,8 +1665,19 @@ async function extractFactsFromEvents(
             ),
           },
         );
+        throwIfAborted(abort);
+        if (outcome.aborted) throw new ConsolidateAbortError();
+        if (
+          outcome.degraded &&
+          outcome.degradedKind === "overflow" &&
+          chunk.length > 1
+        ) {
+          const mid = Math.ceil(chunk.length / 2);
+          work.unshift(chunk.slice(0, mid), chunk.slice(mid));
+          continue;
+        }
         if (outcome.degraded) {
-          const remaining = [...chunk, ...chunks.slice(i + 1).flat()];
+          const remaining = [...chunk, ...work.flat()];
           const examined = thisPending.flatMap((p) => p.group.events);
           if (prefixIsHonest(examined, remaining)) {
             await persistPending(db, thisPending);
@@ -1655,10 +1702,13 @@ async function extractFactsFromEvents(
             closedGist: null,
           });
           earlierThisRun.push(...chunk);
+          examinedLines += chunk.length;
+          onProgress?.(examinedLines, total);
           continue;
         }
       }
 
+      onModelChunk?.(chunk.length, Date.now() - started);
       const firstSeq = chunk[0]?.sequence ?? through + 1;
       const built = buildSituation(
         prior,
@@ -1688,6 +1738,12 @@ async function extractFactsFromEvents(
       if (maxLoaded != null) {
         await setConversationExtractThrough(db, ref, maxLoaded);
         advanced = true;
+      }
+      const chosen = inWindow;
+      const remainder = Math.max(0, chosen.length - eligible.length);
+      if (remainder > 0) {
+        examinedLines += remainder;
+        onProgress?.(examinedLines, total);
       }
       pending.push(...thisPending);
     }

@@ -39,6 +39,7 @@ import {
   type IntelligenceUsage,
 } from "./usage.js";
 import { createHeuristicProvider } from "./heuristic.js";
+import { ConsolidateAbortError } from "./abort.js";
 import { domainRoutingInstruction, normaliseDomainName } from "../schemas/domains.js";
 import {
   CLI_DEFAULT_MODEL,
@@ -72,6 +73,8 @@ export interface CliProviderOpts {
   maxCandidates?: number;
   /** Enable debug logging to stderr. */
   debug?: boolean;
+  /** User stop. Not retried, not heuristic. */
+  abort?: AbortSignal;
 }
 
 // ---------------------------------------------------------------------------
@@ -102,6 +105,17 @@ if (typeof process !== "undefined") {
   process.once("SIGTERM", reap);
 }
 
+/** Kill in-flight `claude -p` children. Historic Ctrl+C must not rely on process.once. */
+export function reapCliChildren(): void {
+  for (const child of activeChildren) {
+    try {
+      child.kill("SIGKILL");
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Subprocess invocation
 // ---------------------------------------------------------------------------
@@ -115,7 +129,7 @@ interface SubprocessResult {
 }
 
 interface SubprocessFailure {
-  error: "timeout" | "spawn-error" | "non-zero-exit" | "parse-error" | "no-structured-output" | "is-error";
+  error: "timeout" | "spawn-error" | "non-zero-exit" | "parse-error" | "no-structured-output" | "is-error" | "aborted";
   detail?: string;
   exitCode?: number | null;
   stderr?: string;
@@ -201,7 +215,7 @@ async function invokeClaude(
   prompt: string,
   schema: unknown,
   command: string[],
-  opts: Required<CliProviderOpts>,
+  opts: Required<Omit<CliProviderOpts, "abort">> & { abort?: AbortSignal },
 ): Promise<SubprocessResult | SubprocessFailure> {
   const cmd = command[0];
   // Prompt goes on stdin, not argv. Windows CreateProcess caps the command
@@ -229,16 +243,25 @@ async function invokeClaude(
   return new Promise((resolve) => {
     let resolved = false;
     const started = Date.now();
+    let child: import("node:child_process").ChildProcess | undefined;
+    const onAbort = () => {
+      try {
+        child?.kill("SIGKILL");
+      } catch {
+        /* ignore */
+      }
+      finish({ error: "aborted" });
+    };
     const finish = (value: SubprocessResult | SubprocessFailure) => {
       if (resolved) return;
       resolved = true;
+      opts.abort?.removeEventListener("abort", onAbort);
       if (typeof value.elapsedMs !== "number") {
         (value as SubprocessFailure).elapsedMs = Date.now() - started;
       }
       resolve(value);
     };
 
-    let child: import("node:child_process").ChildProcess;
     try {
       child = spawn(cmd, args, {
         cwd: opts.cwd,
@@ -251,6 +274,15 @@ async function invokeClaude(
       return finish({ error: "spawn-error", detail: (err as Error).message });
     }
     trackChild(child);
+    if (opts.abort?.aborted) {
+      try {
+        child.kill("SIGKILL");
+      } catch {
+        /* ignore */
+      }
+      return finish({ error: "aborted" });
+    }
+    opts.abort?.addEventListener("abort", onAbort, { once: true });
 
     let stdout = "";
     let stderr = "";
@@ -703,7 +735,7 @@ export function createCliProvider(
    */
   vocabulary: DomainDef[] = [],
 ): IntelligenceProvider {
-  const opts: Required<CliProviderOpts> = {
+  const opts: Required<Omit<CliProviderOpts, "abort">> & { abort?: AbortSignal } = {
     // Resolved lazily below — kept here only to satisfy the Required shape.
     command: [],
     model: userOpts.model ?? CLI_DEFAULT_MODEL,
@@ -714,6 +746,7 @@ export function createCliProvider(
     cwd: userOpts.cwd ?? tmpdir(),
     maxCandidates: userOpts.maxCandidates ?? 50,
     debug: userOpts.debug ?? false,
+    abort: userOpts.abort,
   };
 
   // Resolve the claude invocation lazily and cache it. Deferring resolution
@@ -771,10 +804,12 @@ export function createCliProvider(
     const attempt = () => invokeClaude(prompt, schema, getCommand(), opts);
 
     lastStageError = null;
+    if (opts.abort?.aborted) throw new ConsolidateAbortError();
     let result = await attempt();
     recordAttempt(stageName, result);
     if ("error" in result) {
       lastStageError = result.error;
+      if (result.error === "aborted") throw new ConsolidateAbortError();
       const retryable =
         retryTransient &&
         (CLI_EXTRACT_RETRY_KINDS as readonly string[]).includes(result.error);
@@ -806,6 +841,9 @@ export function createCliProvider(
     async extractFactsFromEvents(events, workingMemory, sessionSummary, longTermMemory, extras) {
       // Nothing to examine is not a failure — there is no watermark to hold back.
       if (events.length === 0) return { facts: [], degraded: false };
+      if (extras?.abort?.aborted || opts.abort?.aborted) {
+        return { facts: [], degraded: false, aborted: true };
+      }
       const result = await runStage<{
         facts: Array<{
           content: string;
@@ -876,7 +914,12 @@ export function createCliProvider(
         return {
           facts: fell.facts,
           degraded: true,
-          degradedKind: lastStageError === "timeout" ? "timeout" : "other",
+          degradedKind:
+            lastStageError === "timeout"
+              ? "timeout"
+              : lastStageError === "non-zero-exit"
+                ? "overflow"
+                : "other",
         };
       }
 
