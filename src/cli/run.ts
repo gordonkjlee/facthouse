@@ -468,7 +468,7 @@ async function runInit() {
         : ` (${INIT_PROMPTS.existingConfig})`
     }`,
     ``,
-    `Paste this into the client and restart:`,
+    INIT_PROMPTS.mcpPaste,
     ``,
     snippet,
     ``,

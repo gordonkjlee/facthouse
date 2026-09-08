@@ -49,12 +49,21 @@ import {
   type InitOverlay,
 } from "./init-knobs.js";
 
+/** Windows drive and UNC paths as JSON-friendly forward slashes. */
+export function mcpSnippetEnvPath(dataDir: string): string {
+  if (/^[A-Za-z]:[\\/]/.test(dataDir) || dataDir.startsWith("\\\\")) {
+    return dataDir.replace(/\\/g, "/");
+  }
+  return dataDir;
+}
+
 /**
  * Render a copy-pasteable MCP client config block.
  *
  * Built via JSON.stringify rather than string interpolation: a Windows data dir
- * contains backslashes, which must be escaped to produce valid JSON. Emitting
- * the path raw yields a snippet that fails to parse when pasted.
+ * contains backslashes, which must be escaped to produce valid JSON. Drive and
+ * UNC paths are emitted with forward slashes so a terminal wrap does not look
+ * unquoted.
  *
  * @param spec     npm package spec, e.g. "@facthouse/mcp@0.3.0"
  * @param dataDir  when set, adds a FACTHOUSE_DATA env override (omit for the
@@ -70,7 +79,7 @@ export function mcpConfigSnippet(
   name = DEFAULT_MCP_SERVER_NAME,
 ): string {
   const entry: Record<string, unknown> = { command: "npx", args: ["-y", spec] };
-  if (dataDir) entry.env = { [envName("DATA")]: dataDir };
+  if (dataDir) entry.env = { [envName("DATA")]: mcpSnippetEnvPath(dataDir) };
   const pad = " ".repeat(indent);
   return JSON.stringify({ mcpServers: { [name]: entry } }, null, 2)
     .split("\n")

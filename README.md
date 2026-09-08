@@ -25,7 +25,7 @@ If npm install -g fails because a command named mcp already exists, remove that 
 
 `facthouse init --web` is the same setup as a browser form — it prints a 127.0.0.1 URL and does not open a browser.
 
-Press Enter to accept each default (copy = Claude Code or Cursor session logs on disk; type record if the assistant should save facts). If you picked copy, init asks whether to copy existing logs, then whether to extract and integrate. Init prints an MCP snippet — paste it into the client and restart.
+Press Enter to accept each default (copy = Claude Code or Cursor session logs on disk; type record if the assistant should save facts). If you picked copy, init asks whether to copy existing logs, then whether to extract and integrate. Init prints an MCP snippet — add it to the client's MCP config and restart.
 
 In the client, state something durable in ordinary conversation — there is no remember command.
 
