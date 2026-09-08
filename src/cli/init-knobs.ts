@@ -654,6 +654,13 @@ export const INIT_PROMPTS = {
     "quote the package so PowerShell does not splat. " +
     "-p and -- stop an older global binary winning. " +
     `npx -y @facthouse/mcp with no -p / ${CLI_NAME} is the server; do not run it as a shell command for init, settings, or stats.`,
+  /** Done card: add this server, then the snippet. Files for every MCP host. */
+  mcpPaste:
+    "Add this server to the client's MCP config, then restart the client.\n" +
+    "  Claude Code     .mcp.json in the project directory (not the data directory)\n" +
+    "  Cursor          .cursor/mcp.json\n" +
+    "  Claude Desktop  claude_desktop_config.json\n" +
+    "Keep any other servers already in that file.",
   /** Quick Start: MCP paste is not a shell install. */
   mcpPasteNoCli:
     `The MCP paste starts the server. It does not put ${CLI_NAME} on PATH. ` +
@@ -664,7 +671,7 @@ export const INIT_PROMPTS = {
   quickStartNext:
     "Press Enter to accept each default (copy = Claude Code or Cursor session logs on disk; type record if the assistant should save facts). " +
     "If you picked copy, init asks whether to copy existing logs, then whether to extract and integrate. " +
-    "Init prints an MCP snippet — paste it into the client and restart.",
+    "Init prints an MCP snippet — add it to the client's MCP config and restart.",
   /** MCP env does not apply to CLI or hooks. Do not write $FACTHOUSE_DATA (hang-safety). */
   mcpEnvNotCli:
     "FACTHOUSE_DATA on an MCP snippet applies only to that server process. " +

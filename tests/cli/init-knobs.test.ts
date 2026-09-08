@@ -71,6 +71,10 @@ describe("init knobs — one definition", () => {
     expect(quick).not.toContain(INIT_PROMPTS.mcpPasteNoCli);
     expect(readme).toContain(INIT_PROMPTS.quickStartNext);
     expect(quick).toContain(INIT_PROMPTS.quickStartNext);
+    expect(INIT_PROMPTS.quickStartNext).toMatch(
+      /add it to the client's MCP config/,
+    );
+    expect(INIT_PROMPTS.quickStartNext).not.toMatch(/\.mcp\.json/);
     expect(readme).toContain(INIT_PROMPTS.mcpEnvNotCli);
     expect(quick).not.toContain(INIT_PROMPTS.mcpEnvNotCli);
     expect(quick).toContain(INIT_PROMPTS.mcpInstallClash);
@@ -127,6 +131,16 @@ describe("init knobs — one definition", () => {
     expect(INIT_PROMPTS.historicExtract(3)).toMatch(/\n  N  /);
   });
 
+  it("done-card CTA names the three MCP config files and does not replace", () => {
+    expect(INIT_PROMPTS.mcpPaste).toMatch(/\.mcp\.json/);
+    expect(INIT_PROMPTS.mcpPaste).toMatch(/\.cursor\/mcp\.json/);
+    expect(INIT_PROMPTS.mcpPaste).toMatch(/claude_desktop_config\.json/);
+    expect(INIT_PROMPTS.mcpPaste).toMatch(/not the data directory/);
+    expect(INIT_PROMPTS.mcpPaste).toMatch(/Keep any other servers/);
+    expect(INIT_PROMPTS.mcpPaste).not.toMatch(/facthouse-store/);
+    expect(INIT_PROMPTS.mcpPaste).not.toContain(INIT_PROMPTS.mcpVsCli);
+  });
+
   it("kind prompt names every shipped kind and not grok", () => {
     for (const kind of CAPTURE_SOURCE_KINDS) {
       expect(INIT_PROMPTS.kind).toContain(kind);
@@ -177,6 +191,7 @@ describe("init knobs — one definition", () => {
         "kind",
         "mcpEnvNotCli",
         "mcpInstallClash",
+        "mcpPaste",
         "mcpPasteNoCli",
         "mcpVsCli",
         "quickStartNext",
