@@ -71,7 +71,7 @@ On a copy store, capture_fact is a correction for every MCP client, not only the
 facthouse init
 ```
 
-Pick copy, set cwd. Init asks whether to copy existing logs, then whether to extract and integrate (Enter = all copied lines). Decline extract to do that later with `facthouse consolidate` (`--all` takes the whole backlog). After that, the server copies new lines when it handles a call.
+Pick copy, set cwd. Init asks whether to copy existing logs, then whether to extract and integrate (Enter = all copied lines; a selection of 500 or more asks you to type the choice again). Decline extract to do that later with `facthouse consolidate` (`--all` takes remaining unexamined lines, not ones skipped as outside a 7-day or 30-day window). After that, the server copies new lines when it handles a call.
 
 Compact (optional): `facthouse notify compaction` — not a turn-end Stop hook.
 

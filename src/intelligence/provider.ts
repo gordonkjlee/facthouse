@@ -27,6 +27,7 @@ import type { HttpFetcher } from "./http.js";
 export { PROVIDER_ENV_VAR, resolveProviderType } from "./provider-type.js";
 
 export interface ProviderContext {
+  abort?: AbortSignal;
   /** MCP server — required for the sampling provider. Absent in CLI contexts,
    *  where a `sampling` selection degrades to heuristic (no client to sample). */
   server?: Server | null;
@@ -85,6 +86,7 @@ export function createIntelligenceProvider(
       model: c.model,
       timeoutMs: c.timeout_ms,
       debug: c.debug,
+      abort: ctx.abort,
     },
     heuristic,
     vocabulary,

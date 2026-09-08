@@ -148,6 +148,43 @@ export function extractEventPayload(event: {
   };
 }
 
+/** JSON wrapper for one empty candidate event. Packing budget uses this × n. */
+export const EXTRACT_PROMPT_OVERHEAD_PER_LINE = JSON.stringify(
+  extractEventPayload({ role: "assistant", content: "", occurred_at: null }),
+).length;
+
+export function packedLineCost(
+  content: string | null,
+  maxContentLength: number,
+): number {
+  const n = Math.min(content?.length ?? 0, Math.max(0, maxContentLength));
+  return n + EXTRACT_PROMPT_OVERHEAD_PER_LINE;
+}
+
+/** Fill `batch_size * max_content_length` of truncated text. JSON wrappers live in STAGE1 slack. */
+export function packEventsForExtract<T extends { content: string | null }>(
+  events: T[],
+  batchSize: number,
+  maxContentLength: number,
+): T[][] {
+  const budget = Math.max(1, batchSize) * Math.max(1, maxContentLength);
+  const chunks: T[][] = [];
+  let current: T[] = [];
+  let used = 0;
+  for (const event of events) {
+    const cost = Math.min(event.content?.length ?? 0, maxContentLength);
+    if (current.length > 0 && used + cost > budget) {
+      chunks.push(current);
+      current = [];
+      used = 0;
+    }
+    current.push(event);
+    used += cost;
+  }
+  if (current.length > 0) chunks.push(current);
+  return chunks;
+}
+
 /** UTC calendar day of this extract, YYYY-MM-DD. Not utterance time. */
 export function extractTodayUtcDate(now = new Date()): string {
   return now.toISOString().slice(0, 10);

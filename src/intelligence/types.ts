@@ -59,11 +59,13 @@ export interface ExtractionOutcome {
   facts: ExtractedFact[];
   /** The configured extractor could not run, and this is a fallback result. */
   degraded: boolean;
+  /** User abort. Never a degrade; never heuristic. */
+  aborted?: boolean;
   /**
    * Why extract degraded. Only `"timeout"` fires `onExtractTimeout`.
    * Other kinds still hold the watermark; they are not skip-marked.
    */
-  degradedKind?: "timeout" | "other";
+  degradedKind?: "timeout" | "overflow" | "other";
   /**
    * 0–1, optional. Absent + !degraded means confident — the heuristic empty
    * extract must not trigger a reread or the watermark would never move.
@@ -102,6 +104,7 @@ export interface ExtractExtras {
    * for `type` spellings (`dbt_model` vs `model`).
    */
   entityTypes?: string[];
+  abort?: AbortSignal;
 }
 
 /** Rich per-fact output from holistic D→I extraction. */

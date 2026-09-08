@@ -28,6 +28,8 @@ import type {
 } from "../types/config.js";
 import { CLI_NAME, cliDataArg, pathFreeCli } from "../identity.js";
 import { EXTRACT_CAP_EVENTS } from "../intelligence/steps.js";
+import { formatDiskBudget } from "../db/disk-budget.js";
+import { formatEta } from "./eta.js";
 import { defaultServerConfig, mergeConfig } from "../config.js";
 import { httpBaseUrlOf, httpIsOptedIn, httpModelOf } from "../intelligence/http.js";
 import {
@@ -568,25 +570,60 @@ export const INIT_PROMPTS = {
     "  Y  yes\n" +
     "  N  not now\n" +
     "  [Y]: ",
-  historicExtract:
-    "Extract and integrate now?  [all]\n" +
-    "  all    every copied line (model calls; may take a while)\n" +
-    "  7d     last 7 days (older lines are skipped)\n" +
-    "  30d    last 30 days (older lines are skipped)\n" +
-    "  <n>    oldest n lines\n" +
-    "  N      not now\n" +
+  historicExtract: (n: number, opts?: { hasCursor?: boolean }) =>
+    `Turn ${n} copied line(s) into knowledge now?  [all]\n` +
+    "  Extract reads transcripts. Integrate writes facts.\n" +
+    "  all    every remaining line (model calls; can take hours)\n" +
+    "  7d     last 7 days; older lines are skipped (not extracted later)\n" +
+    "  30d    last 30 days; older lines are skipped (not extracted later)\n" +
+    "  <n>    oldest n lines (any whole number)\n" +
+    "  N      not now — later: facthouse consolidate --all\n" +
+    (opts?.hasCursor
+      ? "  Cursor has no said-at; 7d/30d there is last file activity, whole conversation.\n"
+      : "") +
     "  [all]: ",
+  historicExtractConfirm: (
+    choice: string,
+    chosenCount: number,
+    truncatedChars: number,
+  ) => {
+    const label =
+      choice === "all"
+        ? "Every remaining line"
+        : choice === "7d"
+          ? "Last 7 days"
+          : choice === "30d"
+            ? "Last 30 days"
+            : `Oldest ${choice} line(s)`;
+    return (
+      `${label} is ${chosenCount} line(s), ${formatDiskBudget(truncatedChars)} sent to extract (model calls; can take hours).\n` +
+      `Type ${choice} again to proceed, or pick another option / N.\n`
+    );
+  },
   copyingNow: "Copying transcripts…",
   copiedLines: (n: number) =>
     n === 0 ? "No new transcript lines." : `Copied ${n} line(s).`,
   extractingNow: (n: number) =>
-    `Extracting and integrating ${n} line(s) (model calls). A quiet gap is idle silence, not the whole job dying. Progress prints as conversations finish.`,
-  extractProgress: (done: number, total: number) =>
-    `Examined ${done} of ${total} line(s)…`,
+    `Extracting and integrating ${n} line(s) (model calls). A quiet gap is idle silence, not the whole job dying. Progress prints as chosen work finishes.`,
+  extractProgress: (done: number, total: number, etaMs?: number | null) =>
+    etaMs == null
+      ? `${done} of ${total} line(s)…`
+      : `${done} of ${total} line(s), ~${formatEta(etaMs)} left`,
+  extractIdle:
+    "Still working. A quiet gap is idle silence, not the whole job dying.",
+  integratingNow: (n: number) => `Integrating ${n} candidate(s)…`,
+  extractInterrupted: (remaining: number) =>
+    remaining > 0
+      ? `Stopped. ${remaining} line(s) still waiting.\nContinue: ${CLI_NAME} consolidate --all`
+      : "Stopped.",
   extractTimedOut: (idleSeconds: number) =>
     `No output from the model for ${idleSeconds}s. That chunk was not examined and stays eligible.`,
   extractSkippedHeuristic:
     "Skipped extract — the heuristic does not read transcripts.",
+  extractDegradedKept: (through: number) =>
+    `Extraction stopped after a failed call. Facts from earlier examined events were kept and the watermark advanced to ${through}. Remaining events are still eligible. Re-run ${CLI_NAME} consolidate to continue.`,
+  extractDegradedHeld:
+    `Extraction could not run — events were not examined and the watermark was held. A zero factsIntegrated here is not a successful empty extract. Re-run ${CLI_NAME} consolidate when the CLI provider can run.`,
   /** After the init offer ran extract + integrate. Same channel as the prompts. */
   integrated: (facts: number, remaining: number) =>
     remaining > 0
