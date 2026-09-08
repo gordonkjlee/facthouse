@@ -31,6 +31,7 @@ import {
 import { domainRoutingInstruction, normaliseDomainName } from "../schemas/domains.js";
 import { UsageAccumulator, addOptional, type IntelligenceUsage } from "./usage.js";
 import { createHeuristicProvider } from "./heuristic.js";
+import { ConsolidateAbortError } from "./abort.js";
 
 export function httpModelOf(config: HttpProviderConfig | undefined): string | null {
   const model = config?.model?.trim();
@@ -251,6 +252,7 @@ export interface HttpProviderOpts {
   model: string;
   timeoutMs?: number;
   fetch?: HttpFetcher;
+  abort?: AbortSignal;
 }
 
 function asFiniteNumber(value: unknown): number | undefined {
@@ -285,11 +287,16 @@ export async function httpChatJson(
     prompt: string;
     timeoutMs: number;
     fetchImpl: HttpFetcher;
+    abort?: AbortSignal;
   },
 ): Promise<HttpChatResult> {
   const started = Date.now();
   const url = `${opts.baseUrl}/chat/completions`;
-  const signal = AbortSignal.timeout(opts.timeoutMs);
+  const timeout = AbortSignal.timeout(opts.timeoutMs);
+  const signal =
+    opts.abort && typeof AbortSignal.any === "function"
+      ? AbortSignal.any([timeout, opts.abort])
+      : timeout;
   let response: { ok: boolean; status: number; text(): Promise<string> };
   try {
     response = await opts.fetchImpl(url, {
@@ -305,6 +312,9 @@ export async function httpChatJson(
     });
   } catch (err) {
     const elapsed_ms = Date.now() - started;
+    if (opts.abort?.aborted) {
+      throw Object.assign(new Error("http aborted"), { elapsed_ms, aborted: true });
+    }
     const name = err instanceof Error ? err.name : "";
     if (name === "TimeoutError" || name === "AbortError") {
       throw Object.assign(new Error("http timeout"), { elapsed_ms });
@@ -361,6 +371,7 @@ export function createHttpProvider(
         prompt,
         timeoutMs,
         fetchImpl,
+        abort: userOpts.abort,
       });
       usageAcc.record(stageName, {
         provider: "http",
@@ -371,6 +382,14 @@ export function createHttpProvider(
       });
       return result.json;
     } catch (err) {
+      if (
+        err &&
+        typeof err === "object" &&
+        "aborted" in err &&
+        (err as { aborted?: boolean }).aborted
+      ) {
+        throw new ConsolidateAbortError();
+      }
       const elapsed_ms =
         err && typeof err === "object" && "elapsed_ms" in err
           ? Number((err as { elapsed_ms: number }).elapsed_ms)

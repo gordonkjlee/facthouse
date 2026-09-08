@@ -171,6 +171,7 @@ export interface StageRouterContext {
   fetch?: HttpFetcher;
   /** Injected CLI provider (tests). Production constructs one per model. */
   cli?: IntelligenceProvider;
+  abort?: AbortSignal;
 }
 
 export function createStageRouter(
@@ -209,7 +210,7 @@ export function createStageRouter(
     const existing = httpByModel.get(model);
     if (existing) return existing;
     const created = createHttpProvider(
-      { baseUrl, model, timeoutMs, fetch: ctx.fetch },
+      { baseUrl, model, timeoutMs, fetch: ctx.fetch, abort: ctx.abort },
       heuristic,
       vocabulary,
     );
@@ -228,6 +229,7 @@ export function createStageRouter(
         model: key || undefined,
         timeoutMs: config.cli?.timeout_ms,
         debug: config.cli?.debug,
+        abort: ctx.abort,
       },
       heuristic,
       vocabulary,
@@ -275,6 +277,7 @@ export function createStageRouter(
           ...args,
         );
       }
+      if (out.aborted) return out;
       if (!out.degraded) return out;
       const fail = resolveStageOnFail(config, "extract", env);
       if (fail === "none" || fail === type) return out;

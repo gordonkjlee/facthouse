@@ -97,6 +97,18 @@ async function seedConversation(n: number, prefix = "line"): Promise<void> {
   }
 }
 
+async function seedFatConversation(n: number): Promise<void> {
+  const width = DEFAULT_CONFIG.extraction.max_content_length;
+  for (let i = 0; i < n; i++) {
+    await insertEvent(db, {
+      client_session_id: "sess-aaa",
+      event_type: "message",
+      role: "user",
+      content: `line ${i + 1} about oat milk at Acme `.padEnd(width, "x"),
+    });
+  }
+}
+
 async function factContents(): Promise<string[]> {
   return (
     (await db
@@ -115,9 +127,77 @@ async function eventWatermark(): Promise<number> {
   ).seq;
 }
 
+describe("progress total follows the run cap", () => {
+  it("caps total at extractLimit when the backlog is larger", async () => {
+    await seedConversation(8);
+    const ticks: Array<[number, number]> = [];
+    await consolidate(
+      db,
+      recording().provider as never,
+      { extraction: { enabled: true } } as never,
+      null,
+      { copy: false, extract: true, integrate: false },
+      {
+        extractLimit: 3,
+        onExtractProgress: (done, total) => ticks.push([done, total]),
+      },
+    );
+    expect(ticks[0]).toEqual([0, 3]);
+    expect(ticks.at(-1)?.[1]).toBe(3);
+    expect(ticks.at(-1)?.[0]).toBe(3);
+  });
+
+  it("7d wholly-old skip does not bump chosen-work progress", async () => {
+    const now = Date.now();
+    await insertEvent(db, {
+      client_session_id: "sess-old",
+      event_type: "message",
+      role: "user",
+      content: "Alex preferred oat milk last year at Acme",
+      occurred_at: new Date(now - 40 * 24 * 60 * 60 * 1000).toISOString(),
+    });
+    await insertEvent(db, {
+      client_session_id: "sess-new",
+      event_type: "message",
+      role: "user",
+      content: "Alex prefers oat milk at Acme today",
+      occurred_at: new Date(now - 2 * 24 * 60 * 60 * 1000).toISOString(),
+    });
+    const ticks: Array<[number, number]> = [];
+    await consolidate(
+      db,
+      recording().provider as never,
+      { extraction: { enabled: true } } as never,
+      null,
+      { copy: false, extract: true, integrate: false },
+      {
+        extractLimit: null,
+        extractSince: new Date(now - 7 * 24 * 60 * 60 * 1000),
+        progressTotal: 1,
+        onExtractProgress: (done, total) => ticks.push([done, total]),
+      },
+    );
+    expect(ticks[0]).toEqual([0, 1]);
+    expect(ticks.every(([, total]) => total === 1)).toBe(true);
+    expect(ticks.at(-1)).toEqual([1, 1]);
+    expect(
+      await conversationExtractThrough(db, { kind: "client", id: "sess-old" }),
+    ).toBeGreaterThan(0);
+  });
+});
+
 describe("extraction.batch_size is read by extract", () => {
-  it("chunks one conversation into calls of that size", async () => {
+  it("packs short lines into one call when they fit the character budget", async () => {
     await seedConversation(5);
+    const { provider, calls } = recording();
+    await consolidate(db, provider as never, {
+      extraction: { enabled: true, batch_size: 2 } as never,
+    });
+    expect(calls.map((c) => c.contents.length)).toEqual([5]);
+  });
+
+  it("chunks full-length lines by batch_size", async () => {
+    await seedFatConversation(5);
     const { provider, calls } = recording();
     await consolidate(db, provider as never, {
       extraction: { enabled: true, batch_size: 2 } as never,
@@ -153,13 +233,13 @@ describe("extraction.batch_size is read by extract", () => {
       { copy: false, extract: true, integrate: true },
       { extractLimit: null },
     );
-    expect(calls.map((c) => c.contents.length)).toEqual([size, 1]);
+    expect(calls.map((c) => c.contents.length)).toEqual([size + 1]);
   });
 });
 
 describe("later chunks see earlier-chunk desk, not earlier candidates", () => {
   it("passes the previous now and a tail of earlier events as evidence", async () => {
-    await seedConversation(4);
+    await seedFatConversation(4);
     const { provider, calls } = recording();
     await consolidate(db, provider as never, {
       extraction: { enabled: true, batch_size: 2 } as never,
@@ -218,7 +298,7 @@ describe("evidence and reread windows obey max_content_length", () => {
 
 describe("unconfident first chunk does not hold the conversation", () => {
   it("keeps facts from a later successful chunk and completes the watermark", async () => {
-    await seedConversation(4);
+    await seedFatConversation(4);
     const { provider, calls } = recording((events, callIndex) => {
       if (callIndex === 0 || callIndex === 1) {
         return { facts: [], degraded: false, confidence: 0.1 };
@@ -257,7 +337,7 @@ describe("chunked topic shift closes segments at distinct clocks", () => {
                  datetime('now'), 'prior desk', 0, '[]', '[]')`,
       )
       .run();
-    await seedConversation(4);
+    await seedFatConversation(4);
     const { provider } = recording(() => ({
       facts: [{ content: "Alex prefers oat milk at Acme.", domain_hint: "preferences" }],
       degraded: false,
@@ -276,9 +356,51 @@ describe("chunked topic shift closes segments at distinct clocks", () => {
   });
 });
 
+describe("overflow split", () => {
+  it("splits a multi-line overflow degrade into smaller calls", async () => {
+    await seedFatConversation(4);
+    const { provider, calls } = recording((_events, callIndex) => {
+      if (callIndex === 0) {
+        return { facts: [], degraded: true, degradedKind: "overflow" };
+      }
+      return {
+        facts: [
+          { content: "Alex prefers oat milk at Acme.", domain_hint: "preferences" },
+        ],
+        degraded: false,
+      };
+    });
+    await consolidate(db, provider as never, {
+      extraction: { enabled: true, batch_size: 4 } as never,
+    });
+    expect(calls[0]!.contents.length).toBe(4);
+    expect(calls[1]!.contents.length).toBe(2);
+    expect(calls[2]!.contents.length).toBe(2);
+  });
+
+  it("does not split a multi-line timeout", async () => {
+    await seedFatConversation(4);
+    const { provider, calls } = recording((_events, callIndex) => {
+      if (callIndex === 0) {
+        return { facts: [], degraded: true, degradedKind: "timeout" };
+      }
+      return {
+        facts: [
+          { content: "Alex prefers oat milk at Acme.", domain_hint: "preferences" },
+        ],
+        degraded: false,
+      };
+    });
+    await consolidate(db, provider as never, {
+      extraction: { enabled: true, batch_size: 4 } as never,
+    });
+    expect(calls.map((c) => c.contents.length)).toEqual([4]);
+  });
+});
+
 describe("a failed later chunk keeps the honest prefix", () => {
   it("persists the first chunk on extract-only and watermarks its last sequence", async () => {
-    await seedConversation(4);
+    await seedFatConversation(4);
     const { provider } = recording((_events, callIndex) => {
       if (callIndex === 1) return { facts: [], degraded: true };
       return {
@@ -310,7 +432,7 @@ describe("a failed later chunk keeps the honest prefix", () => {
 
 describe("a failed first chunk holds the mark and still extracts a neighbour", () => {
   it("does not watermark through an unread prefix of a multi-chunk conversation", async () => {
-    await seedConversation(4);
+    await seedFatConversation(4);
     await insertEvent(db, {
       client_session_id: "sess-bbb",
       event_type: "message",

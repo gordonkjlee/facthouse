@@ -25,7 +25,7 @@ If npm install -g fails because a command named mcp already exists, remove that 
 
 `facthouse init --web` is the same setup as a browser form — it prints a 127.0.0.1 URL and does not open a browser.
 
-Press Enter to accept each default (copy = Claude Code or Cursor session logs on disk; type record if the assistant should save facts). If you picked copy, init asks whether to copy existing logs, then whether to extract and integrate. Init prints an MCP snippet as soon as the store is written — paste it while copy/extract run. Restart the client when init finishes.
+Press Enter to accept each default (copy = Claude Code or Cursor session logs on disk; type record if the assistant should save facts). If you picked copy, init asks whether to copy existing logs, then whether to extract and integrate. Init prints an MCP snippet as soon as the store is written — add it to the client's MCP config while copy/extract run. Restart the client when init finishes.
 
 In the client, state something durable in ordinary conversation — there is no remember command.
 
@@ -91,7 +91,7 @@ On a copy store, capture_fact is a correction for every MCP client, not only the
 facthouse init
 ```
 
-Pick copy, set cwd. Init asks whether to copy existing logs, then whether to extract and integrate (Enter = all copied lines). Decline extract to do that later with `facthouse consolidate` (`--all` takes the whole backlog). After that, the server copies new lines when it handles a Facthouse call. Extract and integrate follow the table in [How it works](#how-it-works).
+Pick copy, set cwd. Init asks whether to copy existing logs, then whether to extract and integrate (Enter = all copied lines; a selection of 500 or more asks you to type the choice again). Decline extract to do that later with `facthouse consolidate` (`--all` takes remaining unexamined lines, not ones skipped as outside a 7-day or 30-day window). After that, the server copies new lines when it handles a Facthouse call. Extract and integrate follow the table in [How it works](#how-it-works).
 
 Compact (recommended): `facthouse notify compaction` — we do not install the hook. Not a turn-end Stop hook.
 

@@ -9,6 +9,7 @@ const {
   mcpConfigSnippet,
   mcpServerName,
   mcpSnippetDataDir,
+  mcpSnippetEnvPath,
   precompactHookJson,
   providerStatusLines,
   sourcesStatusLines,
@@ -239,7 +240,17 @@ describe("mcpConfigSnippet", () => {
     const snippet = mcpConfigSnippet("@facthouse/mcp@1.2.3", winPath);
 
     const parsed = JSON.parse(snippet); // would throw on unescaped backslashes
-    expect(parsed.mcpServers.facthouse.env.FACTHOUSE_DATA).toBe(winPath);
+    expect(parsed.mcpServers.facthouse.env.FACTHOUSE_DATA).toBe(
+      "C:/Users/someone/AppData/Local/openmemory",
+    );
+  });
+
+  it("leaves a POSIX path with a backslash in the name unchanged", () => {
+    expect(mcpSnippetEnvPath('/tmp/we"ird/pa\\th')).toBe('/tmp/we"ird/pa\\th');
+  });
+
+  it("turns a Windows UNC path into forward slashes", () => {
+    expect(mcpSnippetEnvPath("\\\\server\\share\\store")).toBe("//server/share/store");
   });
 
   it("survives quotes in the path without breaking the JSON", () => {

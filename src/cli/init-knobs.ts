@@ -28,6 +28,8 @@ import type {
 } from "../types/config.js";
 import { CLI_NAME, cliDataArg, pathFreeCli } from "../identity.js";
 import { EXTRACT_CAP_EVENTS } from "../intelligence/steps.js";
+import { formatDiskBudget } from "../db/disk-budget.js";
+import { formatEta } from "./eta.js";
 import { defaultServerConfig, mergeConfig } from "../config.js";
 import { httpBaseUrlOf, httpIsOptedIn, httpModelOf } from "../intelligence/http.js";
 import {
@@ -568,25 +570,60 @@ export const INIT_PROMPTS = {
     "  Y  yes\n" +
     "  N  not now\n" +
     "  [Y]: ",
-  historicExtract:
-    "Extract and integrate now?  [all]\n" +
-    "  all    every copied line (model calls; may take a while)\n" +
-    "  7d     last 7 days (older lines are skipped)\n" +
-    "  30d    last 30 days (older lines are skipped)\n" +
-    "  <n>    oldest n lines\n" +
-    "  N      not now\n" +
+  historicExtract: (n: number, opts?: { hasCursor?: boolean }) =>
+    `Turn ${n} copied line(s) into knowledge now?  [all]\n` +
+    "  Extract reads transcripts. Integrate writes facts.\n" +
+    "  all    every remaining line (model calls; can take hours)\n" +
+    "  7d     last 7 days; older lines are skipped (not extracted later)\n" +
+    "  30d    last 30 days; older lines are skipped (not extracted later)\n" +
+    "  <n>    oldest n lines (any whole number)\n" +
+    "  N      not now — later: facthouse consolidate --all\n" +
+    (opts?.hasCursor
+      ? "  Cursor has no said-at; 7d/30d there is last file activity, whole conversation.\n"
+      : "") +
     "  [all]: ",
+  historicExtractConfirm: (
+    choice: string,
+    chosenCount: number,
+    truncatedChars: number,
+  ) => {
+    const label =
+      choice === "all"
+        ? "Every remaining line"
+        : choice === "7d"
+          ? "Last 7 days"
+          : choice === "30d"
+            ? "Last 30 days"
+            : `Oldest ${choice} line(s)`;
+    return (
+      `${label} is ${chosenCount} line(s), ${formatDiskBudget(truncatedChars)} sent to extract (model calls; can take hours).\n` +
+      `Type ${choice} again to proceed, or pick another option / N.\n`
+    );
+  },
   copyingNow: "Copying transcripts…",
   copiedLines: (n: number) =>
     n === 0 ? "No new transcript lines." : `Copied ${n} line(s).`,
   extractingNow: (n: number) =>
-    `Extracting and integrating ${n} line(s) (model calls). A quiet gap is idle silence, not the whole job dying. Progress prints as conversations finish.`,
-  extractProgress: (done: number, total: number) =>
-    `Examined ${done} of ${total} line(s)…`,
+    `Extracting and integrating ${n} line(s) (model calls). A quiet gap is idle silence, not the whole job dying. Progress prints as chosen work finishes.`,
+  extractProgress: (done: number, total: number, etaMs?: number | null) =>
+    etaMs == null
+      ? `${done} of ${total} line(s)…`
+      : `${done} of ${total} line(s), ~${formatEta(etaMs)} left`,
+  extractIdle:
+    "Still working. A quiet gap is idle silence, not the whole job dying.",
+  integratingNow: (n: number) => `Integrating ${n} candidate(s)…`,
+  extractInterrupted: (remaining: number) =>
+    remaining > 0
+      ? `Stopped. ${remaining} line(s) still waiting.\nContinue: ${CLI_NAME} consolidate --all`
+      : "Stopped.",
   extractTimedOut: (idleSeconds: number) =>
     `No output from the model for ${idleSeconds}s. That chunk was not examined and stays eligible.`,
   extractSkippedHeuristic:
     "Skipped extract — the heuristic does not read transcripts.",
+  extractDegradedKept: (through: number) =>
+    `Extraction stopped after a failed call. Facts from earlier examined events were kept and the watermark advanced to ${through}. Remaining events are still eligible. Re-run ${CLI_NAME} consolidate to continue.`,
+  extractDegradedHeld:
+    `Extraction could not run — events were not examined and the watermark was held. A zero factsIntegrated here is not a successful empty extract. Re-run ${CLI_NAME} consolidate when the CLI provider can run.`,
   /** After the init offer ran extract + integrate. Same channel as the prompts. */
   integrated: (facts: number, remaining: number) =>
     remaining > 0
@@ -617,14 +654,19 @@ export const INIT_PROMPTS = {
     "quote the package so PowerShell does not splat. " +
     "-p and -- stop an older global binary winning. " +
     `npx -y @facthouse/mcp with no -p / ${CLI_NAME} is the server; do not run it as a shell command for init, settings, or stats.`,
+  /** Printed as soon as the store exists, before historic copy/extract. */
+  mcpPaste:
+    "Add this server to the client's MCP config now. Copy and extract may still run.\n" +
+    "  Claude Code     .mcp.json in the project directory (not the data directory)\n" +
+    "  Cursor          .cursor/mcp.json\n" +
+    "  Claude Desktop  claude_desktop_config.json\n" +
+    "Keep any other servers already in that file.",
   /** Quick Start: MCP paste is not a shell install. */
   mcpPasteNoCli:
     `The MCP paste starts the server. It does not put ${CLI_NAME} on PATH. ` +
     "To inspect the file from a terminal, see CLI below.",
-  mcpPasteNow:
-    "Paste this into the client now. If copy and extract still run, they do not block paste. Restart the client when init finishes.",
   mcpRestart:
-    "Restart the client if you already pasted the snippet.",
+    "Restart the client if you already added the snippet.",
   compactionHookLead:
     "Recommended PreCompact hook — paste into Claude Code `.claude/settings.json` (we do not install it). Notifies the running server when the client is about to compact; returns at once. `--data` is required; hooks do not see mcp.json env:",
   mcpInstallClash:
@@ -633,7 +675,7 @@ export const INIT_PROMPTS = {
   quickStartNext:
     "Press Enter to accept each default (copy = Claude Code or Cursor session logs on disk; type record if the assistant should save facts). " +
     "If you picked copy, init asks whether to copy existing logs, then whether to extract and integrate. " +
-    "Init prints an MCP snippet as soon as the store is written — paste it while copy/extract run. Restart the client when init finishes.",
+    "Init prints an MCP snippet as soon as the store is written — add it to the client's MCP config while copy/extract run. Restart the client when init finishes.",
   /** MCP env does not apply to CLI or hooks. Do not write $FACTHOUSE_DATA (hang-safety). */
   mcpEnvNotCli:
     "FACTHOUSE_DATA on an MCP snippet applies only to that server process. " +

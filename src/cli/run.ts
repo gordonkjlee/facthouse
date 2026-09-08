@@ -81,10 +81,15 @@ import { createEmbeddingProvider } from "../embedding/provider.js";
 import type { IntelligenceProvider } from "../intelligence/types.js";
 import type { EmbeddingProvider } from "../embedding/types.js";
 import {
+  ABORT_SECOND_KEYPRESS_MS,
   CLI_HISTORIC_TIMEOUT_MS,
   DEFAULT_CONFIG,
   type ServerConfig,
 } from "../types/config.js";
+import { reapCliChildren } from "../intelligence/cli.js";
+import { isConsolidateAbort } from "../intelligence/abort.js";
+import { measureHistoricSelection } from "../intelligence/historic-selection.js";
+import { createTtyProgress } from "./tty-progress.js";
 import type { SessionEvent } from "../types/data.js";
 import {
   CONFIG_FILENAME,
@@ -321,7 +326,7 @@ async function runInit() {
   console.log(
     [
       ``,
-      INIT_PROMPTS.mcpPasteNow,
+      INIT_PROMPTS.mcpPaste,
       ``,
       snippet,
       ``,
@@ -335,6 +340,7 @@ async function runInit() {
     web,
     stdinIsTTY: Boolean(process.stdin.isTTY),
   });
+  let historicAborted = false;
   if (
     canAskHistoric &&
     shouldOfferInitBackfill({
@@ -350,30 +356,67 @@ async function runInit() {
         output: process.stdout,
         terminal: true,
       });
-      rl.on("SIGINT", onSigint);
     }
+    rl.removeListener("SIGINT", onSigint);
+    const abort = new AbortController();
+    let abortedAt = 0;
+    const onUserAbort = () => {
+      if (!abort.signal.aborted) {
+        abortedAt = Date.now();
+        abort.abort();
+        reapCliChildren();
+        return;
+      }
+      if (Date.now() - abortedAt > ABORT_SECOND_KEYPRESS_MS) process.exit(130);
+    };
+    rl.on("SIGINT", onUserAbort);
+    process.on("SIGINT", onUserAbort);
+    const progress = createTtyProgress();
     try {
       const provider = resolveProviderType(written.intelligence.provider);
       const io = bindInitIo(rl);
-      await offerInitBackfill(io, result.dataDir, {
+      const kinds = new Set(
+        (Array.isArray(written.sources) ? written.sources : [])
+          .map((s) =>
+            s && typeof s === "object" && "kind" in s
+              ? String((s as { kind: string }).kind)
+              : "",
+          )
+          .filter(Boolean),
+      );
+      const backfill = await offerInitBackfill(io, result.dataDir, {
         providerIsHeuristic: provider === "heuristic",
+        hasCursor: kinds.has("cursor"),
+        abort: abort.signal,
         copy: async (dir) => {
           const cfg = loadConfig(dir);
           return withDb(dir, (db) => copySources(db, cfg.sources));
         },
         unextracted: (dir) => withDb(dir, (db) => unexaminedEventCount(db)),
+        selection: (dir, choice) =>
+          withDb(dir, (db) =>
+            measureHistoricSelection(
+              db,
+              choice,
+              loadConfig(dir).extraction?.max_content_length,
+            ),
+          ),
         consolidate: async (dir, opts) => {
           const r = await consolidateStore(
             dir,
             { copy: false, extract: true, integrate: true },
             {
               print: false,
+              fatal: false,
+              abort: opts.abort,
               extractLimit: opts.extractLimit,
               extractSince: opts.extractSince,
+              progressTotal: opts.progressTotal,
               timeoutMs: CLI_HISTORIC_TIMEOUT_MS,
-              onExtractProgress: (done, total) => {
-                io.write(INIT_PROMPTS.extractProgress(done, total));
-              },
+              onExtractProgress: progress.onExtractProgress,
+              onModelChunk: progress.onModelChunk,
+              onIntegrateStart: progress.onIntegrateStart,
+              onIntegrateProgress: progress.onIntegrateProgress,
               onExtractTimeout: () => {
                 io.write(
                   INIT_PROMPTS.extractTimedOut(
@@ -383,14 +426,27 @@ async function runInit() {
               },
             },
           );
+          progress.stop();
           return r
-            ? { factsIntegrated: r.factsIntegrated, eventsRemaining: r.eventsRemaining }
+            ? {
+                factsIntegrated: r.factsIntegrated,
+                eventsRemaining: r.eventsRemaining,
+                skipped: r.skipped,
+                skipReason: r.skipReason,
+                extractionDegraded: r.extractionDegraded,
+                prefixCommitted: r.prefixCommitted,
+                examinedThrough: r.examinedThrough,
+                aborted: r.aborted,
+              }
             : undefined;
         },
       });
+      historicAborted = backfill.aborted;
     } finally {
+      progress.stop();
+      rl.removeListener("SIGINT", onUserAbort);
+      process.removeListener("SIGINT", onUserAbort);
       if (openedForHistoric) {
-        rl.removeListener("SIGINT", onSigint);
         rl.close();
         rl = undefined;
       }
@@ -450,6 +506,7 @@ async function runInit() {
     );
   }
   console.log(lines.join("\n"));
+  if (historicAborted) process.exit(130);
 }
 
 async function runSettingsCmd() {
@@ -782,10 +839,36 @@ async function runConsolidate() {
     extractLimit = n;
   }
 
-  await consolidateStore(dataDir, stepsFromFlags(values), {
-    extractLimit,
-    json: Boolean(values.json),
-  });
+  const json = Boolean(values.json);
+  const abort = new AbortController();
+  let abortedAt = 0;
+  const onUserAbort = () => {
+    if (!abort.signal.aborted) {
+      abortedAt = Date.now();
+      abort.abort();
+      reapCliChildren();
+      return;
+    }
+    if (Date.now() - abortedAt > ABORT_SECOND_KEYPRESS_MS) process.exit(130);
+  };
+  process.on("SIGINT", onUserAbort);
+  const progress = createTtyProgress({ json });
+  try {
+    const result = await consolidateStore(dataDir, stepsFromFlags(values), {
+      extractLimit,
+      json,
+      abort: abort.signal,
+      fatal: false,
+      onExtractProgress: progress.onExtractProgress,
+      onModelChunk: progress.onModelChunk,
+      onIntegrateStart: progress.onIntegrateStart,
+      onIntegrateProgress: progress.onIntegrateProgress,
+    });
+    if (result?.aborted) process.exit(130);
+  } finally {
+    progress.stop();
+    process.removeListener("SIGINT", onUserAbort);
+  }
 }
 
 interface ConsolidateStoreOpts {
@@ -793,13 +876,20 @@ interface ConsolidateStoreOpts {
   extractLimit?: number | null;
   /** Init historic window. See ConsolidateCaller.extractSince. */
   extractSince?: Date;
+  progressTotal?: number;
+  abort?: AbortSignal;
   /** Print the result object instead of the human summary. */
   json?: boolean;
   /** Print nothing on success (the init offer prints its own lines). */
   print?: boolean;
+  /** When false, abort returns instead of process.exit. */
+  fatal?: boolean;
   /** Override `intelligence.cli.timeout_ms` for this run only. */
   timeoutMs?: number;
   onExtractProgress?: (examined: number, total: number) => void;
+  onModelChunk?: (lines: number, durationMs: number) => void;
+  onIntegrateStart?: (pendingI: number) => void;
+  onIntegrateProgress?: (done: number, total: number) => void;
   onExtractTimeout?: () => void;
 }
 
@@ -846,6 +936,7 @@ async function consolidateStore(
   }
   const provider = createIntelligenceProvider(intelligence, {
     vocabulary,
+    abort: opts.abort,
   });
   // Embeddings are written here too, not only by the server. `facthouse
   // consolidate` is the documented way to process a store by hand, and a store
@@ -880,22 +971,25 @@ export async function consolidateInProcess(
       copy: () => copySources(db, config.sources),
       extractLimit: opts.extractLimit,
       extractSince: opts.extractSince,
+      abort: opts.abort,
+      progressTotal: opts.progressTotal,
       onExtractProgress: opts.onExtractProgress,
+      onModelChunk: opts.onModelChunk,
+      onIntegrateStart: opts.onIntegrateStart,
+      onIntegrateProgress: opts.onIntegrateProgress,
       onExtractTimeout: opts.onExtractTimeout,
     });
-    if (result.skipped && result.skipReason) {
+    if (opts.print !== false && result.skipped && result.skipReason) {
       console.error(`[facthouse] ${result.skipReason}`);
     }
-    if (result.extractionDegraded) {
-      if (result.prefixCommitted) {
-        console.error(
-          `[facthouse] Extraction stopped after a failed call. Facts from earlier examined events were kept and the watermark advanced to ${result.examinedThrough}. Remaining events are still eligible. Re-run ${CLI_NAME} consolidate to continue.`,
-        );
-      } else {
-        console.error(
-          `[facthouse] Extraction could not run — events were not examined and the watermark was held. A zero factsIntegrated here is not a successful empty extract. Re-run ${CLI_NAME} consolidate when the CLI provider can run.`,
-        );
-      }
+    if (opts.print !== false && result.extractionDegraded) {
+      console.error(
+        `[facthouse] ${
+          result.prefixCommitted
+            ? INIT_PROMPTS.extractDegradedKept(result.examinedThrough)
+            : INIT_PROMPTS.extractDegradedHeld
+        }`,
+      );
     }
     if (
       opts.print !== false &&
@@ -913,6 +1007,26 @@ export async function consolidateInProcess(
     }
     return result;
   } catch (err: unknown) {
+    if (isConsolidateAbort(err)) {
+      const remaining = await unexaminedEventCount(db).catch(() => 0);
+      if (opts.fatal !== false) process.exit(130);
+      return {
+        consolidationId: "",
+        factsIn: 0,
+        factsIntegrated: 0,
+        factsRejected: 0,
+        entitiesCreated: 0,
+        entitiesLinked: 0,
+        supersessions: 0,
+        eventsCopied: 0,
+        eventsRemaining: remaining,
+        summary: null,
+        openThreads: [],
+        skipped: false,
+        examinedThrough: 0,
+        aborted: true,
+      };
+    }
     console.error(errorMessage(err));
     process.exit(1);
   } finally {

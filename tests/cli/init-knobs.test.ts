@@ -1,4 +1,4 @@
-import { EXTRACT_CAP_EVENTS } from "../../src/intelligence/steps.js";
+import { EXTRACT_CAP_EVENTS, HISTORIC_CONFIRM_LINES } from "../../src/intelligence/steps.js";
 import { readFileSync } from "node:fs";
 import { describe, it, expect } from "vitest";
 import { fileURLToPath } from "node:url";
@@ -71,6 +71,10 @@ describe("init knobs — one definition", () => {
     expect(quick).not.toContain(INIT_PROMPTS.mcpPasteNoCli);
     expect(readme).toContain(INIT_PROMPTS.quickStartNext);
     expect(quick).toContain(INIT_PROMPTS.quickStartNext);
+    expect(INIT_PROMPTS.quickStartNext).toMatch(
+      /add it to the client's MCP config/,
+    );
+    expect(INIT_PROMPTS.quickStartNext).not.toMatch(/\.mcp\.json/);
     expect(readme).toContain(INIT_PROMPTS.mcpEnvNotCli);
     expect(quick).not.toContain(INIT_PROMPTS.mcpEnvNotCli);
     expect(quick).toContain(INIT_PROMPTS.mcpInstallClash);
@@ -123,8 +127,18 @@ describe("init knobs — one definition", () => {
     );
     expect(INIT_PROMPTS.historicCopy).toMatch(/\[Y\]: $/);
     expect(INIT_PROMPTS.historicCopy).toMatch(/\n  N  /);
-    expect(INIT_PROMPTS.historicExtract).toMatch(/\[all\]: $/);
-    expect(INIT_PROMPTS.historicExtract).toMatch(/\n  N  /);
+    expect(INIT_PROMPTS.historicExtract(3)).toMatch(/\[all\]: $/);
+    expect(INIT_PROMPTS.historicExtract(3)).toMatch(/\n  N  /);
+  });
+
+  it("done-card CTA names the three MCP config files and does not replace", () => {
+    expect(INIT_PROMPTS.mcpPaste).toMatch(/\.mcp\.json/);
+    expect(INIT_PROMPTS.mcpPaste).toMatch(/\.cursor\/mcp\.json/);
+    expect(INIT_PROMPTS.mcpPaste).toMatch(/claude_desktop_config\.json/);
+    expect(INIT_PROMPTS.mcpPaste).toMatch(/not the data directory/);
+    expect(INIT_PROMPTS.mcpPaste).toMatch(/Keep any other servers/);
+    expect(INIT_PROMPTS.mcpPaste).not.toMatch(/facthouse-store/);
+    expect(INIT_PROMPTS.mcpPaste).not.toContain(INIT_PROMPTS.mcpVsCli);
   });
 
   it("kind prompt names every shipped kind and not grok", () => {
@@ -145,6 +159,12 @@ describe("init knobs — one definition", () => {
         "captureDeclined",
         "historicCopy",
         "historicExtract",
+        "historicExtractConfirm",
+        "extractDegradedHeld",
+        "extractDegradedKept",
+        "extractIdle",
+        "extractInterrupted",
+        "integratingNow",
         "copyStorewide",
         "configMalformed",
         "copiedLines",
@@ -172,8 +192,8 @@ describe("init knobs — one definition", () => {
         "compactionHookLead",
         "mcpEnvNotCli",
         "mcpInstallClash",
+        "mcpPaste",
         "mcpPasteNoCli",
-        "mcpPasteNow",
         "mcpRestart",
         "mcpVsCli",
         "quickStartNext",
@@ -487,11 +507,28 @@ describe("init knobs — one definition", () => {
     expect(readme).toContain(`extracts facts from the oldest ${cap} lines`);
     expect(readme).toContain(`Extract is capped at ${cap} lines per run`);
     expect(readme).toContain(`A first backfill of more than ${cap} lines`);
+    expect(readme).toContain(
+      `a selection of ${HISTORIC_CONFIRM_LINES} or more asks you to type the choice again`,
+    );
     expect(readme).toContain(INIT_PROMPTS.mixCopyRecord);
   });
 
   it("init's copy recipe and the extract prompt name the cap once", () => {
-    expect(INIT_PROMPTS.historicExtract).not.toContain(String(EXTRACT_CAP_EVENTS));
+    expect(INIT_PROMPTS.historicExtract(3)).not.toContain(String(EXTRACT_CAP_EVENTS));
+    expect(INIT_PROMPTS.historicExtract(3)).toMatch(/skipped/);
+    expect(INIT_PROMPTS.historicExtract(3)).toMatch(/not extracted later/);
+    expect(INIT_PROMPTS.historicExtract(3)).not.toMatch(/\bdone\b/);
+    expect(INIT_PROMPTS.historicExtract(1)).toMatch(/line\(s\)/);
+    expect(INIT_PROMPTS.historicExtract(3, { hasCursor: true })).toMatch(
+      /last file activity/,
+    );
+    expect(INIT_PROMPTS.historicExtract(3)).not.toMatch(/file activity/);
+    expect(INIT_PROMPTS.historicExtractConfirm("all", HISTORIC_CONFIRM_LINES, 800_000)).toMatch(
+      /Type all again/,
+    );
+    expect(INIT_PROMPTS.historicExtractConfirm("all", HISTORIC_CONFIRM_LINES, 800_000)).not.toMatch(
+      /\[all\]:/,
+    );
     expect(INIT_PROMPTS.copyNext()).toContain(String(EXTRACT_CAP_EVENTS));
     expect(INIT_PROMPTS.copyNext()).toMatch(new RegExp(`^Run ${"facthouse"} consolidate`));
     expect(INIT_PROMPTS.copyNext("C:/dev/app/.facthouse")).toContain("--data");

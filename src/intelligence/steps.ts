@@ -52,6 +52,9 @@ export function stepsFromFlags(flags: {
  */
 export const EXTRACT_CAP_EVENTS = 50;
 
+/** Init historic confirm gate: selection line count. One definition. */
+export const HISTORIC_CONFIRM_LINES = 500;
+
 export type Moment =
   | "session_start"
   | "threshold"

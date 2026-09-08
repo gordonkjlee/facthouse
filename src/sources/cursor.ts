@@ -24,7 +24,7 @@
  * as a child of `projects/` — that would escape the home.
  */
 
-import { readdirSync } from "node:fs";
+import { readdirSync, statSync } from "node:fs";
 import path from "node:path";
 import type { Db } from "../db/connection.js";
 import { mapTranscriptLine } from "./claude-code.js";
@@ -35,6 +35,7 @@ import {
   type JsonlFileCopy,
 } from "./jsonl-copy.js";
 import { encodeCursorProjectDir, type ResolvedCaptureSource } from "./resolve.js";
+import { SOURCE_MTIME_META } from "../intelligence/line-time.js";
 
 const SKIP_NEST_DIRS = new Set(["subagents"]);
 
@@ -62,9 +63,16 @@ export function discoverCursorFiles(source: ResolvedCaptureSource): string[] {
 
 /** Tail one Cursor Agent JSONL file into session_events. */
 export async function copyCursorFile(db: Db, filePath: string): Promise<JsonlFileCopy> {
+  const sourceMtime = statSync(filePath).mtime.toISOString();
   return await copyJsonlFile(db, filePath, {
     sourceTool: "cursor",
-    mapLine: mapTranscriptLine,
+    mapLine: (raw, sessionId, abs, lineNumber, sourceTool) => {
+      const mapped = mapTranscriptLine(raw, sessionId, abs, lineNumber, sourceTool);
+      return mapped.map((event) => ({
+        ...event,
+        metadata: { ...(event.metadata ?? {}), [SOURCE_MTIME_META]: sourceMtime },
+      }));
+    },
   });
 }
 

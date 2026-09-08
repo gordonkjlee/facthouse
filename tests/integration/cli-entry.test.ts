@@ -296,12 +296,16 @@ describe.skipIf(!runnable)("cli entry — init output", () => {
     const dir = path.join(root, "npx-advice");
     const r = run(["init", dir, "--yes"]);
     expect(r.status).toBe(0);
+    expect(r.stdout).toContain(INIT_PROMPTS.mcpPaste);
     expect(r.stdout).toContain(INIT_PROMPTS.mcpPasteNoCli);
+    const ctaAt = r.stdout.indexOf(INIT_PROMPTS.mcpPaste);
     const snippetAt = r.stdout.indexOf('"mcpServers"');
     const adviceAt = r.stdout.indexOf(INIT_PROMPTS.mcpPasteNoCli);
-    expect(snippetAt).toBeGreaterThanOrEqual(0);
+    expect(ctaAt).toBeGreaterThanOrEqual(0);
+    expect(snippetAt).toBeGreaterThan(ctaAt);
     expect(adviceAt).toBeGreaterThan(snippetAt);
     expect(r.stdout).not.toContain(INIT_PROMPTS.mcpVsCli);
+    expect(r.stdout).not.toMatch(/Paste this into the client/);
   });
 
   it("prints the MCP snippet before the initialised report, and a PreCompact hook after", () => {
@@ -314,7 +318,7 @@ describe.skipIf(!runnable)("cli entry — init output", () => {
     expect(snippetAt).toBeGreaterThanOrEqual(0);
     expect(doneAt).toBeGreaterThan(snippetAt);
     expect(hookAt).toBeGreaterThan(doneAt);
-    expect(r.stdout).toContain(INIT_PROMPTS.mcpPasteNow);
+    expect(r.stdout).toContain(INIT_PROMPTS.mcpPaste);
     expect(r.stdout).toContain(INIT_PROMPTS.mcpRestart);
     expect(r.stdout).toContain(INIT_PROMPTS.compactionHookLead);
     expect(r.stdout).toContain("--data");
@@ -358,12 +362,12 @@ describe.skipIf(!runnable)("cli entry — init output", () => {
     const match = r.stdout.match(/\{\s*"mcpServers"[\s\S]*?\n  \}/);
     expect(match).not.toBeNull();
     const parsed = JSON.parse(match![0]); // throws if the path wasn't escaped
-    const { mcpServerName } = await import("../../src/cli/init.js");
+    const { mcpServerName, mcpSnippetEnvPath } = await import("../../src/cli/init.js");
     const key = mcpServerName(path.resolve(dir));
     const entry = parsed.mcpServers[key];
     expect(entry).toBeDefined();
     expect(entry.command).toBe("npx");
-    expect(entry.env.FACTHOUSE_DATA).toBe(path.resolve(dir));
+    expect(entry.env.FACTHOUSE_DATA).toBe(mcpSnippetEnvPath(path.resolve(dir)));
     expect(parsed.mcpServers.openmemory).toBeUndefined();
     expect(parsed.mcpServers.facthouse).toBeUndefined();
   });

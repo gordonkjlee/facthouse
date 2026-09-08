@@ -33,17 +33,18 @@ export const MAX_INIT_QUESTIONS = 20;
 export interface InitIo {
   isTTY: boolean;
   /** Raw line, no trim inside the interface. Wizard trims. */
-  question(prompt: string): Promise<string>;
+  question(prompt: string, opts?: { signal?: AbortSignal }): Promise<string>;
   /** Wizard-owned copy: intro, skip notes, existence warnings. */
   write(text: string): void;
 }
 
 export function bindInitIo(rl: {
-  question(prompt: string): Promise<string>;
+  question(prompt: string, options?: { signal?: AbortSignal }): Promise<string>;
 }): InitIo {
   return {
     isTTY: true,
-    question: (p) => rl.question(p),
+    question: (p, opts) =>
+      opts?.signal ? rl.question(p, { signal: opts.signal }) : rl.question(p),
     write: (t) => {
       process.stdout.write(t.endsWith("\n") ? t : `${t}\n`);
     },
