@@ -18,6 +18,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { INIT_PROMPTS } from "../../src/cli/init-knobs.js";
+import { PRODUCT_NAME } from "../../src/identity.js";
 import { withoutStoreEnv } from "../helpers/cli-env.js";
 
 const CLI = path.resolve(
@@ -301,6 +302,25 @@ describe.skipIf(!runnable)("cli entry — init output", () => {
     expect(snippetAt).toBeGreaterThanOrEqual(0);
     expect(adviceAt).toBeGreaterThan(snippetAt);
     expect(r.stdout).not.toContain(INIT_PROMPTS.mcpVsCli);
+  });
+
+  it("prints the MCP snippet before the initialised report, and a PreCompact hook after", () => {
+    const dir = path.join(root, "paste-early");
+    const r = run(["init", dir, "--yes"]);
+    expect(r.status).toBe(0);
+    const snippetAt = r.stdout.indexOf('"mcpServers"');
+    const doneAt = r.stdout.indexOf(`${PRODUCT_NAME} initialised`);
+    const hookAt = r.stdout.indexOf("notify compaction");
+    expect(snippetAt).toBeGreaterThanOrEqual(0);
+    expect(doneAt).toBeGreaterThan(snippetAt);
+    expect(hookAt).toBeGreaterThan(doneAt);
+    expect(r.stdout).toContain(INIT_PROMPTS.mcpPasteNow);
+    expect(r.stdout).toContain(INIT_PROMPTS.mcpRestart);
+    expect(r.stdout).toContain(INIT_PROMPTS.compactionHookLead);
+    expect(r.stdout).toContain("--data");
+    const abs = path.resolve(dir);
+    const escaped = JSON.stringify(abs).slice(1, -1);
+    expect(r.stdout.includes(abs) || r.stdout.includes(escaped)).toBe(true);
   });
 
   it("rejects --pull rather than hanging init on a first backfill", () => {

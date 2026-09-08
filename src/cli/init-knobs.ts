@@ -621,13 +621,19 @@ export const INIT_PROMPTS = {
   mcpPasteNoCli:
     `The MCP paste starts the server. It does not put ${CLI_NAME} on PATH. ` +
     "To inspect the file from a terminal, see CLI below.",
+  mcpPasteNow:
+    "Paste this into the client now. If copy and extract still run, they do not block paste. Restart the client when init finishes.",
+  mcpRestart:
+    "Restart the client if you already pasted the snippet.",
+  compactionHookLead:
+    "Recommended PreCompact hook — paste into Claude Code `.claude/settings.json` (we do not install it). Notifies the running server when the client is about to compact; returns at once. `--data` is required; hooks do not see mcp.json env:",
   mcpInstallClash:
     "If npm install -g fails because a command named mcp already exists, remove that leftover command and retry.",
   /** Quick Start after `npm install -g` + TTY init. */
   quickStartNext:
     "Press Enter to accept each default (copy = Claude Code or Cursor session logs on disk; type record if the assistant should save facts). " +
     "If you picked copy, init asks whether to copy existing logs, then whether to extract and integrate. " +
-    "Init prints an MCP snippet — paste it into the client and restart.",
+    "Init prints an MCP snippet as soon as the store is written — paste it while copy/extract run. Restart the client when init finishes.",
   /** MCP env does not apply to CLI or hooks. Do not write $FACTHOUSE_DATA (hang-safety). */
   mcpEnvNotCli:
     "FACTHOUSE_DATA on an MCP snippet applies only to that server process. " +

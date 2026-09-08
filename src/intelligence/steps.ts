@@ -85,8 +85,8 @@ export interface MomentPolicy {
  *                 copy: a record store has no sources, and a copy store's
  *                 heartbeat already copied before the call that raised the
  *                 count.
- * compaction    — the client's window is about to collapse. Everything, now,
- *                 asynchronously: copy the last lines, extract, integrate.
+ * compaction    — the client is about to compact. Copy new JSONL, extract,
+ *                 integrate, asynchronously. Not a photocopy of the live window.
  * session_start — leftovers from a previous process. Everything.
  * shutdown      — no time for a model pass over D. Integrate what is pending.
  * manual        — the MCP tool. Everything.
@@ -115,4 +115,84 @@ export const NOTIFIABLE_MOMENTS: readonly NotifiableMoment[] = Object.freeze([
 
 export function isNotifiableMoment(value: string): value is NotifiableMoment {
   return (NOTIFIABLE_MOMENTS as readonly string[]).includes(value);
+}
+
+function yn(on: boolean): string {
+  return on ? "yes" : "no";
+}
+
+function extractCell(moment: Moment): string {
+  const policy = MOMENT_POLICY[moment];
+  if (!policy.steps.extract) return "no";
+  const cap = `cap ${EXTRACT_CAP_EVENTS}`;
+  if (!policy.force) return `yes, if due (${cap})`;
+  return `yes (${cap})`;
+}
+
+function cells(moment: Moment): [string, string, string] {
+  const s = MOMENT_POLICY[moment].steps;
+  return [yn(s.copy), extractCell(moment), yn(s.integrate)];
+}
+
+function grid(
+  header: string,
+  sep: string,
+  rows: Array<string[]>,
+): string {
+  return [header, sep, ...rows.map((cols) => "| " + cols.join(" | ") + " |")].join(
+    "\n",
+  );
+}
+
+/**
+ * Public when-tables. One projection of MOMENT_POLICY plus the read-time
+ * copy (not a moment: heartbeat on a named-source store). README includes
+ * this string; do not hand-edit the grids.
+ *
+ * Automatic rows are events the server notices. Callable rows are
+ * endpoints. `notify compaction` is not a second pipeline: it asks the
+ * running server to run the same steps as `consolidate`, without waiting.
+ */
+export function pipelineWhenMarkdown(): string {
+  const auto = grid(
+    "| When | Copy | Extract (D→I) | Integrate (I→K) |",
+    "|------|------|---------------|-----------------|",
+    [
+      ["Facthouse MCP server starts", ...cells("session_start")],
+      [
+        "A Facthouse tool or resource is called",
+        "yes, if sources named and JSONL grew",
+        "no",
+        "no",
+      ],
+      ["Facthouse MCP process exits", ...cells("shutdown")],
+    ],
+  );
+  const calls = grid(
+    "| Call | From | Copy | Extract (D→I) | Integrate (I→K) |",
+    "|------|------|------|---------------|-----------------|",
+    [
+      [
+        "`consolidate`",
+        "MCP tool or CLI. Caller waits.",
+        ...cells("manual"),
+      ],
+      [
+        "`facthouse notify compaction`",
+        "Other process (recommended PreCompact; we do not install). Does not wait.",
+        ...cells("compaction"),
+      ],
+      [
+        "`facthouse notify threshold`",
+        "Other process. Does not wait. Not a copy-store hook.",
+        ...cells("threshold"),
+      ],
+    ],
+  );
+  return (
+    "**Automatic**\n\n" +
+    auto +
+    "\n\n**Callable**\n\n" +
+    calls
+  );
 }

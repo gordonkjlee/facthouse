@@ -9,6 +9,7 @@ const {
   mcpConfigSnippet,
   mcpServerName,
   mcpSnippetDataDir,
+  precompactHookJson,
   providerStatusLines,
   sourcesStatusLines,
   appendCaptureRecipe,
@@ -17,6 +18,7 @@ const {
 const { CONFIG_FILENAME, loadConfig, defaultServerConfig } = await import("../../src/config.js");
 const { defaultDataDir } = await import("../../src/paths.js");
 const { INIT_PROMPTS } = await import("../../src/cli/init-knobs.js");
+const { cliDataArg } = await import("../../src/identity.js");
 
 let root: string;
 
@@ -268,6 +270,33 @@ describe("mcpConfigSnippet", () => {
     expect(work.mcpServers["facthouse-work"].env.FACTHOUSE_DATA).toBe(
       "/tmp/facthouse-work",
     );
+  });
+});
+
+describe("precompactHookJson", () => {
+  it("always passes --data and stays valid JSON with a Windows path", () => {
+    const winPath = "C:\\Users\\alex\\.facthouse";
+    const parsed = JSON.parse(
+      precompactHookJson("@facthouse/mcp@1.2.3", winPath),
+    );
+    const command = parsed.hooks.PreCompact[0].hooks[0].command as string;
+    expect(command).toContain("notify compaction");
+    expect(command).toContain("--data");
+    expect(command).toContain(cliDataArg(winPath));
+    expect(command).not.toMatch(/C:\\Users/);
+    expect(command).toMatch(
+      /npx -y -p "@facthouse\/mcp@1\.2\.3" -- facthouse /,
+    );
+  });
+
+  it("quotes a data dir that contains spaces", () => {
+    const spaced = "C:\\Users\\alex\\My Dir\\.facthouse";
+    const parsed = JSON.parse(
+      precompactHookJson("@facthouse/mcp@1.2.3", spaced),
+    );
+    const command = parsed.hooks.PreCompact[0].hooks[0].command as string;
+    expect(command).toContain(cliDataArg(spaced));
+    expect(cliDataArg(spaced).startsWith('"')).toBe(true);
   });
 });
 

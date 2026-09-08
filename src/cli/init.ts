@@ -40,7 +40,9 @@ import { resolveSources } from "../sources/resolve.js";
 import type { IntelligenceProviderType, EmbeddingConfig } from "../types/config.js";
 import {
   DEFAULT_MCP_SERVER_NAME,
+  cliDataArg,
   envName,
+  pathFreeCli,
 } from "../identity.js";
 import { defaultDataDir } from "../paths.js";
 import {
@@ -73,6 +75,35 @@ export function mcpConfigSnippet(
   if (dataDir) entry.env = { [envName("DATA")]: dataDir };
   const pad = " ".repeat(indent);
   return JSON.stringify({ mcpServers: { [name]: entry } }, null, 2)
+    .split("\n")
+    .map((l) => `${pad}${l}`)
+    .join("\n");
+}
+
+/**
+ * PreCompact command. Always `--data`: hooks do not see mcp.json env.
+ * `pathFreeCli` quotes the package; `cliDataArg` uses forward slashes
+ * and quotes spaces. JSON.stringify then escapes the command for the document.
+ */
+export function precompactHookJson(
+  spec: string,
+  dataDir: string,
+  indent = 2,
+): string {
+  const command = pathFreeCli(
+    `notify compaction --data ${cliDataArg(dataDir)}`,
+    spec,
+  );
+  const pad = " ".repeat(indent);
+  return JSON.stringify(
+    {
+      hooks: {
+        PreCompact: [{ hooks: [{ type: "command", command }] }],
+      },
+    },
+    null,
+    2,
+  )
     .split("\n")
     .map((l) => `${pad}${l}`)
     .join("\n");
