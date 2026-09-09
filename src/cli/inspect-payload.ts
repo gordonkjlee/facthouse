@@ -154,7 +154,7 @@ export function firstIndexAtOrAfter<T extends { sequence: number }>(
   return lo;
 }
 
-/** Latest user event with sequence in (seq - window, seq]. */
+/** Latest user event with sequence in [seq - window, seq]. */
 export function latestUserInSequenceWindow<
   T extends { sequence: number; role: string; id: string; content: string },
 >(

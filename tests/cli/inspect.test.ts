@@ -277,6 +277,14 @@ describe("inspect graph HTML", () => {
     expect(firstIndexAtOrAfter([], 1)).toBe(0);
     expect(latestUserInSequenceWindow(list, 12, 8, () => false)).toBe("e10");
     expect(latestUserInSequenceWindow(list, 20, 8, () => false)).toBeNull();
+    expect(
+      latestUserInSequenceWindow(
+        [{ id: "u", sequence: 2, role: "user", content: "x" }],
+        10,
+        8,
+        () => false,
+      ),
+    ).toBe("u");
     const near = new Set<string>();
     addSequenceRadius(near, list, 12, 3);
     expect([...near].sort()).toEqual(["e10", "e11", "e12"]);
