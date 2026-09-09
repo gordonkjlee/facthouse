@@ -14,6 +14,11 @@ import { DEFAULT_CONFIG, type ServerConfig } from "./types/config.js";
 /** Filename expected in the data dir. */
 export const CONFIG_FILENAME = "config.json";
 
+/** Absolute `config.json` in a store. One definition for init, settings, status lines. */
+export function storeConfigPath(dataDir: string): string {
+  return path.resolve(dataDir, CONFIG_FILENAME);
+}
+
 /**
  * Deep-merge overrides onto a base object. Overrides win for scalar/array
  * fields; nested objects merge recursively. Arrays are replaced, not merged,

@@ -23,11 +23,11 @@ import { openStore, sqliteMemoryPath } from "../db/store.js";
 import { ensureDomain } from "../db/domains.js";
 import { ensureSelfEntity } from "../db/entities.js";
 import {
-  CONFIG_FILENAME,
   ConfigDocumentError,
   defaultServerConfig,
   loadShippedStoreConfig,
   readConfigDocument,
+  storeConfigPath,
 } from "../config.js";
 import { probeCliProvider, type CliProbeResult } from "../intelligence/cli.js";
 import { createEmbeddingProvider } from "../embedding/provider.js";
@@ -176,12 +176,14 @@ export function mcpSnippetDataDir(
  */
 export function providerStatusLines(
   provider: IntelligenceProviderType,
+  configPath: string,
   probe: () => CliProbeResult = () => probeCliProvider(),
 ): string[] {
+  const file = path.resolve(configPath);
   if (provider !== "cli") {
     return [
       `Consolidation intelligence: ${provider}. Change it via intelligence.provider`,
-      `in config.json.`,
+      `in ${file}.`,
     ];
   }
 
@@ -198,7 +200,7 @@ export function providerStatusLines(
     `no domain routing — your knowledge graph will be flat.`,
     ``,
     `  To fix:  install the Claude Code CLI, or set intelligence.cli.command in`,
-    `           config.json, or point CLAUDE_CLI_PATH at the binary.`,
+    `           ${file}, or point CLAUDE_CLI_PATH at the binary.`,
     `  To keep: set ${envName("PROVIDER")}=heuristic and this notice goes away.`,
   ];
 }
@@ -217,9 +219,11 @@ export function providerStatusLines(
  */
 export async function embeddingStatusLines(
   config: EmbeddingConfig | undefined,
+  configPath: string,
   env: NodeJS.ProcessEnv = process.env,
   probe: typeof probeOllama = probeOllama,
 ): Promise<string[]> {
+  const file = path.resolve(configPath);
   const reasons: string[] = [];
   const provider = createEmbeddingProvider(config, {
     env,
@@ -230,7 +234,7 @@ export async function embeddingStatusLines(
     return [
       `WARNING: ${reasons[0]}.`,
       `Semantic search is off; search will match words rather than meanings.`,
-      `Set the variable, or set embedding.provider to null in config.json to`,
+      `Set the variable, or set embedding.provider to null in ${file} to`,
       `choose keyword-only deliberately.`,
     ];
   }
@@ -239,7 +243,7 @@ export async function embeddingStatusLines(
     return [
       `Semantic search: off. Search matches words, not meanings — "shellfish"`,
       `finds a shellfish fact, "food" does not. Set embedding.provider in`,
-      `config.json to "ollama" (local, no API key) or "voyage" (hosted) to`,
+      `${file} to "ollama" (local, no API key) or "voyage" (hosted) to`,
       `turn it on.`,
     ];
   }
@@ -253,14 +257,14 @@ export async function embeddingStatusLines(
     if (!probed.ok) {
       return [
         `WARNING: Ollama at ${probed.host} did not answer GET /api/tags (liveness only — this is not an embed).`,
-        `Semantic search is off until it is running. embedding.provider is still "ollama" in config.json.`,
+        `Semantic search is off until it is running. embedding.provider is still "ollama" in ${file}.`,
       ];
     }
     if (!modelPresent) {
       return [
         `WARNING: Ollama at ${probed.host} is running, but ${model} is not in GET /api/tags.`,
         `Semantic search is off until you run: ollama pull ${model}`,
-        `embedding.provider is still "ollama" in config.json.`,
+        `embedding.provider is still "ollama" in ${file}.`,
       ];
     }
   }
@@ -363,7 +367,7 @@ export interface InitResult {
 /** Existing `config.json` must parse, or init is lying. `--force` may replace. */
 export function assertExistingConfigReadable(dataDir: string, force: boolean): void {
   if (force) return;
-  const configPath = path.join(dataDir, CONFIG_FILENAME);
+  const configPath = storeConfigPath(dataDir);
   if (!existsSync(configPath)) return;
   try {
     readConfigDocument(dataDir);
@@ -382,7 +386,7 @@ export async function initDataDir(args: InitArgs): Promise<InitResult> {
   // prints a success card while the process runs shipped defaults. --force
   // replaces; otherwise refuse, same as `facthouse settings`.
   assertExistingConfigReadable(dataDir, force);
-  const configPath = path.join(dataDir, CONFIG_FILENAME);
+  const configPath = storeConfigPath(dataDir);
 
   // Refuse an unknown engine or postgres without a URL *before* mkdir/open —
   // otherwise a postgres config still creates memory.db and we have failed open.

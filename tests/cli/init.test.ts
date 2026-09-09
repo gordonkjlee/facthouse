@@ -357,9 +357,10 @@ describe("providerStatusLines", () => {
   // finds out which of the two they actually got.
   const found = () => ({ command: ["claude"], available: true });
   const missing = () => ({ command: ["claude"], available: false });
+  const configPath = path.resolve("/tmp/facthouse-walk/config.json");
 
   it("warns, and names the consequence, when the CLI is missing", () => {
-    const text = providerStatusLines("cli", missing).join("\n");
+    const text = providerStatusLines("cli", configPath, missing).join("\n");
 
     expect(text).toMatch(/WARNING/);
     // Naming the consequence is the point. "not found" alone tells a user
@@ -369,10 +370,12 @@ describe("providerStatusLines", () => {
     // And both ways out.
     expect(text).toMatch(/CLAUDE_CLI_PATH/);
     expect(text).toMatch(/FACTHOUSE_PROVIDER=heuristic/);
+    expect(text).toContain(configPath);
+    expect(text).not.toMatch(/in config\.json/);
   });
 
   it("confirms rather than warns when the CLI answers", () => {
-    const text = providerStatusLines("cli", found).join("\n");
+    const text = providerStatusLines("cli", configPath, found).join("\n");
 
     expect(text).not.toMatch(/WARNING/);
     expect(text).toMatch(/claude CLI/);
@@ -387,11 +390,12 @@ describe("providerStatusLines", () => {
       return { command: ["claude"], available: false };
     };
 
-    const text = providerStatusLines("heuristic", spy).join("\n");
+    const text = providerStatusLines("heuristic", configPath, spy).join("\n");
 
     expect(probed).toBe(false);
     expect(text).not.toMatch(/WARNING/);
     expect(text).toMatch(/heuristic/);
+    expect(text).toContain(configPath);
   });
 });
 
@@ -445,10 +449,13 @@ describe("appendCaptureRecipe", () => {
 });
 
 describe("embeddingStatusLines", () => {
+  const configPath = path.resolve("/tmp/facthouse-walk/config.json");
+
   it("does not probe when search is off", async () => {
     let called = false;
     const lines = await embeddingStatusLines(
       { provider: null } as never,
+      configPath,
       {},
       async () => {
         called = true;
@@ -457,23 +464,28 @@ describe("embeddingStatusLines", () => {
     );
     expect(called).toBe(false);
     expect(lines.join("\n")).toMatch(/Semantic search: off/);
+    expect(lines.join("\n")).toContain(configPath);
+    expect(lines.join("\n")).not.toMatch(/in config\.json/);
   });
 
   it("warns when ollama is down and does not claim search is on", async () => {
     const lines = await embeddingStatusLines(
       { provider: "ollama", model: null, dimensions: null, api_key_env: "VOYAGE_API_KEY", batch_size: 128, min_similarity_ratio: 0.85, min_similarity: null, host: "http://127.0.0.1:11435" },
+      configPath,
       {},
       async (host) => ({ ok: false, host: host ?? "http://127.0.0.1:11435", models: [] }),
     );
     expect(lines.join("\n")).toMatch(/WARNING/);
     expect(lines.join("\n")).toContain("http://127.0.0.1:11435");
     expect(lines.join("\n")).not.toMatch(/Semantic search: on/);
+    expect(lines.join("\n")).toContain(configPath);
   });
 
   it("strips a trailing slash before probing ollama", async () => {
     let probed: string | undefined;
     await embeddingStatusLines(
       { provider: "ollama", model: null, dimensions: null, api_key_env: "VOYAGE_API_KEY", batch_size: 128, min_similarity_ratio: 0.85, min_similarity: null, host: "http://127.0.0.1:11435/" },
+      configPath,
       {},
       async (host) => {
         probed = host;
@@ -486,18 +498,21 @@ describe("embeddingStatusLines", () => {
   it("warns when ollama is up but the model is missing", async () => {
     const lines = await embeddingStatusLines(
       { provider: "ollama", model: null, dimensions: null, api_key_env: "VOYAGE_API_KEY", batch_size: 128, min_similarity_ratio: 0.85, min_similarity: null, host: "http://127.0.0.1:11435" },
+      configPath,
       {},
       async (host) => ({ ok: true, host: host ?? "http://127.0.0.1:11435", models: [] }),
     );
     expect(lines.join("\n")).toMatch(/WARNING/);
     expect(lines.join("\n")).toMatch(/nomic-embed-text/);
     expect(lines.join("\n")).not.toMatch(/Semantic search: on/);
+    expect(lines.join("\n")).toContain(configPath);
   });
 
   it("reports on when ollama answers with the model", async () => {
     let probed: string | undefined;
     const lines = await embeddingStatusLines(
       { provider: "ollama", model: null, dimensions: null, api_key_env: "VOYAGE_API_KEY", batch_size: 128, min_similarity_ratio: 0.85, min_similarity: null },
+      configPath,
       {},
       async (host) => {
         probed = host;
@@ -513,6 +528,7 @@ describe("embeddingStatusLines", () => {
     let called = false;
     const lines = await embeddingStatusLines(
       { provider: "voyage", model: null, dimensions: null, api_key_env: "VOYAGE_API_KEY", batch_size: 128, min_similarity_ratio: 0.85, min_similarity: null },
+      configPath,
       {},
       async () => {
         called = true;
@@ -522,5 +538,6 @@ describe("embeddingStatusLines", () => {
     expect(called).toBe(false);
     expect(lines.join("\n")).toMatch(/WARNING/);
     expect(lines.join("\n")).toMatch(/VOYAGE_API_KEY/);
+    expect(lines.join("\n")).toContain(configPath);
   });
 });

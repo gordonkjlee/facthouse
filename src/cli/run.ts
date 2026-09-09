@@ -468,7 +468,10 @@ async function runInit() {
     dataDir: result.dataDir,
     brief: true,
   });
-  const embedLines = await embeddingStatusLines(written.embedding);
+  const embedLines = await embeddingStatusLines(
+    written.embedding,
+    result.configPath,
+  );
   const lines = [
     ``,
     `${PRODUCT_NAME} initialised.`,
@@ -495,6 +498,7 @@ async function runInit() {
     ``,
     ...providerStatusLines(
       resolveProviderType(written.intelligence.provider),
+      result.configPath,
     ),
     ``,
     ...embedLines,
