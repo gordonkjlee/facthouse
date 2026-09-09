@@ -3,7 +3,12 @@ import type { Db } from "../../src/db/connection.js";
 import { runInspect } from "../../src/cli/inspect.js";
 import { currencyClause } from "../../src/db/facts.js";
 import { renderInspectHtml } from "../../src/cli/inspect-html.js";
-import { loadGraphPayload } from "../../src/cli/inspect-payload.js";
+import {
+  addSequenceRadius,
+  firstIndexAtOrAfter,
+  latestUserInSequenceWindow,
+  loadGraphPayload,
+} from "../../src/cli/inspect-payload.js";
 import { mkdtempSync, rmSync, existsSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -153,6 +158,30 @@ describe("inspect graph HTML", () => {
     expect(html).toContain('"cap":5');
   });
 
+  it("attaches newest Data samples by entity name without requiring provenance", async () => {
+    const alex = await findOrCreateEntity(db, { name: "Alex", type: "person" });
+    await insertEvent(db, {
+      event_type: "message",
+      role: "user",
+      content: "Alex prefers dark roast",
+      client_session_id: "c1",
+    });
+    await insertEvent(db, {
+      event_type: "message",
+      role: "assistant",
+      content: "Noted.",
+      client_session_id: "c1",
+    });
+    const payload = await loadGraphPayload(db, { cap: 50 });
+    const node = payload.nodes.find((n) => n.id === alex.entity.id);
+    expect(node?.dCount).toBe(1);
+    const ids = payload.dByEntity[alex.entity.id] ?? [];
+    expect(ids.length).toBeGreaterThan(0);
+    expect(
+      payload.events.some((e) => ids.includes(e.id) && /dark roast/.test(e.content)),
+    ).toBe(true);
+  });
+
   it("marks --entity on a type-split name", async () => {
     await findOrCreateEntity(db, { name: "stg_orders", type: "model" });
     await findOrCreateEntity(db, { name: "stg_orders", type: "table" });
@@ -234,5 +263,90 @@ describe("inspect graph HTML", () => {
     const parsed = JSON.parse(result.stdout!);
     expect(parsed.package_version).toBe("0.22.0");
     expect(parsed.health.intelligence.last_24h.calls).toBe(0);
+  });
+
+  it("walks conversation context by sequence window, not the whole chat", () => {
+    const list = [1, 3, 10, 11, 12, 20].map((sequence) => ({
+      id: `e${sequence}`,
+      sequence,
+      role: sequence === 10 ? "user" : "assistant",
+      content: "ok",
+    }));
+    expect(firstIndexAtOrAfter(list, 11)).toBe(3);
+    expect(firstIndexAtOrAfter(list, 2)).toBe(1);
+    expect(firstIndexAtOrAfter([], 1)).toBe(0);
+    expect(latestUserInSequenceWindow(list, 12, 8, () => false)).toBe("e10");
+    expect(latestUserInSequenceWindow(list, 20, 8, () => false)).toBeNull();
+    const near = new Set<string>();
+    addSequenceRadius(near, list, 12, 3);
+    expect([...near].sort()).toEqual(["e10", "e11", "e12"]);
+  });
+
+  it("type-split names share the same Data sample ids", async () => {
+    const model = await findOrCreateEntity(db, { name: "stg_orders", type: "model" });
+    const table = await findOrCreateEntity(db, { name: "stg_orders", type: "table" });
+    await insertEvent(db, {
+      event_type: "message",
+      role: "user",
+      content: "stg_orders is the fact table",
+      client_session_id: "c1",
+    });
+    const payload = await loadGraphPayload(db, { cap: 50 });
+    const a = payload.dByEntity[model.entity.id] ?? [];
+    const b = payload.dByEntity[table.entity.id] ?? [];
+    expect(a.length).toBeGreaterThan(0);
+    expect(a).toEqual(b);
+    expect(payload.nodes.find((n) => n.id === model.entity.id)?.dCount).toBe(1);
+    expect(payload.nodes.find((n) => n.id === table.entity.id)?.dCount).toBe(1);
+  });
+
+  it("dCount matches includes across many names", async () => {
+    const names = ["Alex", "Robin", "Acme", "Helios", "stg_orders"];
+    const created = [];
+    for (const name of names) {
+      created.push(await findOrCreateEntity(db, { name, type: "person" }));
+    }
+    const lines = [
+      "Alex prefers dark roast at Acme",
+      "Robin lives near Helios",
+      "stg_orders and Alex",
+      "unrelated padding",
+      "Acme hired Robin",
+    ];
+    for (const content of lines) {
+      await insertEvent(db, {
+        event_type: "message",
+        role: "user",
+        content,
+        client_session_id: "c-eq",
+      });
+    }
+    const payload = await loadGraphPayload(db, { cap: 50 });
+    for (let i = 0; i < names.length; i++) {
+      const needle = names[i]!.toLowerCase();
+      const expectCount = lines.filter((l) => l.toLowerCase().includes(needle)).length;
+      const node = payload.nodes.find((n) => n.id === created[i]!.entity.id);
+      expect(node?.dCount).toBe(expectCount);
+    }
+  });
+
+  it("Data context stays local in a long conversation", async () => {
+    const alex = await findOrCreateEntity(db, { name: "Alex", type: "person" });
+    for (let i = 0; i < 80; i++) {
+      await insertEvent(db, {
+        event_type: "message",
+        role: i === 40 ? "user" : "assistant",
+        content: i === 40 ? "Alex prefers dark roast" : `padding ${i}`,
+        client_session_id: "long-chat",
+      });
+    }
+    const payload = await loadGraphPayload(db, { cap: 50 });
+    const ids = payload.dByEntity[alex.entity.id] ?? [];
+    expect(ids.length).toBeGreaterThan(0);
+    expect(ids.length).toBeLessThan(20);
+    expect(payload.events.length).toBeLessThan(20);
+    expect(
+      payload.events.some((e) => ids.includes(e.id) && /dark roast/.test(e.content)),
+    ).toBe(true);
   });
 });

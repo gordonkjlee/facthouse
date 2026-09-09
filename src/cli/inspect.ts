@@ -15,9 +15,13 @@ import {
   loadLayerRows,
   type InspectLayerRows,
 } from "./inspect-payload.js";
-import { loadSpendDashboard } from "./spend-dashboard.js";
+import {
+  loadSpendDashboard,
+  SPEND_DASHBOARD_DAYS,
+} from "./spend-dashboard.js";
 import { loadConfig } from "../config.js";
 import { intelligenceRoutingView } from "../intelligence/routing-view.js";
+import { createInspectProgress } from "./inspect-progress.js";
 
 export const INSPECT_LAYERS = [
   "health",
@@ -123,76 +127,97 @@ export async function runInspect(db: Db, opts: InspectOpts): Promise<InspectResu
   const tableLimit = opts.limit ?? DEFAULT_TABLE_LIMIT;
   const graphCap = opts.limit ?? DEFAULT_GRAPH_CAP;
 
-  const health = await loadHealth(db);
-  const version = opts.packageVersion ?? null;
+  const progress = wantHtml
+    ? createInspectProgress({
+        enabled: !wantJson && Boolean(process.stderr.isTTY),
+      })
+    : null;
+  try {
+    if (wantHtml) progress!.phase("Reading store health…");
+    const health = await loadHealth(db);
+    const version = opts.packageVersion ?? null;
 
-  if (layer === "health" && !wantHtml && !wantJson) {
-    return { stdout: formatStats(health) };
-  }
+    if (layer === "health" && !wantHtml && !wantJson) {
+      return { stdout: formatStats(health) };
+    }
 
-  const rows =
-    layer && layer !== "health"
-      ? await loadLayerRows(db, tableLimit)
-      : wantJson && !wantHtml
+    const rows =
+      layer && layer !== "health"
         ? await loadLayerRows(db, tableLimit)
-        : null;
+        : wantJson && !wantHtml
+          ? await loadLayerRows(db, tableLimit)
+          : null;
 
-  if (wantJson && !wantHtml) {
-    const payload: Record<string, unknown> = {
-      package_version: version,
-      health,
-    };
-    if (!layer || layer === "all" || layer === "health") {
-      /* health already included */
-    }
-    if (rows && layer && layer !== "health") {
-      if (layer === "all") Object.assign(payload, { samples: rows });
-      else if (layer === "d") payload.d = rows.d;
-      else if (layer === "i") payload.i = { pending: rows.pending_i, rows: rows.i };
-      else if (layer === "k") payload.k = rows.k;
-      else if (layer === "entities") {
-        payload.entities = { total: rows.entity_total, rows: rows.entities };
-      } else if (layer === "graph") {
-        payload.graph = rows.graph;
-        payload.relationship_histogram = rows.relationship_histogram;
+    if (wantJson && !wantHtml) {
+      const payload: Record<string, unknown> = {
+        package_version: version,
+        health,
+      };
+      if (!layer || layer === "all" || layer === "health") {
+        /* health already included */
       }
-    } else if (!layer || layer === "all") {
-      payload.samples = rows ?? (await loadLayerRows(db, tableLimit));
+      if (rows && layer && layer !== "health") {
+        if (layer === "all") Object.assign(payload, { samples: rows });
+        else if (layer === "d") payload.d = rows.d;
+        else if (layer === "i") payload.i = { pending: rows.pending_i, rows: rows.i };
+        else if (layer === "k") payload.k = rows.k;
+        else if (layer === "entities") {
+          payload.entities = { total: rows.entity_total, rows: rows.entities };
+        } else if (layer === "graph") {
+          payload.graph = rows.graph;
+          payload.relationship_histogram = rows.relationship_histogram;
+        }
+      } else if (!layer || layer === "all") {
+        payload.samples = rows ?? (await loadLayerRows(db, tableLimit));
+      }
+      return { stdout: JSON.stringify(payload, null, 2) };
     }
-    return { stdout: JSON.stringify(payload, null, 2) };
-  }
 
-  const out: InspectResult = {};
-  if (layer && layer !== "health") {
-    const body = formatLayers(rows ?? (await loadLayerRows(db, tableLimit)), layer);
-    out.stdout = layer === "all" ? `${formatStats(health)}${body}` : body;
-  } else if (layer === "health") {
-    out.stdout = formatStats(health);
-  }
+    const out: InspectResult = {};
+    if (layer && layer !== "health") {
+      const body = formatLayers(rows ?? (await loadLayerRows(db, tableLimit)), layer);
+      out.stdout = layer === "all" ? `${formatStats(health)}${body}` : body;
+    } else if (layer === "health") {
+      out.stdout = formatStats(health);
+    }
 
-  if (wantHtml) {
-    const graph = await loadGraphPayload(db, {
-      cap: opts.all ? Number.POSITIVE_INFINITY : graphCap,
-      entity: opts.entity,
-      all: Boolean(opts.all),
-    });
-    if (opts.all) graph.cap = Math.max(graph.nodes.length, 1);
-    const dest = opts.output
-      ? path.resolve(opts.output)
-      : path.join(opts.dataDir, "inspect.html");
-    mkdirSync(path.dirname(dest), { recursive: true });
-    const spend = await loadSpendDashboard(db);
-    const routing = intelligenceRoutingView(loadConfig(opts.dataDir).intelligence);
-    const html = renderInspectHtml({
-      ...graph,
-      health,
-      spend,
-      routing,
-      package_version: version,
-    });
-    writeFileSync(dest, html, "utf8");
-    out.path = dest;
-  }
+    if (wantHtml && progress) {
+      const graph = await loadGraphPayload(
+        db,
+        {
+          cap: opts.all ? Number.POSITIVE_INFINITY : graphCap,
+          entity: opts.entity,
+          all: Boolean(opts.all),
+        },
+        progress,
+      );
+      if (opts.all) graph.cap = Math.max(graph.nodes.length, 1);
+      const dest = opts.output
+        ? path.resolve(opts.output)
+        : path.join(opts.dataDir, "inspect.html");
+      progress.phase("Loading spend…");
+      mkdirSync(path.dirname(dest), { recursive: true });
+      const spend = await loadSpendDashboard(
+        db,
+        new Date(),
+        SPEND_DASHBOARD_DAYS,
+        health,
+      );
+      const routing = intelligenceRoutingView(loadConfig(opts.dataDir).intelligence);
+      progress.phase("Writing inspect.html…");
+      const html = renderInspectHtml({
+        ...graph,
+        health,
+        spend,
+        routing,
+        package_version: version,
+      });
+      writeFileSync(dest, html, "utf8");
+      out.path = dest;
+    }
 
-  return out;
+    return out;
+  } finally {
+    progress?.stop();
+  }
 }

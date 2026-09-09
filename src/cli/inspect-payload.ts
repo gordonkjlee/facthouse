@@ -15,6 +15,8 @@ import {
   type InspectLink,
   type InspectNode,
 } from "./inspect-model.js";
+import { substringHits } from "./inspect-match.js";
+import type { InspectProgress } from "./inspect-progress.js";
 
 const NEAR_USER = 8;
 const NEAR_RADIUS = 3;
@@ -137,6 +139,54 @@ function clipText(c: string): { content: string; full: string | null } {
   };
 }
 
+/** First index in a sequence-ascending list with sequence >= target. */
+export function firstIndexAtOrAfter<T extends { sequence: number }>(
+  sortedAsc: readonly T[],
+  target: number,
+): number {
+  let lo = 0;
+  let hi = sortedAsc.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (sortedAsc[mid]!.sequence < target) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
+}
+
+/** Latest user event with sequence in (seq - window, seq]. */
+export function latestUserInSequenceWindow<
+  T extends { sequence: number; role: string; id: string; content: string },
+>(
+  sortedAsc: readonly T[],
+  seq: number,
+  window: number,
+  isNoise: (c: string) => boolean,
+): string | null {
+  let i = firstIndexAtOrAfter(sortedAsc, seq + 1) - 1;
+  for (; i >= 0; i--) {
+    const ev = sortedAsc[i]!;
+    if (seq - ev.sequence > window) break;
+    if (ev.role === "user" && !isNoise(ev.content)) return ev.id;
+  }
+  return null;
+}
+
+/** Add every event whose sequence is within radius of seq. */
+export function addSequenceRadius<T extends { sequence: number; id: string }>(
+  idSet: Set<string>,
+  sortedAsc: readonly T[],
+  seq: number,
+  radius: number,
+): void {
+  let i = firstIndexAtOrAfter(sortedAsc, seq - radius);
+  for (; i < sortedAsc.length; i++) {
+    const ev = sortedAsc[i]!;
+    if (ev.sequence - seq > radius) break;
+    idSet.add(ev.id);
+  }
+}
+
 export async function loadLayerRows(
   db: Db,
   limit: number,
@@ -246,7 +296,9 @@ export async function loadLayerRows(
 export async function loadGraphPayload(
   db: Db,
   opts: { cap: number; entity?: string; all?: boolean },
+  progress?: InspectProgress,
 ): Promise<InspectGraphPayload> {
+  progress?.phase("Loading inspect graph…");
   const entityRows = (await db
     .prepare(`SELECT id, name, type, canonical_name FROM entities`)
     .all()) as Array<{
@@ -368,7 +420,6 @@ export async function loadGraphPayload(
   });
 
   const eventByIdRaw = new Map(eventsRaw.map((e) => [e.id, e]));
-  const lower = eventsRaw.map((ev) => (ev.content || "").toLowerCase());
   const byConvSeq = new Map<string, typeof eventsRaw>();
   for (const ev of eventsRaw) {
     const conv = ev.conversation || "";
@@ -381,14 +432,12 @@ export async function loadGraphPayload(
   }
 
   function nearestUserId(conv: string, seq: number): string | null {
-    const list = byConvSeq.get(conv || "") || [];
-    let best: string | null = null;
-    for (const ev of list) {
-      if (ev.sequence > seq) break;
-      if (seq - ev.sequence > NEAR_USER) continue;
-      if (ev.role === "user" && !isNoiseContent(ev.content)) best = ev.id;
-    }
-    return best;
+    return latestUserInSequenceWindow(
+      byConvSeq.get(conv || "") || [],
+      seq,
+      NEAR_USER,
+      isNoiseContent,
+    );
   }
 
   function addContext(idSet: Set<string>, eventId: string): void {
@@ -397,9 +446,12 @@ export async function loadGraphPayload(
     idSet.add(hit.id);
     const uid = nearestUserId(hit.conversation || "", hit.sequence);
     if (uid) idSet.add(uid);
-    for (const ev of byConvSeq.get(hit.conversation || "") || []) {
-      if (Math.abs(ev.sequence - hit.sequence) <= NEAR_RADIUS) idSet.add(ev.id);
-    }
+    addSequenceRadius(
+      idSet,
+      byConvSeq.get(hit.conversation || "") || [],
+      hit.sequence,
+      NEAR_RADIUS,
+    );
   }
 
   function pickD(hitIds: string[], extraSet: Set<string>): string[] {
@@ -425,29 +477,61 @@ export async function loadGraphPayload(
   }
 
   const dByEntity: Record<string, string[]> = {};
-  for (const n of nodes) {
-    const needle = (n.canonical_name || n.name || "").toLowerCase();
-    if (needle.length < 2) {
+  const patternOf = nodes.map((n) =>
+    (n.canonical_name || n.name || "").toLowerCase(),
+  );
+  const unique: string[] = [];
+  const uniqueIndex = new Map<string, number>();
+  for (const pat of patternOf) {
+    if (pat.length < 2) continue;
+    if (uniqueIndex.has(pat)) continue;
+    uniqueIndex.set(pat, unique.length);
+    unique.push(pat);
+  }
+  const contents = eventsRaw.map((ev) => ev.content || "");
+  if (unique.length && contents.length) {
+    progress?.phase(
+      `Linking Data (${contents.length} events, ${unique.length} names)…`,
+    );
+  }
+  const hits = substringHits(unique, contents, D_PER_ENTITY, (done, total) => {
+    progress?.tick(done, total, "Linking Data");
+  });
+  if (nodes.length) {
+    progress?.phase(`Conversation context (${nodes.length} entities)…`);
+  }
+  const ctxStep = Math.max(1, Math.floor(nodes.length / 20) || 1);
+  for (let ni = 0; ni < nodes.length; ni++) {
+    const n = nodes[ni]!;
+    const pat = (n.canonical_name || n.name || "").toLowerCase();
+    const ui = uniqueIndex.get(pat);
+    if (ui === undefined) {
       n.dCount = 0;
       dByEntity[n.id] = [];
-      continue;
+    } else {
+      const hit = hits[ui]!;
+      const ids = hit.ids.map((i) => eventsRaw[i]!.id);
+      n.dCount = hit.count;
+      const extra = new Set(ids);
+      for (const eid of ids) addContext(extra, eid);
+      dByEntity[n.id] = pickD(ids, extra);
     }
-    const ids: string[] = [];
-    let matchCount = 0;
-    for (let i = 0; i < eventsRaw.length; i++) {
-      if (lower[i].includes(needle)) {
-        matchCount++;
-        if (ids.length < D_PER_ENTITY) ids.push(eventsRaw[i].id);
-      }
+    if (ni === nodes.length - 1 || ni % ctxStep === 0) {
+      progress?.tick(ni + 1, nodes.length, "Conversation context");
     }
-    n.dCount = matchCount;
-    const extra = new Set(ids);
-    for (const eid of ids) addContext(extra, eid);
-    dByEntity[n.id] = pickD(ids, extra);
   }
 
   const used = new Set(Object.values(dByEntity).flat());
-  for (const row of iToD) addContext(used, row.event_id);
+  const iToDStep = Math.max(1, Math.floor(iToD.length / 20) || 1);
+  if (iToD.length) {
+    progress?.phase(`Provenance context (${iToD.length} links)…`);
+  }
+  for (let i = 0; i < iToD.length; i++) {
+    addContext(used, iToD[i]!.event_id);
+    if (i === iToD.length - 1 || i % iToDStep === 0) {
+      progress?.tick(i + 1, iToD.length, "Provenance context");
+    }
+  }
 
   function toolNameFor(e: (typeof eventsRaw)[number]): string | null {
     const own = toolNameFromContent(e.content);
