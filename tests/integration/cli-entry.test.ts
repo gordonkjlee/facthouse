@@ -288,6 +288,17 @@ describe.skipIf(!runnable)("cli entry — init output", () => {
     expect(existsSync(path.join(dir, "config.json"))).toBe(true);
   });
 
+  it("names the absolute config path to turn semantic search on", () => {
+    const dir = path.join(root, "embed-config-path");
+    const r = run(["init", dir, "--yes"]);
+    expect(r.status).toBe(0);
+    const configPath = path.resolve(dir, "config.json");
+    expect(r.stdout).toContain(`Config          ${configPath}`);
+    expect(r.stdout).toContain(`Set embedding.provider in`);
+    expect(r.stdout).toContain(`${configPath} to "ollama"`);
+    expect(r.stdout).not.toMatch(/Set embedding\.provider in\s+config\.json/);
+  });
+
   it("honours --yes without printing prompt copy", () => {
     const dir = path.join(root, "yes-flag");
     const r = run(["init", dir, "--yes"]);
