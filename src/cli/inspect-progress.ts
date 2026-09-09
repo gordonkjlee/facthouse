@@ -25,8 +25,6 @@ export function createInspectProgress(opts: {
   let last = "";
   let idle: ReturnType<typeof setInterval> | undefined;
   let startedAt = 0;
-  let lastDone = 0;
-  let lastTotal = 0;
   let lastLabel = "";
 
   const paint = (line: string) => {
@@ -59,16 +57,12 @@ export function createInspectProgress(opts: {
     phase(label: string) {
       clearIdle();
       startedAt = Date.now();
-      lastDone = 0;
-      lastTotal = 0;
       lastLabel = label;
       paint(label);
       armIdle();
     },
     tick(done: number, total: number, label: string) {
       clearIdle();
-      lastDone = done;
-      lastTotal = total;
       lastLabel = label;
       if (startedAt === 0) startedAt = Date.now();
       let extra = "";
