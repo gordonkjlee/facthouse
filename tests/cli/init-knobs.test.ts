@@ -9,6 +9,7 @@ import {
   HTTP_WELL_KNOWN_BASE_URLS,
 } from "../../src/types/config.js";
 import { defaultServerConfig } from "../../src/config.js";
+import { CLI_STORE_DEFAULT_HELP } from "../../src/paths.js";
 import {
   INIT_KNOB_IDS,
   MORE_SETTING_IDS,
@@ -76,6 +77,7 @@ describe("init knobs — one definition", () => {
     );
     expect(INIT_PROMPTS.quickStartNext).not.toMatch(/\.mcp\.json/);
     expect(readme).toContain(INIT_PROMPTS.mcpEnvNotCli);
+    expect(readme).toContain(CLI_STORE_DEFAULT_HELP);
     expect(quick).not.toContain(INIT_PROMPTS.mcpEnvNotCli);
     expect(quick).toContain(INIT_PROMPTS.mcpInstallClash);
     expect(readme).toContain(INIT_PROMPTS.storeDir);
@@ -275,7 +277,7 @@ describe("init knobs — one definition", () => {
     const cli = readFileSync(path.join(ROOT, "src/cli/run.ts"), "utf-8");
     const server = readFileSync(path.join(ROOT, "src/server.ts"), "utf-8");
     expect(cli).toMatch(/timeoutMs:\s*CLI_HISTORIC_TIMEOUT_MS/);
-    expect(cli).toMatch(/dataDirFromEnvOrDefault/);
+    expect(cli).toMatch(/cliStoreDir/);
     expect(cli).toMatch(/resolveUserPath/);
     expect(cli).not.toMatch(/path\.join\(homedir\(/);
     expect(server).toMatch(/dataDirFromEnvOrDefault/);

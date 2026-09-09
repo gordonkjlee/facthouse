@@ -146,8 +146,9 @@ export function mcpServerName(
 }
 
 /**
- * Env is omitted only for the default directory, never because the name
- * equals "facthouse".
+ * Env is omitted only for the home default (`~/.facthouse`), never because
+ * the name equals "facthouse". CLI walk-up is not this comparison — MCP
+ * does not walk, so a project `.facthouse` must still set FACTHOUSE_DATA.
  */
 export function mcpSnippetDataDir(
   dataDir: string,

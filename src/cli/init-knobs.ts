@@ -679,7 +679,7 @@ export const INIT_PROMPTS = {
   /** MCP env does not apply to CLI or hooks. Do not write $FACTHOUSE_DATA (hang-safety). */
   mcpEnvNotCli:
     "FACTHOUSE_DATA on an MCP snippet applies only to that server process. " +
-    `A terminal ${CLI_NAME} command needs --data, or FACTHOUSE_DATA in the environment that shell inherits. ` +
+    `A terminal ${CLI_NAME} command needs --data, FACTHOUSE_DATA in the environment that shell inherits, or a .facthouse store in this project. ` +
     "Hooks do not see mcp.json env.",
   shellNote:
     "These CLI commands work in bash, zsh, and PowerShell. Quote @facthouse/mcp in PowerShell. " +

@@ -137,7 +137,7 @@ Both are read-only views over the same database the tools query. Clients that ne
 
 The MCP JSON starts the server via npx and does not need a global install. npm install -g puts facthouse on PATH for init, settings, stats, and inspect. The same CLI without PATH is npx -y -p "@facthouse/mcp" -- facthouse — pin the version; quote the package so PowerShell does not splat. -p and -- stop an older global binary winning. npx -y @facthouse/mcp with no -p / facthouse is the server; do not run it as a shell command for init, settings, or stats. The MCP paste starts the server. It does not put facthouse on PATH. To inspect the file from a terminal, see CLI below.
 
-These CLI commands work in bash, zsh, and PowerShell. Quote @facthouse/mcp in PowerShell. Git Bash /c/... paths are not PowerShell; use C:/... and pass --data instead of cd or export. In Git Bash, quote a backslash path or write C:/... — unquoted \ is an escape. ~/ is expanded on every platform. WSL uses /mnt/c/.... FACTHOUSE_DATA on an MCP snippet applies only to that server process. A terminal facthouse command needs --data, or FACTHOUSE_DATA in the environment that shell inherits. Hooks do not see mcp.json env.
+These CLI commands work in bash, zsh, and PowerShell. Quote @facthouse/mcp in PowerShell. Git Bash /c/... paths are not PowerShell; use C:/... and pass --data instead of cd or export. In Git Bash, quote a backslash path or write C:/... — unquoted \ is an escape. ~/ is expanded on every platform. WSL uses /mnt/c/.... FACTHOUSE_DATA on an MCP snippet applies only to that server process. A terminal facthouse command needs --data, FACTHOUSE_DATA in the environment that shell inherits, or a .facthouse store in this project. Hooks do not see mcp.json env.
 
 <!-- x-release-please-start-version -->
 ```bash
@@ -210,7 +210,7 @@ facthouse record --role user --event-type message --content "hello world"
 #   --content       Event content (or pipe via stdin)
 #   --speaker       Named participant when the transcript has one
 #   --session-id    Target session (default: most recent)
-#   --data          Data directory (default: ~/.facthouse or FACTHOUSE_DATA)
+#   --data          Data directory (default: FACTHOUSE_DATA, a .facthouse store in this project, or ~/.facthouse)
 ```
 
 #### `facthouse consolidate`
@@ -231,7 +231,7 @@ facthouse consolidate --limit 200       # extract the oldest 200
 # Extract is capped at 50 lines per run so a first backfill is never spent on
 # the lot; the run says how many remain. --all lifts the cap, --limit N sets it.
 #   --json           print the result object instead of the summary
-#   --data           Data directory (default: ~/.facthouse or FACTHOUSE_DATA)
+#   --data           Data directory (default: FACTHOUSE_DATA, a .facthouse store in this project, or ~/.facthouse)
 ```
 
 Honours the configured provider (by default `claude -p`). Empty `sources` makes the copy step a no-op. Set `cwd` on the source unless you intend to copy every project group. Do not also run `record` hooks on a store with named sources.
@@ -245,7 +245,7 @@ facthouse notify compaction   # client about to compact: copy new JSONL, extract
 facthouse notify threshold    # events arrived: extract if the threshold is due
 
 # Options:
-#   --data     Data directory (default: ~/.facthouse or FACTHOUSE_DATA)
+#   --data     Data directory (default: FACTHOUSE_DATA, a .facthouse store in this project, or ~/.facthouse)
 ```
 
 No server listening is not an error: the command says so and exits 0, and the next session start covers it. This is what the PreCompact hook calls.
@@ -261,7 +261,7 @@ facthouse search "coffee" --json
 #   --domain   Prioritise a domain. Biases ranking; does not filter
 #   --limit    Maximum results (default: 20)
 #   --json     Emit the raw search payload
-#   --data     Data directory (default: ~/.facthouse or FACTHOUSE_DATA)
+#   --data     Data directory (default: FACTHOUSE_DATA, a .facthouse store in this project, or ~/.facthouse)
 ```
 
 `--domain` **biases ranking rather than filtering.** A hard filter would hide a fact filed under a near-synonym.

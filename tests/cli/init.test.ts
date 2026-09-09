@@ -338,6 +338,12 @@ describe("mcpServerName / mcpSnippetDataDir", () => {
     expect(mcpSnippetDataDir(dir)).toBe(dir);
   });
 
+  it("keeps FACTHOUSE_DATA on a project .facthouse (MCP does not walk)", () => {
+    const dir = path.join(root, ".facthouse");
+    expect(mcpSnippetDataDir(dir)).toBe(dir);
+    expect(mcpServerName(dir)).toBe("facthouse-store");
+  });
+
   it("strips a leading dot so ~/.facthouse-work is facthouse-work", () => {
     expect(mcpServerName("/tmp/.facthouse-work")).toBe("facthouse-work");
   });
