@@ -211,12 +211,14 @@ export function spendDashboardFromStats(stats: KnowledgeStats): SpendDashboard {
 
 export async function loadSpendDashboard(
   db: Db,
-  now = new Date(),
-  windowDays = SPEND_DASHBOARD_DAYS,
+  now?: Date,
+  windowDays?: number,
+  already?: KnowledgeStats,
 ): Promise<SpendDashboard> {
-  const stats = await getStats(db);
-  const today = utcDay(now);
-  const from = addUtcDays(today, -(windowDays - 1));
+  const stats = already ?? (await getStats(db));
+  const today = utcDay(now ?? new Date());
+  const daysN = windowDays ?? SPEND_DASHBOARD_DAYS;
+  const from = addUtcDays(today, -(daysN - 1));
   const cutoff = `${from}T00:00:00.000Z`;
   const days = fillDays(from, today);
   const byDay = new Map(days.map((d) => [d.day, d]));
@@ -296,7 +298,7 @@ export async function loadSpendDashboard(
   }
 
   return {
-    window_days: windowDays,
+    window_days: daysN,
     unread_events: stats.extract.unextracted_events,
     pending_facts: stats.pending_facts,
     reclaimable_events: stats.events.reclaimable.events,
