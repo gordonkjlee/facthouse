@@ -1,6 +1,6 @@
 {
   "name": "@facthouse/mcp",
-  "version": "0.30.0",
+  "version": "0.31.0",
   "mcpName": "io.github.gordonkjlee/facthouse",
   "description": "Local AI memory: neuroscience-inspired Data→Information→Knowledge in SQLite you own.",
   "type": "module",

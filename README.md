@@ -16,7 +16,7 @@ Needs Node 22.5 or 24+.
 
 <!-- x-release-please-start-version -->
 ```bash
-npm install -g @facthouse/mcp@0.30.0
+npm install -g @facthouse/mcp@0.31.0
 facthouse init
 ```
 <!-- x-release-please-end -->
@@ -141,15 +141,15 @@ These CLI commands work in bash, zsh, and PowerShell. Quote @facthouse/mcp in Po
 
 <!-- x-release-please-start-version -->
 ```bash
-npm install -g @facthouse/mcp@0.30.0
+npm install -g @facthouse/mcp@0.31.0
 facthouse init --yes
 ```
 
 ```bash
-npx -y -p "@facthouse/mcp@0.30.0" -- facthouse init --yes
-npx -y -p "@facthouse/mcp@0.30.0" -- facthouse settings --json
-npx -y -p "@facthouse/mcp@0.30.0" -- facthouse stats
-npx -y -p "@facthouse/mcp@0.30.0" -- facthouse inspect
+npx -y -p "@facthouse/mcp@0.31.0" -- facthouse init --yes
+npx -y -p "@facthouse/mcp@0.31.0" -- facthouse settings --json
+npx -y -p "@facthouse/mcp@0.31.0" -- facthouse stats
+npx -y -p "@facthouse/mcp@0.31.0" -- facthouse inspect
 ```
 <!-- x-release-please-end -->
 
@@ -303,12 +303,12 @@ A non-default data directory prints a distinct MCP server name so two stores can
   "mcpServers": {
     "facthouse-personal": {
       "command": "npx",
-      "args": ["-y", "@facthouse/mcp@0.30.0"],
+      "args": ["-y", "@facthouse/mcp@0.31.0"],
       "env": { "FACTHOUSE_DATA": "C:\\Users\\alex\\.facthouse-personal" }
     },
     "facthouse-work": {
       "command": "npx",
-      "args": ["-y", "@facthouse/mcp@0.30.0"],
+      "args": ["-y", "@facthouse/mcp@0.31.0"],
       "env": { "FACTHOUSE_DATA": "C:\\Users\\alex\\.facthouse-work" }
     }
   }
@@ -334,7 +334,7 @@ Example — placeholders only; do not put a real password in a committed file:
   "mcpServers": {
     "facthouse": {
       "command": "npx",
-      "args": ["-y", "@facthouse/mcp@0.30.0"],
+      "args": ["-y", "@facthouse/mcp@0.31.0"],
       "env": {
         "FACTHOUSE_DATA": "C:\\Users\\alex\\.facthouse-work",
         "FACTHOUSE_STORAGE": "postgres",
@@ -380,7 +380,7 @@ To skip the wizard (record only — no transcript copy), paste this. The server 
   "mcpServers": {
     "facthouse": {
       "command": "npx",
-      "args": ["-y", "@facthouse/mcp@0.30.0"]
+      "args": ["-y", "@facthouse/mcp@0.31.0"]
     }
   }
 }
@@ -405,7 +405,7 @@ PreCompact `notify compaction` is the useful one: when the client is about to co
         "hooks": [
           {
             "type": "command",
-            "command": "npx -y -p @facthouse/mcp@0.30.0 -- facthouse notify compaction --data /absolute/path/to/the-same-store"
+            "command": "npx -y -p @facthouse/mcp@0.31.0 -- facthouse notify compaction --data /absolute/path/to/the-same-store"
           }
         ]
       }
@@ -488,7 +488,7 @@ Throwaway store, not the capture path for a real Claude Code or Cursor home. The
 <!-- x-release-please-start-version -->
 ```bash
 export FACTHOUSE_DATA=/tmp/facthouse-demo
-om() { npx -y -p "@facthouse/mcp@0.30.0" -- facthouse "$@"; }
+om() { npx -y -p "@facthouse/mcp@0.31.0" -- facthouse "$@"; }
 
 om init --yes
 
@@ -503,7 +503,7 @@ om stats
 
 ```powershell
 $env:FACTHOUSE_DATA = Join-Path $env:TEMP "facthouse-demo"
-function om { npx -y -p "@facthouse/mcp@0.30.0" -- facthouse @args }
+function om { npx -y -p "@facthouse/mcp@0.31.0" -- facthouse @args }
 om init --yes
 om record --role user --content "I prefer dark mode in every editor, and I never want telemetry enabled."
 om record --role user --content "I am allergic to shellfish, so avoid seafood restaurants when booking anything."
