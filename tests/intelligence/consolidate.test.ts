@@ -49,7 +49,7 @@ afterEach(async () => {
 async function setupSession(): Promise<string> {
   const session = await createSession(db, {
     source_tool: "test-client",
-    project: "openmemory",
+    project: "facthouse",
   });
   return session.id;
 }

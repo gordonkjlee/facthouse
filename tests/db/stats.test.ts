@@ -1,6 +1,6 @@
 /**
  * getStats — the shared source of truth behind the `get_stats` tool and the
- * `openmemory stats` CLI. Its "currently true" filter is the part that matters:
+ * `facthouse stats` CLI. Its "currently true" filter is the part that matters:
  * facts are immutable and never deleted, so total and current legitimately
  * diverge, and a filter that drifts would quietly misreport the store.
  */

@@ -236,12 +236,12 @@ describe("mcpConfigSnippet", () => {
   it("escapes a Windows data dir so the snippet stays valid JSON", () => {
     // Raw interpolation of this path would emit unescaped backslashes and
     // produce a snippet that fails to parse when pasted into a client config.
-    const winPath = "C:\\Users\\someone\\AppData\\Local\\openmemory";
+    const winPath = "C:\\Users\\someone\\AppData\\Local\\facthouse";
     const snippet = mcpConfigSnippet("@facthouse/mcp@1.2.3", winPath);
 
     const parsed = JSON.parse(snippet); // would throw on unescaped backslashes
     expect(parsed.mcpServers.facthouse.env.FACTHOUSE_DATA).toBe(
-      "C:/Users/someone/AppData/Local/openmemory",
+      "C:/Users/someone/AppData/Local/facthouse",
     );
   });
 

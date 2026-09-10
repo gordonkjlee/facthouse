@@ -44,14 +44,14 @@ describe("sessions", () => {
   it("creates a session with generated id and timestamps", async () => {
     const session = await createSession(db, {
       source_tool: "claude-code",
-      project: "openmemory",
+      project: "facthouse",
     });
 
     expect(session.id).toMatch(
       /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
     );
     expect(session.source_tool).toBe("claude-code");
-    expect(session.project).toBe("openmemory");
+    expect(session.project).toBe("facthouse");
     expect(session.started_at).toBeTruthy();
     expect(session.last_activity_at).toBe(session.started_at);
   });
