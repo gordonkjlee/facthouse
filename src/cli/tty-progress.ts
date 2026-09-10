@@ -11,11 +11,18 @@ export function createTtyProgress(opts: { json?: boolean } = {}): {
   onModelChunk: (lines: number, durationMs: number) => void;
   onIntegrateStart: (pendingI: number) => void;
   onIntegrateProgress: (done: number, total: number) => void;
+  onEmbedStart: () => void;
+  onEmbedProgress: (
+    done: number,
+    total: number,
+    batch?: { durationMs: number; factCount: number },
+  ) => void;
+  onEmbedEnd: () => void;
   stop: () => void;
 } {
   const eta = new ChunkEta();
   let last = "";
-  let phase: "extract" | "integrate" = "extract";
+  let phase: "extract" | "integrate" | "embed" = "extract";
   let lastDone = 0;
   let lastTotal = 0;
   let idle: ReturnType<typeof setInterval> | undefined;
@@ -89,6 +96,28 @@ export function createTtyProgress(opts: { json?: boolean } = {}): {
       clearIdle();
       rewrite(INIT_PROMPTS.extractProgress(done, total, eta.etaMs(total - done)));
       armIdle();
+    },
+    onEmbedStart() {
+      finishLine();
+      eta.reset();
+      phase = "embed";
+      lastDone = 0;
+      lastTotal = 0;
+      rewrite(INIT_PROMPTS.embeddingNow);
+      clearIdle();
+      armIdle();
+    },
+    onEmbedProgress(done, total, batch) {
+      lastDone = done;
+      lastTotal = total;
+      if (batch) eta.noteBatch(batch.durationMs, batch.factCount);
+      clearIdle();
+      rewrite(INIT_PROMPTS.embedProgress(done, total, eta.etaMs(total - done)));
+      armIdle();
+    },
+    onEmbedEnd() {
+      clearIdle();
+      finishLine();
     },
     stop() {
       clearIdle();

@@ -7,6 +7,7 @@ import { currencyClause } from "../db/facts.js";
 import { SUBJECT_OF } from "../db/entities.js";
 import { getUnconsolidatedFacts } from "../db/session-facts.js";
 import { getStats, type KnowledgeStats } from "../db/stats.js";
+import type { SemanticIntent } from "../embedding/provider.js";
 import {
   D_CAP,
   D_PER_ENTITY,
@@ -592,6 +593,9 @@ export async function loadGraphPayload(
   };
 }
 
-export async function loadHealth(db: Db): Promise<KnowledgeStats> {
-  return getStats(db);
+export async function loadHealth(
+  db: Db,
+  intent?: SemanticIntent | null,
+): Promise<KnowledgeStats> {
+  return getStats(db, intent);
 }

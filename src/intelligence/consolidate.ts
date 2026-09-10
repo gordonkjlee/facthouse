@@ -43,7 +43,7 @@ import {
   packEventsForExtract,
 } from "./extract-prompt.js";
 import { lineTimeMs } from "./line-time.js";
-import { ConsolidateAbortError, throwIfAborted } from "./abort.js";
+import { ConsolidateAbortError, isConsolidateAbort, throwIfAborted } from "./abort.js";
 import { relatedFactsForExtract } from "./related-k.js";
 import {
   latestConversationSituation,
@@ -102,7 +102,7 @@ import {
   EXTRACT_CAP_EVENTS,
   type ConsolidateSteps,
 } from "./steps.js";
-import type { EmbeddingProvider } from "../embedding/types.js";
+import type { EmbeddingProvider, EmbeddingResult } from "../embedding/types.js";
 import {
   countFactsMissingEmbeddings,
   getFactsMissingEmbeddings,
@@ -166,6 +166,13 @@ export interface ConsolidateCaller {
   onIntegrateProgress?: (done: number, total: number) => void;
   /** Fired only when extract degraded because the CLI subprocess timed out. */
   onExtractTimeout?: () => void;
+  onEmbedStart?: () => void;
+  onEmbedProgress?: (
+    done: number,
+    total: number,
+    batch?: { durationMs: number; factCount: number },
+  ) => void;
+  onEmbedEnd?: () => void;
 }
 
 export interface ConsolidationResult {
@@ -220,9 +227,14 @@ export interface EmbedRunReport {
   dimensions: number | null;
   /** Vectors written this run. */
   embedded: number;
-  /** Current facts still without a vector for this model. */
-  missing: number;
+  /** Current facts still without a vector for this model. Omitted when the pair is unknown. */
+  missing?: number;
   error?: string;
+}
+
+/** Same predicate as `formatConsolidate` / MCP consolidate JSON. */
+export function embedReportVisible(e: EmbedRunReport | undefined): boolean {
+  return Boolean(e && (e.error || (e.model && e.dimensions)));
 }
 
 /**
@@ -467,7 +479,7 @@ export async function consolidate(
       // would mean the backlog only ever drains on runs that happen to have new
       // facts, which for a quiet store is never.
       const embedding = integrateNow
-        ? await embedIntegratedFacts(db, embeddingProvider, config)
+        ? await embedIntegratedFacts(db, embeddingProvider, config, caller)
         : undefined;
 
       await releaseLock(db, consolidationId);
@@ -936,6 +948,7 @@ export async function consolidate(
       db,
       embeddingProvider,
       config,
+      caller,
     );
 
     // Release lock before summary generation. summarise() is async on the
@@ -1790,7 +1803,7 @@ async function extractFactsFromEvents(
  * present identically — facts with no row for the current model — and all drain
  * through this one path with no separate retry bookkeeping.
  *
- * Never throws. Semantic search is an enhancement to retrieval; losing it for a
+ * Provider errors never throw (abort does). Semantic search is an enhancement to retrieval; losing it for a
  * run costs recall until the next consolidation, and the alternative — failing
  * a consolidation that has already committed its facts — costs far more.
  * The report is how the CLI can say so: a swallowed error used to look like a
@@ -1800,6 +1813,10 @@ async function embedIntegratedFacts(
   db: Db,
   provider: EmbeddingProvider | null,
   config?: Partial<ServerConfig>,
+  caller: Pick<
+    ConsolidateCaller,
+    "abort" | "onEmbedStart" | "onEmbedProgress" | "onEmbedEnd"
+  > = {},
 ): Promise<EmbedRunReport> {
   if (!provider) {
     return { model: null, dimensions: null, embedded: 0, missing: 0 };
@@ -1810,6 +1827,7 @@ async function embedIntegratedFacts(
   let model: string | null = provider.model ?? null;
   let dimensions: number | null =
     provider.dimensions > 0 ? provider.dimensions : null;
+  let started = false;
 
   const missingOf = async (): Promise<number> => {
     if (!model || !dimensions) return 0;
@@ -1817,9 +1835,20 @@ async function embedIntegratedFacts(
   };
 
   try {
+    throwIfAborted(caller.abort);
+    started = true;
+    caller.onEmbedStart?.();
+
     // Dimension is only known after the provider's first call on some backends,
     // so probe with a trivial embed rather than assuming a configured value.
-    const probe = await provider.embed(["dimension probe"], "document");
+    let probe: EmbeddingResult;
+    try {
+      probe = await provider.embed(["dimension probe"], "document");
+    } catch (err) {
+      throwIfAborted(caller.abort);
+      throw err;
+    }
+    throwIfAborted(caller.abort);
     model = probe.model;
     dimensions = probe.dimensions;
     if (!dimensions) {
@@ -1827,7 +1856,6 @@ async function embedIntegratedFacts(
         model,
         dimensions: 0,
         embedded: 0,
-        missing: 0,
         error: "provider returned no dimension",
       };
     }
@@ -1838,8 +1866,12 @@ async function embedIntegratedFacts(
     // on over an existing store would need one consolidation per 128 facts
     // with no indication that more were owed. The backlog is a one-off — a
     // steady-state run embeds the handful of facts that just integrated.
+    const total = await missingOf();
+    if (total > 0) caller.onEmbedProgress?.(0, total);
+
     const attempted = new Set<string>();
     for (;;) {
+      throwIfAborted(caller.abort);
       const pending = await getFactsMissingEmbeddings(db, model, dimensions, batchSize);
       if (pending.length === 0) {
         return { model, dimensions, embedded, missing: 0 };
@@ -1860,13 +1892,20 @@ async function embedIntegratedFacts(
       }
       for (const f of pending) attempted.add(f.id);
 
-      const result = await provider.embed(
-        pending.map((f) => f.content),
-        // Stored facts are documents. Embedding them as queries would put them
-        // in the wrong half of an asymmetrically-trained model and silently
-        // degrade every subsequent search.
-        "document",
-      );
+      const t0 = Date.now();
+      let result: EmbeddingResult;
+      try {
+        result = await provider.embed(
+          pending.map((f) => f.content),
+          // Stored facts are documents. Embedding them as queries would put them
+          // in the wrong half of an asymmetrically-trained model and silently
+          // degrade every subsequent search.
+          "document",
+        );
+      } catch (err) {
+        throwIfAborted(caller.abort);
+        throw err;
+      }
 
       if (result.vectors.length !== pending.length) {
         // Misalignment would attach each fact to a different fact's meaning —
@@ -1885,21 +1924,29 @@ async function embedIntegratedFacts(
         result.dimensions,
       );
       embedded += pending.length;
+      caller.onEmbedProgress?.(embedded, total, {
+        durationMs: Date.now() - t0,
+        factCount: pending.length,
+      });
 
       if (pending.length < batchSize) {
         return { model, dimensions, embedded, missing: await missingOf() };
       }
     }
   } catch (err) {
+    if (isConsolidateAbort(err)) throw err;
     // Swallowed on purpose. The missing rows are the retry queue; the next run
     // finds exactly these facts again and tries once more. The report is what
-    // makes that visible on the CLI.
+    // makes that visible on the CLI. Omit `missing` when the working pair was
+    // never known — do not invent a second (model-only) queue.
     return {
       model,
       dimensions,
       embedded,
-      missing: await missingOf(),
+      ...(model && dimensions ? { missing: await missingOf() } : {}),
       error: err instanceof Error ? err.message : String(err),
     };
+  } finally {
+    if (started) caller.onEmbedEnd?.();
   }
 }

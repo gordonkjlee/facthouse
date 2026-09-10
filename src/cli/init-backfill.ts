@@ -74,6 +74,7 @@ export interface InitBackfillConsolidateResult {
   prefixCommitted?: boolean;
   examinedThrough?: number;
   aborted?: boolean;
+  embedding?: { error?: string };
 }
 
 export interface InitBackfillResult {
@@ -196,6 +197,9 @@ export async function offerInitBackfill(
       }
       if (result) {
         io.write(INIT_PROMPTS.integrated(result.factsIntegrated, result.eventsRemaining));
+        if (result.embedding?.error) {
+          io.write(INIT_PROMPTS.embedFailed(result.embedding.error));
+        }
       }
     } catch (err: unknown) {
       if (isConsolidateAbort(err)) {
