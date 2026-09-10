@@ -881,6 +881,8 @@ describe("embedding never costs a fact", () => {
 
     expect(result.factsIntegrated).toBe(1);
     expect(result.skipped).toBe(false);
+    expect(result.embedding?.error).toMatch(/unreachable/);
+    expect(result.embedding?.embedded).toBe(0);
   });
 
   it("leaves the unembedded fact queued for the next run", async () => {
@@ -909,10 +911,19 @@ describe("embedding never costs a fact", () => {
 
     // Second run integrates nothing new — the backfill must come from the store,
     // not from what this run happened to produce.
-    await consolidate(db, createHeuristicProvider(PERSONAL_VOCABULARY), {}, working() as never);
+    const backfill = await consolidate(
+      db,
+      createHeuristicProvider(PERSONAL_VOCABULARY),
+      {},
+      working() as never,
+    );
 
     expect(await countEmbeddings(db, "test-model", 3)).toBe(1);
     expect(await getFactsMissingEmbeddings(db, "test-model", 3, 100)).toHaveLength(0);
+    expect(backfill.factsIntegrated).toBe(0);
+    expect(backfill.embedding?.embedded).toBe(1);
+    expect(backfill.embedding?.missing).toBe(0);
+    expect(backfill.embedding?.error).toBeUndefined();
   });
 
   it("drains a backlog larger than one batch in a single run", async () => {
@@ -1012,12 +1023,17 @@ describe("embedding never costs a fact", () => {
       source_origin: "explicit",
     });
 
-    await consolidate(db, createHeuristicProvider(PERSONAL_VOCABULARY), {});
+    const result = await consolidate(
+      db,
+      createHeuristicProvider(PERSONAL_VOCABULARY),
+      {},
+    );
 
     const rows = (await db
       .prepare(`SELECT COUNT(*) AS n FROM fact_embeddings`)
       .get()) as { n: number };
     expect(rows.n).toBe(0);
+    expect(result.embedding?.model).toBeNull();
   });
 });
 
