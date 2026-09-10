@@ -170,7 +170,7 @@ export const CLI_DEFAULT_INTEGRATE_MODEL = "sonnet";
 export const CLI_DEFAULT_TIMEOUT_MS = 45_000;
 /** Init historic extract/integrate idle overlay. Automatic session_start stays `CLI_DEFAULT_TIMEOUT_MS`. */
 export const CLI_HISTORIC_TIMEOUT_MS = 180_000;
-/** TTY “still working” while extract/integrate is silent. Not the lock heartbeat. */
+/** TTY “still working” while a consolidate phase is silent. Not the lock heartbeat. */
 export const EXTRACT_IDLE_HEARTBEAT_MS = 15_000;
 /** Same Ctrl+C can fire process SIGINT and readline SIGINT. Hard-exit only after this. */
 export const ABORT_SECOND_KEYPRESS_MS = 500;

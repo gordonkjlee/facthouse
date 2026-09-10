@@ -214,6 +214,8 @@ describe.skipIf(unavailable)(
       // Coverage is only meaningful against the fact count — a bare count of 4
       // would be full coverage here and a failed run on a larger store.
       expect(stats.embeddings[0].count).toBe(stats.facts.active_latest);
+      expect(stats.semantic.model).toBe(MODEL);
+      expect(stats.semantic.stored).toBe(stats.facts.active_latest);
     },
     120_000,
   );

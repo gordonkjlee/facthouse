@@ -16,6 +16,7 @@ const { findEntity, getSelfEntity, ensureSelfEntity, getFactsBySubject } = await
 const { ensureDomain } = await import("../../src/db/domains.js");
 const { getFactsMissingEmbeddings, countEmbeddings } = await import("../../src/db/embeddings.js");
 const { consolidate } = await import("../../src/intelligence/consolidate.js");
+const { ConsolidateAbortError } = await import("../../src/intelligence/abort.js");
 const { createHeuristicProvider } = await import("../../src/intelligence/heuristic.js");
 const { createHttpProvider } = await import("../../src/intelligence/http.js");
 const { createStageRouter } = await import("../../src/intelligence/stage-router.js");
@@ -1034,6 +1035,122 @@ describe("embedding never costs a fact", () => {
       .get()) as { n: number };
     expect(rows.n).toBe(0);
     expect(result.embedding?.model).toBeNull();
+  });
+
+  it("fires embed progress from inside the drain, including empty I", async () => {
+    await ensureDomain(db, "general");
+    await insertFact(db, {
+      content: "The user prefers dark roast coffee",
+      domain: "general",
+      source_type: "explicit",
+    });
+    const starts: number[] = [];
+    const progress: Array<{ done: number; total: number; hasBatch: boolean }> = [];
+    let ended = 0;
+    const result = await consolidate(
+      db,
+      createHeuristicProvider(PERSONAL_VOCABULARY),
+      { embedding: { batch_size: 1 } as never },
+      working() as never,
+      { copy: false, extract: false, integrate: true },
+      {
+        onEmbedStart: () => starts.push(1),
+        onEmbedProgress: (done, total, batch) =>
+          progress.push({ done, total, hasBatch: Boolean(batch) }),
+        onEmbedEnd: () => {
+          ended += 1;
+        },
+      },
+    );
+
+    expect(result.factsIntegrated).toBe(0);
+    expect(result.embedding?.embedded).toBe(1);
+    expect(starts).toEqual([1]);
+    expect(ended).toBe(1);
+    expect(progress).toEqual([
+      { done: 0, total: 1, hasBatch: false },
+      { done: 1, total: 1, hasBatch: true },
+    ]);
+  });
+
+  it("does not fire embed callbacks on extract-only", async () => {
+    let started = 0;
+    await consolidate(
+      db,
+      createHeuristicProvider(PERSONAL_VOCABULARY),
+      {},
+      working() as never,
+      { copy: false, extract: true, integrate: false },
+      { onEmbedStart: () => { started += 1; } },
+    );
+    expect(started).toBe(0);
+  });
+
+  it("notes batches with a constant total", async () => {
+    const sessionId = await setupSession();
+    for (let i = 0; i < 3; i++) {
+      await insertSessionFact(db, {
+        session_id: sessionId,
+        content: `The user prefers beverage number ${i}`,
+        source_origin: "explicit",
+      });
+    }
+    const progress: Array<{ done: number; total: number; hasBatch: boolean }> = [];
+    await consolidate(
+      db,
+      createHeuristicProvider(PERSONAL_VOCABULARY),
+      { embedding: { batch_size: 1 } as never },
+      working() as never,
+      undefined,
+      {
+        onEmbedProgress: (done, total, batch) =>
+          progress.push({ done, total, hasBatch: Boolean(batch) }),
+      },
+    );
+    expect(progress[0]).toEqual({ done: 0, total: 3, hasBatch: false });
+    expect(progress.slice(1).map((p) => p.done)).toEqual([1, 2, 3]);
+    expect(progress.slice(1).every((p) => p.total === 3 && p.hasBatch)).toBe(true);
+  });
+
+  it("throws ConsolidateAbortError when the signal is set during the probe", async () => {
+    const abort = new AbortController();
+    const slow = {
+      model: "test-model",
+      dimensions: 0,
+      async embed() {
+        abort.abort();
+        throw new Error("still in flight");
+      },
+    };
+    await expect(
+      consolidate(
+        db,
+        createHeuristicProvider(PERSONAL_VOCABULARY),
+        {},
+        slow as never,
+        { copy: false, extract: false, integrate: true },
+        { abort: abort.signal },
+      ),
+    ).rejects.toBeInstanceOf(ConsolidateAbortError);
+  });
+
+  it("omits missing when the probe fails before dimensions are known", async () => {
+    const blank = {
+      model: "broken",
+      dimensions: 0,
+      async embed(): Promise<never> {
+        throw new Error("ECONNREFUSED");
+      },
+    };
+    const result = await consolidate(
+      db,
+      createHeuristicProvider(PERSONAL_VOCABULARY),
+      {},
+      blank as never,
+      { copy: false, extract: false, integrate: true },
+    );
+    expect(result.embedding?.error).toMatch(/ECONNREFUSED/);
+    expect(result.embedding?.missing).toBeUndefined();
   });
 });
 

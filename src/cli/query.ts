@@ -2,9 +2,9 @@
  * search / stats CLI commands — read-only inspection of the knowledge base.
  *
  * Both are thin renderers over the same functions the MCP tools use
- * (`hybridSearch`, `getStats`), so what you see on the command line is exactly
- * what an AI client would see. They are the answer to "what does it actually
- * know?" without wiring up a client.
+ * (`hybridSearch`, `getStats`). The shared object is `KnowledgeStats`; CLI
+ * repair copy (`INIT_PROMPTS.semanticBackfill`) is surface-specific and is not
+ * on the MCP payload.
  *
  * Default output is human-readable; `--json` emits the raw tool payload for
  * scripting.
@@ -15,6 +15,7 @@ import { searchWithProvider } from "../search/index.js";
 import type { VectorSearchOpts } from "../search/vector.js";
 import type { EmbeddingProvider } from "../embedding/types.js";
 import { getStats, type KnowledgeStats } from "../db/stats.js";
+import { INIT_PROMPTS } from "./init-knobs.js";
 import type {
   IntelligenceRunSummary,
   IntelligenceSpendRollup,
@@ -202,14 +203,14 @@ export function formatConsolidate(r: ConsolidationResult): string {
       if (e.embedded > 0) {
         lines.push(`  Embedded this run  ${e.embedded}`);
       }
-      if (e.missing > 0) {
+      if (e.missing != null && e.missing > 0) {
         lines.push(`  Still unembedded   ${e.missing}`);
       }
     } else if (e.model && e.dimensions) {
       const coverage =
-        e.embedded === 0 && e.missing === 0
+        e.embedded === 0 && (e.missing ?? 0) === 0
           ? "already complete"
-          : e.missing > 0
+          : (e.missing ?? 0) > 0
             ? `wrote ${e.embedded}; ${e.missing} still missing`
             : `wrote ${e.embedded}`;
       lines.push(`  Semantic           ${e.model} @ ${e.dimensions}d  ${coverage}`);
@@ -217,6 +218,19 @@ export function formatConsolidate(r: ConsolidationResult): string {
   }
   if (r.summary) lines.push("", `  ${r.summary}`);
   return lines.join("\n");
+}
+
+function formatCoverageLine(
+  model: string,
+  dimensions: number | undefined,
+  count: number,
+  of: number,
+  leftover: boolean,
+): string {
+  const dim = dimensions != null && dimensions > 0 ? ` @ ${dimensions}d` : "";
+  const pct = of > 0 ? ` (${Math.round((count / of) * 100)}%)` : "";
+  const counts = of > 0 ? `  ${count}/${of}${pct}` : "  (none yet)";
+  return `    ${model}${dim}${counts}${leftover ? "  leftover" : ""}`;
 }
 
 export function formatStats(stats: KnowledgeStats): string {
@@ -241,16 +255,36 @@ export function formatStats(stats: KnowledgeStats): string {
     }
   }
 
-  // Coverage, not just presence. A store can hold vectors for some of its
-  // facts and search will still work — the semantic path ranks rather than
-  // gates — so the number that matters is how many of the current facts are
-  // reachable by meaning, which is only visible against the fact count.
-  if (stats.embeddings.length) {
+  // Coverage, not just presence. `semantic` is intent plus the join;
+  // `embeddings[]` is holdings, including leftovers from a previous model.
+  const of = stats.facts.active_latest;
+  if (stats.semantic || stats.embeddings.length) {
     lines.push("", "  Semantic coverage");
+    const working = stats.semantic;
     for (const e of stats.embeddings) {
-      const of = stats.facts.active_latest;
-      const pct = of > 0 ? ` (${Math.round((e.count / of) * 100)}%)` : "";
-      lines.push(`    ${e.model} @ ${e.dimensions}d  ${e.count}/${of}${pct}`);
+      const leftover =
+        !working ||
+        e.model !== working.model ||
+        (working.dimensions != null && e.dimensions !== working.dimensions);
+      if (leftover) {
+        lines.push(formatCoverageLine(e.model, e.dimensions, e.count, of, true));
+      }
+    }
+    if (working) {
+      const matching = stats.embeddings.filter(
+        (e) =>
+          e.model === working.model &&
+          (working.dimensions == null || e.dimensions === working.dimensions),
+      );
+      const dim =
+        working.dimensions ??
+        (matching.length === 1 ? matching[0]!.dimensions : undefined);
+      if (of === 0) {
+        lines.push(`    ${working.model}  (none yet)`);
+      } else {
+        lines.push(formatCoverageLine(working.model, dim, working.stored, of, false));
+        if (working.stored < of) lines.push(`    ${INIT_PROMPTS.semanticBackfill}`);
+      }
     }
   }
 

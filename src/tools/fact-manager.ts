@@ -22,6 +22,7 @@ import {
 import { getEventById } from "../db/sessions.js";
 import {
   consolidate,
+  embedReportVisible,
   type ConsolidationResult,
   type ConsolidateSteps,
   type ConsolidateCaller,
@@ -411,7 +412,11 @@ export function createFactManager(
             `Extract is capped at ${EXTRACT_CAP_EVENTS} of the oldest unexamined ` +
             `lines per call; events_remaining in the result says how many wait. ` +
             `Pass all: true to take the whole backlog in one call, or limit: N ` +
-            `for the oldest N.`,
+            `for the oldest N.\n\n` +
+            `When meaning search is on, integrate also embeds currently-true facts ` +
+            `that have no vector for the working model. A result with ` +
+            `facts_integrated: 0 can still have written vectors — read embedding ` +
+            `(embedded, missing, error). Call get_stats for store-wide coverage.`,
           {
             all: z
               .boolean()
@@ -453,6 +458,7 @@ export function createFactManager(
                       skip_reason: result.skipReason ?? null,
                       extraction_degraded: result.extractionDegraded === true,
                       examined_through: result.examinedThrough,
+                      embedding: mcpEmbeddingField(result),
                     }),
                   },
                 ],
@@ -473,4 +479,22 @@ export function createFactManager(
   };
 
   return manager;
+}
+
+export function mcpEmbeddingField(result: ConsolidationResult): {
+  model: string | null;
+  dimensions: number | null;
+  embedded: number;
+  missing?: number;
+  error?: string;
+} | null {
+  const e = result.embedding;
+  if (!embedReportVisible(e) || !e) return null;
+  return {
+    model: e.model,
+    dimensions: e.dimensions,
+    embedded: e.embedded,
+    ...(e.missing != null ? { missing: e.missing } : {}),
+    ...(e.error ? { error: e.error } : {}),
+  };
 }

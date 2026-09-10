@@ -19,6 +19,11 @@ export class ChunkEta {
     }
   }
 
+  /** Same estimator; units are facts in an embed batch, not extract lines. */
+  noteBatch(durationMs: number, factCount: number): void {
+    this.noteModelChunk(durationMs, factCount);
+  }
+
   reset(): void {
     this.durations.length = 0;
     this.lines.length = 0;

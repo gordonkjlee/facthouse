@@ -612,6 +612,13 @@ export const INIT_PROMPTS = {
   extractIdle:
     "Still working. A quiet gap is idle silence, not the whole job dying.",
   integratingNow: (n: number) => `Integrating ${n} candidate(s)…`,
+  embeddingNow: "Checking embeddings…",
+  embedProgress: (done: number, total: number, etaMs?: number | null) =>
+    etaMs == null
+      ? `${done} of ${total} fact(s)…`
+      : `${done} of ${total} fact(s), ~${formatEta(etaMs)} left`,
+  semanticBackfill: `Not yet embedded. Run ${CLI_NAME} consolidate --integrate.`,
+  embedFailed: (err: string) => `Embedding failed — ${err}`,
   extractInterrupted: (remaining: number) =>
     remaining > 0
       ? `Stopped. ${remaining} line(s) still waiting.\nContinue: ${CLI_NAME} consolidate --all`

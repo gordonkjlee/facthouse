@@ -212,6 +212,16 @@ describe.skipIf(!runnable)("tool descriptions are an instruction layer", () => {
     expect(dangling).toEqual([]);
   });
 
+  it("get_stats does not tell agents to run a CLI command", () => {
+    const stats = tools.find((t) => t.name === "get_stats");
+    expect(stats?.description ?? "").not.toMatch(/facthouse/);
+    expect(stats?.description ?? "").not.toMatch(/--integrate/);
+    expect(stats?.description ?? "").toMatch(/semantic\.stored/);
+    const consolidate = tools.find((t) => t.name === "consolidate");
+    expect(consolidate?.description ?? "").toMatch(/embedding/);
+    expect(consolidate?.description ?? "").not.toMatch(/facthouse/);
+  });
+
   it("no description leaks a real name into shipped text", () => {
     // The spec's get_context example used the owner's partner's real name. Tool
     // descriptions ship to every client — examples must be synthetic. The

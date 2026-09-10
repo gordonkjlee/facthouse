@@ -14,7 +14,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 const { createVoyageProvider } = await import("../../src/embedding/voyage.js");
 const { createOllamaProvider, ollamaHost, probeOllama, DEFAULT_HOST } = await import("../../src/embedding/ollama.js");
-const { createEmbeddingProvider, resolveEmbeddingProviderType } = await import(
+const { createEmbeddingProvider, resolveEmbeddingProviderType, semanticIntentOf } = await import(
   "../../src/embedding/provider.js"
 );
 
@@ -281,6 +281,46 @@ describe("provider selection", () => {
     );
 
     expect(p?.model).toBe("nomic-embed-text");
+  });
+
+  it("semanticIntentOf is lazy and names the resolved model", () => {
+    expect(semanticIntentOf(undefined, {})).toBeNull();
+    expect(
+      semanticIntentOf(
+        {
+          provider: "ollama",
+          model: null,
+          dimensions: null,
+          api_key_env: "UNUSED",
+          batch_size: 8,
+        } as never,
+        {},
+      ),
+    ).toEqual({ provider: "ollama", model: "nomic-embed-text" });
+    expect(
+      semanticIntentOf(
+        {
+          provider: "voyage",
+          model: null,
+          dimensions: null,
+          api_key_env: "VOYAGE_API_KEY",
+          batch_size: 8,
+        } as never,
+        {},
+      ),
+    ).toBeNull();
+    expect(
+      semanticIntentOf(
+        {
+          provider: "ollama",
+          model: "nomic-embed-text",
+          dimensions: null,
+          api_key_env: "UNUSED",
+          batch_size: 8,
+        } as never,
+        { FACTHOUSE_EMBEDDING_PROVIDER: "none" },
+      ),
+    ).toBeNull();
   });
 
   it("honours the env kill-switch in both directions", () => {
