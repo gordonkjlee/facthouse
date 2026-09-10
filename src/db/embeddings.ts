@@ -185,6 +185,25 @@ export async function getFactsMissingEmbeddings(
   }>;
 }
 
+/** Size of the embed queue for this model. Same predicate as the drain. */
+export async function countFactsMissingEmbeddings(
+  db: Db,
+  model: string,
+  dimensions: number,
+): Promise<number> {
+  const row = (await db
+    .prepare(
+      `SELECT COUNT(*) AS n
+         FROM facts f
+         LEFT JOIN fact_embeddings e
+           ON e.fact_id = f.id AND e.model = ? AND e.dimensions = ?
+        WHERE e.fact_id IS NULL
+          AND f.status = 'active' AND f.is_latest = 1`,
+    )
+    .get(model, dimensions)) as { n: number };
+  return Number(row.n);
+}
+
 /** How many facts carry a vector for this model — coverage, for `get_stats`. */
 export async function countEmbeddings(
   db: Db,

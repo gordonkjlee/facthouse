@@ -194,6 +194,27 @@ export function formatConsolidate(r: ConsolidationResult): string {
   if (r.extractionDegraded) {
     lines.push(`  Extraction         degraded — see the message above`);
   }
+  if (r.embedding) {
+    const e = r.embedding;
+    if (e.error) {
+      const who = e.model ? ` (${e.model})` : "";
+      lines.push(`  Semantic           failed${who} — ${e.error}`);
+      if (e.embedded > 0) {
+        lines.push(`  Embedded this run  ${e.embedded}`);
+      }
+      if (e.missing > 0) {
+        lines.push(`  Still unembedded   ${e.missing}`);
+      }
+    } else if (e.model && e.dimensions) {
+      const coverage =
+        e.embedded === 0 && e.missing === 0
+          ? "already complete"
+          : e.missing > 0
+            ? `wrote ${e.embedded}; ${e.missing} still missing`
+            : `wrote ${e.embedded}`;
+      lines.push(`  Semantic           ${e.model} @ ${e.dimensions}d  ${coverage}`);
+    }
+  }
   if (r.summary) lines.push("", `  ${r.summary}`);
   return lines.join("\n");
 }
