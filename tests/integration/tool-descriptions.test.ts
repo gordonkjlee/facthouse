@@ -1,7 +1,7 @@
 /**
  * Tool descriptions are the product's instruction layer, not API documentation.
  * They ship with the server and are the only thing telling an assistant when to
- * capture and when to search — which is what lets OpenMemory work on any MCP
+ * capture and when to search — which is what lets Facthouse work on any MCP
  * client with no client-side rules.
  *
  * Nothing tested them, so they rotted quietly: an audit against a live server
@@ -123,7 +123,7 @@ describe.skipIf(!runnable)("tool descriptions are an instruction layer", () => {
 
   it("the tools an assistant must reach for unprompted push proactive use", () => {
     // These are the product thesis: capture without being asked, search before
-    // answering. If their descriptions go passive, OpenMemory stops working on
+    // answering. If their descriptions go passive, Facthouse stops working on
     // clients that have no rules of their own — which is every client but one.
     const captureFact = tools.find((t) => t.name === "capture_fact")!;
     // Default init writes sources: [] — proactive capture is the instruction.

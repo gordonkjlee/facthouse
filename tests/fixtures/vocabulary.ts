@@ -14,7 +14,7 @@
 import type { DomainDef } from "../../src/types/config.js";
 
 /**
- * A personal vocabulary — the shape OpenMemory is best at.
+ * A personal vocabulary — the shape Facthouse is best at.
  *
  * Patterns match how facts are actually written: `capture_fact` is called by an
  * assistant recording a fact *about* its user, so content arrives in the third

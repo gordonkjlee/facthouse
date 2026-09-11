@@ -11,10 +11,7 @@ import pytest
 import build_pages
 
 ROOT = Path(__file__).resolve().parents[2]
-SHORT_PITCH = (
-    "Local AI memory: neuroscience-inspired "
-    "Data→Information→Knowledge in SQLite you own."
-)
+SHORT_PITCH = "A local memory engine any AI tool can use."
 README_PITCH = (
     "Facthouse is a local memory engine for AI tools. Most “memory” products "
     "index chat logs. Facthouse takes agent activity - messages, tool use, "
@@ -79,7 +76,6 @@ def test_builds_site_from_readme(tmp_path: Path):
     assert "(extracted facts)" in index
     assert "(integrated beliefs on an entity graph)" in index
     assert "The store is a SQLite file on your disk." in index
-    assert "A local memory engine any AI tool can use." not in index
     assert "paste the snippet it prints" not in index
     assert "Install `@facthouse/mcp`" not in index
     assert "Install <code>@facthouse/mcp</code>" not in index
@@ -205,17 +201,13 @@ def test_listing_description_matches_package_and_registry():
     assert build_pages.PITCH == SHORT_PITCH
     assert build_pages.listing_description() == SHORT_PITCH
     # MCP Registry server.schema.json description maxLength is 100.
-    assert SHORT_PITCH == (
-        "Local AI memory: neuroscience-inspired "
-        "Data→Information→Knowledge in SQLite you own."
-    )
-    assert len(SHORT_PITCH) == 84
+    assert SHORT_PITCH == "A local memory engine any AI tool can use."
     assert len(SHORT_PITCH) <= 100
     assert_no_rival_copy(SHORT_PITCH, "SHORT_PITCH")
     assert_no_rival_copy(pkg["description"], "package.json description")
     assert_no_rival_copy(server["description"], "server.json description")
-    assert "neuroscience" in SHORT_PITCH.lower()
-    assert "you own" in SHORT_PITCH.lower()
+    assert "neuroscience" not in SHORT_PITCH.lower()
+    assert "you own" not in SHORT_PITCH.lower()
     assert "Wisdom" not in SHORT_PITCH
 
 

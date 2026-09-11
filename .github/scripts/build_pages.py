@@ -28,13 +28,10 @@ DOMAIN = "facthouse.dev"
 SITE_ORIGIN = f"https://{DOMAIN}"
 GITHUB = "https://github.com/gordonkjlee/facthouse"
 NPM = "https://www.npmjs.com/package/@facthouse/mcp"
-# Fallback / cramped-field hook. The landing chrome prefers the README lede.
-# Keep in sync with package.json and server.json description.
+# Cramped-field hook (npm, registry, meta, JSON-LD). Visible landing lede is
+# the README. Keep in sync with package.json / server.json / src/identity LOCKUP.
 # MCP Registry server.json description maxLength is 100 characters.
-PITCH = (
-    "Local AI memory: neuroscience-inspired "
-    "Data→Information→Knowledge in SQLite you own."
-)
+PITCH = "A local memory engine any AI tool can use."
 # Public IndexNow host-verification key (not a credential). Served at /{key}.txt.
 INDEXNOW_KEY = "a88a795220f4450e97a5f2486a4426f8"
 MARKDOWN_EXTENSIONS = ("fenced_code", "tables")
@@ -181,7 +178,7 @@ def split_readme(text: str) -> tuple[str, str]:
 
 
 def listing_description() -> str:
-    """Cramped-field hook from package.json (npm, registry, meta, JSON-LD)."""
+    """Lockup from package.json (npm, registry, meta, JSON-LD)."""
     desc = package_metadata().get("description")
     if isinstance(desc, str) and desc.strip():
         return desc.strip()

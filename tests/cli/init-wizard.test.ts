@@ -47,7 +47,7 @@ function fakeIo(answers: string[]): InitIo & { prompts: string[]; writes: string
 }
 
 const seed: InitWizardSeed = {
-  dataDir: "/tmp/openmemory-try",
+  dataDir: "/tmp/facthouse-try",
   dataDirLocked: true,
   force: false,
 };
