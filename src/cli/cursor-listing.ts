@@ -16,7 +16,9 @@ import {
   HOMEPAGE,
   LOCKUP,
   PRODUCT_NAME,
+  cliDataArg,
   npmPackageSpec,
+  pathFreeCli,
 } from "../identity.js";
 import { SESSION_BOOTSTRAP_INSTRUCTIONS } from "../tools/resources.js";
 import { mcpConfigSnippet } from "./init.js";
@@ -27,17 +29,24 @@ import { packageVersion } from "./package-version.js";
 /** Same words as README Quick Start. `package.json` `engines.node` is the constraint. */
 export const NODE_REQUIREMENT_LINE = "Needs Node 22.5 or 24+.";
 
+/**
+ * MCP-only listing store. No `FACTHOUSE_DATA` on the paste, so the server
+ * is this directory. The Hooks JSON uses the same path as `--data`.
+ */
+export const LISTING_DEFAULT_DATA_DIR = "~/.facthouse";
+
 export { CURSOR_DIRECTORY_ORIGIN };
 
 /**
  * Tools-only client rules. README § Cursor / Windsurf repeats this block.
  * Cursor Directory gets it as the Rules field, not inside Setup.
+ * First bullet is `SESSION_BOOTSTRAP_INSTRUCTIONS` — one definition.
  */
 export const CURSOR_RULES_BODY = `When the facthouse MCP server is available:
+- ${SESSION_BOOTSTRAP_INSTRUCTIONS}
 - Before answering questions this store might already know, call search_knowledge
 - To find out everything known about a particular person, project, or thing, call get_entity
-- Call capture_fact only to correct or add something copy or extraction missed
-- When context is getting long, call consolidate`;
+- Call capture_fact only to correct or add something copy or extraction missed`;
 
 export interface CursorDirectoryListing {
   origin: string;
@@ -47,10 +56,15 @@ export interface CursorDirectoryListing {
   description: string;
   /** Valid JSON. Default store; no env, no embedding keys. */
   mcpJson: string;
-  /** Cursor-specific setup. Not an account login. Three steps. */
+  /** Cursor-specific setup. Not an account login. */
   setup: string;
   /** Directory Rules field. Not Setup. */
   rules: string;
+  /**
+   * Directory Hooks tab. Copy into `~/.cursor/hooks.json` — that tab is
+   * Copy, not Add to Cursor.
+   */
+  hooks: string;
 }
 
 function requiredVersion(version?: string): string {
@@ -63,12 +77,40 @@ function requiredVersion(version?: string): string {
 
 export function cursorListingDescription(): string {
   return (
-    `${LOCKUP} In Cursor it turns Agent chats into a graph of people, projects, and decisions — duplicates dropped, contradictions superseded. No account.`
+    `${LOCKUP} In Cursor it turns Agent chats into a graph of people, projects, and decisions — duplicates dropped, contradictions superseded. ` +
+    `Click Add to Cursor on the MCP server and on the rule. ${NODE_REQUIREMENT_LINE} ` +
+    `No account and no init; the store is ${LISTING_DEFAULT_DATA_DIR}. ` +
+    `Copy transcripts: ${INIT_PROMPTS.copyRecipe} Kind cursor. ` +
+    `Compaction: copy the Hooks tab into ~/.cursor/hooks.json.`
   );
 }
 
 export function cursorListingMcpJson(version?: string): string {
   return mcpConfigSnippet(npmPackageSpec(requiredVersion(version)), undefined, 0);
+}
+
+/**
+ * Same argv as init `precompactHookJson` (`notify compaction --data`).
+ * Cursor Directory Hooks are Copy, not an installed plugin script.
+ */
+export function cursorListingHookCommand(version?: string): string {
+  return pathFreeCli(
+    `notify compaction --data ${cliDataArg(LISTING_DEFAULT_DATA_DIR)}`,
+    npmPackageSpec(requiredVersion(version)),
+  );
+}
+
+export function cursorListingHooksJson(version?: string): string {
+  return JSON.stringify(
+    {
+      version: 1,
+      hooks: {
+        preCompact: [{ command: cursorListingHookCommand(version) }],
+      },
+    },
+    null,
+    2,
+  );
 }
 
 export function cursorListingSetup(): string {
@@ -78,9 +120,9 @@ export function cursorListingSetup(): string {
   return [
     `${NODE_REQUIREMENT_LINE} No Facthouse account.`,
     "",
-    "1. Paste the MCP JSON into project `.cursor/mcp.json` or user `~/.cursor/mcp.json`. Keep any other servers already in that file. Restart. Settings → Tools & MCP should show Facthouse connected.",
-    `2. ${SESSION_BOOTSTRAP_INSTRUCTIONS}`,
-    `3. To copy Cursor transcripts automatically: ${INIT_PROMPTS.copyRecipe} Kind cursor. ${HOMEPAGE}`,
+    `1. Click Add to Cursor on the MCP server, then on the rule. Restart. Settings → Tools & MCP should show Facthouse connected. The store is ${LISTING_DEFAULT_DATA_DIR} — no init.`,
+    `2. Optional — copy Agent transcripts automatically: ${INIT_PROMPTS.copyRecipe} Kind cursor. ${HOMEPAGE}`,
+    `3. Optional — before compact: copy the Hooks JSON into ~/.cursor/hooks.json (we do not install it). --data is ${LISTING_DEFAULT_DATA_DIR} so it matches the MCP default. Hooks do not see mcp.json env.`,
   ].join("\n");
 }
 
@@ -95,6 +137,7 @@ export function cursorDirectoryListing(version?: string): CursorDirectoryListing
     mcpJson: cursorListingMcpJson(pin),
     setup: cursorListingSetup(),
     rules: CURSOR_RULES_BODY,
+    hooks: cursorListingHooksJson(pin),
   };
 }
 
@@ -127,6 +170,9 @@ export function formatCursorDirectoryListing(
     ``,
     `## Rules`,
     listing.rules,
+    ``,
+    `## Hooks`,
+    listing.hooks,
     ``,
   ].join("\n");
 }

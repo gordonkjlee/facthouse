@@ -16,8 +16,11 @@ import { INIT_PROMPTS, silentEmbeddingProvider } from "../../src/cli/init-knobs.
 import {
   CURSOR_DIRECTORY_ORIGIN,
   CURSOR_RULES_BODY,
+  LISTING_DEFAULT_DATA_DIR,
   NODE_REQUIREMENT_LINE,
   cursorDirectoryListing,
+  cursorListingHookCommand,
+  cursorListingHooksJson,
   cursorListingMcpJson,
   formatCursorDirectoryListing,
 } from "../../src/cli/cursor-listing.js";
@@ -60,21 +63,28 @@ describe("cursor directory listing — one definition", () => {
     expect(DEFAULT_CONFIG.embedding.provider).toBeNull();
   });
 
-  it("description is lockup plus a Cursor consequence, not pipeline jargon", () => {
+  it("description tells Directory users Add to Cursor is enough for a record store", () => {
     expect(listing.description.startsWith(LOCKUP)).toBe(true);
     expect(listing.description).toMatch(/In Cursor/);
-    expect(listing.description).toMatch(/No account/);
+    expect(listing.description).toMatch(/Add to Cursor/);
+    expect(listing.description).toContain(NODE_REQUIREMENT_LINE);
+    expect(listing.description).toContain(LISTING_DEFAULT_DATA_DIR);
+    expect(listing.description).toMatch(/no init/i);
+    expect(listing.description).toContain(INIT_PROMPTS.copyRecipe);
+    expect(listing.description).toMatch(/Kind cursor/);
+    expect(listing.description).toMatch(/Hooks tab/);
     expect(listing.description).not.toMatch(/JSONL|record store|SQLite you own|you own the file|Mem0|openmemory/i);
   });
 
-  it("setup is three Cursor steps, not a README dump", () => {
+  it("setup is Add to Cursor, then optional copy and hook, not a README dump", () => {
     expect(listing.setup).toContain(NODE_REQUIREMENT_LINE);
-    expect(listing.setup).toContain(".cursor/mcp.json");
-    expect(listing.setup).toContain("~/.cursor/mcp.json");
-    expect(listing.setup).toContain(SESSION_BOOTSTRAP_INSTRUCTIONS);
+    expect(listing.setup).toMatch(/Add to Cursor/);
+    expect(listing.setup).toContain(LISTING_DEFAULT_DATA_DIR);
     expect(listing.setup).toContain(INIT_PROMPTS.copyRecipe);
     expect(listing.setup).toContain("Kind cursor");
     expect(listing.setup).toContain(HOMEPAGE);
+    expect(listing.setup).toMatch(/~\/\.cursor\/hooks\.json/);
+    expect(listing.setup).toMatch(/we do not install it/);
     expect(listing.setup).toMatch(/No Facthouse account/);
     expect(listing.setup).not.toMatch(/npm install -g/);
     expect(listing.setup).not.toMatch(/see CLI below/);
@@ -86,11 +96,35 @@ describe("cursor directory listing — one definition", () => {
     expect(numbered).toEqual(["1. ", "2. ", "3. "]);
   });
 
-  it("rules are a separate field frozen against the README Cursor block", () => {
+  it("rules lead with session bootstrap and freeze against the README Cursor block", () => {
     expect(listing.rules).toBe(CURSOR_RULES_BODY);
+    expect(listing.rules).toContain(SESSION_BOOTSTRAP_INSTRUCTIONS);
+    expect(listing.rules).not.toMatch(/When context is getting long/);
+    expect(listing.rules).not.toMatch(/call consolidate/);
     expect(readmeText()).toContain(CURSOR_RULES_BODY);
     expect(readmeText()).toContain(NODE_REQUIREMENT_LINE);
     expect(readmeText()).toMatch(/kind: "cursor"/);
+    expect(readmeText()).toMatch(/Add to Cursor/);
+    expect(readmeText()).toMatch(/per component/);
+  });
+
+  it("hooks JSON is Cursor preCompact, path-free CLI, default store --data", () => {
+    expect(listing.hooks).toBe(cursorListingHooksJson(version));
+    const parsed = JSON.parse(listing.hooks) as {
+      version: number;
+      hooks: { preCompact: { command: string }[] };
+    };
+    expect(parsed.version).toBe(1);
+    const command = parsed.hooks.preCompact[0]?.command;
+    expect(command).toBe(cursorListingHookCommand(version));
+    expect(command).toContain("notify compaction");
+    expect(command).toContain(`--data ${LISTING_DEFAULT_DATA_DIR}`);
+    expect(command).toMatch(/npx -y -p "@facthouse\/mcp@/);
+    expect(command).toContain("-- facthouse ");
+    expect(command).not.toMatch(/npx -y @facthouse\/mcp[^\s]/);
+    expect(listing.hooks).not.toMatch(/YOUR_/i);
+    expect(listing.hooks).not.toMatch(/PreCompact/);
+    expect(listing.hooks).not.toMatch(/CURSOR_PLUGIN_ROOT/);
   });
 
   it("identity and dump fields match package.json", () => {
@@ -108,12 +142,14 @@ describe("cursor directory listing — one definition", () => {
     expect(pkg.version).toBe(version);
   });
 
-  it("dump is pasteable labelled fields, including Rules", () => {
+  it("dump is pasteable labelled fields, including Rules and Hooks", () => {
     const dump = formatCursorDirectoryListing(listing);
     expect(dump).toContain(listing.mcpJson);
     expect(dump).toContain(listing.setup);
     expect(dump).toContain(listing.rules);
+    expect(dump).toContain(listing.hooks);
     expect(dump).toMatch(/^## Rules$/m);
+    expect(dump).toMatch(/^## Hooks$/m);
     expect(dump).toContain("Do not add a repo-root .mcp.json");
     expect(dump).toContain(listing.origin);
   });
