@@ -33,6 +33,9 @@ describe("listing surfaces — one inventory", () => {
     expect(pagesMeta?.dump).toMatch(/SHORT_PITCH/);
     expect(pagesMeta?.dump).not.toMatch(/LOCKUP/);
     expect(pagesMeta?.sources).toEqual([".github/scripts/build_pages.py"]);
+    const mcpservers = LISTING_SURFACES.find((s) => s.id === "mcpservers-org");
+    expect(mcpservers?.dump).toMatch(/npx -y @facthouse\/mcp/);
+    expect(mcpservers?.dump).not.toMatch(/npm install -g/);
   });
 
   it("only Cursor Directory has a client overlay", () => {

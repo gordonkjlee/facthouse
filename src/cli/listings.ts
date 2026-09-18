@@ -87,7 +87,7 @@ export const LISTING_SURFACES: readonly ListingSurface[] = [
     channel: "readme-scrape",
     client: "any",
     sources: ["README.md"],
-    dump: "Request update on the listing after a README or pin change",
+    dump: "README Quick Start is npx -y @facthouse/mcp + facthouse init. Request update after a README change",
   },
   {
     id: "glama",

@@ -86,6 +86,9 @@ def test_builds_site_from_readme(tmp_path: Path):
     assert "Install <code>@facthouse/mcp</code>" not in index
     assert "facthouse init" in index
     quick_html = index.split("Quick Start", 1)[1].split("What you get", 1)[0]
+    assert "npx -y @facthouse/mcp" in quick_html
+    assert "facthouse init" in quick_html
+    assert "npm install -g" not in quick_html
     assert "facthouse init --web" in quick_html
     assert "same setup as a browser form" in quick_html
     assert "skip the wizard" not in quick_html

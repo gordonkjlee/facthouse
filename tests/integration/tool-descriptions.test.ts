@@ -425,6 +425,8 @@ describe.skipIf(!runnable)("the README names tools that exist", () => {
     for (const line of md.split("\n")) {
       const trimmed = line.trim();
       if (!trimmed.startsWith("npx ")) continue;
+      // Quick Start / listings scrape: the MCP server, not the CLI.
+      if (/^npx -y @facthouse\/mcp(?:@[\w.-]+)?$/.test(trimmed)) continue;
       expect(trimmed).toMatch(/-p "@facthouse\/mcp/);
       expect(trimmed).toMatch(/\bfacthouse\b/);
     }
