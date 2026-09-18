@@ -11,7 +11,11 @@ import pytest
 import build_pages
 
 ROOT = Path(__file__).resolve().parents[2]
-SHORT_PITCH = "A local memory engine any AI tool can use."
+SHORT_PITCH = (
+    "Local AI memory: neuroscience-inspired "
+    "Data→Information→Knowledge in SQLite you own."
+)
+LOCKUP = "A local memory engine any AI tool can use."
 README_PITCH = (
     "Facthouse is a local memory engine for AI tools. Most “memory” products "
     "index chat logs. Facthouse takes agent activity - messages, tool use, "
@@ -76,6 +80,7 @@ def test_builds_site_from_readme(tmp_path: Path):
     assert "(extracted facts)" in index
     assert "(integrated beliefs on an entity graph)" in index
     assert "The store is a SQLite file on your disk." in index
+    assert LOCKUP not in index
     assert "paste the snippet it prints" not in index
     assert "Install `@facthouse/mcp`" not in index
     assert "Install <code>@facthouse/mcp</code>" not in index
@@ -138,6 +143,7 @@ def test_builds_site_from_readme(tmp_path: Path):
     assert ">gordonkjlee/facthouse<" in index
     assert "hosted plane" not in index.lower()
     assert "vendor blob" not in index.lower()
+    assert "factmem" not in index.lower()
     assert f'content="{SHORT_PITCH}"' in index
 
 
@@ -188,27 +194,29 @@ def test_public_surfaces_have_no_rival_disambiguation():
     assert_no_rival_copy(demo, "site/demo.html")
     assert README_PITCH in readme
     assert "The store is a SQLite file on your disk." in readme
-    assert "A local memory engine any AI tool can use." not in readme
-    assert pkg["description"] == SHORT_PITCH
-    assert server["description"] == SHORT_PITCH
+    assert LOCKUP not in readme
 
 
-def test_listing_description_matches_package_and_registry():
+def test_listing_description_is_approved_neuroscience_pitch():
     pkg = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))
     server = json.loads((ROOT / "server.json").read_text(encoding="utf-8"))
-    assert pkg["description"] == SHORT_PITCH
-    assert server["description"] == SHORT_PITCH
     assert build_pages.PITCH == SHORT_PITCH
     assert build_pages.listing_description() == SHORT_PITCH
-    # MCP Registry server.schema.json description maxLength is 100.
-    assert SHORT_PITCH == "A local memory engine any AI tool can use."
+    assert build_pages.listing_description() != LOCKUP
+    # Site meta / JSON-LD must not follow npm LOCKUP if the two diverge.
+    assert SHORT_PITCH == (
+        "Local AI memory: neuroscience-inspired "
+        "Data→Information→Knowledge in SQLite you own."
+    )
+    assert len(SHORT_PITCH) == 84
     assert len(SHORT_PITCH) <= 100
     assert_no_rival_copy(SHORT_PITCH, "SHORT_PITCH")
     assert_no_rival_copy(pkg["description"], "package.json description")
     assert_no_rival_copy(server["description"], "server.json description")
-    assert "neuroscience" not in SHORT_PITCH.lower()
-    assert "you own" not in SHORT_PITCH.lower()
+    assert "neuroscience" in SHORT_PITCH.lower()
+    assert "you own" in SHORT_PITCH.lower()
     assert "Wisdom" not in SHORT_PITCH
+    assert "FactMem" not in SHORT_PITCH
 
 
 def test_split_readme_uses_lede_and_keeps_image():
@@ -266,9 +274,12 @@ def test_index_has_software_application_json_ld(tmp_path: Path):
         "https://www.npmjs.com/package/@facthouse/mcp",
     ]
     assert data["description"] == SHORT_PITCH
+    assert data["description"] != LOCKUP
+    assert LOCKUP not in body
     assert "www.facthouse.dev" not in body
     assert "openmemory" not in body.lower()
     assert "mem0" not in body.lower()
+    assert "factmem" not in body.lower()
 
 
 def test_footer_no_longer_says_openmemory(tmp_path: Path):

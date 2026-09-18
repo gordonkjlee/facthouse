@@ -104,8 +104,8 @@ export const LISTING_SURFACES: readonly ListingSurface[] = [
     url: HOMEPAGE,
     channel: "package-field",
     client: "any",
-    sources: [".github/scripts/build_pages.py", "package.json"],
-    dump: "build_pages.py PITCH === LOCKUP (meta / JSON-LD; visible lede is the README)",
+    sources: [".github/scripts/build_pages.py"],
+    dump: "build_pages.py PITCH === approved neuroscience SHORT_PITCH (meta / JSON-LD; visible lede is the README)",
   },
 ];
 
