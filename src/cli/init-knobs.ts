@@ -678,7 +678,7 @@ export const INIT_PROMPTS = {
     "Recommended PreCompact hook — paste into Claude Code `.claude/settings.json` (we do not install it). Notifies the running server when the client is about to compact; returns at once. `--data` is required; hooks do not see mcp.json env:",
   mcpInstallClash:
     "If npm install -g fails because a command named mcp already exists, remove that leftover command and retry.",
-  /** Quick Start after `npm install -g` + TTY init. */
+  /** Quick Start after `npx -y @facthouse/mcp` + TTY init. */
   quickStartNext:
     "Press Enter to accept each default (copy = Claude Code or Cursor session logs on disk; type record if the assistant should save facts). " +
     "If you picked copy, init asks whether to copy existing logs, then whether to extract and integrate. " +

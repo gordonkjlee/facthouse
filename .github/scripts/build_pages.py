@@ -28,10 +28,14 @@ DOMAIN = "facthouse.dev"
 SITE_ORIGIN = f"https://{DOMAIN}"
 GITHUB = "https://github.com/gordonkjlee/facthouse"
 NPM = "https://www.npmjs.com/package/@facthouse/mcp"
-# Cramped-field hook (npm, registry, meta, JSON-LD). Visible landing lede is
-# the README. Keep in sync with package.json / server.json / src/identity LOCKUP.
+# Approved cramped-field pitch for site meta and JSON-LD (≤100 chars).
+# Visible landing lede is the README. This is not LOCKUP — the 42-char
+# "any AI tool can use" line is rejected for public site / JSON-LD.
 # MCP Registry server.json description maxLength is 100 characters.
-PITCH = "A local memory engine any AI tool can use."
+PITCH = (
+    "Local AI memory: neuroscience-inspired "
+    "Data→Information→Knowledge in SQLite you own."
+)
 # Public IndexNow host-verification key (not a credential). Served at /{key}.txt.
 INDEXNOW_KEY = "a88a795220f4450e97a5f2486a4426f8"
 MARKDOWN_EXTENSIONS = ("fenced_code", "tables")
@@ -178,10 +182,11 @@ def split_readme(text: str) -> tuple[str, str]:
 
 
 def listing_description() -> str:
-    """Lockup from package.json (npm, registry, meta, JSON-LD)."""
-    desc = package_metadata().get("description")
-    if isinstance(desc, str) and desc.strip():
-        return desc.strip()
+    """Approved SHORT_PITCH for site meta and JSON-LD.
+
+    Do not read package.json here. npm / registry may still carry LOCKUP;
+    facthouse.dev meta and SoftwareApplication.description must not.
+    """
     return PITCH
 
 

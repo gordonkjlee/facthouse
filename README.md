@@ -14,14 +14,10 @@ Facthouse is a local memory engine for AI tools. Most “memory” products inde
 
 Needs Node 22.5 or 24+.
 
-<!-- x-release-please-start-version -->
 ```bash
-npm install -g @facthouse/mcp@0.31.0
+npx -y @facthouse/mcp
 facthouse init
 ```
-<!-- x-release-please-end -->
-
-If npm install -g fails because a command named mcp already exists, remove that leftover command and retry.
 
 `facthouse init --web` is the same setup as a browser form — it prints a 127.0.0.1 URL and does not open a browser.
 
@@ -144,6 +140,8 @@ These CLI commands work in bash, zsh, and PowerShell. Quote @facthouse/mcp in Po
 npm install -g @facthouse/mcp@0.31.0
 facthouse init --yes
 ```
+
+If npm install -g fails because a command named mcp already exists, remove that leftover command and retry.
 
 ```bash
 npx -y -p "@facthouse/mcp@0.31.0" -- facthouse init --yes
