@@ -2,17 +2,17 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.gordonkjlee/facthouse",
   "title": "Facthouse",
-  "description": "A local memory engine any AI tool can use. Not Mem0's hosted OpenMemory MCP.",
+  "description": "A local memory engine any AI tool can use.",
   "repository": {
     "url": "https://github.com/gordonkjlee/facthouse",
     "source": "github"
   },
-  "version": "0.26.0",
+  "version": "0.31.0",
   "packages": [
     {
       "registryType": "npm",
       "identifier": "@facthouse/mcp",
-      "version": "0.26.0",
+      "version": "0.31.0",
       "transport": {
         "type": "stdio"
       }

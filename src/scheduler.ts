@@ -36,10 +36,12 @@ export interface SchedulerOpts {
   /** Unexamined events at which a non-forced moment fires. */
   threshold: number;
   /** Minimum ms between non-forced runs. Protects LLM rate limits during
-   *  event bursts. Forced moments bypass this throttle.
-   *  Default 120_000 (2 minutes). */
+   *  event bursts. Forced moments bypass this throttle. */
   minIntervalMs?: number;
 }
+
+/** Gated-moment throttle. README says "two minutes"; do not restate the ms. */
+export const THRESHOLD_MIN_INTERVAL_MS = 120_000;
 
 export interface Scheduler {
   /** Run the steps MOMENT_POLICY assigns to this moment. */
@@ -54,7 +56,7 @@ async function readDataVersion(db: Db): Promise<number> {
 }
 
 export function startScheduler(opts: SchedulerOpts): Scheduler {
-  const minIntervalMs = opts.minIntervalMs ?? 120_000;
+  const minIntervalMs = opts.minIntervalMs ?? THRESHOLD_MIN_INTERVAL_MS;
 
   // Last data_version we observed. When unchanged, the DB hasn't been
   // committed to by another connection since the last run — skip the SQL

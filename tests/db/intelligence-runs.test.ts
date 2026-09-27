@@ -209,13 +209,13 @@ describe("intelligence_runs schema 22", () => {
         kind: "consolidate",
         usage: extractUsage,
         trigger: "scheduler",
-        sourceTool: "openmemory",
+        sourceTool: "facthouse",
         project: "demo",
       });
       const stamped = (await listIntelligenceRuns(legacy)).find(
         (r) => r.trigger === "scheduler",
       );
-      expect(stamped?.source_tool).toBe("openmemory");
+      expect(stamped?.source_tool).toBe("facthouse");
       expect(stamped?.project).toBe("demo");
     } finally {
       await closeDatabase(legacy);

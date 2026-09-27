@@ -1,5 +1,93 @@
 # Changelog
 
+## [0.31.0](https://github.com/gordonkjlee/facthouse/compare/v0.30.0...v0.31.0) (2026-09-10)
+
+
+### Features
+
+* **cli:** print MCP snippet before extract ([#272](https://github.com/gordonkjlee/facthouse/issues/272)) ([c9d8a6f](https://github.com/gordonkjlee/facthouse/commit/c9d8a6f02a5eae4ea91361896ead4f2f7ff7a3e0))
+* **cli:** walk up to a project .facthouse store ([#275](https://github.com/gordonkjlee/facthouse/issues/275)) ([8ad6438](https://github.com/gordonkjlee/facthouse/commit/8ad6438934de45bd1862e6cef5e2ff0ee12a87ef))
+
+
+### Bug Fixes
+
+* **ci:** Windows capture tests were load detectors ([#268](https://github.com/gordonkjlee/facthouse/issues/268)) ([3862f4e](https://github.com/gordonkjlee/facthouse/commit/3862f4eb86ac1b40c474ed036756379d053c9e32))
+* **cli:** honest historic extract, progress, Ctrl+C ([#273](https://github.com/gordonkjlee/facthouse/issues/273)) ([845cdac](https://github.com/gordonkjlee/facthouse/commit/845cdac682c87596b35249b224ef59e4290b3601))
+* **cli:** name MCP config files on the init done card ([#274](https://github.com/gordonkjlee/facthouse/issues/274)) ([f92ab8c](https://github.com/gordonkjlee/facthouse/commit/f92ab8cf8f86e33271ca89d97d7bdd90f6380c43))
+* **cli:** name the config file on init status lines ([#277](https://github.com/gordonkjlee/facthouse/issues/277)) ([2e69b2a](https://github.com/gordonkjlee/facthouse/commit/2e69b2a41c0eb2050a1e8568897b64a773e3af59))
+* **cli:** report embed on consolidate ([#279](https://github.com/gordonkjlee/facthouse/issues/279)) ([a0104ea](https://github.com/gordonkjlee/facthouse/commit/a0104ea6a4d8f364bd4703cd557519ae75d89239))
+* **cli:** show embed queue on stats and TTY ([#280](https://github.com/gordonkjlee/facthouse/issues/280)) ([1da04f1](https://github.com/gordonkjlee/facthouse/commit/1da04f13e5e697e087509f5943672ca69bd2464f))
+* **deps:** add zod as a direct dependency ([#271](https://github.com/gordonkjlee/facthouse/issues/271)) ([d243686](https://github.com/gordonkjlee/facthouse/commit/d24368607cea2ea5805f6a2ae78a20ef130b3b66))
+
+
+### Performance
+
+* **cli:** one-pass inspect Data matching ([#276](https://github.com/gordonkjlee/facthouse/issues/276)) ([2bc2e7a](https://github.com/gordonkjlee/facthouse/commit/2bc2e7a3d119ccb9e7b35ea1041779f06dfce8d8))
+
+## [0.30.0](https://github.com/gordonkjlee/facthouse/compare/v0.29.1...v0.30.0) (2026-09-06)
+
+
+### Features
+
+* **brand:** replace mascot with constellation house ([#262](https://github.com/gordonkjlee/facthouse/issues/262)) ([e730bfe](https://github.com/gordonkjlee/facthouse/commit/e730bfeda3c15f9d6b1b4ba42bccfc238eb6d5a9))
+
+
+### Bug Fixes
+
+* **cli:** drop TTY residue on init --web and offer historic after it ([#260](https://github.com/gordonkjlee/facthouse/issues/260)) ([d923792](https://github.com/gordonkjlee/facthouse/commit/d92379217982afcd6d2310117b4d0045c38a2eab))
+
+## [0.29.1](https://github.com/gordonkjlee/facthouse/compare/v0.29.0...v0.29.1) (2026-09-05)
+
+
+### Bug Fixes
+
+* shorten MCP Registry description to 100-char max ([#257](https://github.com/gordonkjlee/facthouse/issues/257)) ([10bcdae](https://github.com/gordonkjlee/facthouse/commit/10bcdaed757f66960e76fe267643c12d8d9b5b84))
+
+## [0.29.0](https://github.com/gordonkjlee/facthouse/compare/v0.28.1...v0.29.0) (2026-09-05)
+
+
+### Features
+
+* **cli:** one HTML kit, two verb-honest web modes ([#256](https://github.com/gordonkjlee/facthouse/issues/256)) ([c929ce5](https://github.com/gordonkjlee/facthouse/commit/c929ce5a97bb30820859fbc30f3c39a769f76579))
+
+
+### Bug Fixes
+
+* **intelligence:** idle stream-json timeout for consolidate ([#254](https://github.com/gordonkjlee/facthouse/issues/254)) ([32556cf](https://github.com/gordonkjlee/facthouse/commit/32556cfb564ce81677da61a992512bab01767f9d))
+
+## [0.28.1](https://github.com/gordonkjlee/facthouse/compare/v0.28.0...v0.28.1) (2026-09-04)
+
+
+### Bug Fixes
+
+* **cli:** honest init on config, warning, and copy ([#250](https://github.com/gordonkjlee/facthouse/issues/250)) ([1518e8d](https://github.com/gordonkjlee/facthouse/commit/1518e8ddd98104fc3ab8cf5ca98ce033f9bc7b66))
+
+## [0.28.0](https://github.com/gordonkjlee/facthouse/compare/v0.27.1...v0.28.0) (2026-09-04)
+
+
+### Features
+
+* **cli:** first-run extract-all and sonnet integrate ([#248](https://github.com/gordonkjlee/facthouse/issues/248)) ([2ab81e9](https://github.com/gordonkjlee/facthouse/commit/2ab81e980d4978146c28822c398494a2b6951358))
+* **cli:** make TTY init the first-run wizard ([#246](https://github.com/gordonkjlee/facthouse/issues/246)) ([cc04e10](https://github.com/gordonkjlee/facthouse/commit/cc04e1069cf9e9d32ddf2d435ff9586f1d5802fd))
+
+## [0.27.1](https://github.com/gordonkjlee/facthouse/compare/v0.27.0...v0.27.1) (2026-09-04)
+
+
+### Bug Fixes
+
+* **intelligence:** freeze token-budget reset clock in tests ([#244](https://github.com/gordonkjlee/facthouse/issues/244)) ([91fc295](https://github.com/gordonkjlee/facthouse/commit/91fc2955af0c4afb43f93862d19f2d86a00ae10c))
+
+## [0.27.0](https://github.com/gordonkjlee/factmem/compare/v0.26.0...v0.27.0) (2026-09-03)
+
+
+### ⚠ BREAKING CHANGES
+
+* @factmem/mcp and @openmem/mcp are not published from this cut. FACTMEM_* / OPENMEMORY_* and ~/.factmem / ~/.openmemory are ignored. Windows notify pipe is facthouse-.
+
+### Features
+
+* rebrand as Facthouse and drop linger ([#239](https://github.com/gordonkjlee/factmem/issues/239)) ([1aa54c1](https://github.com/gordonkjlee/factmem/commit/1aa54c16979f483f7432a1d0d06a24aee7326f96))
+
 ## [0.26.0](https://github.com/gordonkjlee/factmem/compare/v0.25.0...v0.26.0) (2026-09-02)
 
 

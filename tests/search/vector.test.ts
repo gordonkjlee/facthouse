@@ -20,6 +20,7 @@ const {
   insertEmbeddings,
   getEmbeddings,
   getFactsMissingEmbeddings,
+  countFactsMissingEmbeddings,
   countEmbeddings,
 } = await import("../../src/db/embeddings.js");
 const { cosineSimilarity, vectorSearch } = await import("../../src/search/vector.js");
@@ -275,6 +276,7 @@ describe("the backfill queue", () => {
 
     const pending = await getFactsMissingEmbeddings(db, "m", 2, 100);
     expect(pending.map((f) => f.id)).toEqual([b.id]);
+    expect(await countFactsMissingEmbeddings(db, "m", 2)).toBe(1);
   });
 
   it("enqueues the whole store when the model changes", async () => {

@@ -75,7 +75,7 @@ describe("openStore", () => {
     );
     await expect(
       openStore(dir, loadConfig(dir), {
-        FACTHOUSE_POSTGRES_URL: "mysql://127.0.0.1:3306/openmemory",
+        FACTHOUSE_POSTGRES_URL: "mysql://127.0.0.1:3306/facthouse",
       }),
     ).rejects.toThrow(postgresInvalidUrlMessage());
     expect(existsSync(path.join(dir, SQLITE_MEMORY_FILENAME))).toBe(false);
@@ -89,7 +89,7 @@ describe("openStore", () => {
     );
     await expect(
       openStore(dir, loadConfig(dir), {
-        FACTHOUSE_POSTGRES_URL: "postgres://127.0.0.1:1/openmemory",
+        FACTHOUSE_POSTGRES_URL: "postgres://127.0.0.1:1/facthouse",
       }),
     ).rejects.toThrow(/SQLite was not opened/);
     expect(existsSync(path.join(dir, SQLITE_MEMORY_FILENAME))).toBe(false);

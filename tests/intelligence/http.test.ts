@@ -23,6 +23,7 @@ import {
   usesStageRouter,
 } from "../../src/intelligence/stage-router.js";
 import { createHeuristicProvider } from "../../src/intelligence/heuristic.js";
+import { ConsolidateAbortError } from "../../src/intelligence/abort.js";
 import type { IntelligenceConfig } from "../../src/types/config.js";
 import type { SessionEvent } from "../../src/types/data.js";
 
@@ -449,6 +450,48 @@ describe("createIntelligenceProvider with HTTP", () => {
     );
     expect(out.degraded).toBe(false);
     expect(out.facts[0].source_quality).toBe("http");
+  });
+
+  it("does not steal to CLI when HTTP extract is aborted", async () => {
+    let cliCalls = 0;
+    const abort = new AbortController();
+    abort.abort();
+    const cli = {
+      ...createHeuristicProvider(),
+      async extractFactsFromEvents() {
+        cliCalls += 1;
+        return { facts: [], degraded: false };
+      },
+    };
+    const provider = createIntelligenceProvider(
+      {
+        ...base,
+        http: { model: "qwen2.5:7b" },
+        stages: { extract: { provider: "http", on_fail: "cli" } },
+      },
+      {
+        abort: abort.signal,
+        fetch: async (_url, init) => {
+          if (init.signal.aborted) {
+            const err = new Error("aborted");
+            err.name = "AbortError";
+            throw err;
+          }
+          return {
+            ok: true,
+            status: 200,
+            async text() {
+              return "{}";
+            },
+          };
+        },
+        cli,
+      },
+    );
+    await expect(
+      provider.extractFactsFromEvents([event("Alex prefers tea.")], []),
+    ).rejects.toBeInstanceOf(ConsolidateAbortError);
+    expect(cliCalls).toBe(0);
   });
 
   it("does not call the CLI when HTTP extract succeeds", async () => {

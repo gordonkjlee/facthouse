@@ -1,7 +1,7 @@
 /**
  * CLI entry-point integration tests.
  *
- * `src/cli/index.ts` runs main() on import, so its dispatch, recursion guard,
+ * `src/cli/run.ts` runs on import (loaded from `src/cli/index.ts`), so its dispatch, recursion guard,
  * argument precedence, and exit codes are unreachable from unit tests — the
  * only way to exercise them is to spawn the built CLI as a real subprocess.
  * Both bugs found in this area (a silently no-opping `init`, an unparseable
@@ -18,6 +18,8 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { INIT_PROMPTS } from "../../src/cli/init-knobs.js";
+import { PRODUCT_NAME } from "../../src/identity.js";
+import { CLI_STORE_DEFAULT_HELP } from "../../src/paths.js";
 import { withoutStoreEnv } from "../helpers/cli-env.js";
 
 const CLI = path.resolve(
@@ -36,7 +38,11 @@ const runnable = existsSync(CLI);
  * environment so a developer's own settings can't influence assertions —
  * every test states the environment it means to test.
  */
-function run(args: string[], extraEnv: Record<string, string> = {}) {
+function run(
+  args: string[],
+  extraEnv: Record<string, string> = {},
+  cwd?: string,
+) {
   const env: Record<string, string | undefined> = withoutStoreEnv();
   // Default to the provider that costs nothing to report on. `init` probes for
   // the claude CLI when `cli` is selected, and that probe spawns subprocesses —
@@ -49,6 +55,7 @@ function run(args: string[], extraEnv: Record<string, string> = {}) {
     encoding: "utf-8",
     env: env as NodeJS.ProcessEnv,
     timeout: 30_000,
+    cwd,
   });
 }
 
@@ -89,6 +96,7 @@ describe.skipIf(!runnable)("cli entry — dispatch and usage", () => {
     // Hidden aliases are not advertised.
     expect(r.stdout).not.toMatch(/^  (pull|signal)\b/m);
     expect(r.stdout).not.toMatch(/\b(tick|flush|graduate)\b/);
+    expect(r.stdout).toContain(`--data defaults to ${CLI_STORE_DEFAULT_HELP}.`);
   });
 
   it.each(["--help", "-h", "help"])("%s prints usage and exits 0", (flag) => {
@@ -206,7 +214,7 @@ describe.skipIf(!runnable)("cli entry — init argument precedence", () => {
     );
     const env: Record<string, string | undefined> = withoutStoreEnv();
     env.FACTHOUSE_PROVIDER = "heuristic";
-    env.FACTHOUSE_POSTGRES_URL = "postgres://127.0.0.1:1/openmemory";
+    env.FACTHOUSE_POSTGRES_URL = "postgres://127.0.0.1:1/facthouse";
     const r = spawnSync(process.execPath, [SERVER, "--data", dir], {
       encoding: "utf-8",
       env: env as NodeJS.ProcessEnv,
@@ -253,6 +261,44 @@ describe.skipIf(!runnable)("cli entry — init output", () => {
     expect(r.stderr).toMatch(/does not start a local page/);
   });
 
+  it("does not print Node's sqlite ExperimentalWarning", () => {
+    const r = run(["init", path.join(root, "no-sqlite-warn"), "--yes"]);
+    expect(r.status).toBe(0);
+    expect(r.stderr).not.toMatch(/ExperimentalWarning/);
+    expect(r.stdout).not.toMatch(/ExperimentalWarning/);
+  });
+
+  it("refuses init when config.json is malformed", () => {
+    const dir = path.join(root, "malformed-init");
+    mkdirSync(dir);
+    const configPath = path.join(dir, "config.json");
+    const garbage = `{ "storage": { "provider": "sqlite"' }\n`;
+    writeFileSync(configPath, garbage);
+    const r = run(["init", dir, "--yes"]);
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).toContain(INIT_PROMPTS.configMalformed);
+    expect(r.stdout).not.toMatch(/initialised/i);
+    expect(readFileSync(configPath, "utf-8")).toBe(garbage);
+  });
+
+  it("init --yes with forward slashes writes that directory", () => {
+    const dir = path.join(root, "slash-fwd");
+    const r = run(["init", dir.replace(/\\/g, "/"), "--yes"]);
+    expect(r.status).toBe(0);
+    expect(existsSync(path.join(dir, "config.json"))).toBe(true);
+  });
+
+  it("names the absolute config path to turn semantic search on", () => {
+    const dir = path.join(root, "embed-config-path");
+    const r = run(["init", dir, "--yes"]);
+    expect(r.status).toBe(0);
+    const configPath = path.resolve(dir, "config.json");
+    expect(r.stdout).toContain(`Config          ${configPath}`);
+    expect(r.stdout).toContain(`Set embedding.provider in`);
+    expect(r.stdout).toContain(`${configPath} to "ollama"`);
+    expect(r.stdout).not.toMatch(/Set embedding\.provider in\s+config\.json/);
+  });
+
   it("honours --yes without printing prompt copy", () => {
     const dir = path.join(root, "yes-flag");
     const r = run(["init", dir, "--yes"]);
@@ -261,19 +307,42 @@ describe.skipIf(!runnable)("cli entry — init output", () => {
     expect(r.stdout).not.toContain(INIT_PROMPTS.capture);
     expect(r.stdout).not.toContain(INIT_PROMPTS.embedding);
     expect(r.stdout).not.toContain(INIT_PROMPTS.more);
-    expect(r.stdout).not.toContain(INIT_PROMPTS.copyNow);
-    expect(r.stdout).not.toContain(INIT_PROMPTS.extractNow);
+    expect(r.stdout).not.toContain(INIT_PROMPTS.historicCopy);
   });
 
-  it("prints global vs npx advice after the MCP snippet", () => {
+  it("prints paste-is-not-CLI after the MCP snippet", () => {
     const dir = path.join(root, "npx-advice");
     const r = run(["init", dir, "--yes"]);
     expect(r.status).toBe(0);
-    expect(r.stdout).toContain(INIT_PROMPTS.mcpVsCli);
+    expect(r.stdout).toContain(INIT_PROMPTS.mcpPaste);
+    expect(r.stdout).toContain(INIT_PROMPTS.mcpPasteNoCli);
+    const ctaAt = r.stdout.indexOf(INIT_PROMPTS.mcpPaste);
     const snippetAt = r.stdout.indexOf('"mcpServers"');
-    const adviceAt = r.stdout.indexOf(INIT_PROMPTS.mcpVsCli);
-    expect(snippetAt).toBeGreaterThanOrEqual(0);
+    const adviceAt = r.stdout.indexOf(INIT_PROMPTS.mcpPasteNoCli);
+    expect(ctaAt).toBeGreaterThanOrEqual(0);
+    expect(snippetAt).toBeGreaterThan(ctaAt);
     expect(adviceAt).toBeGreaterThan(snippetAt);
+    expect(r.stdout).not.toContain(INIT_PROMPTS.mcpVsCli);
+    expect(r.stdout).not.toMatch(/Paste this into the client/);
+  });
+
+  it("prints the MCP snippet before the initialised report, and a PreCompact hook after", () => {
+    const dir = path.join(root, "paste-early");
+    const r = run(["init", dir, "--yes"]);
+    expect(r.status).toBe(0);
+    const snippetAt = r.stdout.indexOf('"mcpServers"');
+    const doneAt = r.stdout.indexOf(`${PRODUCT_NAME} initialised`);
+    const hookAt = r.stdout.indexOf("notify compaction");
+    expect(snippetAt).toBeGreaterThanOrEqual(0);
+    expect(doneAt).toBeGreaterThan(snippetAt);
+    expect(hookAt).toBeGreaterThan(doneAt);
+    expect(r.stdout).toContain(INIT_PROMPTS.mcpPaste);
+    expect(r.stdout).toContain(INIT_PROMPTS.mcpRestart);
+    expect(r.stdout).toContain(INIT_PROMPTS.compactionHookLead);
+    expect(r.stdout).toContain("--data");
+    const abs = path.resolve(dir);
+    const escaped = JSON.stringify(abs).slice(1, -1);
+    expect(r.stdout.includes(abs) || r.stdout.includes(escaped)).toBe(true);
   });
 
   it("rejects --pull rather than hanging init on a first backfill", () => {
@@ -281,11 +350,11 @@ describe.skipIf(!runnable)("cli entry — init output", () => {
     expect(r.status).not.toBe(0);
   });
 
-  it("says one data directory is one memory", () => {
-    const dir = path.join(root, "one-brain");
+  it("says the store is this directory", () => {
+    const dir = path.join(root, "one-store");
     const r = run(["init", dir]);
     expect(r.status).toBe(0);
-    expect(r.stdout).toMatch(/one data directory is one memory/i);
+    expect(r.stdout).toContain(INIT_PROMPTS.storeDir);
     expect(r.stdout).not.toContain(INIT_PROMPTS.intro);
     expect(r.stdout).not.toContain(INIT_PROMPTS.capture);
   });
@@ -296,7 +365,8 @@ describe.skipIf(!runnable)("cli entry — init output", () => {
     expect(r.status).toBe(0);
     expect(r.stdout).toMatch(/copy is off/i);
     expect(r.stdout).toMatch(/capture_fact is how facts get in/);
-    expect(r.stdout).toMatch(/facthouse consolidate/);
+    expect(r.stdout).toContain(INIT_PROMPTS.copyRecipe);
+    expect(r.stdout).not.toMatch(/facthouse consolidate/);
     expect(r.stdout).not.toMatch(/facthouse pull/);
   });
 
@@ -310,12 +380,12 @@ describe.skipIf(!runnable)("cli entry — init output", () => {
     const match = r.stdout.match(/\{\s*"mcpServers"[\s\S]*?\n  \}/);
     expect(match).not.toBeNull();
     const parsed = JSON.parse(match![0]); // throws if the path wasn't escaped
-    const { mcpServerName } = await import("../../src/cli/init.js");
+    const { mcpServerName, mcpSnippetEnvPath } = await import("../../src/cli/init.js");
     const key = mcpServerName(path.resolve(dir));
     const entry = parsed.mcpServers[key];
     expect(entry).toBeDefined();
     expect(entry.command).toBe("npx");
-    expect(entry.env.FACTHOUSE_DATA).toBe(path.resolve(dir));
+    expect(entry.env.FACTHOUSE_DATA).toBe(mcpSnippetEnvPath(path.resolve(dir)));
     expect(parsed.mcpServers.openmemory).toBeUndefined();
     expect(parsed.mcpServers.facthouse).toBeUndefined();
   });
@@ -531,6 +601,29 @@ describe.skipIf(!runnable)("cli entry — search and stats", () => {
     expect(parsed.package_version.length).toBeGreaterThan(0);
     expect(parsed.intelligence.last_24h.calls).toBe(0);
     expect(parsed.intelligence.recent).toEqual([]);
+  });
+
+  it("inspect without --data uses a .facthouse store walking up from cwd", async () => {
+    const app = path.join(root, "walk-app");
+    const store = path.join(app, ".facthouse");
+    const nested = path.join(app, "src");
+    const fakeHome = path.join(root, "walk-home");
+    mkdirSync(nested, { recursive: true });
+    mkdirSync(fakeHome, { recursive: true });
+    await seed(store);
+
+    const r = run(
+      ["inspect", "--graph"],
+      { HOME: fakeHome, USERPROFILE: fakeHome },
+      nested,
+    );
+    expect(r.status).toBe(0);
+    const dest = path.join(store, "inspect.html");
+    expect(existsSync(dest)).toBe(true);
+    expect(r.stdout).toContain(dest);
+    expect(
+      existsSync(path.join(fakeHome, ".facthouse", "inspect.html")),
+    ).toBe(false);
   });
 
   it("inspect --graph writes inspect.html under the data dir and does not dump cwd", async () => {

@@ -14,6 +14,9 @@ export const CLI_NAME = "facthouse";
 export const NPM_PACKAGE = "@facthouse/mcp";
 export const DEFAULT_MCP_SERVER_NAME = "facthouse";
 export const GITHUB_REPO = "gordonkjlee/facthouse";
+export const HOMEPAGE = "https://facthouse.dev";
+/** Listings, npm, and server.json. README first prose is longer; do not paste this into the README lede. */
+export const LOCKUP = "A local memory engine any AI tool can use.";
 export const DEFAULT_DATA_DIRNAME = ".facthouse";
 export const ENV_PREFIX = "FACTHOUSE";
 export const LOG_PREFIX = "[facthouse]";
@@ -46,6 +49,21 @@ export function envIsSet(
 /** npm spec for MCP snippets, e.g. `@facthouse/mcp@0.26.0`. */
 export function npmPackageSpec(version: string | null | undefined): string {
   return version ? `${NPM_PACKAGE}@${version}` : NPM_PACKAGE;
+}
+
+/**
+ * Path-free CLI. The MCP paste does not put the bin on PATH. Quote the
+ * package so PowerShell does not splat. Pin `spec` in snippets.
+ */
+export function pathFreeCli(argv: string, spec: string = NPM_PACKAGE): string {
+  const rest = argv.trim() ? ` ${argv.trim()}` : "";
+  return `npx -y -p "${spec}" -- ${CLI_NAME}${rest}`;
+}
+
+/** `--data` value for a terminal: forward slashes, quoted if it has spaces. */
+export function cliDataArg(dataDir: string): string {
+  const normalised = dataDir.replace(/\\/g, "/");
+  return /\s/.test(normalised) ? `"${normalised}"` : normalised;
 }
 
 /** Env keys that select a store. Tests must strip this prefix. */

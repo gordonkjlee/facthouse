@@ -8,11 +8,15 @@ import {
   DEFAULT_MCP_SERVER_NAME,
   ENV_PREFIX,
   GITHUB_REPO,
+  HOMEPAGE,
+  LOCKUP,
   NPM_PACKAGE,
   PRODUCT_NAME,
   envName,
   envValue,
   npmPackageSpec,
+  pathFreeCli,
+  cliDataArg,
   subprocessGuardEnv,
 } from "../src/identity.js";
 import { defaultDataDir, newInstallDataDir } from "../src/paths.js";
@@ -28,6 +32,10 @@ describe("identity", () => {
     expect(pkg.bin.openmemory).toBeUndefined();
     expect(pkg.bin.mcp).toBe("dist/index.js");
     expect(pkg.repository.url).toBe(`https://github.com/${GITHUB_REPO}`);
+    expect(pkg.homepage).toBe(HOMEPAGE);
+    expect(pkg.description).toBe(LOCKUP);
+    expect(HOMEPAGE).toBe("https://facthouse.dev");
+    expect(LOCKUP).toBe("A local memory engine any AI tool can use.");
     expect(PRODUCT_NAME).toBe("Facthouse");
     expect(DEFAULT_MCP_SERVER_NAME).toBe("facthouse");
     expect(ENV_PREFIX).toBe("FACTHOUSE");
@@ -37,6 +45,15 @@ describe("identity", () => {
     expect(npmPackageSpec("1.2.3")).toBe(`${NPM_PACKAGE}@1.2.3`);
     expect(npmPackageSpec(null)).toBe(NPM_PACKAGE);
     expect(NPM_PACKAGE).toBe("@facthouse/mcp");
+  });
+
+  it("path-free CLI quotes the package and names the bin", () => {
+    expect(pathFreeCli("")).toBe(`npx -y -p "${NPM_PACKAGE}" -- ${CLI_NAME}`);
+    expect(pathFreeCli("consolidate --all")).toBe(
+      `npx -y -p "${NPM_PACKAGE}" -- ${CLI_NAME} consolidate --all`,
+    );
+    expect(cliDataArg("C:\\dev\\app\\.facthouse")).toBe("C:/dev/app/.facthouse");
+    expect(cliDataArg("C:/Users/alex/My Store")).toBe('"C:/Users/alex/My Store"');
   });
 
   it("reads only FACTHOUSE_", () => {

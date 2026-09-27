@@ -8,7 +8,7 @@
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { CONFIG_FILENAME } from "../config.js";
-import { expandTilde, resolveUserPath } from "../paths.js";
+import { acceptTypedPath, expandTilde, resolveUserPath } from "../paths.js";
 import {
   isCaptureSourceKind,
   type CaptureSourceKind,
@@ -22,6 +22,7 @@ import {
   MORE_SETTING_IDS,
   SHIPPED_MORE_SHOWN,
   defaultHomeForKind,
+  walksOnInitMore,
   type InitOverlay,
   type MoreShown,
 } from "./init-knobs.js";
@@ -32,17 +33,18 @@ export const MAX_INIT_QUESTIONS = 20;
 export interface InitIo {
   isTTY: boolean;
   /** Raw line, no trim inside the interface. Wizard trims. */
-  question(prompt: string): Promise<string>;
+  question(prompt: string, opts?: { signal?: AbortSignal }): Promise<string>;
   /** Wizard-owned copy: intro, skip notes, existence warnings. */
   write(text: string): void;
 }
 
 export function bindInitIo(rl: {
-  question(prompt: string): Promise<string>;
+  question(prompt: string, options?: { signal?: AbortSignal }): Promise<string>;
 }): InitIo {
   return {
     isTTY: true,
-    question: (p) => rl.question(p),
+    question: (p, opts) =>
+      opts?.signal ? rl.question(p, { signal: opts.signal }) : rl.question(p),
     write: (t) => {
       process.stdout.write(t.endsWith("\n") ? t : `${t}\n`);
     },
@@ -63,6 +65,8 @@ export interface InitWizardDeps {
   cwd: () => string;
   exists: (absPath: string) => boolean;
   platform: () => NodeJS.Platform;
+  /** Client env for home defaults. Tests pass `{}`. */
+  env?: NodeJS.ProcessEnv;
   /** OpenAI-compat GET /v1/models. Omit in tests. */
   probeHttp?: (
     baseUrl: string,
@@ -73,6 +77,7 @@ export const defaultInitWizardDeps: InitWizardDeps = {
   cwd: () => process.cwd(),
   exists: existsSync,
   platform: () => process.platform,
+  env: process.env,
 };
 
 export interface InitWizardSeed {
@@ -178,14 +183,35 @@ async function askCapture(
     io.write(INIT_PROMPTS.unknownKind());
   }
 
-  const homeDefault = defaultHomeForKind(kind);
-  const homeRaw = (await io.question(INIT_PROMPTS.home(homeDefault))).trim();
-  const home = homeRaw === "" ? homeDefault : homeRaw;
+  const homeDefault = defaultHomeForKind(kind, deps.env ?? {});
+  let home = homeDefault;
+  for (;;) {
+    const homeRaw = (await io.question(INIT_PROMPTS.home(homeDefault))).trim();
+    if (homeRaw === "") break;
+    if (!acceptTypedPath(homeRaw, deps.exists)) {
+      io.write(INIT_PROMPTS.notAPath);
+      continue;
+    }
+    home = homeRaw;
+    break;
+  }
   const homeAbs = resolveUserPath(home);
   const homeOk = deps.exists(homeAbs);
   if (!homeOk) io.write(INIT_PROMPTS.homeMissing(home));
 
-  const cwdRaw = (await io.question(INIT_PROMPTS.cwd(deps.cwd()))).trim();
+  let cwdRaw: string;
+  for (;;) {
+    cwdRaw = (await io.question(INIT_PROMPTS.cwd(deps.cwd()))).trim();
+    if (
+      cwdRaw === "" ||
+      cwdRaw === "-" ||
+      cwdRaw.toLowerCase() === "skip" ||
+      acceptTypedPath(cwdRaw, deps.exists)
+    ) {
+      break;
+    }
+    io.write(INIT_PROMPTS.notAPath);
+  }
   const stored = storeCwdAnswer(cwdRaw, deps.cwd());
   if (stored === "skip") {
     io.write(INIT_PROMPTS.cwdSkip);
@@ -242,12 +268,16 @@ export async function askMoreSettings(
       if (yn === "no") return;
       break;
     }
+    await askSearch(io, overlay);
   }
 
   const shown = opts.shown;
   const initEmpty = opts.gate;
 
   for (const id of MORE_SETTING_IDS) {
+    if (initEmpty && !walksOnInitMore(id)) {
+      continue;
+    }
     switch (id) {
       case "cliModel": {
         const modelRaw = (
@@ -257,9 +287,7 @@ export async function askMoreSettings(
         break;
       }
       case "cliIntegrateModel": {
-        const shownIntegrate = opts.gate
-          ? (overlay.cliModel ?? shown.cliIntegrateModel)
-          : shown.cliIntegrateModel;
+        const shownIntegrate = shown.cliIntegrateModel;
         const raw = (
           await io.question(INIT_PROMPTS.moreCliIntegrateModel(shownIntegrate))
         ).trim();
@@ -375,8 +403,19 @@ export async function collectInitAnswers(
 
   let dataDir = seed.dataDir;
   if (!seed.dataDirLocked) {
-    const raw = (await io.question(INIT_PROMPTS.dataDir(seed.dataDir))).trim();
-    dataDir = raw === "" ? seed.dataDir : resolveUserPath(raw);
+    for (;;) {
+      const raw = (await io.question(INIT_PROMPTS.dataDir(seed.dataDir))).trim();
+      if (raw === "") {
+        dataDir = seed.dataDir;
+        break;
+      }
+      if (!acceptTypedPath(raw, deps.exists)) {
+        io.write(INIT_PROMPTS.notAPath);
+        continue;
+      }
+      dataDir = resolveUserPath(raw);
+      break;
+    }
   }
 
   const chosenExists = deps.exists(path.join(dataDir, CONFIG_FILENAME));
@@ -393,7 +432,6 @@ export async function collectInitAnswers(
 
   const overlay: InitOverlay = {};
   const captureOutcome = await askCapture(io, deps, overlay);
-  await askSearch(io, overlay);
   await askMoreSettings(io, overlay, deps, {
     gate: true,
     shown: SHIPPED_MORE_SHOWN,

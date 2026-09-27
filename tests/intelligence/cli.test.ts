@@ -6,7 +6,11 @@ import { EventEmitter } from "node:events";
 // ---------------------------------------------------------------------------
 
 interface MockStdin extends EventEmitter {
-  end: (chunk?: string, encoding?: string) => void;
+  end: (
+    chunk?: string,
+    encoding?: string | (() => void),
+    cb?: () => void,
+  ) => void;
   write: (chunk: string) => boolean;
 }
 
@@ -22,6 +26,8 @@ let behaviourQueue: Array<(child: MockChild, args: string[]) => void> = [];
 let lastSpawnArgs: { cmd: string; args: string[]; opts: any } | null = null;
 let lastStdin = "";
 let spawnCount = 0;
+let lastKillSignals: string[] = [];
+let stdinEndDefer: ((cb: () => void) => void) | null = null;
 
 vi.mock("node:child_process", async () => {
   return {
@@ -32,15 +38,26 @@ vi.mock("node:child_process", async () => {
       child.stdout = new EventEmitter();
       child.stderr = new EventEmitter();
       const stdin = new EventEmitter() as MockStdin;
-      stdin.end = (chunk?: string) => {
+      stdin.end = (
+        chunk?: string,
+        encodingOrCb?: string | (() => void),
+        cb?: () => void,
+      ) => {
         if (typeof chunk === "string") lastStdin += chunk;
+        const done = typeof encodingOrCb === "function" ? encodingOrCb : cb;
+        if (typeof done === "function") {
+          if (stdinEndDefer) stdinEndDefer(done);
+          else queueMicrotask(done);
+        }
       };
       stdin.write = (chunk: string) => {
         lastStdin += chunk;
         return true;
       };
       child.stdin = stdin;
-      child.kill = () => {};
+      child.kill = (sig?: string) => {
+        lastKillSignals.push(sig ?? "");
+      };
       // Defer behaviour to microtask so the caller gets a chance to wire
       // listeners before we emit.
       const behaviour = behaviourQueue.shift() ?? nextMockChildBehaviour;
@@ -50,7 +67,12 @@ vi.mock("node:child_process", async () => {
   };
 });
 
-const { createCliProvider, CLI_TIMEOUT_JOIN_MS } = await import("../../src/intelligence/cli.js");
+const {
+  createCliProvider,
+  CLI_TIMEOUT_JOIN_MS,
+  CLI_HARD_TIMEOUT_MS,
+  parseClaudeCliStdout,
+} = await import("../../src/intelligence/cli.js");
 const {
   STAGE1_STDIN_CEILING,
   EXTRACT_EVIDENCE_SLICE,
@@ -62,6 +84,8 @@ beforeEach(() => {
   lastSpawnArgs = null;
   lastStdin = "";
   spawnCount = 0;
+  lastKillSignals = [];
+  stdinEndDefer = null;
   behaviourQueue = [];
   nextMockChildBehaviour = () => {};
 });
@@ -211,6 +235,10 @@ describe("createCliProvider — extractFactsFromEvents", () => {
     // Prompt is stdin, not argv — the last argv element is the model, not the payload.
     expect(lastSpawnArgs!.args.at(-1)).toBe("haiku");
     expect(lastSpawnArgs!.args).not.toContain(lastStdin);
+    const fmt = lastSpawnArgs!.args.indexOf("--output-format");
+    expect(lastSpawnArgs!.args[fmt + 1]).toBe("stream-json");
+    expect(lastSpawnArgs!.args).toContain("--verbose");
+    expect(lastSpawnArgs!.args).toContain("--include-partial-messages");
   });
 
   it("threads working memory, session summary and long-term memory into the stage-1 payload", async () => {
@@ -318,6 +346,7 @@ describe("createCliProvider — extractFactsFromEvents", () => {
     // The point of the flag: these events were never examined, so the caller
     // must not advance past them.
     expect(result.degraded).toBe(true);
+    expect(result.degradedKind).toBe("other");
   });
 
   it("falls back to heuristic when subprocess exits non-zero", async () => {
@@ -362,6 +391,211 @@ describe("createCliProvider — extractFactsFromEvents", () => {
     expect(result.degraded).toBe(true);
   });
 
+  it("resets idle timeout when the CLI writes stream-json", async () => {
+    vi.useFakeTimers();
+    nextMockChildBehaviour = (child) => {
+      setTimeout(() => {
+        child.stdout.emit("data", Buffer.from('{"type":"system","subtype":"init"}\n'));
+      }, 80);
+      setTimeout(() => {
+        child.stdout.emit(
+          "data",
+          Buffer.from(
+            JSON.stringify({
+              type: "result",
+              is_error: false,
+              structured_output: { facts: [] },
+            }) + "\n",
+          ),
+        );
+        child.emit("close", 0);
+      }, 150);
+    };
+    const provider = createCliProvider({ timeoutMs: 100 }, stubFallback);
+    const eventPromise = provider.extractFactsFromEvents(
+      [{ id: "e1", role: "user", content: "I prefer dark roast", sequence: 1 } as any],
+      [],
+    );
+    await vi.advanceTimersByTimeAsync(150);
+    vi.useRealTimers();
+    const result = await eventPromise;
+    expect(result.degraded).toBe(false);
+    expect(spawnCount).toBe(1);
+  });
+
+  it("keeps a live stream past the idle window", async () => {
+    vi.useFakeTimers();
+    nextMockChildBehaviour = (child) => {
+      let n = 0;
+      const tick = () => {
+        n += 1;
+        if (n >= 5) {
+          child.stdout.emit(
+            "data",
+            Buffer.from(
+              JSON.stringify({
+                type: "result",
+                is_error: false,
+                structured_output: { facts: [] },
+              }) + "\n",
+            ),
+          );
+          child.emit("close", 0);
+          return;
+        }
+        child.stdout.emit("data", Buffer.from('{"type":"assistant"}\n'));
+        setTimeout(tick, 80);
+      };
+      setTimeout(tick, 80);
+    };
+    const provider = createCliProvider({ timeoutMs: 100 }, stubFallback);
+    const eventPromise = provider.extractFactsFromEvents(
+      [{ id: "e1", role: "user", content: "I prefer dark roast", sequence: 1 } as any],
+      [],
+    );
+    await vi.advanceTimersByTimeAsync(400);
+    vi.useRealTimers();
+    const result = await eventPromise;
+    expect(result.degraded).toBe(false);
+    expect(spawnCount).toBe(1);
+  });
+
+  it("resets idle timeout when stdin finishes writing", async () => {
+    vi.useFakeTimers();
+    stdinEndDefer = (cb) => {
+      setTimeout(cb, 80);
+    };
+    nextMockChildBehaviour = (child) => {
+      setTimeout(() => {
+        child.stdout.emit(
+          "data",
+          Buffer.from(
+            JSON.stringify({
+              type: "result",
+              is_error: false,
+              structured_output: { facts: [] },
+            }) + "\n",
+          ),
+        );
+        child.emit("close", 0);
+      }, 150);
+    };
+    const provider = createCliProvider({ timeoutMs: 100 }, stubFallback);
+    const eventPromise = provider.extractFactsFromEvents(
+      [{ id: "e1", role: "user", content: "I prefer dark roast", sequence: 1 } as any],
+      [],
+    );
+    await vi.advanceTimersByTimeAsync(150);
+    vi.useRealTimers();
+    const result = await eventPromise;
+    expect(result.degraded).toBe(false);
+    expect(spawnCount).toBe(1);
+  });
+
+  it("resets idle timeout when the CLI writes stderr", async () => {
+    vi.useFakeTimers();
+    nextMockChildBehaviour = (child) => {
+      setTimeout(() => {
+        child.stderr.emit("data", Buffer.from("thinking\n"));
+      }, 80);
+      setTimeout(() => {
+        child.stdout.emit(
+          "data",
+          Buffer.from(
+            JSON.stringify({
+              type: "result",
+              is_error: false,
+              structured_output: { facts: [] },
+            }) + "\n",
+          ),
+        );
+        child.emit("close", 0);
+      }, 150);
+    };
+    const provider = createCliProvider({ timeoutMs: 100 }, stubFallback);
+    const eventPromise = provider.extractFactsFromEvents(
+      [{ id: "e1", role: "user", content: "I prefer dark roast", sequence: 1 } as any],
+      [],
+    );
+    await vi.advanceTimersByTimeAsync(150);
+    vi.useRealTimers();
+    const result = await eventPromise;
+    expect(result.degraded).toBe(false);
+    expect(spawnCount).toBe(1);
+  });
+
+  it("resets idle timeout when the child actually spawns", async () => {
+    vi.useFakeTimers();
+    nextMockChildBehaviour = (child) => {
+      setTimeout(() => child.emit("spawn"), 80);
+      setTimeout(() => {
+        child.stdout.emit(
+          "data",
+          Buffer.from(
+            JSON.stringify({
+              type: "result",
+              is_error: false,
+              structured_output: { facts: [] },
+            }) + "\n",
+          ),
+        );
+        child.emit("close", 0);
+      }, 150);
+    };
+    const provider = createCliProvider({ timeoutMs: 100 }, stubFallback);
+    const eventPromise = provider.extractFactsFromEvents(
+      [{ id: "e1", role: "user", content: "I prefer dark roast", sequence: 1 } as any],
+      [],
+    );
+    await vi.advanceTimersByTimeAsync(150);
+    vi.useRealTimers();
+    const result = await eventPromise;
+    expect(result.degraded).toBe(false);
+    expect(spawnCount).toBe(1);
+  });
+
+  it("kills a live stream at the hard ceiling", async () => {
+    vi.useFakeTimers();
+    nextMockChildBehaviour = (child) => {
+      let live = true;
+      const innerKill = child.kill;
+      child.kill = (sig?: string) => {
+        live = false;
+        innerKill(sig);
+      };
+      const tick = () => {
+        if (!live) return;
+        child.stdout.emit("data", Buffer.from('{"type":"assistant"}\n'));
+        setTimeout(tick, 50);
+      };
+      setTimeout(tick, 50);
+    };
+    const provider = createCliProvider({ timeoutMs: 100 }, stubFallback);
+    let settled = false;
+    const eventPromise = provider
+      .extractFactsFromEvents(
+        [{ id: "e1", role: "user", content: "I prefer dark roast", sequence: 1 } as any],
+        [],
+      )
+      .then((r) => {
+        settled = true;
+        return r;
+      });
+    await vi.advanceTimersByTimeAsync(200);
+    expect(spawnCount).toBe(1);
+    expect(settled).toBe(false);
+    await vi.advanceTimersByTimeAsync(
+      2 * (CLI_HARD_TIMEOUT_MS + CLI_TIMEOUT_JOIN_MS),
+    );
+    expect(settled).toBe(true);
+    vi.useRealTimers();
+    const result = await eventPromise;
+    expect(result.degraded).toBe(true);
+    expect(result.facts[0].content).toBe(FALLBACK_MARKER);
+    expect(spawnCount).toBe(2);
+    expect(lastKillSignals).toContain("SIGKILL");
+  });
+
   it("times out after the configured window", async () => {
     vi.useFakeTimers();
     nextMockChildBehaviour = () => {
@@ -378,6 +612,7 @@ describe("createCliProvider — extractFactsFromEvents", () => {
     const result = await eventPromise;
     expect(result.facts[0].content).toBe(FALLBACK_MARKER);
     expect(result.degraded).toBe(true);
+    expect(result.degradedKind).toBe("timeout");
     expect(spawnCount).toBe(2);
   });
 
@@ -431,7 +666,9 @@ describe("createCliProvider — extractFactsFromEvents", () => {
     err.mockRestore();
     const failureLines = lines.filter((l) => l.includes("failed (timeout)"));
     expect(failureLines[0]).toContain("stage-1-extract failed (timeout)");
-    expect(failureLines[0]).toContain("after=100ms");
+    expect(failureLines[0]).toContain("idle=100ms");
+    expect(failureLines[0]).toMatch(/elapsed=\d+ms/);
+    expect(failureLines[0]).not.toContain("after=");
     expect(failureLines[0]).toContain("— retrying once");
   });
 
@@ -584,6 +821,10 @@ describe("createCliProvider — reconcile", () => {
       [{ id: "f1", content: "existing fact" } as any],
     );
     expect(decision.kind).toBe("noop");
+    const fmt = lastSpawnArgs!.args.indexOf("--output-format");
+    expect(lastSpawnArgs!.args[fmt + 1]).toBe("stream-json");
+    expect(lastSpawnArgs!.args).toContain("--verbose");
+    expect(lastSpawnArgs!.args).toContain("--include-partial-messages");
   });
 
   it("returns enrich with existingFactId validated against candidates", async () => {
@@ -971,5 +1212,52 @@ describe("createCliProvider — billed usage", () => {
       output_tokens: 6,
     });
     expect(usage!.stages).not.toHaveProperty("extract");
+  });
+});
+
+describe("parseClaudeCliStdout", () => {
+  it("prefers the last type:result line in NDJSON", () => {
+    const stdout = [
+      '{"type":"system","subtype":"init"}',
+      '{"type":"assistant","message":{"content":[{"type":"text","text":"working"}]}}',
+      '{"type":"result","is_error":false,"structured_output":{"facts":[{"content":"A"}]}}',
+    ].join("\n");
+    const envelope = parseClaudeCliStdout(stdout);
+    expect(envelope.type).toBe("result");
+    expect(envelope.structured_output).toEqual({ facts: [{ content: "A" }] });
+  });
+
+  it("falls back to the last object with structured_output", () => {
+    const stdout = [
+      '{"type":"system"}',
+      '{"structured_output":{"facts":[{"content":"kept"}]}}',
+    ].join("\n");
+    expect(parseClaudeCliStdout(stdout).structured_output).toEqual({
+      facts: [{ content: "kept" }],
+    });
+  });
+
+  it("parses a single JSON envelope (tests, --output-format json)", () => {
+    const envelope = parseClaudeCliStdout(
+      JSON.stringify({
+        is_error: false,
+        structured_output: { facts: [] },
+      }),
+    );
+    expect(envelope.is_error).toBe(false);
+    expect(envelope.structured_output).toEqual({ facts: [] });
+  });
+
+  it("ignores non-JSON lines and still finds the result", () => {
+    const stdout = [
+      "not json",
+      '{"type":"result","is_error":false,"structured_output":{"facts":[]}}',
+    ].join("\n");
+    expect(parseClaudeCliStdout(stdout).type).toBe("result");
+  });
+
+  it("throws when stdout is not a JSON object", () => {
+    expect(() => parseClaudeCliStdout("[]")).toThrow(/not a JSON object/);
+    expect(() => parseClaudeCliStdout("")).toThrow();
   });
 });

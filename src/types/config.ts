@@ -107,7 +107,7 @@ export interface HttpProviderConfig {
    * model can be used for this run without pinning.
    */
   model?: string;
-  /** Per-stage timeout in ms. Falls back to CLI_DEFAULT_TIMEOUT_MS. */
+  /** Request wall-clock (ms). Falls back to the number CLI_DEFAULT_TIMEOUT_MS — not CLI idle silence. */
   timeout_ms?: number;
 }
 
@@ -162,10 +162,18 @@ export interface ExtractionConfig {
   working_memory_size: number;
 }
 
-/** Default `--model` for the CLI intelligence provider. One definition. */
+/** Default `--model` for the CLI intelligence provider (extract). One definition. */
 export const CLI_DEFAULT_MODEL = "haiku";
-/** Default per-stage subprocess timeout (ms). One definition. */
+/** Default CLI model for the integrate step. One definition. Extract stays `CLI_DEFAULT_MODEL`. */
+export const CLI_DEFAULT_INTEGRATE_MODEL = "sonnet";
+/** Default idle silence on the CLI subprocess pipes (ms). One definition. Automatic runs. */
 export const CLI_DEFAULT_TIMEOUT_MS = 45_000;
+/** Init historic extract/integrate idle overlay. Automatic session_start stays `CLI_DEFAULT_TIMEOUT_MS`. */
+export const CLI_HISTORIC_TIMEOUT_MS = 180_000;
+/** TTY “still working” while a consolidate phase is silent. Not the lock heartbeat. */
+export const EXTRACT_IDLE_HEARTBEAT_MS = 15_000;
+/** Same Ctrl+C can fire process SIGINT and readline SIGINT. Hard-exit only after this. */
+export const ABORT_SECOND_KEYPRESS_MS = 500;
 
 /** Options for the 'cli' provider (subprocess `claude -p`). All optional —
  *  sensible defaults are applied by createCliProvider. */
@@ -175,11 +183,11 @@ export interface CliProviderConfig {
   /** Model alias passed via --model. Default: CLI_DEFAULT_MODEL. */
   model?: string;
   /**
-   * CLI model for I→K (summarise, reconcile, supersede). Omit to use `model`.
-   * Extract / classify / entities still use `model`.
+   * CLI model for the integrate step. Omit to use `CLI_DEFAULT_INTEGRATE_MODEL`.
+   * Extract still uses `model` / `CLI_DEFAULT_MODEL`.
    */
   integrate_model?: string;
-  /** Per-stage subprocess timeout in ms. Default: CLI_DEFAULT_TIMEOUT_MS. */
+  /** Idle silence on the subprocess pipes before kill (ms). Default: CLI_DEFAULT_TIMEOUT_MS. */
   timeout_ms?: number;
   /** Emit provider debug logging to stderr. Default: false. */
   debug?: boolean;
@@ -485,6 +493,10 @@ export const DEFAULT_CONFIG: Omit<ServerConfig, "storage" | "temporal"> = {
     // (e.g. =heuristic) or intelligence.provider in config.json.
     provider: "cli",
     api_key: null,
+    cli: {
+      model: CLI_DEFAULT_MODEL,
+      integrate_model: CLI_DEFAULT_INTEGRATE_MODEL,
+    },
   },
   consolidation: {
     triggers: ["session_start", "threshold", "compaction", "shutdown", "manual"],

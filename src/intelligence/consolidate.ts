@@ -40,7 +40,10 @@ import {
   EXTRACT_REREAD_CONFIDENCE,
   EXTRACT_REREAD_WINDOW,
   capReferents,
+  packEventsForExtract,
 } from "./extract-prompt.js";
+import { lineTimeMs } from "./line-time.js";
+import { ConsolidateAbortError, isConsolidateAbort, throwIfAborted } from "./abort.js";
 import { relatedFactsForExtract } from "./related-k.js";
 import {
   latestConversationSituation,
@@ -53,6 +56,7 @@ import { attachBackingSources } from "./backing.js";
 import {
   claimForConsolidation,
   getClaimedFacts,
+  getUnconsolidatedFacts,
   insertSessionFact,
   linkFactSource,
   primaryEventForFact,
@@ -98,8 +102,9 @@ import {
   EXTRACT_CAP_EVENTS,
   type ConsolidateSteps,
 } from "./steps.js";
-import type { EmbeddingProvider } from "../embedding/types.js";
+import type { EmbeddingProvider, EmbeddingResult } from "../embedding/types.js";
 import {
+  countFactsMissingEmbeddings,
   getFactsMissingEmbeddings,
   insertEmbeddings,
 } from "../db/embeddings.js";
@@ -141,10 +146,33 @@ export interface ConsolidateCaller {
    */
   copy?: () => Promise<{ events_inserted: number }>;
   /**
-   * How many of the oldest unexamined events extract may examine this run.
+   * How many of the oldest unexamined lines extract may examine this run.
    * Undefined means the default cap (EXTRACT_CAP_EVENTS); null lifts it.
    */
   extractLimit?: number | null;
+  /**
+   * Init historic window. Lines before this instant (said-at, else Cursor
+   * file mtime, else copy time) are marked examined without a model call.
+   * Automatic consolidate does not set this.
+   */
+  extractSince?: Date;
+  abort?: AbortSignal;
+  /** Override progress denominator (historic chosenCount). */
+  progressTotal?: number;
+  /** Counter after each examined chunk. Not a tick during the model call. */
+  onExtractProgress?: (examined: number, total: number) => void;
+  onModelChunk?: (lines: number, durationMs: number) => void;
+  onIntegrateStart?: (pendingI: number) => void;
+  onIntegrateProgress?: (done: number, total: number) => void;
+  /** Fired only when extract degraded because the CLI subprocess timed out. */
+  onExtractTimeout?: () => void;
+  onEmbedStart?: () => void;
+  onEmbedProgress?: (
+    done: number,
+    total: number,
+    batch?: { durationMs: number; factCount: number },
+  ) => void;
+  onEmbedEnd?: () => void;
 }
 
 export interface ConsolidationResult {
@@ -177,12 +205,36 @@ export interface ConsolidationResult {
   examinedThrough: number;
   /** True when a later extract call failed but an honest prefix was kept. */
   prefixCommitted?: boolean;
+  /** User Ctrl+C / abort. Integrate did not claim, or was unclaimed. */
+  aborted?: boolean;
   /**
    * Billed intelligence for this run. Absent when nothing was billed (heuristic,
    * skip-if-busy, or a provider that does not report). Token keys are omitted
    * rather than zero when the provider did not send usage.
    */
   usage?: IntelligenceUsage;
+  /**
+   * Set when this run included integrate. Absent on copy-only / extract-only.
+   * `model` is null when semantic search is off. `error` is set when the
+   * provider threw — facts are still committed; the missing rows are the queue.
+   */
+  embedding?: EmbedRunReport;
+}
+
+/** What the embed step did. Not a second coverage table — stats remains that. */
+export interface EmbedRunReport {
+  model: string | null;
+  dimensions: number | null;
+  /** Vectors written this run. */
+  embedded: number;
+  /** Current facts still without a vector for this model. Omitted when the pair is unknown. */
+  missing?: number;
+  error?: string;
+}
+
+/** Same predicate as `formatConsolidate` / MCP consolidate JSON. */
+export function embedReportVisible(e: EmbedRunReport | undefined): boolean {
+  return Boolean(e && (e.error || (e.model && e.dimensions)));
 }
 
 /**
@@ -364,6 +416,12 @@ export async function consolidate(
         intelligence,
         config,
         extractLimit,
+        caller.extractSince,
+        caller.onExtractProgress,
+        caller.onExtractTimeout,
+        caller.abort,
+        caller.progressTotal,
+        caller.onModelChunk,
       );
       extractionDegraded = extracted.degraded;
       extractPending = extracted.pending;
@@ -379,6 +437,8 @@ export async function consolidate(
     const effectiveWatermark = await extractWatermark(db);
 
     if (integrateNow) {
+      throwIfAborted(caller.abort);
+      caller.onIntegrateStart?.((await getUnconsolidatedFacts(db)).length);
       await claimForConsolidation(db, consolidationId);
     }
     const sessionFacts = integrateNow
@@ -418,9 +478,9 @@ export async function consolidate(
       // previous run whose provider was down. Returning here without embedding
       // would mean the backlog only ever drains on runs that happen to have new
       // facts, which for a quiet store is never.
-      if (integrateNow) {
-        await embedIntegratedFacts(db, embeddingProvider, config);
-      }
+      const embedding = integrateNow
+        ? await embedIntegratedFacts(db, embeddingProvider, config, caller)
+        : undefined;
 
       await releaseLock(db, consolidationId);
       const extractedCount = extractPending.reduce(
@@ -444,6 +504,7 @@ export async function consolidate(
         ...(budgetReason ? { skipReason: budgetReason } : {}),
         examinedThrough: effectiveWatermark,
         prefixCommitted,
+        ...(embedding ? { embedding } : {}),
       });
     }
 
@@ -465,6 +526,7 @@ export async function consolidate(
         domain: f.domain_hint!,
         subdomain: f.subdomain_hint ?? null,
       }));
+    throwIfAborted(caller.abort);
     const explicitClassified = needsClassification.length
       ? await intelligence.classifyFacts(needsClassification)
       : [];
@@ -502,6 +564,7 @@ export async function consolidate(
       }
       needsEntityExtraction.push(sf);
     }
+    throwIfAborted(caller.abort);
     if (needsEntityExtraction.length > 0) {
       const extracted = await intelligence.extractEntities(needsEntityExtraction);
       for (const [id, ents] of extracted.entries()) {
@@ -542,7 +605,9 @@ export async function consolidate(
     // twin yet), producing duplicate rows in the facts table.
     const seenBatchContent = new Set<string>();
 
+    let integrateDone = 0;
     for (const cf of classified) {
+      throwIfAborted(caller.abort);
       const sessionFact = sessionFactMap.get(cf.id);
       if (!sessionFact) continue;
 
@@ -556,6 +621,8 @@ export async function consolidate(
 
       const domainFacts = await getDomainFacts(cf.domain);
       const decision = await intelligence.reconcile(sessionFact, domainFacts);
+      integrateDone += 1;
+      caller.onIntegrateProgress?.(integrateDone, classified.length);
 
       if (decision.kind === "noop") {
         rejected++;
@@ -877,7 +944,12 @@ export async function consolidate(
     // vector until the next run picks them up.
     //
     // Also outside the lock — like summarise() below, and for the same reason.
-    await embedIntegratedFacts(db, embeddingProvider, config);
+    const embedding = await embedIntegratedFacts(
+      db,
+      embeddingProvider,
+      config,
+      caller,
+    );
 
     // Release lock before summary generation. summarise() is async on the
     // IntelligenceProvider interface — LLM-based providers make calls that
@@ -1001,6 +1073,7 @@ export async function consolidate(
       supersessions: supersessionCount,
       eventsCopied,
       eventsRemaining: await remainingEvents(),
+      embedding,
       summary: summaryText,
       openThreads: threads,
       skipped: false,
@@ -1358,15 +1431,6 @@ function truncateForPrompt(
   }));
 }
 
-function chunkEvents(events: SessionEvent[], batchSize: number): SessionEvent[][] {
-  const size = Math.max(1, batchSize);
-  const chunks: SessionEvent[][] = [];
-  for (let i = 0; i < events.length; i += size) {
-    chunks.push(events.slice(i, i + size));
-  }
-  return chunks;
-}
-
 function lastSeq(events: SessionEvent[]): number | null {
   if (events.length === 0) return null;
   return Math.max(...events.map((e) => e.sequence));
@@ -1452,6 +1516,12 @@ async function extractFactsFromEvents(
   intelligence: IntelligenceProvider,
   config?: Partial<ServerConfig>,
   limit: number | null = null,
+  since?: Date,
+  onProgress?: (examined: number, total: number) => void,
+  onTimeout?: () => void,
+  abort?: AbortSignal,
+  progressTotal?: number,
+  onModelChunk?: (lines: number, durationMs: number) => void,
 ): Promise<ExtractResult> {
   const empty: ExtractResult = {
     degraded: false,
@@ -1476,6 +1546,12 @@ async function extractFactsFromEvents(
 
   const conversations = await listUnexaminedConversations(db);
   if (conversations.length === 0) return empty;
+  const counted = await unexaminedEventCount(db);
+  const total =
+    progressTotal ??
+    (limit == null ? counted : Math.min(limit, counted));
+  let examinedLines = 0;
+  onProgress?.(0, total);
 
   const vocabulary = await loadStoreVocabulary(db, config?.domains ?? []);
   const entityTypes = await listEntityTypes(db);
@@ -1487,13 +1563,17 @@ async function extractFactsFromEvents(
   // Oldest conversations first, bounded by `limit` events across the run. A
   // per-conversation mark advances only through what this run examined, so a
   // truncated tail is simply the next run's work — never a claim to have read it.
-  let budget = limit ?? Number.POSITIVE_INFINITY;
+  let budget = since ? Number.POSITIVE_INFINITY : (limit ?? Number.POSITIVE_INFINITY);
+  const sinceMs = since?.getTime();
 
   for (const conv of conversations) {
+    throwIfAborted(abort);
     if (budget <= 0) break;
     if (conv.kind === "unkeyed") {
       await setConversationExtractThrough(db, conv, conv.minSequence);
       advanced = true;
+      examinedLines += 1;
+      onProgress?.(examinedLines, total);
       continue;
     }
 
@@ -1501,9 +1581,16 @@ async function extractFactsFromEvents(
     const through = await conversationExtractThrough(db, ref);
     const loaded = await loadConversationEventsAfter(db, ref, through, budget);
     if (loaded.length === 0) continue;
-    budget -= loaded.length;
+    const inWindow = sinceMs === undefined
+      ? loaded
+      : loaded.filter((e) => lineTimeMs(e) >= sinceMs);
+    if (sinceMs === undefined) {
+      budget -= loaded.length;
+    } else {
+      budget -= inWindow.length;
+    }
 
-    const eligible = loaded.filter((e) =>
+    const eligible = inWindow.filter((e) =>
       isEligibleEvent(e, eventTypes, roles, minContentLength),
     );
     if (eligible.length === 0) {
@@ -1512,12 +1599,17 @@ async function extractFactsFromEvents(
         await setConversationExtractThrough(db, ref, maxLoaded);
         advanced = true;
       }
+      // Wholly-old skip (inWindow empty) does not move the chosen-work counter.
+      if (inWindow.length > 0) {
+        examinedLines += inWindow.length;
+        onProgress?.(examinedLines, total);
+      }
       continue;
     }
 
     const thisPending: ExtractPending[] = [];
     const truncated = truncateForPrompt(eligible, maxContentLength);
-    const chunks = chunkEvents(truncated, batchSize);
+    const chunks = packEventsForExtract(truncated, batchSize, maxContentLength);
     let prior = await latestConversationSituation(db, ref.id);
     const priorSummary = await latestSessionSummary(db, ref.id);
     const dbEvidence = truncateForPrompt(
@@ -1526,9 +1618,11 @@ async function extractFactsFromEvents(
     );
     const earlierThisRun: SessionEvent[] = [];
     let conversationDegraded = false;
+    const work = [...chunks];
 
-    for (let i = 0; i < chunks.length; i++) {
-      const chunk = chunks[i]!;
+    while (work.length > 0) {
+      throwIfAborted(abort);
+      const chunk = work.shift()!;
       const evidence =
         earlierThisRun.length > 0
           ? truncateForPrompt(
@@ -1544,8 +1638,10 @@ async function extractFactsFromEvents(
         relatedFacts,
         vocabulary,
         entityTypes,
+        abort,
       };
 
+      const started = Date.now();
       let outcome = await intelligence.extractFactsFromEvents(
         chunk,
         evidence,
@@ -1553,8 +1649,19 @@ async function extractFactsFromEvents(
         relatedFacts,
         extras,
       );
+      throwIfAborted(abort);
+      if (outcome.aborted) throw new ConsolidateAbortError();
+      if (
+        outcome.degraded &&
+        outcome.degradedKind === "overflow" &&
+        chunk.length > 1
+      ) {
+        const mid = Math.ceil(chunk.length / 2);
+        work.unshift(chunk.slice(0, mid), chunk.slice(mid));
+        continue;
+      }
       if (outcome.degraded) {
-        const remaining = [...chunk, ...chunks.slice(i + 1).flat()];
+        const remaining = [...chunk, ...work.flat()];
         const examined = thisPending.flatMap((p) => p.group.events);
         if (prefixIsHonest(examined, remaining)) {
           await persistPending(db, thisPending);
@@ -1567,6 +1674,8 @@ async function extractFactsFromEvents(
         }
         conversationDegraded = true;
         degraded = true;
+        if (outcome.degradedKind === "timeout") onTimeout?.();
+        onProgress?.(examinedLines, total);
         break;
       }
       if (needsReread(outcome)) {
@@ -1593,8 +1702,19 @@ async function extractFactsFromEvents(
             ),
           },
         );
+        throwIfAborted(abort);
+        if (outcome.aborted) throw new ConsolidateAbortError();
+        if (
+          outcome.degraded &&
+          outcome.degradedKind === "overflow" &&
+          chunk.length > 1
+        ) {
+          const mid = Math.ceil(chunk.length / 2);
+          work.unshift(chunk.slice(0, mid), chunk.slice(mid));
+          continue;
+        }
         if (outcome.degraded) {
-          const remaining = [...chunk, ...chunks.slice(i + 1).flat()];
+          const remaining = [...chunk, ...work.flat()];
           const examined = thisPending.flatMap((p) => p.group.events);
           if (prefixIsHonest(examined, remaining)) {
             await persistPending(db, thisPending);
@@ -1607,6 +1727,8 @@ async function extractFactsFromEvents(
           }
           conversationDegraded = true;
           degraded = true;
+          if (outcome.degradedKind === "timeout") onTimeout?.();
+          onProgress?.(examinedLines, total);
           break;
         }
         if (needsReread(outcome)) {
@@ -1617,10 +1739,13 @@ async function extractFactsFromEvents(
             closedGist: null,
           });
           earlierThisRun.push(...chunk);
+          examinedLines += chunk.length;
+          onProgress?.(examinedLines, total);
           continue;
         }
       }
 
+      onModelChunk?.(chunk.length, Date.now() - started);
       const firstSeq = chunk[0]?.sequence ?? through + 1;
       const built = buildSituation(
         prior,
@@ -1640,6 +1765,8 @@ async function extractFactsFromEvents(
         closedGist: built.closedGist,
       });
       earlierThisRun.push(...chunk);
+      examinedLines += chunk.length;
+      onProgress?.(examinedLines, total);
     }
 
     if (!conversationDegraded) {
@@ -1648,6 +1775,12 @@ async function extractFactsFromEvents(
       if (maxLoaded != null) {
         await setConversationExtractThrough(db, ref, maxLoaded);
         advanced = true;
+      }
+      const chosen = inWindow;
+      const remainder = Math.max(0, chosen.length - eligible.length);
+      if (remainder > 0) {
+        examinedLines += remainder;
+        onProgress?.(examinedLines, total);
       }
       pending.push(...thisPending);
     }
@@ -1670,25 +1803,62 @@ async function extractFactsFromEvents(
  * present identically — facts with no row for the current model — and all drain
  * through this one path with no separate retry bookkeeping.
  *
- * Never throws. Semantic search is an enhancement to retrieval; losing it for a
+ * Provider errors never throw (abort does). Semantic search is an enhancement to retrieval; losing it for a
  * run costs recall until the next consolidation, and the alternative — failing
  * a consolidation that has already committed its facts — costs far more.
+ * The report is how the CLI can say so: a swallowed error used to look like a
+ * successful empty integrate.
  */
 async function embedIntegratedFacts(
   db: Db,
   provider: EmbeddingProvider | null,
   config?: Partial<ServerConfig>,
-): Promise<void> {
-  if (!provider) return;
+  caller: Pick<
+    ConsolidateCaller,
+    "abort" | "onEmbedStart" | "onEmbedProgress" | "onEmbedEnd"
+  > = {},
+): Promise<EmbedRunReport> {
+  if (!provider) {
+    return { model: null, dimensions: null, embedded: 0, missing: 0 };
+  }
 
   const batchSize = config?.embedding?.batch_size ?? 128;
+  let embedded = 0;
+  let model: string | null = provider.model ?? null;
+  let dimensions: number | null =
+    provider.dimensions > 0 ? provider.dimensions : null;
+  let started = false;
+
+  const missingOf = async (): Promise<number> => {
+    if (!model || !dimensions) return 0;
+    return countFactsMissingEmbeddings(db, model, dimensions);
+  };
 
   try {
+    throwIfAborted(caller.abort);
+    started = true;
+    caller.onEmbedStart?.();
+
     // Dimension is only known after the provider's first call on some backends,
     // so probe with a trivial embed rather than assuming a configured value.
-    const probe = await provider.embed(["dimension probe"], "document");
-    const { model, dimensions } = probe;
-    if (!dimensions) return;
+    let probe: EmbeddingResult;
+    try {
+      probe = await provider.embed(["dimension probe"], "document");
+    } catch (err) {
+      throwIfAborted(caller.abort);
+      throw err;
+    }
+    throwIfAborted(caller.abort);
+    model = probe.model;
+    dimensions = probe.dimensions;
+    if (!dimensions) {
+      return {
+        model,
+        dimensions: 0,
+        embedded: 0,
+        error: "provider returned no dimension",
+      };
+    }
 
     // Drain the queue rather than taking one batch. `batch_size` bounds the
     // size of a request, which is a property of the provider; it must not also
@@ -1696,25 +1866,46 @@ async function embedIntegratedFacts(
     // on over an existing store would need one consolidation per 128 facts
     // with no indication that more were owed. The backlog is a one-off — a
     // steady-state run embeds the handful of facts that just integrated.
+    const total = await missingOf();
+    if (total > 0) caller.onEmbedProgress?.(0, total);
+
     const attempted = new Set<string>();
     for (;;) {
+      throwIfAborted(caller.abort);
       const pending = await getFactsMissingEmbeddings(db, model, dimensions, batchSize);
-      if (pending.length === 0) return;
+      if (pending.length === 0) {
+        return { model, dimensions, embedded, missing: 0 };
+      }
 
       // If a batch comes back entirely made of facts already written this run,
       // the writes are not clearing the queue and another pass would repeat
       // itself for ever. Stop rather than spin; the rows still missing are the
       // queue, exactly as after any other failure.
-      if (pending.every((f) => attempted.has(f.id))) return;
+      if (pending.every((f) => attempted.has(f.id))) {
+        return {
+          model,
+          dimensions,
+          embedded,
+          missing: await missingOf(),
+          error: "embed queue did not drain",
+        };
+      }
       for (const f of pending) attempted.add(f.id);
 
-      const result = await provider.embed(
-        pending.map((f) => f.content),
-        // Stored facts are documents. Embedding them as queries would put them
-        // in the wrong half of an asymmetrically-trained model and silently
-        // degrade every subsequent search.
-        "document",
-      );
+      const t0 = Date.now();
+      let result: EmbeddingResult;
+      try {
+        result = await provider.embed(
+          pending.map((f) => f.content),
+          // Stored facts are documents. Embedding them as queries would put them
+          // in the wrong half of an asymmetrically-trained model and silently
+          // degrade every subsequent search.
+          "document",
+        );
+      } catch (err) {
+        throwIfAborted(caller.abort);
+        throw err;
+      }
 
       if (result.vectors.length !== pending.length) {
         // Misalignment would attach each fact to a different fact's meaning —
@@ -1732,11 +1923,30 @@ async function embedIntegratedFacts(
         result.model,
         result.dimensions,
       );
+      embedded += pending.length;
+      caller.onEmbedProgress?.(embedded, total, {
+        durationMs: Date.now() - t0,
+        factCount: pending.length,
+      });
 
-      if (pending.length < batchSize) return;
+      if (pending.length < batchSize) {
+        return { model, dimensions, embedded, missing: await missingOf() };
+      }
     }
-  } catch {
+  } catch (err) {
+    if (isConsolidateAbort(err)) throw err;
     // Swallowed on purpose. The missing rows are the retry queue; the next run
-    // finds exactly these facts again and tries once more.
+    // finds exactly these facts again and tries once more. The report is what
+    // makes that visible on the CLI. Omit `missing` when the working pair was
+    // never known — do not invent a second (model-only) queue.
+    return {
+      model,
+      dimensions,
+      embedded,
+      ...(model && dimensions ? { missing: await missingOf() } : {}),
+      error: err instanceof Error ? err.message : String(err),
+    };
+  } finally {
+    if (started) caller.onEmbedEnd?.();
   }
 }

@@ -12,6 +12,7 @@ import { parseSystemTime } from "../db/facts.js";
 import { getTopicContext, lookupNamedSubject } from "../search/entity.js";
 import { getDomains } from "../db/domains.js";
 import { getStats } from "../db/stats.js";
+import type { SemanticIntent } from "../embedding/provider.js";
 import type { InterlocutorConfig, TemporalConfig } from "../types/config.js";
 import { systemTimeWarning } from "../config.js";
 
@@ -34,6 +35,8 @@ export function registerReadTools(
   interlocutor?: InterlocutorConfig,
   /** Copy new lines on a copy store. Must not throw. */
   beforeRead?: () => Promise<void>,
+  /** Resolved embedding intent. Same factory as search; no HTTP. */
+  semanticIntent?: SemanticIntent | null,
 ): void {
   const bitemporal = temporal?.mode === "bitemporal";
   // -----------------------------------------------------------------
@@ -305,11 +308,16 @@ export function registerReadTools(
       `get_entity or get_context for actual recall.
 
 ` +
-      `\`embeddings\` reports semantic-search coverage per model. An empty list ` +
-      `means this store searches by keyword only, which is the default. A count ` +
-      `well below the current fact count means some facts are findable by ` +
-      `wording but not by meaning — worth mentioning if the user asks why ` +
-      `something was not recalled.\n\n` +
+      `\`semantic\` is present when this store is configured for meaning search. ` +
+      `\`semantic.stored\` is how many currently-true facts already have a vector ` +
+      `for the working model (and dimension, when known). \`embeddings\` lists ` +
+      `every vector group the store holds, including leftovers from a previous ` +
+      `model — leftover rows do not serve meaning search. No \`semantic\` object ` +
+      `means keyword-only, which is the default, even if \`embeddings\` still ` +
+      `lists leftover rows. When \`semantic\` is present and \`semantic.stored\` ` +
+      `is well below \`facts.active_latest\`, facts are findable by wording but ` +
+      `not yet by meaning — call consolidate. Search does not wait for full ` +
+      `coverage: unembedded facts still match on words.\n\n` +
       `\`extract.unextracted_events\` is how many transcript lines extract has ` +
       `not examined. \`pending_facts\` is I not yet integrated. ` +
       `A large unextracted count with a healthy fact count means capture is ` +
@@ -328,7 +336,7 @@ export function registerReadTools(
       // Shared with `facthouse stats` so the tool and the CLI can't disagree.
       return {
         content: [
-          { type: "text" as const, text: JSON.stringify(await getStats(db)) },
+          { type: "text" as const, text: JSON.stringify(await getStats(db, semanticIntent ?? null)) },
         ],
       };
     },

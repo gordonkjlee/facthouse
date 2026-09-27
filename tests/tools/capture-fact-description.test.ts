@@ -68,7 +68,7 @@ describe("captureFactDescription", () => {
     expect(src("tools/fact-manager.ts")).not.toMatch(
       /when you need to correct the knowledge/,
     );
-    expect(src("index.ts")).toMatch(/sources:\s*config\.sources/);
+    expect(src("server.ts")).toMatch(/sources:\s*config\.sources/);
   });
 });
 
@@ -78,12 +78,33 @@ const README = readFileSync(
 );
 
 describe("README instruction layer for capture and identity", () => {
-  it("names this package in the opening, not Mem0's hosted MCP", () => {
-    const head = README.split(/\r?\n/).slice(0, 8).join("\n");
-    expect(head).toContain(GITHUB_REPO);
+  it("names this package in the opening", () => {
+    const head = README.split(/\r?\n/).slice(0, 10).join("\n");
     expect(head).toContain(NPM_PACKAGE);
-    expect(head).toMatch(/mcp\.mem0\.ai/);
+    expect(head).toMatch(/The store is a SQLite file on your disk\./);
+    expect(head).not.toMatch(/mem0/i);
+    expect(head).not.toMatch(/mcp\.[a-z0-9-]+\.ai/i);
+    expect(head).not.toMatch(/hosted OpenMemory/i);
+    expect(head).not.toMatch(/facthouse init/);
+    expect(head).not.toMatch(/paste the snippet it prints/);
+    expect(head).toMatch(/neuroscience-inspired consolidation/);
+    expect(head).toMatch(/\*\*Data\*\*/);
+    expect(head).toMatch(/\*\*Information\*\*/);
+    expect(head).toMatch(/\*\*Knowledge\*\*/);
+    expect(head).toContain("→");
+    expect(head).toMatch(/optional semantic search/);
+    expect(head).not.toMatch(/A local memory engine any AI tool can use/);
+    expect(head).not.toMatch(/—/);
+    expect(head).not.toMatch(/Wisdom/);
+    expect(README).toMatch(/## Quick Start[\s\S]*facthouse init/);
+    expect(README).toContain(GITHUB_REPO);
+    expect(README).not.toMatch(/mem0/i);
+    expect(README).not.toMatch(/mcp\.[a-z0-9-]+\.ai/i);
+    expect(README).not.toMatch(/hosted OpenMemory/i);
+    expect(README).not.toMatch(/A local memory engine any AI tool can use/);
     expect(head).not.toMatch(/abolotnov/);
+    expect(README).not.toMatch(/hosted plane/i);
+    expect(README).not.toMatch(/vendor blob/i);
   });
 
   it("does not describe the prune spare as a pronoun dictionary", () => {

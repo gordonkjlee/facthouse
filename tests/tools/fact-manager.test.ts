@@ -306,3 +306,46 @@ describe("get_session_context", () => {
     expect(await factManager.getSessionContext()).toHaveLength(0);
   });
 });
+
+describe("mcpEmbeddingField", () => {
+  const { mcpEmbeddingField } = factMod;
+
+  it("is null on the no-provider sentinel", () => {
+    expect(
+      mcpEmbeddingField({
+        embedding: { model: null, dimensions: null, embedded: 0, missing: 0 },
+      } as never),
+    ).toBeNull();
+  });
+
+  it("serialises a provider report including already-complete", () => {
+    expect(
+      mcpEmbeddingField({
+        embedding: {
+          model: "nomic-embed-text",
+          dimensions: 768,
+          embedded: 0,
+          missing: 0,
+        },
+      } as never),
+    ).toEqual({
+      model: "nomic-embed-text",
+      dimensions: 768,
+      embedded: 0,
+      missing: 0,
+    });
+  });
+
+  it("omits missing when the pair was never known", () => {
+    expect(
+      mcpEmbeddingField({
+        embedding: { model: null, dimensions: null, embedded: 0, error: "ECONNREFUSED" },
+      } as never),
+    ).toEqual({
+      model: null,
+      dimensions: null,
+      embedded: 0,
+      error: "ECONNREFUSED",
+    });
+  });
+});

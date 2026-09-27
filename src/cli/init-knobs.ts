@@ -11,7 +11,9 @@ import {
   DEFAULT_CONFIG,
   CAPTURE_SOURCE_KINDS,
   CLI_DEFAULT_MODEL,
+  CLI_DEFAULT_INTEGRATE_MODEL,
   CLI_DEFAULT_TIMEOUT_MS,
+  CLI_HISTORIC_TIMEOUT_MS,
   HTTP_DEFAULT_BASE_URL,
   HTTP_WELL_KNOWN_BASE_URLS,
   type IntelligenceConfig,
@@ -24,8 +26,10 @@ import type {
   EmbeddingProviderType,
   ServerConfig,
 } from "../types/config.js";
-import { CLI_NAME } from "../identity.js";
+import { CLI_NAME, cliDataArg, pathFreeCli } from "../identity.js";
 import { EXTRACT_CAP_EVENTS } from "../intelligence/steps.js";
+import { formatDiskBudget } from "../db/disk-budget.js";
+import { formatEta } from "./eta.js";
 import { defaultServerConfig, mergeConfig } from "../config.js";
 import { httpBaseUrlOf, httpIsOptedIn, httpModelOf } from "../intelligence/http.js";
 import {
@@ -35,7 +39,7 @@ import {
 } from "../intelligence/stage-router.js";
 
 /** Topics init is allowed to ask about on the recommended path. */
-export const INIT_KNOB_IDS = ["dataDir", "sources", "embedding", "more"] as const;
+export const INIT_KNOB_IDS = ["dataDir", "sources", "more"] as const;
 export type InitKnobId = (typeof INIT_KNOB_IDS)[number];
 
 /**
@@ -46,7 +50,7 @@ export type InitKnobId = (typeof INIT_KNOB_IDS)[number];
  */
 export interface MoreOverlay {
   cliModel?: string;
-  /** CLI model for summarise / reconcile / supersede. Omit to use cliModel. */
+  /** CLI model for the integrate step. Omit to use cliModel. */
   cliIntegrateModel?: string;
   cliTimeoutMs?: number;
   /** Y on local OpenAI-compat extract. */
@@ -66,6 +70,11 @@ export const MORE_SETTING_IDS = [
   "httpExtractOnFail",
 ] as const satisfies readonly (keyof MoreOverlay)[];
 export type MoreSettingId = (typeof MORE_SETTING_IDS)[number];
+
+/** TTY init More Y still skips these; init --web must too. */
+export function walksOnInitMore(id: MoreSettingId): boolean {
+  return id !== "cliTimeoutMs" && id !== "httpExtractOnFail";
+}
 
 type _EveryMoreKeyListed = Exclude<keyof MoreOverlay, MoreSettingId> extends never
   ? true
@@ -110,7 +119,7 @@ export interface MoreShown {
 /** Init More walk only. Enable-default on_fail is cli, not resolved CLI none. */
 export const SHIPPED_MORE_SHOWN: MoreShown = {
   cliModel: CLI_DEFAULT_MODEL,
-  cliIntegrateModel: CLI_DEFAULT_MODEL,
+  cliIntegrateModel: CLI_DEFAULT_INTEGRATE_MODEL,
   cliTimeoutMs: CLI_DEFAULT_TIMEOUT_MS,
   httpExtract: false,
   httpBaseUrl: HTTP_DEFAULT_BASE_URL,
@@ -413,9 +422,7 @@ export function moreShownFromConfig(
   const shown: MoreShown = {
     cliModel: config.intelligence.cli?.model ?? CLI_DEFAULT_MODEL,
     cliIntegrateModel:
-      config.intelligence.cli?.integrate_model ??
-      config.intelligence.cli?.model ??
-      CLI_DEFAULT_MODEL,
+      config.intelligence.cli?.integrate_model ?? CLI_DEFAULT_INTEGRATE_MODEL,
     cliTimeoutMs: config.intelligence.cli?.timeout_ms ?? CLI_DEFAULT_TIMEOUT_MS,
     httpExtract:
       resolveStageProviderType(config.intelligence, "extract", env) === "http",
@@ -444,38 +451,59 @@ export function silentEmbeddingProvider(): EmbeddingProviderType | null {
   return DEFAULT_CONFIG.embedding.provider;
 }
 
-export function defaultHomeForKind(kind: CaptureSourceKind): string {
-  return kind === "cursor" ? INIT_SYNTHETIC.cursorHome : INIT_SYNTHETIC.claudeHome;
+export function defaultHomeForKind(
+  kind: CaptureSourceKind,
+  env: NodeJS.ProcessEnv = {},
+): string {
+  if (kind === "cursor") return INIT_SYNTHETIC.cursorHome;
+  const fromEnv = env.CLAUDE_CONFIG_DIR?.trim();
+  if (fromEnv) return fromEnv;
+  return INIT_SYNTHETIC.claudeHome;
 }
 
 function supportedKindsList(): string {
   return CAPTURE_SOURCE_KINDS.map((k) => `"${k}"`).join(" and ");
 }
 
+/** First line of an INIT_PROMPTS string, before the default in brackets. */
+export function promptLabel(prompt: string): string {
+  const first = prompt.split("\n")[0] ?? prompt;
+  return first.split("  [")[0]!.replace(/\?$/, "").trim();
+}
+
+/** Isolation unit. Intro, done card, and README § Another store print this. */
+const STORE_DIR =
+  "The store is this directory. Clients share it by using the same path. " +
+  "A second store is a second directory, not a second install.";
+
+const SETUP_LEAD = "Facthouse setup.";
+
 export const INIT_PROMPTS = {
+  storeDir: STORE_DIR,
   intro:
-    "Facthouse setup. Press Enter to accept the default in [brackets].\n" +
-    "One directory is one memory. Another store is another directory.",
+    SETUP_LEAD +
+    " Press Enter to accept the default in [brackets].\n" +
+    STORE_DIR,
   dataDir: (shown: string) => `Data directory [${shown}]: `,
   capture:
-    "How should this store get conversations?  [copy]\n" +
-    "  copy    recommended if Claude Code or Cursor writes a transcript here\n" +
-    "          — Facthouse copies new lines into your file\n" +
-    "  record  any MCP client — the assistant calls capture_fact\n" +
-    "          (Grok Build, Desktop, and anyone without a transcript file)\n" +
+    "How do conversations get in?\n" +
+    "  copy    session logs on disk (Claude Code or Cursor)\n" +
+    "  record  the assistant saves facts as you talk (Grok, Desktop, …)\n" +
     "  [copy]: ",
   kind:
-    "Source kind  [claude-code]\n" +
-    "  claude-code  Claude Code session JSONL\n" +
-    "  cursor       Cursor Agent JSONL\n" +
+    "Which client writes those logs?  [claude-code]\n" +
+    "  claude-code  Claude Code\n" +
+    "  cursor       Cursor\n" +
     "  [claude-code]: ",
   unknownKind: () => `This version supports ${supportedKindsList()}.`,
-  home: (shown: string) => `Client config dir (home)  [${shown}]: `,
+  home: (shown: string) =>
+    `Where those logs live (client home, not the project)  [${shown}]: `,
   cwd: (shown: string) =>
-    "Project directory (cwd) — required; a bare home walks every project group\n" +
-    `  [${shown}]: `,
+    `Which project folder are the logs for?  [${shown}]: `,
   cwdSkip:
-    "cwd is required to add a source. Leaving copy off (sources stays empty).",
+    "A project folder is required to add a source. Leaving copy off (sources stays empty).",
+  notAPath:
+    "That is not a directory path. Use C:/..., ~/..., or ./... (or leave it blank for the default).",
   embedding:
     "Semantic search  [off]\n" +
     '  off     keyword only — "shellfish" finds a shellfish fact, "food" does not\n' +
@@ -485,15 +513,14 @@ export const INIT_PROMPTS = {
   more:
     "More settings?  [N]\n" +
     "  N  recommended — leave extra knobs at shipped defaults\n" +
-    "  Y  set extra knobs (CLI model, timeout, optional local extract)\n" +
+    "  Y  semantic search, models, optional local extract\n" +
     "  [N]: ",
-  moreCliModel: (shown: string) =>
-    `Model to extract facts from messages  [${shown}]: `,
-  moreCliIntegrateModel: (shown: string) =>
-    `Model to update long-term knowledge  [${shown}]: `,
-  moreCliTimeout: (shown: string) => `Per-stage timeout in ms  [${shown}]: `,
+  moreCliModel: (shown: string) => `Extract model  [${shown}]: `,
+  moreCliIntegrateModel: (shown: string) => `Integrate model  [${shown}]: `,
+  moreCliTimeout: (shown: string) =>
+    `Idle silence on the Claude CLI (ms)  [${shown}]: `,
   moreCliTimeoutInvalid:
-    "Timeout must be a whole number of milliseconds greater than 0.",
+    "Timeout must be a whole number of milliseconds greater than 0 (no pipe bytes before kill).",
   moreHttpExtract: (shownYn: "Y" | "N") =>
     `Local extract on an OpenAI-compatible host?  [${shownYn}]\n` +
     "  N  no — extract stays on the Claude CLI\n" +
@@ -530,22 +557,84 @@ export const INIT_PROMPTS = {
     "Replace config.json with shipped defaults (and, on a TTY, with the wizard answers). Does not merge with the previous file.",
   existingConfig:
     `already exists — left unchanged; run ${CLI_NAME} settings to change extra knobs, or --force to reset. Prompts run only when writing config.json.`,
+  configMalformed:
+    "config.json is malformed. Fix or restore it, or pass --force to replace it.",
   homeMissing: (stored: string) =>
     `Note: ${stored} does not exist yet. Copy will fail until the client has written it.`,
   projectGroupMissing: (home: string, cwd: string, encoded: string) =>
     `Note: no project group for cwd ${cwd} under ${home} (looked for ${encoded}).`,
   gitBashCwdHint: (cwd: string, encoded: string) =>
     `A POSIX-looking cwd ${cwd} on Windows is not the path Claude Code encodes (${encoded} vs ${INIT_SYNTHETIC.cwd} → C--dev-app). Store what the client used.`,
-  copyNow: "Copy transcripts now?  [Y]: ",
-  extractNow: `Extract the oldest ${EXTRACT_CAP_EVENTS} events and integrate now?  [Y]: `,
-  copiedEvents: (n: number) =>
-    n === 0 ? "No new transcript lines." : `Copied ${n} event(s).`,
+  historicCopy:
+    "Copy existing logs now?  [Y]\n" +
+    "  Y  yes\n" +
+    "  N  not now\n" +
+    "  [Y]: ",
+  historicExtract: (n: number, opts?: { hasCursor?: boolean }) =>
+    `Turn ${n} copied line(s) into knowledge now?  [all]\n` +
+    "  Extract reads transcripts. Integrate writes facts.\n" +
+    "  all    every remaining line (model calls; can take hours)\n" +
+    "  7d     last 7 days; older lines are skipped (not extracted later)\n" +
+    "  30d    last 30 days; older lines are skipped (not extracted later)\n" +
+    "  <n>    oldest n lines (any whole number)\n" +
+    "  N      not now — later: facthouse consolidate --all\n" +
+    (opts?.hasCursor
+      ? "  Cursor has no said-at; 7d/30d there is last file activity, whole conversation.\n"
+      : "") +
+    "  [all]: ",
+  historicExtractConfirm: (
+    choice: string,
+    chosenCount: number,
+    truncatedChars: number,
+  ) => {
+    const label =
+      choice === "all"
+        ? "Every remaining line"
+        : choice === "7d"
+          ? "Last 7 days"
+          : choice === "30d"
+            ? "Last 30 days"
+            : `Oldest ${choice} line(s)`;
+    return (
+      `${label} is ${chosenCount} line(s), ${formatDiskBudget(truncatedChars)} sent to extract (model calls; can take hours).\n` +
+      `Type ${choice} again to proceed, or pick another option / N.\n`
+    );
+  },
+  copyingNow: "Copying transcripts…",
+  copiedLines: (n: number) =>
+    n === 0 ? "No new transcript lines." : `Copied ${n} line(s).`,
+  extractingNow: (n: number) =>
+    `Extracting and integrating ${n} line(s) (model calls). A quiet gap is idle silence, not the whole job dying. Progress prints as chosen work finishes.`,
+  extractProgress: (done: number, total: number, etaMs?: number | null) =>
+    etaMs == null
+      ? `${done} of ${total} line(s)…`
+      : `${done} of ${total} line(s), ~${formatEta(etaMs)} left`,
+  extractIdle:
+    "Still working. A quiet gap is idle silence, not the whole job dying.",
+  integratingNow: (n: number) => `Integrating ${n} candidate(s)…`,
+  embeddingNow: "Checking embeddings…",
+  embedProgress: (done: number, total: number, etaMs?: number | null) =>
+    etaMs == null
+      ? `${done} of ${total} fact(s)…`
+      : `${done} of ${total} fact(s), ~${formatEta(etaMs)} left`,
+  semanticBackfill: `Not yet embedded. Run ${CLI_NAME} consolidate --integrate.`,
+  embedFailed: (err: string) => `Embedding failed — ${err}`,
+  extractInterrupted: (remaining: number) =>
+    remaining > 0
+      ? `Stopped. ${remaining} line(s) still waiting.\nContinue: ${CLI_NAME} consolidate --all`
+      : "Stopped.",
+  extractTimedOut: (idleSeconds: number) =>
+    `No output from the model for ${idleSeconds}s. That chunk was not examined and stays eligible.`,
   extractSkippedHeuristic:
     "Skipped extract — the heuristic does not read transcripts.",
+  extractDegradedKept: (through: number) =>
+    `Extraction stopped after a failed call. Facts from earlier examined events were kept and the watermark advanced to ${through}. Remaining events are still eligible. Re-run ${CLI_NAME} consolidate to continue.`,
+  extractDegradedHeld:
+    `Extraction could not run — events were not examined and the watermark was held. A zero factsIntegrated here is not a successful empty extract. Re-run ${CLI_NAME} consolidate when the CLI provider can run.`,
   /** After the init offer ran extract + integrate. Same channel as the prompts. */
   integrated: (facts: number, remaining: number) =>
     remaining > 0
-      ? `Integrated ${facts} fact(s). ${remaining} event(s) remain — ${CLI_NAME} consolidate takes the next ${EXTRACT_CAP_EVENTS}; --all takes the lot.`
+      ? `Integrated ${facts} fact(s). ${remaining} line(s) remain — ${CLI_NAME} consolidate --all takes the lot.`
       : `Integrated ${facts} fact(s).`,
   captureDeclined:
     `Capture: copy is off (record). capture_fact is how facts get in; a client hook can pipe into ${CLI_NAME} record.`,
@@ -553,9 +642,14 @@ export const INIT_PROMPTS = {
     `Capture: copy is off — no cwd was given. capture_fact is how facts get in; re-run ${CLI_NAME} init --force on a terminal to name a source.`,
   /** The one sentence that says how a copy store starts. init prints it; README repeats it. */
   copyRecipe:
-    `${CLI_NAME} init on a terminal, pick copy, set cwd, then ${CLI_NAME} consolidate.`,
-  copyNext:
-    `Run ${CLI_NAME} consolidate (oldest ${EXTRACT_CAP_EVENTS} events per run; --all for the lot).`,
+    `${CLI_NAME} init on a terminal, pick copy, set cwd. Init asks whether to copy existing logs, then whether to extract and integrate.`,
+  copyNext: (dataDir?: string) => {
+    const extra = dataDir ? ` --data ${cliDataArg(dataDir)}` : "";
+    return (
+      `Run ${CLI_NAME} consolidate${extra} ` +
+      `(oldest ${EXTRACT_CAP_EVENTS} lines per run; --all takes the lot).`
+    );
+  },
   copyStorewide:
     "On a copy store, capture_fact is a correction for every MCP client, not only the one that writes JSONL.",
   webExisting:
@@ -563,13 +657,41 @@ export const INIT_PROMPTS = {
   mcpVsCli:
     "The MCP JSON starts the server via npx and does not need a global install. " +
     `npm install -g puts ${CLI_NAME} on PATH for init, settings, stats, and inspect. ` +
-    `The same CLI without PATH is npx -y -p "@facthouse/mcp" -- ${CLI_NAME} — pin the version; ` +
+    `The same CLI without PATH is ${pathFreeCli("")} — pin the version; ` +
     "quote the package so PowerShell does not splat. " +
     "-p and -- stop an older global binary winning. " +
     `npx -y @facthouse/mcp with no -p / ${CLI_NAME} is the server; do not run it as a shell command for init, settings, or stats.`,
+  /** Printed as soon as the store exists, before historic copy/extract. */
+  mcpPaste:
+    "Add this server to the client's MCP config now. Copy and extract may still run.\n" +
+    "  Claude Code     .mcp.json in the project directory (not the data directory)\n" +
+    "  Cursor          .cursor/mcp.json\n" +
+    "  Claude Desktop  claude_desktop_config.json\n" +
+    "Keep any other servers already in that file.",
+  /** Quick Start: MCP paste is not a shell install. */
+  mcpPasteNoCli:
+    `The MCP paste starts the server. It does not put ${CLI_NAME} on PATH. ` +
+    "To inspect the file from a terminal, see CLI below.",
+  mcpRestart:
+    "Restart the client if you already added the snippet.",
+  compactionHookLead:
+    "Recommended PreCompact hook — paste into Claude Code `.claude/settings.json` (we do not install it). Notifies the running server when the client is about to compact; returns at once. `--data` is required; hooks do not see mcp.json env:",
+  mcpInstallClash:
+    "If npm install -g fails because a command named mcp already exists, remove that leftover command and retry.",
+  /** Quick Start after `npx -y @facthouse/mcp` + TTY init. */
+  quickStartNext:
+    "Press Enter to accept each default (copy = Claude Code or Cursor session logs on disk; type record if the assistant should save facts). " +
+    "If you picked copy, init asks whether to copy existing logs, then whether to extract and integrate. " +
+    "Init prints an MCP snippet as soon as the store is written — add it to the client's MCP config while copy/extract run. Restart the client when init finishes.",
+  /** MCP env does not apply to CLI or hooks. Do not write $FACTHOUSE_DATA (hang-safety). */
+  mcpEnvNotCli:
+    "FACTHOUSE_DATA on an MCP snippet applies only to that server process. " +
+    `A terminal ${CLI_NAME} command needs --data, FACTHOUSE_DATA in the environment that shell inherits, or a .facthouse store in this project. ` +
+    "Hooks do not see mcp.json env.",
   shellNote:
     "These CLI commands work in bash, zsh, and PowerShell. Quote @facthouse/mcp in PowerShell. " +
     "Git Bash /c/... paths are not PowerShell; use C:/... and pass --data instead of cd or export. " +
+    "In Git Bash, quote a backslash path or write C:/... — unquoted \\ is an escape. " +
     "~/ is expanded on every platform. WSL uses /mnt/c/....",
   webYesRefuse:
     "--yes does not start a local page. Re-run without --yes, or skip --web.",
@@ -596,4 +718,10 @@ export const SETTINGS_PROMPTS = {
     `Could not write ${configPath} (permission denied).`,
 } as const;
 
-export { CLI_DEFAULT_MODEL, CLI_DEFAULT_TIMEOUT_MS, HTTP_DEFAULT_BASE_URL };
+export {
+  CLI_DEFAULT_MODEL,
+  CLI_DEFAULT_INTEGRATE_MODEL,
+  CLI_DEFAULT_TIMEOUT_MS,
+  CLI_HISTORIC_TIMEOUT_MS,
+  HTTP_DEFAULT_BASE_URL,
+};

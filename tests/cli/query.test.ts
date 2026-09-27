@@ -10,7 +10,8 @@ import { describe, it, expect } from "vitest";
 import type { SearchResponse } from "../../src/types/data.js";
 import type { KnowledgeStats } from "../../src/db/stats.js";
 
-const { formatSearch, formatStats } = await import("../../src/cli/query.js");
+const { formatSearch, formatStats, formatConsolidate } = await import("../../src/cli/query.js");
+import type { ConsolidationResult } from "../../src/intelligence/consolidate.js";
 
 function result(content: string, domain = "preferences", subdomain: string | null = "food") {
   return {
@@ -283,16 +284,21 @@ describe("formatStats", () => {
     const out = formatStats(
       stats({
         facts: { active_latest: 100, total: 100 },
+        semantic: {
+          provider: "ollama",
+          model: "nomic-embed-text",
+          dimensions: 768,
+          stored: 40,
+        },
         embeddings: [{ model: "nomic-embed-text", dimensions: 768, count: 40 }],
       }),
     );
     expect(out).toContain("nomic-embed-text @ 768d  40/100 (40%)");
+    expect(out).toContain("facthouse consolidate --integrate");
+    expect(out).not.toContain("leftover");
   });
 
-  it("lists every model the store holds vectors for", () => {
-    // Two pairs means a model or dimension changed. Search only reads one of
-    // them, so a store that looks fully embedded may have almost no reachable
-    // vectors — visible here and nowhere else.
+  it("lists leftover vector groups when meaning-search is off", () => {
     const out = formatStats(
       stats({
         facts: { active_latest: 10, total: 10 },
@@ -302,8 +308,88 @@ describe("formatStats", () => {
         ],
       }),
     );
-    expect(out).toContain("voyage-3.5-lite @ 512d  10/10");
-    expect(out).toContain("nomic-embed-text @ 768d  3/10");
+    expect(out).toContain("voyage-3.5-lite @ 512d  10/10 (100%)  leftover");
+    expect(out).toContain("nomic-embed-text @ 768d  3/10 (30%)  leftover");
+    expect(out).not.toContain("consolidate --integrate");
+  });
+
+  it("shows configured-empty coverage and names the drain", () => {
+    const out = formatStats(
+      stats({
+        facts: { active_latest: 6186, total: 6186 },
+        semantic: { provider: "ollama", model: "nomic-embed-text", stored: 0 },
+        embeddings: [],
+      }),
+    );
+    expect(out).toContain("Semantic coverage");
+    expect(out).toContain("nomic-embed-text  0/6186 (0%)");
+    expect(out).not.toContain("@ 0d");
+    expect(out).toContain("Not yet embedded. Run facthouse consolidate --integrate.");
+  });
+
+  it("labels leftover groups after a model change and still prints the repair line", () => {
+    const out = formatStats(
+      stats({
+        facts: { active_latest: 100, total: 100 },
+        semantic: { provider: "ollama", model: "nomic-embed-text", stored: 0 },
+        embeddings: [{ model: "voyage-4-lite", dimensions: 512, count: 100 }],
+      }),
+    );
+    expect(out).toContain("voyage-4-lite @ 512d  100/100 (100%)  leftover");
+    expect(out).toContain("nomic-embed-text  0/100 (0%)");
+    expect(out).toContain("facthouse consolidate --integrate");
+  });
+
+  it("prints mixed leftover and partial matching coverage", () => {
+    const out = formatStats(
+      stats({
+        facts: { active_latest: 100, total: 100 },
+        semantic: {
+          provider: "ollama",
+          model: "nomic-embed-text",
+          dimensions: 768,
+          stored: 40,
+        },
+        embeddings: [
+          { model: "voyage-4-lite", dimensions: 512, count: 60 },
+          { model: "nomic-embed-text", dimensions: 768, count: 40 },
+        ],
+      }),
+    );
+    expect(out).toContain("voyage-4-lite @ 512d  60/100 (60%)  leftover");
+    expect(out).toContain("nomic-embed-text @ 768d  40/100 (40%)");
+    expect(out).toContain("facthouse consolidate --integrate");
+  });
+
+  it("omits the repair line at full coverage and on an empty store", () => {
+    expect(
+      formatStats(
+        stats({
+          facts: { active_latest: 4, total: 4 },
+          semantic: {
+            provider: "ollama",
+            model: "nomic-embed-text",
+            dimensions: 768,
+            stored: 4,
+          },
+          embeddings: [{ model: "nomic-embed-text", dimensions: 768, count: 4 }],
+        }),
+      ),
+    ).not.toContain("consolidate --integrate");
+    expect(
+      formatStats(
+        stats({
+          semantic: { provider: "ollama", model: "nomic-embed-text", stored: 0 },
+        }),
+      ),
+    ).toContain("(none yet)");
+    expect(
+      formatStats(
+        stats({
+          semantic: { provider: "ollama", model: "nomic-embed-text", stored: 0 },
+        }),
+      ),
+    ).not.toContain("consolidate --integrate");
   });
 
   it("says nothing about semantics when the store has no vectors", () => {
@@ -473,5 +559,95 @@ describe("formatStats", () => {
     expect(out).toContain("1M used · 9M remaining");
     expect(out).toContain("resets");
     expect(out).toContain("Edit token_budget in this store's config.json.");
+  });
+});
+
+describe("formatConsolidate", () => {
+  function run(over: Partial<ConsolidationResult> = {}): ConsolidationResult {
+    return {
+      consolidationId: "c1",
+      factsIn: 0,
+      factsIntegrated: 0,
+      factsRejected: 0,
+      entitiesCreated: 0,
+      entitiesLinked: 0,
+      supersessions: 0,
+      eventsCopied: 0,
+      eventsRemaining: 531,
+      summary: null,
+      openThreads: [],
+      skipped: false,
+      examinedThrough: 0,
+      ...over,
+    };
+  }
+
+  it("says semantic search already complete when integrate wrote no vectors", () => {
+    const out = formatConsolidate(
+      run({
+        embedding: {
+          model: "nomic-embed-text",
+          dimensions: 768,
+          embedded: 0,
+          missing: 0,
+        },
+      }),
+    );
+    expect(out).toContain("Facts integrated   0");
+    expect(out).toContain("nomic-embed-text @ 768d  already complete");
+  });
+
+  it("reports vectors written and any remainder", () => {
+    const out = formatConsolidate(
+      run({
+        embedding: {
+          model: "nomic-embed-text",
+          dimensions: 768,
+          embedded: 128,
+          missing: 20,
+        },
+      }),
+    );
+    expect(out).toContain("wrote 128; 20 still missing");
+  });
+
+  it("omits still-unembedded when missing is unknown", () => {
+    const out = formatConsolidate(
+      run({
+        embedding: {
+          model: null,
+          dimensions: null,
+          embedded: 0,
+          error: "ECONNREFUSED",
+        },
+      }),
+    );
+    expect(out).toContain("failed — ECONNREFUSED");
+    expect(out).not.toContain("Still unembedded");
+  });
+
+  it("surfaces a swallowed embed failure", () => {
+    const out = formatConsolidate(
+      run({
+        embedding: {
+          model: "nomic-embed-text",
+          dimensions: 768,
+          embedded: 0,
+          missing: 6186,
+          error: "provider unreachable",
+        },
+      }),
+    );
+    expect(out).toContain("failed (nomic-embed-text) — provider unreachable");
+    expect(out).toContain("Still unembedded   6186");
+  });
+
+  it("omits semantic lines when search is off", () => {
+    const out = formatConsolidate(
+      run({
+        embedding: { model: null, dimensions: null, embedded: 0, missing: 0 },
+      }),
+    );
+    expect(out).not.toContain("Semantic");
   });
 });

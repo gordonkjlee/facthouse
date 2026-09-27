@@ -135,8 +135,8 @@ describe("askMoreSettings settings walk", () => {
     expect(probed[0]).not.toBe(HTTP_DEFAULT_BASE_URL);
   });
 
-  it("init empty still writes URL and on_fail cli", async () => {
-    const io = fakeIo(["y", "", "", "", "y", "", "", ""]);
+  it("init empty still writes URL; on_fail stays the shipped default", async () => {
+    const io = fakeIo(["y", "", "", "", "y", "", ""]);
     const overlay = {};
     await askMoreSettings(io, overlay, { cwd: () => "", exists: () => false, platform: () => "win32" }, {
       gate: true,
@@ -144,7 +144,7 @@ describe("askMoreSettings settings walk", () => {
     });
     expect(overlay.httpExtract).toBe(true);
     expect(overlay.httpBaseUrl).toBe(HTTP_DEFAULT_BASE_URL);
-    expect(overlay.httpExtractOnFail).toBe("cli");
+    expect(overlay.httpExtractOnFail).toBeUndefined();
   });
 });
 

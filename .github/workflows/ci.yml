@@ -16,7 +16,7 @@ jobs:
     env:
       # Disposable CI database only. Production reads FACTHOUSE_POSTGRES_URL;
       # this variable is the live-test opt-in so sqlite tests cannot pick it up.
-      FACTHOUSE_TEST_POSTGRES_URL: postgres://openmemory:openmemory@localhost:5432/openmemory
+      FACTHOUSE_TEST_POSTGRES_URL: postgres://facthouse:facthouse@localhost:5432/facthouse
       # GitHub sets CI=true on every runner, including Windows (no Postgres
       # service). The live handshake must key off this flag, not CI.
       FACTHOUSE_REQUIRE_POSTGRES: "1"
@@ -24,13 +24,13 @@ jobs:
       postgres:
         image: postgres:16
         env:
-          POSTGRES_USER: openmemory
-          POSTGRES_PASSWORD: openmemory
-          POSTGRES_DB: openmemory
+          POSTGRES_USER: facthouse
+          POSTGRES_PASSWORD: facthouse
+          POSTGRES_DB: facthouse
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U openmemory -d openmemory"
+          --health-cmd "pg_isready -U facthouse -d facthouse"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
@@ -78,19 +78,19 @@ jobs:
     name: test pgvector HNSW (node 24)
     runs-on: ubuntu-latest
     env:
-      FACTHOUSE_TEST_POSTGRES_URL: postgres://openmemory:openmemory@localhost:5432/openmemory
+      FACTHOUSE_TEST_POSTGRES_URL: postgres://facthouse:facthouse@localhost:5432/facthouse
       FACTHOUSE_REQUIRE_PGVECTOR: "1"
     services:
       postgres:
         image: pgvector/pgvector:pg16
         env:
-          POSTGRES_USER: openmemory
-          POSTGRES_PASSWORD: openmemory
-          POSTGRES_DB: openmemory
+          POSTGRES_USER: facthouse
+          POSTGRES_PASSWORD: facthouse
+          POSTGRES_DB: facthouse
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U openmemory -d openmemory"
+          --health-cmd "pg_isready -U facthouse -d facthouse"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5

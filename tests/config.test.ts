@@ -15,6 +15,8 @@ import {
   ensureBitemporalSince,
   SYSTEM_TIME_INCOMPLETE_WARNING,
   systemTimeWarning,
+  storeConfigPath,
+  CONFIG_FILENAME,
 } from "../src/config.js";
 
 let dir: string;
@@ -29,6 +31,13 @@ afterEach(() => {
   } catch {
     /* best effort */
   }
+});
+
+describe("storeConfigPath", () => {
+  it("is the absolute config.json in that directory", () => {
+    expect(storeConfigPath(dir)).toBe(path.resolve(dir, CONFIG_FILENAME));
+    expect(path.isAbsolute(storeConfigPath("relative-store"))).toBe(true);
+  });
 });
 
 describe("storage provider", () => {
@@ -108,7 +117,7 @@ describe("storage provider", () => {
       JSON.stringify({ storage: { provider: "postgres" } }),
     );
     const cfg = loadShippedStoreConfig(dir, {
-      FACTHOUSE_POSTGRES_URL: "postgres://USER:PASSWORD@127.0.0.1:5432/openmemory",
+      FACTHOUSE_POSTGRES_URL: "postgres://USER:PASSWORD@127.0.0.1:5432/facthouse",
     });
     expect(cfg.storage.provider).toBe("postgres");
     expect(existsSync(path.join(dir, "memory.db"))).toBe(false);

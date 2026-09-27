@@ -1,61 +1,33 @@
 # Facthouse
 
-<img src="brand/mascot-right.png" width="128" align="right" alt="Facthouse mascot">
+<img src="brand/mark.png" width="128" align="right" alt="Facthouse">
 
-A local memory engine any AI tool can use. GitHub [`gordonkjlee/facthouse`](https://github.com/gordonkjlee/facthouse), npm [`@facthouse/mcp`](https://www.npmjs.com/package/@facthouse/mcp).
-
-Not a hosted plane. Not a vendor blob. Not Mem0's hosted "OpenMemory MCP" at [`mcp.mem0.ai`](https://mcp.mem0.ai).
+Facthouse is a local memory engine for AI tools. Most “memory” products index chat logs. Facthouse takes agent activity - messages, tool use, and other MCP traffic - and applies neuroscience-inspired consolidation so it moves through **Data** (what happened in the session) → **Information** (extracted facts) → **Knowledge** (integrated beliefs on an entity graph). During this process, Facthouse links entities, drops duplicates, reconciles conflicts, and supersedes what is out of date. Vector embeddings add optional semantic search on top of that graph. The store is a SQLite file on your disk.
 
 [![npm](https://img.shields.io/npm/v/@facthouse/mcp.svg)](https://www.npmjs.com/package/@facthouse/mcp)
 [![CI](https://github.com/gordonkjlee/facthouse/actions/workflows/ci.yml/badge.svg)](https://github.com/gordonkjlee/facthouse/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/github/license/gordonkjlee/facthouse)](LICENSE)
 
-It records, stores, and retrieves structured knowledge. Domain routing, entity extraction, deduplication, and supersession run in the server. Exposed as an MCP server.
+<a id="quick-start"></a>
 
 ## Quick Start
 
 Needs Node 22.5 or 24+.
 
-Paste this. Restart the client. The server creates `~/.facthouse` on first boot.
-
-<!-- x-release-please-start-version -->
-```json
-{
-  "mcpServers": {
-    "facthouse": {
-      "command": "npx",
-      "args": ["-y", "@facthouse/mcp@0.26.0"]
-    }
-  }
-}
-```
-<!-- x-release-please-end -->
-
-In the client, state something durable in ordinary conversation — there is no remember command.
-
-That is the store. Transcript file (Claude Code or Cursor): next section. CLI: [below](#cli).
-
-## How conversations get in
-
-Two ways. Pick one per store.
-
-| | Copy from transcripts | The assistant records |
-|---|---|---|
-| Who | Claude Code or Cursor, when that client writes a JSONL file here | Any MCP client (Grok Build, Desktop, …) |
-| How | Name a source; Facthouse copies new lines into your file | Empty `sources`; the assistant calls `capture_fact` |
-| First run | TTY walk-through, pick **copy**, set cwd, then `facthouse consolidate` | The paste above (already record) |
-
-On a copy store, capture_fact is a correction for every MCP client, not only the one that writes JSONL. Grok has no transcript adapter — do not put Claude Code on copy and Grok on the same store expecting Grok to record.
-
 ```bash
+npx -y @facthouse/mcp
 facthouse init
 ```
 
-Pick copy, set cwd, then `facthouse consolidate` once. It copies your transcripts, extracts facts from the oldest 50 events, and integrates them; `--all` takes the whole backlog. After that, the server copies new lines when it handles a call.
+`facthouse init --web` is the same setup as a browser form — it prints a 127.0.0.1 URL and does not open a browser.
 
-Compact (optional): `facthouse notify compaction` — not a turn-end Stop hook.
+Press Enter to accept each default (copy = Claude Code or Cursor session logs on disk; type record if the assistant should save facts). If you picked copy, init asks whether to copy existing logs, then whether to extract and integrate. Init prints an MCP snippet as soon as the store is written — add it to the client's MCP config while copy/extract run. Restart the client when init finishes.
 
-Replay: [facthouse.dev/demo.html](https://facthouse.dev/demo.html).
+In the client, state something durable in ordinary conversation — there is no remember command.
+
+Ask it back in the next session, or `facthouse search`. That is the store.
+
+Copy from Claude Code or Cursor logs, or record from any MCP client: [How conversations get in](#how-conversations-get-in). Replay: [facthouse.dev/demo.html](https://facthouse.dev/demo.html). CLI: [below](#cli).
 
 ## What you get
 
@@ -67,7 +39,7 @@ Replay: [facthouse.dev/demo.html](https://facthouse.dev/demo.html).
 
 ## How it works
 
-One SQLite database. Three tables in it, not three databases:
+One SQLite database. Three tables in it, not three databases: **Data** (what happened in the session) → **Information** (extracted facts) → **Knowledge** (integrated beliefs).
 
 - **D** (`session_events`) — what was said (copied transcripts, or what the assistant records)
 - **I** (`session_facts`) — what was just extracted, or `capture_fact`
@@ -75,13 +47,53 @@ One SQLite database. Three tables in it, not three databases:
 
 FTS5 (words) and optional embeddings (meaning) are indexes of **K**. They are not a second store. Semantic search is off unless you turn it on: `search "shellfish"` finds a shellfish fact, `search "food"` does not, until you choose an embedding model — a model is an opinion about what “similar” means.
 
-Two speeds. **Extract** turns new transcript lines into self-contained facts. **Integrate** fits them into what the store already knows: domains, entities, duplicates, contradictions, the graph. `consolidate` runs copy, extract, and integrate together — in the server at session start and at compaction, or by hand from the CLI. Extract is capped at 50 events per run, so a first backfill is never spent on the lot. The MCP server copies the raw log on a call; it does not extract then. Consolidation does not invent a sentence nobody said.
+Two speeds. **Copy** tails named transcripts into Data. **Extract** turns new transcript lines into self-contained facts (D→I). **Integrate** fits them into what the store already knows: domains, entities, duplicates, contradictions, the graph (I→K). `consolidate` is the umbrella: copy, extract, and integrate together. Extract is capped at 50 lines per run, so a first backfill is never spent on the lot; when extract runs, it takes the oldest 50 lines. Consolidation does not invent a sentence nobody said.
+
+A hook cannot call MCP tools — those exist only on the assistant’s connection — and it must not wait for a model pass. So it does not invoke `consolidate`. It runs `facthouse notify …`, which tells the **already-running** server that a moment happened and returns at once. `consolidate` is the pipeline verb (MCP tool or CLI); the caller waits. `notify compaction` is that verb asked of the live server, asynchronously. `notify threshold` is a different policy (extract only, if due).
+
+**Automatic**
+
+| When | Copy | Extract (D→I) | Integrate (I→K) |
+|------|------|---------------|-----------------|
+| Facthouse MCP server starts | yes | yes (cap 50) | yes |
+| A Facthouse tool or resource is called | yes, if sources named and JSONL grew | no | no |
+| Facthouse MCP process exits | no | no | yes |
+
+**Callable**
+
+| Call | From | Copy | Extract (D→I) | Integrate (I→K) |
+|------|------|------|---------------|-----------------|
+| `consolidate` | MCP tool or CLI. Caller waits. | yes | yes (cap 50) | yes |
+| `facthouse notify compaction` | Other process (recommended PreCompact; we do not install). Does not wait. | yes | yes (cap 50) | yes |
+| `facthouse notify threshold` | Other process. Does not wait. Not a copy-store hook. | no | yes, if due (cap 50) | no |
+
+On a default copy store with no extra hooks, only the automatic table runs: Facthouse starts (all three), copy on each Facthouse tool or resource call if named sources grew, and integrate on a clean process exit. Closing a chat window may skip the exit row; the next start still consolidates. Due on threshold means at least 10 unexamined lines and two minutes since the last gated run. `consolidate --all` lifts the extract cap. Compaction is recommended PreCompact (`notify compaction`): same three steps as `consolidate`, on the running server, without waiting. We do not install the hook. Not a Stop hook. `record` wakes threshold extract on a record store — do not install record hooks on a copy store.
 
 Storage needs Node. Intelligence needs a language model. By default that is the [Claude Code CLI](https://github.com/anthropics/claude-code) on your existing subscription. Without it, consolidation falls back to a built-in heuristic that **does not extract facts from transcripts**. `capture_fact` still stores facts, with no entities and no domain routing.
 
+## How conversations get in
+
+Two ways. Pick one per store.
+
+| | Copy from transcripts | The assistant records |
+|---|---|---|
+| Who | Claude Code or Cursor (session logs on disk, under the client home) | Any MCP client (Grok, Desktop, …) |
+| How | Name a source; Facthouse copies new lines from those logs into the store | Empty `sources`; the assistant calls `capture_fact` |
+| First run | TTY walk-through, pick **copy**, set cwd; init asks whether to copy existing logs, then whether to extract and integrate | TTY walk-through, pick **record** |
+
+On a copy store, capture_fact is a correction for every MCP client, not only the one that writes JSONL. Grok has no transcript adapter — do not put Claude Code on copy and Grok on the same store expecting Grok to record.
+
+```bash
+facthouse init
+```
+
+Pick copy, set cwd. Init asks whether to copy existing logs, then whether to extract and integrate (Enter = all copied lines; a selection of 500 or more asks you to type the choice again). Decline extract to do that later with `facthouse consolidate` (`--all` takes remaining unexamined lines, not ones skipped as outside a 7-day or 30-day window). After that, the server copies new lines when it handles a Facthouse call. Extract and integrate follow the table in [How it works](#how-it-works).
+
+Compact (recommended): `facthouse notify compaction` — we do not install the hook. Not a turn-end Stop hook.
+
 ## MCP
 
-Works with Claude Code, Claude Desktop, and any MCP-compatible tool. Data is stored at `~/.facthouse` by default. That one directory is the whole install. To use a different path, add `"env": { "FACTHOUSE_DATA": "/absolute/path" }` to the MCP snippet. JSON accepts forward slashes on Windows.
+Works with any MCP-compatible tool. Default store: `~/.facthouse`. A different path is `"env": { "FACTHOUSE_DATA": "/absolute/path" }` on the MCP snippet. JSON accepts forward slashes on Windows.
 
 Cursor consumes tools but not resources until a later adapter exists — `search_knowledge` and `get_entity` still work there; call `get_session_context` at session start.
 
@@ -119,21 +131,23 @@ Both are read-only views over the same database the tools query. Clients that ne
 
 ## CLI
 
-The MCP JSON starts the server via npx and does not need a global install. npm install -g puts facthouse on PATH for init, settings, stats, and inspect. The same CLI without PATH is npx -y -p "@facthouse/mcp" -- facthouse — pin the version; quote the package so PowerShell does not splat. -p and -- stop an older global binary winning. npx -y @facthouse/mcp with no -p / facthouse is the server; do not run it as a shell command for init, settings, or stats.
+The MCP JSON starts the server via npx and does not need a global install. npm install -g puts facthouse on PATH for init, settings, stats, and inspect. The same CLI without PATH is npx -y -p "@facthouse/mcp" -- facthouse — pin the version; quote the package so PowerShell does not splat. -p and -- stop an older global binary winning. npx -y @facthouse/mcp with no -p / facthouse is the server; do not run it as a shell command for init, settings, or stats. The MCP paste starts the server. It does not put facthouse on PATH. To inspect the file from a terminal, see CLI below.
 
-These CLI commands work in bash, zsh, and PowerShell. Quote @facthouse/mcp in PowerShell. Git Bash /c/... paths are not PowerShell; use C:/... and pass --data instead of cd or export. ~/ is expanded on every platform. WSL uses /mnt/c/....
+These CLI commands work in bash, zsh, and PowerShell. Quote @facthouse/mcp in PowerShell. Git Bash /c/... paths are not PowerShell; use C:/... and pass --data instead of cd or export. In Git Bash, quote a backslash path or write C:/... — unquoted \ is an escape. ~/ is expanded on every platform. WSL uses /mnt/c/.... FACTHOUSE_DATA on an MCP snippet applies only to that server process. A terminal facthouse command needs --data, FACTHOUSE_DATA in the environment that shell inherits, or a .facthouse store in this project. Hooks do not see mcp.json env.
 
 <!-- x-release-please-start-version -->
 ```bash
-npm install -g @facthouse/mcp@0.26.0
+npm install -g @facthouse/mcp@0.31.0
 facthouse init --yes
 ```
 
+If npm install -g fails because a command named mcp already exists, remove that leftover command and retry.
+
 ```bash
-npx -y -p "@facthouse/mcp@0.26.0" -- facthouse init --yes
-npx -y -p "@facthouse/mcp@0.26.0" -- facthouse settings --json
-npx -y -p "@facthouse/mcp@0.26.0" -- facthouse stats
-npx -y -p "@facthouse/mcp@0.26.0" -- facthouse inspect
+npx -y -p "@facthouse/mcp@0.31.0" -- facthouse init --yes
+npx -y -p "@facthouse/mcp@0.31.0" -- facthouse settings --json
+npx -y -p "@facthouse/mcp@0.31.0" -- facthouse stats
+npx -y -p "@facthouse/mcp@0.31.0" -- facthouse inspect
 ```
 <!-- x-release-please-end -->
 
@@ -194,7 +208,7 @@ facthouse record --role user --event-type message --content "hello world"
 #   --content       Event content (or pipe via stdin)
 #   --speaker       Named participant when the transcript has one
 #   --session-id    Target session (default: most recent)
-#   --data          Data directory (default: ~/.facthouse or FACTHOUSE_DATA)
+#   --data          Data directory (default: FACTHOUSE_DATA, a .facthouse store in this project, or ~/.facthouse)
 ```
 
 #### `facthouse consolidate`
@@ -209,13 +223,13 @@ facthouse consolidate --all             # extract the whole backlog now
 facthouse consolidate --limit 200       # extract the oldest 200
 
 # Steps — named steps run, in order; none named means all three:
-#   -c, --copy       copy new transcript lines into events
-#   -e, --extract    turn new events into candidate facts (the model call)
+#   -c, --copy       copy new transcript lines into the store
+#   -e, --extract    turn new lines into candidate facts (the model call)
 #   -i, --integrate  classify, link, dedupe, supersede, embed
-# Extract is capped at 50 events per run so a first backfill is never spent on
+# Extract is capped at 50 lines per run so a first backfill is never spent on
 # the lot; the run says how many remain. --all lifts the cap, --limit N sets it.
 #   --json           print the result object instead of the summary
-#   --data           Data directory (default: ~/.facthouse or FACTHOUSE_DATA)
+#   --data           Data directory (default: FACTHOUSE_DATA, a .facthouse store in this project, or ~/.facthouse)
 ```
 
 Honours the configured provider (by default `claude -p`). Empty `sources` makes the copy step a no-op. Set `cwd` on the source unless you intend to copy every project group. Do not also run `record` hooks on a store with named sources.
@@ -225,11 +239,11 @@ Honours the configured provider (by default `claude -p`). Empty `sources` makes 
 Tell the running MCP server that a moment happened. The server decides what to run and does it in the background, so a hook returns at once:
 
 ```bash
-facthouse notify compaction   # the client window is about to collapse: copy, extract, integrate now
+facthouse notify compaction   # client about to compact: copy new JSONL, extract, integrate (does not wait)
 facthouse notify threshold    # events arrived: extract if the threshold is due
 
 # Options:
-#   --data     Data directory (default: ~/.facthouse or FACTHOUSE_DATA)
+#   --data     Data directory (default: FACTHOUSE_DATA, a .facthouse store in this project, or ~/.facthouse)
 ```
 
 No server listening is not an error: the command says so and exits 0, and the next session start covers it. This is what the PreCompact hook calls.
@@ -245,7 +259,7 @@ facthouse search "coffee" --json
 #   --domain   Prioritise a domain. Biases ranking; does not filter
 #   --limit    Maximum results (default: 20)
 #   --json     Emit the raw search payload
-#   --data     Data directory (default: ~/.facthouse or FACTHOUSE_DATA)
+#   --data     Data directory (default: FACTHOUSE_DATA, a .facthouse store in this project, or ~/.facthouse)
 ```
 
 `--domain` **biases ranking rather than filtering.** A hard filter would hide a fact filed under a near-synonym.
@@ -277,7 +291,7 @@ facthouse inspect --entity Helios --limit 20 --output ~/inspect.html
 
 ### Another store
 
-You do not need two installs. The default is one directory and one MCP server named `facthouse`. A second store is a second directory — not a filter on which client wrote the row. Work and personal is one reason to split, not a required setup.
+The store is this directory. Clients share it by using the same path. A second store is a second directory, not a second install. The default MCP server name is `facthouse`. Splitting is not a filter on which client wrote the row. Work and personal is one reason to split, not a required setup.
 
 A non-default data directory prints a distinct MCP server name so two stores can share one `mcp.json`. Init against each extra directory prints that snippet. Example:
 
@@ -287,12 +301,12 @@ A non-default data directory prints a distinct MCP server name so two stores can
   "mcpServers": {
     "facthouse-personal": {
       "command": "npx",
-      "args": ["-y", "@facthouse/mcp@0.26.0"],
+      "args": ["-y", "@facthouse/mcp@0.31.0"],
       "env": { "FACTHOUSE_DATA": "C:\\Users\\alex\\.facthouse-personal" }
     },
     "facthouse-work": {
       "command": "npx",
-      "args": ["-y", "@facthouse/mcp@0.26.0"],
+      "args": ["-y", "@facthouse/mcp@0.31.0"],
       "env": { "FACTHOUSE_DATA": "C:\\Users\\alex\\.facthouse-work" }
     }
   }
@@ -318,7 +332,7 @@ Example — placeholders only; do not put a real password in a committed file:
   "mcpServers": {
     "facthouse": {
       "command": "npx",
-      "args": ["-y", "@facthouse/mcp@0.26.0"],
+      "args": ["-y", "@facthouse/mcp@0.31.0"],
       "env": {
         "FACTHOUSE_DATA": "C:\\Users\\alex\\.facthouse-work",
         "FACTHOUSE_STORAGE": "postgres",
@@ -348,13 +362,32 @@ Choose one mechanism per store.
 }
 ```
 
-`home` is the client config dir (`~/.claude` or `~/.cursor` — path examples, not extra discovery). Cursor is `"kind": "cursor"` and `home/projects/*/agent-transcripts/**/*.jsonl` only — not Composer SQLite. Cursor encodes `C:\\dev\\app` as `c-dev-app` (Claude Code uses `C--dev-app`). A first backfill of more than 50 events takes several runs, or one `facthouse consolidate --all`.
+`home` is the client config dir (`~/.claude` or `~/.cursor` — path examples, not extra discovery). Cursor is `"kind": "cursor"` and `home/projects/*/agent-transcripts/**/*.jsonl` only — not Composer SQLite. Cursor encodes `C:\\dev\\app` as `c-dev-app` (Claude Code uses `C--dev-app`). A first backfill of more than 50 lines takes several runs, or one `facthouse consolidate --all`.
 
 **Alternative — record, no sources.** Leave `sources` empty. Pipe a client hook payload into `facthouse record` if you have one. MCP `log_event` / `capture_fact` keep working.
 
 Do not install record hooks on this store — both write the same rows. Facthouse does not detect or rewrite existing hook configs.
 
-### Hooks (after the first consolidate)
+### MCP-only record mode
+
+To skip the wizard (record only — no transcript copy), paste this. The server creates `~/.facthouse` on first boot; you are not asked those questions.
+
+<!-- x-release-please-start-version -->
+```json
+{
+  "mcpServers": {
+    "facthouse": {
+      "command": "npx",
+      "args": ["-y", "@facthouse/mcp@0.31.0"]
+    }
+  }
+}
+```
+<!-- x-release-please-end -->
+
+### Hooks
+
+PreCompact `notify compaction` is the useful one: when the client is about to compact, a short-lived hook tells the **running** server, and the hook returns at once. The server copies new JSONL lines, then extracts and integrates — compaction does not delete the transcript, and the hook does not photocopy the live window. Init prints this JSON with `--data` filled in. Paste into Claude Code `.claude/settings.json` (user or project). We do not install it. Do not install a Stop hook. Do not install record hooks on this store — both write the same rows.
 
 `mcp.json` `env` is **not** visible to hooks. Pass the same `--data` (or set `FACTHOUSE_DATA` in the environment the client itself inherits). The command must invoke the CLI (`facthouse`), never the server binary. `npx -y @facthouse/mcp` with no `-p` / `facthouse` starts the MCP **server** and hangs a hook. Pin the package version, quote it if the hook runs PowerShell, and put `--` before `facthouse` so a globally installed older binary on PATH cannot win.
 
@@ -370,7 +403,7 @@ Do not install record hooks on this store — both write the same rows. Facthous
         "hooks": [
           {
             "type": "command",
-            "command": "npx -y -p @facthouse/mcp@0.26.0 -- facthouse notify compaction --data /absolute/path/to/the-same-store"
+            "command": "npx -y -p @facthouse/mcp@0.31.0 -- facthouse notify compaction --data /absolute/path/to/the-same-store"
           }
         ]
       }
@@ -453,7 +486,7 @@ Throwaway store, not the capture path for a real Claude Code or Cursor home. The
 <!-- x-release-please-start-version -->
 ```bash
 export FACTHOUSE_DATA=/tmp/facthouse-demo
-om() { npx -y -p "@facthouse/mcp@0.26.0" -- facthouse "$@"; }
+om() { npx -y -p "@facthouse/mcp@0.31.0" -- facthouse "$@"; }
 
 om init --yes
 
@@ -468,7 +501,7 @@ om stats
 
 ```powershell
 $env:FACTHOUSE_DATA = Join-Path $env:TEMP "facthouse-demo"
-function om { npx -y -p "@facthouse/mcp@0.26.0" -- facthouse @args }
+function om { npx -y -p "@facthouse/mcp@0.31.0" -- facthouse @args }
 om init --yes
 om record --role user --content "I prefer dark mode in every editor, and I never want telemetry enabled."
 om record --role user --content "I am allergic to shellfish, so avoid seafood restaurants when booking anything."
@@ -511,7 +544,7 @@ Create `.claude/rules/facthouse.md` in your project (or `~/.claude/rules/facthou
 # Facthouse
 
 - Conversations are copied from the named Claude Code source (first backfill: `facthouse consolidate` on the CLI)
-- Do not install record hooks on this store
+- Do not install record hooks on this store — both write the same rows.
 - Identity context loads automatically from the `memory://profile` resource — no tool call needed
 - Before answering questions this store might already know, call `search_knowledge`
 - Call `capture_fact` only to correct or add something that is not in the transcript
@@ -533,14 +566,16 @@ To allow Facthouse tools without per-call approval prompts, add to the `permissi
 
 ### Cursor / Windsurf
 
+On [Cursor Directory](https://cursor.directory/plugins/facthouse), **Add to Cursor** is per component: click it on the MCP server and again on the rule. That boots a record store at `~/.facthouse` — no `facthouse init`. The Hooks tab is Copy into `~/.cursor/hooks.json`, not Add to Cursor. To copy Agent transcripts, run `facthouse init`, pick copy, kind cursor.
+
 Add to `.cursorrules` (Cursor) or `.windsurfrules` (Windsurf) in your project root:
 
 ```
 When the facthouse MCP server is available:
+- At the start of every conversation, before answering, call get_session_context unless you already loaded the memory://briefing resource. That call returns the same working briefing the resource would have injected. Tools-only clients never fetch resources.
 - Before answering questions this store might already know, call search_knowledge
 - To find out everything known about a particular person, project, or thing, call get_entity
 - Call capture_fact only to correct or add something copy or extraction missed
-- When context is getting long, call consolidate to process pending facts before they are lost
 ```
 
 Cursor and Windsurf consume tools but not resources, so `memory://profile` will not load on its own there. Cursor conversations themselves are copied with `kind: "cursor"` (JSONL under `~/.cursor/projects/`, not the SQLite composer store).

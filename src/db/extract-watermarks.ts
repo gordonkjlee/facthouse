@@ -88,6 +88,27 @@ export async function extractWatermark(db: Db): Promise<number> {
   return row?.seq ?? 0;
 }
 
+export interface UnexaminedEventRow {
+  sequence: number;
+  content: string | null;
+  occurred_at: string | null;
+  created_at: string;
+  metadata: string | null;
+}
+
+/** Unexamined events oldest-first, for historic selection counts. */
+export async function listUnexaminedEventRows(db: Db): Promise<UnexaminedEventRow[]> {
+  return (await db
+    .prepare(
+      `SELECT e.sequence, e.content, e.occurred_at, e.created_at, e.metadata
+         FROM session_events e
+         ${EXTRACT_WATERMARK_JOIN}
+        WHERE ${UNEXAMINED_EVENT_PREDICATE}
+        ORDER BY e.sequence ASC`,
+    )
+    .all()) as UnexaminedEventRow[];
+}
+
 /** Events not covered by any extract_watermarks row. */
 export async function unexaminedEventCount(db: Db): Promise<number> {
   const row = (await db

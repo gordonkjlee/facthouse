@@ -21,10 +21,10 @@ describe("session manager", () => {
     const manager = createSessionManager(db);
     expect(manager.getActiveSession()).toBeNull();
 
-    const session = await manager.startSession("claude-code", "openmemory");
+    const session = await manager.startSession("claude-code", "facthouse");
     expect(session.id).toBeTruthy();
     expect(session.source_tool).toBe("claude-code");
-    expect(session.project).toBe("openmemory");
+    expect(session.project).toBe("facthouse");
     expect(manager.getActiveSession()).toEqual(session);
   });
 

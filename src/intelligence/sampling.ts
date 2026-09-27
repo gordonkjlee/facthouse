@@ -25,6 +25,7 @@ import type {
 } from "./types.js";
 import { UsageAccumulator, type IntelligenceUsage } from "./usage.js";
 import { createHeuristicProvider } from "./heuristic.js";
+import { ConsolidateAbortError } from "./abort.js";
 import { domainRoutingInstruction } from "../schemas/domains.js";
 import type { DomainDef } from "../types/config.js";
 import {
@@ -152,7 +153,8 @@ async function withFallback<T>(
 ): Promise<T> {
   try {
     return await attempt();
-  } catch {
+  } catch (err) {
+    if (err instanceof ConsolidateAbortError) throw err;
     return fallbackFn();
   }
 }

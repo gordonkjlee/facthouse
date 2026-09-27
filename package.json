@@ -1,6 +1,6 @@
 {
   "name": "@facthouse/mcp",
-  "version": "0.26.0",
+  "version": "0.31.0",
   "mcpName": "io.github.gordonkjlee/facthouse",
   "description": "A local memory engine any AI tool can use.",
   "type": "module",
@@ -47,7 +47,8 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.0",
-    "pg": "^8.23.0"
+    "pg": "^8.23.0",
+    "zod": "^3.25.76"
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.5.8",

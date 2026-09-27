@@ -86,7 +86,7 @@ export type SpeakerRole = "user" | "assistant" | "system" | "tool";
  */
 export interface SessionEvent {
   id: string;
-  /** Openmemory MCP server's connection UUID. Null for hook-sourced events. */
+  /** Facthouse MCP server's connection UUID. Null for hook-sourced events. */
   mcp_session_id: string | null;
   /** AI client's conversation UUID. Null when unknown. */
   client_session_id: string | null;

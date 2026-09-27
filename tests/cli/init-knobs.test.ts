@@ -1,4 +1,4 @@
-import { EXTRACT_CAP_EVENTS } from "../../src/intelligence/steps.js";
+import { EXTRACT_CAP_EVENTS, HISTORIC_CONFIRM_LINES } from "../../src/intelligence/steps.js";
 import { readFileSync } from "node:fs";
 import { describe, it, expect } from "vitest";
 import { fileURLToPath } from "node:url";
@@ -9,9 +9,12 @@ import {
   HTTP_WELL_KNOWN_BASE_URLS,
 } from "../../src/types/config.js";
 import { defaultServerConfig } from "../../src/config.js";
+import { CLI_STORE_DEFAULT_HELP } from "../../src/paths.js";
 import {
   INIT_KNOB_IDS,
   MORE_SETTING_IDS,
+  CLI_DEFAULT_TIMEOUT_MS,
+  CLI_HISTORIC_TIMEOUT_MS,
   INIT_PROMPTS,
   INIT_SYNTHETIC,
   SETTINGS_PROMPTS,
@@ -21,6 +24,7 @@ import {
   silentEmbeddingProvider,
   silentSources,
   applyMoreOverlayToIntelligence,
+  defaultHomeForKind,
 } from "../../src/cli/init-knobs.js";
 
 const ROOT = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
@@ -59,11 +63,28 @@ describe("init knobs — one definition", () => {
     expect(quick).not.toContain(INIT_PROMPTS.mcpVsCli);
     expect(readme).toContain(INIT_PROMPTS.shellNote);
     expect(quick).not.toContain(INIT_PROMPTS.shellNote);
+    expect(quick).toMatch(/^npx -y @facthouse\/mcp$/m);
+    expect(quick).toMatch(/^facthouse init$/m);
     expect(quick).not.toMatch(/npm install -g/);
     expect(readme).toContain(INIT_PROMPTS.copyStorewide);
     expect(INIT_PROMPTS.shellNote).toMatch(/C:\/\.\.\./);
     expect(INIT_PROMPTS.shellNote).toMatch(/~\/ is expanded/);
     expect(readme).not.toMatch(/\$FACTHOUSE_DATA\b/);
+    expect(readme).toContain(INIT_PROMPTS.mcpPasteNoCli);
+    expect(quick).not.toContain(INIT_PROMPTS.mcpPasteNoCli);
+    expect(readme).toContain(INIT_PROMPTS.quickStartNext);
+    expect(quick).toContain(INIT_PROMPTS.quickStartNext);
+    expect(INIT_PROMPTS.quickStartNext).toMatch(
+      /add it to the client's MCP config/,
+    );
+    expect(INIT_PROMPTS.quickStartNext).not.toMatch(/\.mcp\.json/);
+    expect(readme).toContain(INIT_PROMPTS.mcpEnvNotCli);
+    expect(readme).toContain(CLI_STORE_DEFAULT_HELP);
+    expect(quick).not.toContain(INIT_PROMPTS.mcpEnvNotCli);
+    expect(quick).not.toContain(INIT_PROMPTS.mcpInstallClash);
+    expect(readme).toContain(INIT_PROMPTS.mcpInstallClash);
+    expect(readme).toContain(INIT_PROMPTS.storeDir);
+    expect(quick).not.toContain(INIT_PROMPTS.storeDir);
   });
 
   it("Unix-only path or env recipes have a following PowerShell fence", () => {
@@ -97,19 +118,32 @@ describe("init knobs — one definition", () => {
     expect(INIT_PROMPTS.capture).toMatch(/\[copy\]/);
     expect(INIT_PROMPTS.capture).toMatch(/\bcopy\b/);
     expect(INIT_PROMPTS.capture).toMatch(/\brecord\b/);
-    expect(INIT_PROMPTS.capture).toMatch(/Grok Build/);
+    expect(INIT_PROMPTS.capture).toMatch(/\bGrok\b/);
+    expect(INIT_PROMPTS.capture).not.toMatch(/\bhere\b/);
     expect(INIT_PROMPTS.capture).toMatch(/\[copy\]: $/);
     expect(INIT_PROMPTS.kind).toMatch(/\[claude-code\]: $/);
+    expect(INIT_PROMPTS.home("~/.claude")).toMatch(/not the project/);
+    expect(INIT_PROMPTS.cwd("C:\\dev\\app")).toMatch(/project folder/);
     expect(INIT_PROMPTS.embedding).toMatch(/\[off\]: $/);
     expect(INIT_PROMPTS.more).toMatch(/\[N\]: $/);
-    expect(INIT_PROMPTS.moreCliModel("haiku")).toBe(
-      "Model to extract facts from messages  [haiku]: ",
-    );
+    expect(INIT_PROMPTS.moreCliModel("haiku")).toBe("Extract model  [haiku]: ");
     expect(INIT_PROMPTS.moreCliIntegrateModel("haiku")).toBe(
-      "Model to update long-term knowledge  [haiku]: ",
+      "Integrate model  [haiku]: ",
     );
-    expect(INIT_PROMPTS.copyNow).toMatch(/\[Y\]: $/);
-    expect(INIT_PROMPTS.extractNow).toMatch(/\[Y\]: $/);
+    expect(INIT_PROMPTS.historicCopy).toMatch(/\[Y\]: $/);
+    expect(INIT_PROMPTS.historicCopy).toMatch(/\n  N  /);
+    expect(INIT_PROMPTS.historicExtract(3)).toMatch(/\[all\]: $/);
+    expect(INIT_PROMPTS.historicExtract(3)).toMatch(/\n  N  /);
+  });
+
+  it("done-card CTA names the three MCP config files and does not replace", () => {
+    expect(INIT_PROMPTS.mcpPaste).toMatch(/\.mcp\.json/);
+    expect(INIT_PROMPTS.mcpPaste).toMatch(/\.cursor\/mcp\.json/);
+    expect(INIT_PROMPTS.mcpPaste).toMatch(/claude_desktop_config\.json/);
+    expect(INIT_PROMPTS.mcpPaste).toMatch(/not the data directory/);
+    expect(INIT_PROMPTS.mcpPaste).toMatch(/Keep any other servers/);
+    expect(INIT_PROMPTS.mcpPaste).not.toMatch(/facthouse-store/);
+    expect(INIT_PROMPTS.mcpPaste).not.toContain(INIT_PROMPTS.mcpVsCli);
   });
 
   it("kind prompt names every shipped kind and not grok", () => {
@@ -128,9 +162,22 @@ describe("init knobs — one definition", () => {
       [
         "capture",
         "captureDeclined",
-        "copyNow",
+        "historicCopy",
+        "historicExtract",
+        "historicExtractConfirm",
+        "extractDegradedHeld",
+        "extractDegradedKept",
+        "extractIdle",
+        "extractInterrupted",
+        "integratingNow",
+        "embeddingNow",
+        "embedProgress",
+        "embedFailed",
+        "semanticBackfill",
         "copyStorewide",
-        "copiedEvents",
+        "configMalformed",
+        "copiedLines",
+        "copyingNow",
         "cwd",
         "cwdSkip",
         "cwdSkipped",
@@ -139,8 +186,11 @@ describe("init knobs — one definition", () => {
         "integrated",
         "dataDir",
         "embedding",
-        "extractNow",
+
+        "extractProgress",
         "extractSkippedHeuristic",
+        "extractTimedOut",
+        "extractingNow",
         "existingConfig",
         "forceHelp",
         "gitBashCwdHint",
@@ -148,9 +198,18 @@ describe("init knobs — one definition", () => {
         "homeMissing",
         "intro",
         "kind",
+        "compactionHookLead",
+        "mcpEnvNotCli",
+        "mcpInstallClash",
+        "mcpPaste",
+        "mcpPasteNoCli",
+        "mcpRestart",
         "mcpVsCli",
+        "quickStartNext",
         "mixCopyRecord",
+        "notAPath",
         "shellNote",
+        "storeDir",
         "more",
         "webExisting",
         "webListening",
@@ -185,7 +244,14 @@ describe("init knobs — one definition", () => {
     expect(moreShownFromConfig(defaultServerConfig(), {}).httpExtractOnFail).toBe(
       "none",
     );
-    expect(INIT_KNOB_IDS).toEqual(["dataDir", "sources", "embedding", "more"]);
+    expect(INIT_KNOB_IDS).toEqual(["dataDir", "sources", "more"]);
+    expect(defaultHomeForKind("claude-code")).toBe("~/.claude");
+    expect(
+      defaultHomeForKind("claude-code", {
+        CLAUDE_CONFIG_DIR: "C:/Users/alex/.claude-work",
+      }),
+    ).toBe("C:/Users/alex/.claude-work");
+    expect(defaultHomeForKind("cursor")).toBe("~/.cursor");
     expect(MORE_SETTING_IDS).toEqual([
       "cliModel",
       "cliIntegrateModel",
@@ -195,9 +261,19 @@ describe("init knobs — one definition", () => {
       "httpModel",
       "httpExtractOnFail",
     ]);
-    expect(INIT_PROMPTS.intro).toMatch(/Another store is another directory/);
+    expect(INIT_PROMPTS.intro).toContain(INIT_PROMPTS.storeDir);
+    expect(INIT_PROMPTS.notAPath).toMatch(/leave it blank/);
+    expect(INIT_PROMPTS.notAPath).not.toMatch(/\bEnter\b/);
+    expect(INIT_PROMPTS.storeDir).toMatch(/same path/i);
+    expect(INIT_PROMPTS.storeDir).toMatch(/second directory/i);
+    expect(INIT_PROMPTS.storeDir).not.toMatch(/\bmemory\b/i);
     expect(INIT_PROMPTS.intro).not.toMatch(/two brains/i);
     expect(INIT_PROMPTS.intro).not.toMatch(/work and personal/i);
+    expect(CLI_HISTORIC_TIMEOUT_MS).toBeGreaterThan(CLI_DEFAULT_TIMEOUT_MS);
+    expect(INIT_PROMPTS.extractTimedOut(180)).toMatch(/180s/);
+    expect(INIT_PROMPTS.extractTimedOut(180)).not.toMatch(/[Cc]ontinuing/);
+    expect(INIT_PROMPTS.moreCliTimeout("45000")).toMatch(/Idle silence/);
+    expect(INIT_PROMPTS.extractingNow(3)).not.toMatch(/several minutes/);
     expect(INIT_PROMPTS.homeMissing("~/.claude")).toContain("~/.claude");
     expect(INIT_PROMPTS.projectGroupMissing("~/.claude", "C:\\dev\\app", "C--dev-app")).toContain(
       "C--dev-app",
@@ -205,9 +281,10 @@ describe("init knobs — one definition", () => {
   });
 
   it("CLI and MCP entry use defaultDataDir / resolveUserPath, not path.join(homedir()", () => {
-    const cli = readFileSync(path.join(ROOT, "src/cli/index.ts"), "utf-8");
-    const server = readFileSync(path.join(ROOT, "src/index.ts"), "utf-8");
-    expect(cli).toMatch(/dataDirFromEnvOrDefault/);
+    const cli = readFileSync(path.join(ROOT, "src/cli/run.ts"), "utf-8");
+    const server = readFileSync(path.join(ROOT, "src/server.ts"), "utf-8");
+    expect(cli).toMatch(/timeoutMs:\s*CLI_HISTORIC_TIMEOUT_MS/);
+    expect(cli).toMatch(/cliStoreDir/);
     expect(cli).toMatch(/resolveUserPath/);
     expect(cli).not.toMatch(/path\.join\(homedir\(/);
     expect(server).toMatch(/dataDirFromEnvOrDefault/);
@@ -239,7 +316,7 @@ describe("init knobs — one definition", () => {
     });
     expect(next.intelligence.cli?.model).toBe("sonnet");
     expect(next.intelligence.cli?.timeout_ms).toBe(180_000);
-    expect(next.intelligence.cli?.integrate_model).toBeUndefined();
+    expect(next.intelligence.cli?.integrate_model).toBe("sonnet");
     expect(next.intelligence.provider).toBe("cli");
     const split = applyInitOverlay(defaultServerConfig(), {
       cliModel: "haiku",
@@ -266,7 +343,8 @@ describe("init knobs — one definition", () => {
       on_fail: "none",
     });
     const recommended = applyInitOverlay(defaultServerConfig(), {});
-    expect(recommended.intelligence.cli?.model).toBeUndefined();
+    expect(recommended.intelligence.cli?.model).toBe("haiku");
+    expect(recommended.intelligence.cli?.integrate_model).toBe("sonnet");
     expect(recommended.intelligence.cli?.timeout_ms).toBeUndefined();
   });
 
@@ -335,6 +413,13 @@ describe("init knobs — one definition", () => {
       ) {
         return true;
       }
+      if (
+        commands.length === 2 &&
+        /^npx -y @facthouse\/mcp(?:@[\w.-]+)?$/.test(commands[0] ?? "") &&
+        /^(?:om|facthouse) init\s*$/.test(commands[1] ?? "")
+      ) {
+        return true;
+      }
       return (
         commands.length === 2 &&
         /^npm install -g @facthouse\/mcp@\d+\.\d+\.\d+$/.test(commands[0] ?? "") &&
@@ -348,13 +433,26 @@ describe("init knobs — one definition", () => {
     }
     expect(recipeB).toBeGreaterThanOrEqual(1);
 
-    const installFence = fences.find((f) =>
-      liveLines(f.body).some((l) => /^npm install -g @facthouse\/mcp@\d+\.\d+\.\d+$/.test(l)),
+    const silentInstall = fences.find((f) =>
+      liveLines(f.body).some((l) =>
+        /^npm install -g @facthouse\/mcp@\d+\.\d+\.\d+$/.test(l),
+      ) && liveLines(f.body).some((l) => /init --yes\s*$/.test(l)),
     );
-    expect(installFence).toBeDefined();
-    expect(liveLines(installFence?.body ?? "")).toEqual([
+    expect(silentInstall).toBeDefined();
+    expect(liveLines(silentInstall?.body ?? "")).toEqual([
       expect.stringMatching(/^npm install -g @facthouse\/mcp@\d+\.\d+\.\d+$/),
       "facthouse init --yes",
+    ]);
+
+    const wizardInstall = fences.find((f) => walkThroughFence(f.body) &&
+      liveLines(f.body).some((l) =>
+        /^npx -y @facthouse\/mcp(?:@[\w.-]+)?$/.test(l),
+      ),
+    );
+    expect(wizardInstall).toBeDefined();
+    expect(liveLines(wizardInstall?.body ?? "")).toEqual([
+      "npx -y @facthouse/mcp",
+      "facthouse init",
     ]);
 
     const quickStartAt = readme.indexOf("## Quick Start");
@@ -368,6 +466,9 @@ describe("init knobs — one definition", () => {
       const fence = fences.find((f) => at >= f.start && at < f.end);
       if (fence && walkThroughFence(fence.body)) continue;
       const rest = m[1] ?? "";
+      // Prose / lede: `facthouse init` and `facthouse init --web` are the
+      // human walk-through (TTY or the same questions as a browser form).
+      if (!fence && (rest.trim() === "" || /^\s*--web\b/.test(rest))) continue;
       expect(rest).toMatch(/(?:--yes|-y)\b/);
       expect(rest).not.toMatch(/^-y\b/);
     }
@@ -392,13 +493,26 @@ describe("init knobs — one definition", () => {
     expect(quick).not.toMatch(/ollama pull/);
     expect(quick).not.toMatch(/facthouse settings/);
     expect(quick).not.toMatch(/facthouse pull/);
-    expect(quick).not.toMatch(/--web/);
+    expect(quick).toMatch(/facthouse init --web/);
+    expect(quick).toMatch(/same setup as a browser form/);
+    expect(quick).not.toMatch(/skip the wizard/);
+    expect(quick).not.toMatch(/"mcpServers"/);
     expect(quick).not.toMatch(/\bStop\b/);
     expect(quick).not.toMatch(/openmemory-personal/);
     expect(quick).not.toMatch(/facthouse-personal/);
     for (const fence of quick.matchAll(/```(?:bash|powershell|text|json)\n([\s\S]*?)```/g)) {
       expect(fence[1]).not.toMatch(/\bpull\b/);
+      expect(fence[1]).not.toMatch(/"mcpServers"/);
     }
+    const advancedAt = readme.indexOf("## Advanced");
+    const advancedEnd = readme.indexOf("\n## ", advancedAt + 1);
+    const advanced = readme.slice(
+      advancedAt,
+      advancedEnd === -1 ? undefined : advancedEnd,
+    );
+    expect(advanced).toMatch(/### MCP-only record mode/);
+    expect(advanced).toMatch(/skip the wizard \(record only/);
+    expect(advanced).toMatch(/"mcpServers"/);
   });
 
   it("README states the extract cap with the one constant, in every sentence that names it", () => {
@@ -406,16 +520,35 @@ describe("init knobs — one definition", () => {
     const cap = String(EXTRACT_CAP_EVENTS);
     // Each sentence that teaches the cap must carry the same number the
     // engine enforces; a change to EXTRACT_CAP_EVENTS must fail here.
-    expect(readme).toContain(`extracts facts from the oldest ${cap} events`);
-    expect(readme).toContain(`Extract is capped at ${cap} events per run`);
-    expect(readme).toContain(`A first backfill of more than ${cap} events`);
+    expect(readme).toContain(`when extract runs, it takes the oldest ${cap} lines`);
+    expect(readme).toContain(`Extract is capped at ${cap} lines per run`);
+    expect(readme).toContain(`A first backfill of more than ${cap} lines`);
+    expect(readme).toContain(
+      `a selection of ${HISTORIC_CONFIRM_LINES} or more asks you to type the choice again`,
+    );
     expect(readme).toContain(INIT_PROMPTS.mixCopyRecord);
   });
 
   it("init's copy recipe and the extract prompt name the cap once", () => {
-    expect(INIT_PROMPTS.extractNow).toContain(String(EXTRACT_CAP_EVENTS));
-    expect(INIT_PROMPTS.copyNext).toContain(String(EXTRACT_CAP_EVENTS));
-    expect(INIT_PROMPTS.integrated(3, 7)).toContain(String(EXTRACT_CAP_EVENTS));
+    expect(INIT_PROMPTS.historicExtract(3)).not.toContain(String(EXTRACT_CAP_EVENTS));
+    expect(INIT_PROMPTS.historicExtract(3)).toMatch(/skipped/);
+    expect(INIT_PROMPTS.historicExtract(3)).toMatch(/not extracted later/);
+    expect(INIT_PROMPTS.historicExtract(3)).not.toMatch(/\bdone\b/);
+    expect(INIT_PROMPTS.historicExtract(1)).toMatch(/line\(s\)/);
+    expect(INIT_PROMPTS.historicExtract(3, { hasCursor: true })).toMatch(
+      /last file activity/,
+    );
+    expect(INIT_PROMPTS.historicExtract(3)).not.toMatch(/file activity/);
+    expect(INIT_PROMPTS.historicExtractConfirm("all", HISTORIC_CONFIRM_LINES, 800_000)).toMatch(
+      /Type all again/,
+    );
+    expect(INIT_PROMPTS.historicExtractConfirm("all", HISTORIC_CONFIRM_LINES, 800_000)).not.toMatch(
+      /\[all\]:/,
+    );
+    expect(INIT_PROMPTS.copyNext()).toContain(String(EXTRACT_CAP_EVENTS));
+    expect(INIT_PROMPTS.copyNext()).toMatch(new RegExp(`^Run ${"facthouse"} consolidate`));
+    expect(INIT_PROMPTS.copyNext("C:/dev/app/.facthouse")).toContain("--data");
+    expect(INIT_PROMPTS.integrated(3, 7)).toMatch(/7 line\(s\) remain/);
     expect(INIT_PROMPTS.integrated(3, 0)).not.toMatch(/remain/);
   });
 

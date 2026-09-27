@@ -23,9 +23,11 @@ import { openStore, sqliteMemoryPath } from "../db/store.js";
 import { ensureDomain } from "../db/domains.js";
 import { ensureSelfEntity } from "../db/entities.js";
 import {
-  CONFIG_FILENAME,
+  ConfigDocumentError,
   defaultServerConfig,
   loadShippedStoreConfig,
+  readConfigDocument,
+  storeConfigPath,
 } from "../config.js";
 import { probeCliProvider, type CliProbeResult } from "../intelligence/cli.js";
 import { createEmbeddingProvider } from "../embedding/provider.js";
@@ -38,7 +40,9 @@ import { resolveSources } from "../sources/resolve.js";
 import type { IntelligenceProviderType, EmbeddingConfig } from "../types/config.js";
 import {
   DEFAULT_MCP_SERVER_NAME,
+  cliDataArg,
   envName,
+  pathFreeCli,
 } from "../identity.js";
 import { defaultDataDir } from "../paths.js";
 import {
@@ -47,12 +51,21 @@ import {
   type InitOverlay,
 } from "./init-knobs.js";
 
+/** Windows drive and UNC paths as JSON-friendly forward slashes. */
+export function mcpSnippetEnvPath(dataDir: string): string {
+  if (/^[A-Za-z]:[\\/]/.test(dataDir) || dataDir.startsWith("\\\\")) {
+    return dataDir.replace(/\\/g, "/");
+  }
+  return dataDir;
+}
+
 /**
  * Render a copy-pasteable MCP client config block.
  *
  * Built via JSON.stringify rather than string interpolation: a Windows data dir
- * contains backslashes, which must be escaped to produce valid JSON. Emitting
- * the path raw yields a snippet that fails to parse when pasted.
+ * contains backslashes, which must be escaped to produce valid JSON. Drive and
+ * UNC paths are emitted with forward slashes so a terminal wrap does not look
+ * unquoted.
  *
  * @param spec     npm package spec, e.g. "@facthouse/mcp@0.3.0"
  * @param dataDir  when set, adds a FACTHOUSE_DATA env override (omit for the
@@ -68,9 +81,38 @@ export function mcpConfigSnippet(
   name = DEFAULT_MCP_SERVER_NAME,
 ): string {
   const entry: Record<string, unknown> = { command: "npx", args: ["-y", spec] };
-  if (dataDir) entry.env = { [envName("DATA")]: dataDir };
+  if (dataDir) entry.env = { [envName("DATA")]: mcpSnippetEnvPath(dataDir) };
   const pad = " ".repeat(indent);
   return JSON.stringify({ mcpServers: { [name]: entry } }, null, 2)
+    .split("\n")
+    .map((l) => `${pad}${l}`)
+    .join("\n");
+}
+
+/**
+ * PreCompact command. Always `--data`: hooks do not see mcp.json env.
+ * `pathFreeCli` quotes the package; `cliDataArg` uses forward slashes
+ * and quotes spaces. JSON.stringify then escapes the command for the document.
+ */
+export function precompactHookJson(
+  spec: string,
+  dataDir: string,
+  indent = 2,
+): string {
+  const command = pathFreeCli(
+    `notify compaction --data ${cliDataArg(dataDir)}`,
+    spec,
+  );
+  const pad = " ".repeat(indent);
+  return JSON.stringify(
+    {
+      hooks: {
+        PreCompact: [{ hooks: [{ type: "command", command }] }],
+      },
+    },
+    null,
+    2,
+  )
     .split("\n")
     .map((l) => `${pad}${l}`)
     .join("\n");
@@ -104,8 +146,9 @@ export function mcpServerName(
 }
 
 /**
- * Env is omitted only for the default directory, never because the name
- * equals "facthouse".
+ * Env is omitted only for the home default (`~/.facthouse`), never because
+ * the name equals "facthouse". CLI walk-up is not this comparison — MCP
+ * does not walk, so a project `.facthouse` must still set FACTHOUSE_DATA.
  */
 export function mcpSnippetDataDir(
   dataDir: string,
@@ -133,12 +176,14 @@ export function mcpSnippetDataDir(
  */
 export function providerStatusLines(
   provider: IntelligenceProviderType,
+  configPath: string,
   probe: () => CliProbeResult = () => probeCliProvider(),
 ): string[] {
+  const file = path.resolve(configPath);
   if (provider !== "cli") {
     return [
       `Consolidation intelligence: ${provider}. Change it via intelligence.provider`,
-      `in config.json.`,
+      `in ${file}.`,
     ];
   }
 
@@ -155,7 +200,7 @@ export function providerStatusLines(
     `no domain routing — your knowledge graph will be flat.`,
     ``,
     `  To fix:  install the Claude Code CLI, or set intelligence.cli.command in`,
-    `           config.json, or point CLAUDE_CLI_PATH at the binary.`,
+    `           ${file}, or point CLAUDE_CLI_PATH at the binary.`,
     `  To keep: set ${envName("PROVIDER")}=heuristic and this notice goes away.`,
   ];
 }
@@ -174,9 +219,11 @@ export function providerStatusLines(
  */
 export async function embeddingStatusLines(
   config: EmbeddingConfig | undefined,
+  configPath: string,
   env: NodeJS.ProcessEnv = process.env,
   probe: typeof probeOllama = probeOllama,
 ): Promise<string[]> {
+  const file = path.resolve(configPath);
   const reasons: string[] = [];
   const provider = createEmbeddingProvider(config, {
     env,
@@ -187,7 +234,7 @@ export async function embeddingStatusLines(
     return [
       `WARNING: ${reasons[0]}.`,
       `Semantic search is off; search will match words rather than meanings.`,
-      `Set the variable, or set embedding.provider to null in config.json to`,
+      `Set the variable, or set embedding.provider to null in ${file} to`,
       `choose keyword-only deliberately.`,
     ];
   }
@@ -196,7 +243,7 @@ export async function embeddingStatusLines(
     return [
       `Semantic search: off. Search matches words, not meanings — "shellfish"`,
       `finds a shellfish fact, "food" does not. Set embedding.provider in`,
-      `config.json to "ollama" (local, no API key) or "voyage" (hosted) to`,
+      `${file} to "ollama" (local, no API key) or "voyage" (hosted) to`,
       `turn it on.`,
     ];
   }
@@ -210,14 +257,14 @@ export async function embeddingStatusLines(
     if (!probed.ok) {
       return [
         `WARNING: Ollama at ${probed.host} did not answer GET /api/tags (liveness only — this is not an embed).`,
-        `Semantic search is off until it is running. embedding.provider is still "ollama" in config.json.`,
+        `Semantic search is off until it is running. embedding.provider is still "ollama" in ${file}.`,
       ];
     }
     if (!modelPresent) {
       return [
         `WARNING: Ollama at ${probed.host} is running, but ${model} is not in GET /api/tags.`,
         `Semantic search is off until you run: ollama pull ${model}`,
-        `embedding.provider is still "ollama" in config.json.`,
+        `embedding.provider is still "ollama" in ${file}.`,
       ];
     }
   }
@@ -230,7 +277,13 @@ export async function embeddingStatusLines(
 
 export function appendCaptureRecipe(
   sources: unknown,
-  opts: { captureAskedAndEmpty?: boolean; captureSkippedCwd?: boolean } = {},
+  opts: {
+    captureAskedAndEmpty?: boolean;
+    captureSkippedCwd?: boolean;
+    dataDir?: string;
+    /** First-run done card: next command only, no mix/record warnings. */
+    brief?: boolean;
+  } = {},
 ): string[] {
   if (opts.captureSkippedCwd) {
     return [INIT_PROMPTS.cwdSkipped];
@@ -238,7 +291,8 @@ export function appendCaptureRecipe(
   if (opts.captureAskedAndEmpty) {
     return [INIT_PROMPTS.captureDeclined];
   }
-  const status = sourcesStatusLines(sources);
+  const status = sourcesStatusLines(sources, opts.dataDir, opts.brief);
+  if (opts.brief) return status;
   try {
     if (resolveSources(sources).length > 0) {
       return [...status, INIT_PROMPTS.mixCopyRecord];
@@ -257,7 +311,11 @@ export function appendCaptureRecipe(
  * `capture_fact` until a source is named — that is the sentence a silent
  * `--yes` run must print, or it reads like copy is required.
  */
-export function sourcesStatusLines(sources: unknown): string[] {
+export function sourcesStatusLines(
+  sources: unknown,
+  dataDir?: string,
+  brief?: boolean,
+): string[] {
   let n: number;
   try {
     n = resolveSources(sources).length;
@@ -271,10 +329,9 @@ export function sourcesStatusLines(sources: unknown): string[] {
       `Transcripts: ${INIT_PROMPTS.copyRecipe}`,
     ];
   }
-  return [
-    `Capture: ${n} source${n === 1 ? "" : "s"}. ${INIT_PROMPTS.copyNext}`,
-    INIT_PROMPTS.copyStorewide,
-  ];
+  const next = `Capture: ${n} source${n === 1 ? "" : "s"}. ${INIT_PROMPTS.copyNext(dataDir)}`;
+  if (brief) return [next];
+  return [next, INIT_PROMPTS.copyStorewide];
 }
 
 export interface InitArgs {
@@ -307,8 +364,29 @@ export interface InitResult {
 /**
  * Create (or update) a data directory: database + schema + default config.
  */
+/** Existing `config.json` must parse, or init is lying. `--force` may replace. */
+export function assertExistingConfigReadable(dataDir: string, force: boolean): void {
+  if (force) return;
+  const configPath = storeConfigPath(dataDir);
+  if (!existsSync(configPath)) return;
+  try {
+    readConfigDocument(dataDir);
+  } catch (err) {
+    if (err instanceof ConfigDocumentError) {
+      throw new ConfigDocumentError(err.code, INIT_PROMPTS.configMalformed);
+    }
+    throw err;
+  }
+}
+
 export async function initDataDir(args: InitArgs): Promise<InitResult> {
   const { dataDir, force = false, overlay, env = process.env } = args;
+
+  // A file that does not parse is not "settings to preserve". Swallowing it
+  // prints a success card while the process runs shipped defaults. --force
+  // replaces; otherwise refuse, same as `facthouse settings`.
+  assertExistingConfigReadable(dataDir, force);
+  const configPath = storeConfigPath(dataDir);
 
   // Refuse an unknown engine or postgres without a URL *before* mkdir/open —
   // otherwise a postgres config still creates memory.db and we have failed open.
@@ -349,7 +427,6 @@ export async function initDataDir(args: InitArgs): Promise<InitResult> {
   }
 
   // Write defaults only when absent (or forced) — never clobber user settings.
-  const configPath = path.join(dataDir, CONFIG_FILENAME);
   const configExisted = existsSync(configPath);
   const wroteConfig = !configExisted || force;
   if (wroteConfig) {
