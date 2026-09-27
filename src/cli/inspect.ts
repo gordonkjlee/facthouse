@@ -20,6 +20,7 @@ import {
   SPEND_DASHBOARD_DAYS,
 } from "./spend-dashboard.js";
 import { loadConfig } from "../config.js";
+import { semanticIntentOf } from "../embedding/provider.js";
 import { intelligenceRoutingView } from "../intelligence/routing-view.js";
 import { createInspectProgress } from "./inspect-progress.js";
 
@@ -134,7 +135,10 @@ export async function runInspect(db: Db, opts: InspectOpts): Promise<InspectResu
     : null;
   try {
     if (wantHtml) progress!.phase("Reading store health…");
-    const health = await loadHealth(db);
+    const health = await loadHealth(
+      db,
+      semanticIntentOf(loadConfig(opts.dataDir).embedding),
+    );
     const version = opts.packageVersion ?? null;
 
     if (layer === "health" && !wantHtml && !wantJson) {

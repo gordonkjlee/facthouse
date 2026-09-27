@@ -1,7 +1,7 @@
 /**
  * Tool descriptions are the product's instruction layer, not API documentation.
  * They ship with the server and are the only thing telling an assistant when to
- * capture and when to search — which is what lets OpenMemory work on any MCP
+ * capture and when to search — which is what lets Facthouse work on any MCP
  * client with no client-side rules.
  *
  * Nothing tested them, so they rotted quietly: an audit against a live server
@@ -123,7 +123,7 @@ describe.skipIf(!runnable)("tool descriptions are an instruction layer", () => {
 
   it("the tools an assistant must reach for unprompted push proactive use", () => {
     // These are the product thesis: capture without being asked, search before
-    // answering. If their descriptions go passive, OpenMemory stops working on
+    // answering. If their descriptions go passive, Facthouse stops working on
     // clients that have no rules of their own — which is every client but one.
     const captureFact = tools.find((t) => t.name === "capture_fact")!;
     // Default init writes sources: [] — proactive capture is the instruction.
@@ -210,6 +210,16 @@ describe.skipIf(!runnable)("tool descriptions are an instruction layer", () => {
     }
 
     expect(dangling).toEqual([]);
+  });
+
+  it("get_stats does not tell agents to run a CLI command", () => {
+    const stats = tools.find((t) => t.name === "get_stats");
+    expect(stats?.description ?? "").not.toMatch(/facthouse/);
+    expect(stats?.description ?? "").not.toMatch(/--integrate/);
+    expect(stats?.description ?? "").toMatch(/semantic\.stored/);
+    const consolidate = tools.find((t) => t.name === "consolidate");
+    expect(consolidate?.description ?? "").toMatch(/embedding/);
+    expect(consolidate?.description ?? "").not.toMatch(/facthouse/);
   });
 
   it("no description leaks a real name into shipped text", () => {
@@ -415,6 +425,8 @@ describe.skipIf(!runnable)("the README names tools that exist", () => {
     for (const line of md.split("\n")) {
       const trimmed = line.trim();
       if (!trimmed.startsWith("npx ")) continue;
+      // Quick Start / listings scrape: the MCP server, not the CLI.
+      if (/^npx -y @facthouse\/mcp(?:@[\w.-]+)?$/.test(trimmed)) continue;
       expect(trimmed).toMatch(/-p "@facthouse\/mcp/);
       expect(trimmed).toMatch(/\bfacthouse\b/);
     }

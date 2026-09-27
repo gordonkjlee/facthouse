@@ -63,7 +63,9 @@ describe("init knobs — one definition", () => {
     expect(quick).not.toContain(INIT_PROMPTS.mcpVsCli);
     expect(readme).toContain(INIT_PROMPTS.shellNote);
     expect(quick).not.toContain(INIT_PROMPTS.shellNote);
-    expect(quick).toMatch(/npm install -g @facthouse\/mcp@\d+\.\d+\.\d+/);
+    expect(quick).toMatch(/^npx -y @facthouse\/mcp$/m);
+    expect(quick).toMatch(/^facthouse init$/m);
+    expect(quick).not.toMatch(/npm install -g/);
     expect(readme).toContain(INIT_PROMPTS.copyStorewide);
     expect(INIT_PROMPTS.shellNote).toMatch(/C:\/\.\.\./);
     expect(INIT_PROMPTS.shellNote).toMatch(/~\/ is expanded/);
@@ -79,7 +81,8 @@ describe("init knobs — one definition", () => {
     expect(readme).toContain(INIT_PROMPTS.mcpEnvNotCli);
     expect(readme).toContain(CLI_STORE_DEFAULT_HELP);
     expect(quick).not.toContain(INIT_PROMPTS.mcpEnvNotCli);
-    expect(quick).toContain(INIT_PROMPTS.mcpInstallClash);
+    expect(quick).not.toContain(INIT_PROMPTS.mcpInstallClash);
+    expect(readme).toContain(INIT_PROMPTS.mcpInstallClash);
     expect(readme).toContain(INIT_PROMPTS.storeDir);
     expect(quick).not.toContain(INIT_PROMPTS.storeDir);
   });
@@ -167,6 +170,10 @@ describe("init knobs — one definition", () => {
         "extractIdle",
         "extractInterrupted",
         "integratingNow",
+        "embeddingNow",
+        "embedProgress",
+        "embedFailed",
+        "semanticBackfill",
         "copyStorewide",
         "configMalformed",
         "copiedLines",
@@ -406,6 +413,13 @@ describe("init knobs — one definition", () => {
       ) {
         return true;
       }
+      if (
+        commands.length === 2 &&
+        /^npx -y @facthouse\/mcp(?:@[\w.-]+)?$/.test(commands[0] ?? "") &&
+        /^(?:om|facthouse) init\s*$/.test(commands[1] ?? "")
+      ) {
+        return true;
+      }
       return (
         commands.length === 2 &&
         /^npm install -g @facthouse\/mcp@\d+\.\d+\.\d+$/.test(commands[0] ?? "") &&
@@ -432,12 +446,12 @@ describe("init knobs — one definition", () => {
 
     const wizardInstall = fences.find((f) => walkThroughFence(f.body) &&
       liveLines(f.body).some((l) =>
-        /^npm install -g @facthouse\/mcp@\d+\.\d+\.\d+$/.test(l),
+        /^npx -y @facthouse\/mcp(?:@[\w.-]+)?$/.test(l),
       ),
     );
     expect(wizardInstall).toBeDefined();
     expect(liveLines(wizardInstall?.body ?? "")).toEqual([
-      expect.stringMatching(/^npm install -g @facthouse\/mcp@\d+\.\d+\.\d+$/),
+      "npx -y @facthouse/mcp",
       "facthouse init",
     ]);
 

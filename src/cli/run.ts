@@ -81,7 +81,7 @@ import { createIntelligenceProvider, resolveProviderType } from "../intelligence
 import { createHeuristicProvider } from "../intelligence/heuristic.js";
 import { probeHttpModels } from "../intelligence/http.js";
 import { loadStoreVocabulary } from "../db/domains.js";
-import { createEmbeddingProvider } from "../embedding/provider.js";
+import { createEmbeddingProvider, semanticIntentOf } from "../embedding/provider.js";
 import type { IntelligenceProvider } from "../intelligence/types.js";
 import type { EmbeddingProvider } from "../embedding/types.js";
 import {
@@ -421,6 +421,9 @@ async function runInit() {
               onModelChunk: progress.onModelChunk,
               onIntegrateStart: progress.onIntegrateStart,
               onIntegrateProgress: progress.onIntegrateProgress,
+              onEmbedStart: progress.onEmbedStart,
+              onEmbedProgress: progress.onEmbedProgress,
+              onEmbedEnd: progress.onEmbedEnd,
               onExtractTimeout: () => {
                 io.write(
                   INIT_PROMPTS.extractTimedOut(
@@ -441,6 +444,7 @@ async function runInit() {
                 prefixCommitted: r.prefixCommitted,
                 examinedThrough: r.examinedThrough,
                 aborted: r.aborted,
+                embedding: r.embedding,
               }
             : undefined;
         },
@@ -715,7 +719,9 @@ async function runStatsCmd() {
   });
 
   const dataDir = resolveUserPath(values.data as string);
-  const stats = await withDb(dataDir, (db) => getStats(db));
+  const stats = await withDb(dataDir, (db) =>
+    getStats(db, semanticIntentOf(loadConfig(dataDir).embedding)),
+  );
   stats.listener = await isServerListening(dataDir);
   const payload = { ...stats, package_version: packageVersion() };
 
@@ -871,6 +877,9 @@ async function runConsolidate() {
       onModelChunk: progress.onModelChunk,
       onIntegrateStart: progress.onIntegrateStart,
       onIntegrateProgress: progress.onIntegrateProgress,
+      onEmbedStart: progress.onEmbedStart,
+      onEmbedProgress: progress.onEmbedProgress,
+      onEmbedEnd: progress.onEmbedEnd,
     });
     if (result?.aborted) process.exit(130);
   } finally {
@@ -899,6 +908,13 @@ interface ConsolidateStoreOpts {
   onIntegrateStart?: (pendingI: number) => void;
   onIntegrateProgress?: (done: number, total: number) => void;
   onExtractTimeout?: () => void;
+  onEmbedStart?: () => void;
+  onEmbedProgress?: (
+    done: number,
+    total: number,
+    batch?: { durationMs: number; factCount: number },
+  ) => void;
+  onEmbedEnd?: () => void;
 }
 
 /**
@@ -986,6 +1002,9 @@ export async function consolidateInProcess(
       onIntegrateStart: opts.onIntegrateStart,
       onIntegrateProgress: opts.onIntegrateProgress,
       onExtractTimeout: opts.onExtractTimeout,
+      onEmbedStart: opts.onEmbedStart,
+      onEmbedProgress: opts.onEmbedProgress,
+      onEmbedEnd: opts.onEmbedEnd,
     });
     if (opts.print !== false && result.skipped && result.skipReason) {
       console.error(`[facthouse] ${result.skipReason}`);

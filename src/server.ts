@@ -20,7 +20,7 @@ import { openStore } from "./db/store.js";
 import { applySchema } from "./db/schema.js";
 import { ensureSelfEntity } from "./db/entities.js";
 import { loadStoreVocabulary } from "./db/domains.js";
-import { createEmbeddingProvider } from "./embedding/provider.js";
+import { createEmbeddingProvider, semanticIntentOf } from "./embedding/provider.js";
 import { createSessionManager, registerSessionReadTools } from "./tools/session-manager.js";
 import { createFactManager } from "./tools/fact-manager.js";
 import { createHeuristicProvider } from "./intelligence/heuristic.js";
@@ -159,6 +159,7 @@ async function main() {
   const embeddingProvider = createEmbeddingProvider(config.embedding, {
     onUnavailable: (reason) => console.error(`[facthouse] ${reason}`),
   });
+  const semanticIntent = semanticIntentOf(config.embedding);
 
   // Named sources: copy new lines when a tool or resource is read if the
   // files grew. Empty sources never walks a client home. Does not extract.
@@ -227,6 +228,7 @@ async function main() {
     config.temporal,
     config.interlocutor,
     beforeRead,
+    semanticIntent,
   );
 
   const sched = startScheduler({

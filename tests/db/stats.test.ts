@@ -1,6 +1,6 @@
 /**
  * getStats — the shared source of truth behind the `get_stats` tool and the
- * `openmemory stats` CLI. Its "currently true" filter is the part that matters:
+ * `facthouse stats` CLI. Its "currently true" filter is the part that matters:
  * facts are immutable and never deleted, so total and current legitimately
  * diverge, and a filter that drifts would quietly misreport the store.
  */
@@ -224,5 +224,49 @@ describe("getStats semantic coverage", () => {
     const stats = await getStats(db);
     expect(stats.facts.active_latest).toBe(1);
     expect(stats.embeddings).toEqual([{ model: "m", dimensions: 2, count: 1 }]);
+  });
+
+  it("omits semantic when no intent is passed", async () => {
+    await insertFact(db, { content: "a fact", domain: "general", source_type: "explicit" });
+    expect((await getStats(db)).semantic).toBeUndefined();
+  });
+
+  it("reports stored: 0 with empty embeddings when intent is on and nothing is embedded", async () => {
+    await insertFact(db, { content: "a fact", domain: "general", source_type: "explicit" });
+    const stats = await getStats(db, {
+      provider: "ollama",
+      model: "nomic-embed-text",
+    });
+    expect(stats.embeddings).toEqual([]);
+    expect(stats.semantic).toEqual({
+      provider: "ollama",
+      model: "nomic-embed-text",
+      stored: 0,
+    });
+  });
+
+  it("joins stored as a fact count, not a group count", async () => {
+    const a = await insertFact(db, { content: "a", domain: "general", source_type: "explicit" });
+    const b = await insertFact(db, { content: "b", domain: "general", source_type: "explicit" });
+    await insertEmbeddings(db, [{ fact_id: a.id, vector: vec(1, 0) }], "nomic-embed-text", 2);
+    await insertEmbeddings(db, [{ fact_id: b.id, vector: vec(0, 1, 0) }], "other", 3);
+    const stats = await getStats(db, {
+      provider: "ollama",
+      model: "nomic-embed-text",
+    });
+    expect(stats.semantic?.stored).toBe(1);
+    expect(stats.embeddings).toHaveLength(2);
+  });
+
+  it("filters stored on dimensions when intent names them", async () => {
+    const a = await insertFact(db, { content: "a", domain: "general", source_type: "explicit" });
+    await insertEmbeddings(db, [{ fact_id: a.id, vector: vec(1, 0) }], "nomic-embed-text", 2);
+    const stats = await getStats(db, {
+      provider: "ollama",
+      model: "nomic-embed-text",
+      dimensions: 256,
+    });
+    expect(stats.semantic?.stored).toBe(0);
+    expect(stats.semantic?.dimensions).toBe(256);
   });
 });

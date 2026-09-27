@@ -117,7 +117,7 @@ describe("storage provider", () => {
       JSON.stringify({ storage: { provider: "postgres" } }),
     );
     const cfg = loadShippedStoreConfig(dir, {
-      FACTHOUSE_POSTGRES_URL: "postgres://USER:PASSWORD@127.0.0.1:5432/openmemory",
+      FACTHOUSE_POSTGRES_URL: "postgres://USER:PASSWORD@127.0.0.1:5432/facthouse",
     });
     expect(cfg.storage.provider).toBe("postgres");
     expect(existsSync(path.join(dir, "memory.db"))).toBe(false);

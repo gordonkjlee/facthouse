@@ -11,6 +11,7 @@ import { getBoundDiskBudget, keepPerSessionOf, storeBytes } from "./disk-budget.
 import { extractWatermark, unexaminedEventCount } from "./extract-watermarks.js";
 import { currencyClause } from "./facts.js";
 import { listIntelligenceRuns, listIntelligenceRunsSince } from "./intelligence-runs.js";
+import type { SemanticIntent } from "../embedding/provider.js";
 import {
   rollupRuns,
   type IntelligenceSpendStats,
@@ -45,6 +46,15 @@ export interface KnowledgeStats {
    * first; a pair that isn't the configured one gives the second.
    */
   embeddings: Array<{ model: string; dimensions: number; count: number }>;
+  /**
+   * What this process would search with, plus how many current facts already
+   * have a vector for that pair. Omitted when the embedding factory would
+   * return null (keyword-only, kill-switch, missing key).
+   *
+   * `stored` is a fact count (sum of matching `embeddings[].count`), not a
+   * group count. Leftover groups stay in `embeddings` and are not `stored`.
+   */
+  semantic?: SemanticIntent & { stored: number };
   /**
    * The raw event layer beneath the facts.
    *
@@ -99,7 +109,10 @@ async function count(db: Db, sql: string): Promise<number> {
 }
 
 /** Snapshot of what the knowledge base currently holds. */
-export async function getStats(db: Db): Promise<KnowledgeStats> {
+export async function getStats(
+  db: Db,
+  intent?: SemanticIntent | null,
+): Promise<KnowledgeStats> {
   const domainDistribution = (await db
     .prepare(
       `SELECT domain, COUNT(*) as count FROM facts
@@ -139,6 +152,21 @@ export async function getStats(db: Db): Promise<KnowledgeStats> {
         }
       : undefined;
 
+  const semantic = intent
+    ? {
+        provider: intent.provider,
+        model: intent.model,
+        ...(intent.dimensions != null ? { dimensions: intent.dimensions } : {}),
+        stored: embeddingCoverage
+          .filter(
+            (e) =>
+              e.model === intent.model &&
+              (intent.dimensions == null || e.dimensions === intent.dimensions),
+          )
+          .reduce((n, e) => n + e.count, 0),
+      }
+    : undefined;
+
   return {
     facts: {
       active_latest: await count(db, `SELECT COUNT(*) as count FROM facts WHERE ${CURRENT}`),
@@ -149,6 +177,7 @@ export async function getStats(db: Db): Promise<KnowledgeStats> {
     consolidations: await count(db, `SELECT COUNT(*) as count FROM consolidations`),
     domain_distribution: domainDistribution,
     embeddings: embeddingCoverage,
+    ...(semantic ? { semantic } : {}),
     events: { ...eventVolume, reclaimable },
     store,
     extract: {

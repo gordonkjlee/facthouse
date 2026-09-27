@@ -53,6 +53,39 @@ export interface EmbeddingProviderContext {
  * from "configured but broken" — a store whose key env var is unset should be
  * able to say so rather than silently behaving like an unconfigured one.
  */
+/**
+ * What this process would embed/search with, without calling the network.
+ *
+ * `createEmbeddingProvider` is lazy (HTTP only in `embed`). Stats and inspect
+ * use this so configured-empty coverage is visible without a probe.
+ */
+export type SemanticIntent = {
+  provider: EmbeddingProviderType;
+  model: string;
+  /** Set when known without probing: config.dimensions, or provider.dimensions > 0. */
+  dimensions?: number;
+};
+
+export function semanticIntentOf(
+  config: EmbeddingConfig | undefined,
+  env: NodeJS.ProcessEnv = process.env,
+): SemanticIntent | null {
+  const type = resolveEmbeddingProviderType(config?.provider ?? null, env);
+  const provider = createEmbeddingProvider(config, { env });
+  if (!type || !provider) return null;
+  const dimensions =
+    config?.dimensions != null && config.dimensions > 0
+      ? config.dimensions
+      : provider.dimensions > 0
+        ? provider.dimensions
+        : undefined;
+  return {
+    provider: type,
+    model: provider.model,
+    ...(dimensions != null ? { dimensions } : {}),
+  };
+}
+
 export function createEmbeddingProvider(
   config: EmbeddingConfig | undefined,
   ctx: EmbeddingProviderContext = {},

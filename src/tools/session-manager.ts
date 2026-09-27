@@ -138,7 +138,7 @@ export function createSessionManager(
             .optional()
             .describe("URI or path for non-text content"),
           metadata: z
-            .record(z.unknown())
+            .record(z.string(), z.unknown())
             .nullable()
             .optional()
             .describe("Arbitrary metadata"),

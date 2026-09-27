@@ -8,6 +8,8 @@ import {
   DEFAULT_MCP_SERVER_NAME,
   ENV_PREFIX,
   GITHUB_REPO,
+  HOMEPAGE,
+  LOCKUP,
   NPM_PACKAGE,
   PRODUCT_NAME,
   envName,
@@ -30,6 +32,10 @@ describe("identity", () => {
     expect(pkg.bin.openmemory).toBeUndefined();
     expect(pkg.bin.mcp).toBe("dist/index.js");
     expect(pkg.repository.url).toBe(`https://github.com/${GITHUB_REPO}`);
+    expect(pkg.homepage).toBe(HOMEPAGE);
+    expect(pkg.description).toBe(LOCKUP);
+    expect(HOMEPAGE).toBe("https://facthouse.dev");
+    expect(LOCKUP).toBe("A local memory engine any AI tool can use.");
     expect(PRODUCT_NAME).toBe("Facthouse");
     expect(DEFAULT_MCP_SERVER_NAME).toBe("facthouse");
     expect(ENV_PREFIX).toBe("FACTHOUSE");

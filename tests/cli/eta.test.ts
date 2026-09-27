@@ -18,6 +18,17 @@ describe("ChunkEta", () => {
     expect(eta.etaMs(50)).toBe(1000);
   });
 
+  it("noteBatch uses the same estimator in fact units", () => {
+    const eta = new ChunkEta();
+    eta.noteModelChunk(10_000, 50);
+    eta.reset();
+    eta.noteBatch(1000, 128);
+    eta.noteBatch(1000, 128);
+    expect(eta.etaMs(5802)).toBeNull();
+    eta.noteBatch(1000, 128);
+    expect(eta.etaMs(5802)).toBe(Math.round((5802 / 128) * 1000));
+  });
+
   it("formatEta is minutes or seconds", () => {
     expect(formatEta(1000)).toBe("1s");
     expect(formatEta(60_000)).toBe("1m");

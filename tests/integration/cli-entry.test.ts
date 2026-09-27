@@ -214,7 +214,7 @@ describe.skipIf(!runnable)("cli entry — init argument precedence", () => {
     );
     const env: Record<string, string | undefined> = withoutStoreEnv();
     env.FACTHOUSE_PROVIDER = "heuristic";
-    env.FACTHOUSE_POSTGRES_URL = "postgres://127.0.0.1:1/openmemory";
+    env.FACTHOUSE_POSTGRES_URL = "postgres://127.0.0.1:1/facthouse";
     const r = spawnSync(process.execPath, [SERVER, "--data", dir], {
       encoding: "utf-8",
       env: env as NodeJS.ProcessEnv,

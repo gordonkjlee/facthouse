@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.31.0](https://github.com/gordonkjlee/facthouse/compare/v0.30.0...v0.31.0) (2026-09-10)
+
+
+### Features
+
+* **cli:** print MCP snippet before extract ([#272](https://github.com/gordonkjlee/facthouse/issues/272)) ([c9d8a6f](https://github.com/gordonkjlee/facthouse/commit/c9d8a6f02a5eae4ea91361896ead4f2f7ff7a3e0))
+* **cli:** walk up to a project .facthouse store ([#275](https://github.com/gordonkjlee/facthouse/issues/275)) ([8ad6438](https://github.com/gordonkjlee/facthouse/commit/8ad6438934de45bd1862e6cef5e2ff0ee12a87ef))
+
+
+### Bug Fixes
+
+* **ci:** Windows capture tests were load detectors ([#268](https://github.com/gordonkjlee/facthouse/issues/268)) ([3862f4e](https://github.com/gordonkjlee/facthouse/commit/3862f4eb86ac1b40c474ed036756379d053c9e32))
+* **cli:** honest historic extract, progress, Ctrl+C ([#273](https://github.com/gordonkjlee/facthouse/issues/273)) ([845cdac](https://github.com/gordonkjlee/facthouse/commit/845cdac682c87596b35249b224ef59e4290b3601))
+* **cli:** name MCP config files on the init done card ([#274](https://github.com/gordonkjlee/facthouse/issues/274)) ([f92ab8c](https://github.com/gordonkjlee/facthouse/commit/f92ab8cf8f86e33271ca89d97d7bdd90f6380c43))
+* **cli:** name the config file on init status lines ([#277](https://github.com/gordonkjlee/facthouse/issues/277)) ([2e69b2a](https://github.com/gordonkjlee/facthouse/commit/2e69b2a41c0eb2050a1e8568897b64a773e3af59))
+* **cli:** report embed on consolidate ([#279](https://github.com/gordonkjlee/facthouse/issues/279)) ([a0104ea](https://github.com/gordonkjlee/facthouse/commit/a0104ea6a4d8f364bd4703cd557519ae75d89239))
+* **cli:** show embed queue on stats and TTY ([#280](https://github.com/gordonkjlee/facthouse/issues/280)) ([1da04f1](https://github.com/gordonkjlee/facthouse/commit/1da04f13e5e697e087509f5943672ca69bd2464f))
+* **deps:** add zod as a direct dependency ([#271](https://github.com/gordonkjlee/facthouse/issues/271)) ([d243686](https://github.com/gordonkjlee/facthouse/commit/d24368607cea2ea5805f6a2ae78a20ef130b3b66))
+
+
+### Performance
+
+* **cli:** one-pass inspect Data matching ([#276](https://github.com/gordonkjlee/facthouse/issues/276)) ([2bc2e7a](https://github.com/gordonkjlee/facthouse/commit/2bc2e7a3d119ccb9e7b35ea1041779f06dfce8d8))
+
 ## [0.30.0](https://github.com/gordonkjlee/facthouse/compare/v0.29.1...v0.30.0) (2026-09-06)
 
 

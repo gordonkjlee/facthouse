@@ -28,8 +28,9 @@ DOMAIN = "facthouse.dev"
 SITE_ORIGIN = f"https://{DOMAIN}"
 GITHUB = "https://github.com/gordonkjlee/facthouse"
 NPM = "https://www.npmjs.com/package/@facthouse/mcp"
-# Fallback / cramped-field hook. The landing chrome prefers the README lede.
-# Keep in sync with package.json and server.json description.
+# Approved cramped-field pitch for site meta and JSON-LD (≤100 chars).
+# Visible landing lede is the README. This is not LOCKUP — the 42-char
+# "any AI tool can use" line is rejected for public site / JSON-LD.
 # MCP Registry server.json description maxLength is 100 characters.
 PITCH = (
     "Local AI memory: neuroscience-inspired "
@@ -181,10 +182,11 @@ def split_readme(text: str) -> tuple[str, str]:
 
 
 def listing_description() -> str:
-    """Cramped-field hook from package.json (npm, registry, meta, JSON-LD)."""
-    desc = package_metadata().get("description")
-    if isinstance(desc, str) and desc.strip():
-        return desc.strip()
+    """Approved SHORT_PITCH for site meta and JSON-LD.
+
+    Do not read package.json here. npm / registry may still carry LOCKUP;
+    facthouse.dev meta and SoftwareApplication.description must not.
+    """
     return PITCH
 
 
