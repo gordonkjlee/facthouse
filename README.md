@@ -580,7 +580,7 @@ When the facthouse MCP server is available:
 
 Cursor and Windsurf consume tools but not resources, so `memory://profile` will not load on its own there. Cursor conversations themselves are copied with `kind: "cursor"` (JSONL under `~/.cursor/projects/`, not the SQLite composer store).
 
-Grok Build conversations are copied with `kind: "grok"`: `chat_history.jsonl` under `~/.grok/sessions/` (or `GROK_HOME`), not `updates.jsonl`. Reasoning, system lines, injected reminders and sub-agent runs are skipped.
+Grok Build conversations are copied with `kind: "grok"`: `chat_history.jsonl` under `~/.grok/sessions/` (or `GROK_HOME`), not `updates.jsonl`. Reasoning, system lines, injected reminders and sub-agent runs (sessions a parent lists under its `subagents/`) are skipped.
 
 ### Claude Desktop / other MCP clients
 
