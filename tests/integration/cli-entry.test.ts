@@ -902,12 +902,12 @@ describe.skipIf(!runnable)("cli entry — consolidate steps", () => {
     run(["init", dir]);
     const configPath = path.join(dir, "config.json");
     const config = JSON.parse(readFileSync(configPath, "utf-8"));
-    config.sources = [{ kind: "grok", home: path.join(root, "nope") }];
+    config.sources = [{ kind: "codex", home: path.join(root, "nope") }];
     writeFileSync(configPath, JSON.stringify(config, null, 2), "utf-8");
 
     const r = run(["consolidate", "--copy", "--data", dir]);
     expect(r.status).toBe(1);
-    expect(r.stderr).toMatch(/Unknown source kind "grok"/);
+    expect(r.stderr).toMatch(/Unknown source kind "codex"/);
   });
 });
 

@@ -317,11 +317,20 @@ describe("collectInitAnswers", () => {
     expect(io.prompts).toContain(INIT_PROMPTS.more);
   });
 
-  it("re-prompts an unknown kind and does not write grok", async () => {
-    const io = fakeIo(["copy", "grok", "claude-code", "", "", "n"]);
+  it("re-prompts an unknown kind and does not write codex", async () => {
+    const io = fakeIo(["copy", "codex", "claude-code", "", "", "n"]);
     const result = await collectInitAnswers(io, seed, deps());
     expect(io.writes).toContain(INIT_PROMPTS.unknownKind());
     expect(result.overlay.sources?.[0]?.kind).toBe("claude-code");
+  });
+
+  it("offers grok as a copy kind with Grok's own home default", async () => {
+    const io = fakeIo(["copy", "grok", "", "", "n"]);
+    const result = await collectInitAnswers(io, seed, deps());
+    expect(io.writes).not.toContain(INIT_PROMPTS.unknownKind());
+    expect(result.overlay.sources).toEqual([
+      { kind: "grok", home: "~/.grok", cwd: "C:\\dev\\app" },
+    ]);
   });
 
   it("hints a POSIX cwd on Windows", async () => {

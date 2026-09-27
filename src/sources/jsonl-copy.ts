@@ -44,6 +44,14 @@ export type MapTranscriptLine = (
 export interface JsonlCopyOptions {
   sourceTool: string;
   mapLine: MapTranscriptLine;
+  /**
+   * The client's conversation id when the file name is not it (Grok names
+   * every transcript `chat_history.jsonl` inside `<session-id>/`). Defaults
+   * to the file's basename.
+   */
+  sessionId?: string;
+  /** On-disk group when it is not under `projects/`. Defaults to that. */
+  project?: string | null;
 }
 
 /**
@@ -72,8 +80,9 @@ export async function copyJsonlFile(
     const startLine = resume?.line_number ?? 0;
 
     const { lines, endOffset } = readCompleteLines(fd, startOffset, size);
-    const sessionId = sessionIdFromPath(abs);
-    const project = encodedProjectGroupFromPath(abs);
+    const sessionId = opts.sessionId ?? sessionIdFromPath(abs);
+    const project =
+      opts.project !== undefined ? opts.project : encodedProjectGroupFromPath(abs);
     if (lines.length === 0 && resume) {
       // File unchanged, or only an incomplete last line past the watermark.
       // Leave the watermark where it is: a later append that completes the

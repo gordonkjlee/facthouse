@@ -86,14 +86,17 @@ describe("resolveSources", () => {
 
   it("rejects an unknown kind with a clear error", () => {
     expect(() =>
-      resolveSources([{ kind: "grok", home: "~/.grok" }]),
-    ).toThrow(/Unknown source kind "grok"/);
+      resolveSources([{ kind: "codex", home: "~/.codex" }]),
+    ).toThrow(/Unknown source kind "codex"/);
     expect(() =>
-      resolveSources([{ kind: "grok", home: "~/.grok" }]),
-    ).toThrow(/claude-code/);
-    expect(() =>
-      resolveSources([{ kind: "grok", home: "~/.grok" }]),
-    ).toThrow(/cursor/);
+      resolveSources([{ kind: "codex", home: "~/.codex" }]),
+    ).toThrow(/This version supports "claude-code", "cursor" and "grok"\./);
+  });
+
+  it("accepts grok as a copy kind", () => {
+    expect(resolveSources([{ kind: "grok", home: "~/.grok", cwd: "C:\\dev\\app" }])).toEqual([
+      { kind: "grok", home: path.join(homedir(), ".grok"), cwd: "C:\\dev\\app" },
+    ]);
   });
 
   it("rejects a source missing home", () => {

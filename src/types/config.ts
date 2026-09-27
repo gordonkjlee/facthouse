@@ -377,10 +377,19 @@ export interface EmbeddingConfig {
  *
  * `claude-code` tails session JSONL. `cursor` tails Cursor Agent JSONL under
  * home/projects/<group>/agent-transcripts/ only — not Composer SQLite, not
- * `state.vscdb`. Grok and Codex remain later adapters.
+ * `state.vscdb`. `grok` tails Grok Build's
+ * home/sessions/<group>/<session-id>/chat_history.jsonl only — not
+ * `updates.jsonl`. Codex remains a later adapter.
  */
-export const CAPTURE_SOURCE_KINDS = ["claude-code", "cursor"] as const;
+export const CAPTURE_SOURCE_KINDS = ["claude-code", "cursor", "grok"] as const;
 export type CaptureSourceKind = (typeof CAPTURE_SOURCE_KINDS)[number];
+
+/** `"claude-code", "cursor" and "grok"` — the one sentence for error and init copy. */
+export function captureSourceKindsList(): string {
+  const quoted = CAPTURE_SOURCE_KINDS.map((k) => `"${k}"`);
+  if (quoted.length <= 2) return quoted.join(" and ");
+  return quoted.slice(0, -1).join(", ") + " and " + quoted[quoted.length - 1];
+}
 
 export function isCaptureSourceKind(value: unknown): value is CaptureSourceKind {
   return (
@@ -390,20 +399,22 @@ export function isCaptureSourceKind(value: unknown): value is CaptureSourceKind 
 }
 
 export interface CaptureSource {
-  /** Adapter to run. `"claude-code"` or `"cursor"` in this version. */
+  /** Adapter to run. `"claude-code"`, `"cursor"` or `"grok"` in this version. */
   kind: CaptureSourceKind;
   /**
    * Client config dir, e.g. `~/.claude` / `C:\\Users\\alex\\.claude` for
-   * Claude Code, `~/.cursor` / `C:\\Users\\alex\\.cursor` for Cursor.
-   * Transcripts are read from `home/projects/` only.
+   * Claude Code, `~/.cursor` / `C:\\Users\\alex\\.cursor` for Cursor,
+   * `~/.grok` / `C:\\Users\\alex\\.grok` (or `GROK_HOME`) for Grok Build.
+   * Transcripts are read from `home/projects/` (`home/sessions/` for Grok)
+   * only.
    */
   home: string;
   /**
    * Strongly recommended. Restricts copy to that project's transcript
    * group. Encodings differ by client: Claude Code turns `C:\\dev\\app`
-   * into `C--dev-app`; Cursor into `c-dev-app`. A bare `home` walks every
-   * project group under `projects/` — a first copy of a shared home can be
-   * thousands of files.
+   * into `C--dev-app`; Cursor into `c-dev-app`; Grok into
+   * `C%3A%5Cdev%5Capp`. A bare `home` walks every project group — a first
+   * copy of a shared home can be thousands of files.
    */
   cwd?: string;
 }
