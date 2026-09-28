@@ -148,15 +148,24 @@ export function sessionIdFromPath(filePath: string): string {
 }
 
 /**
- * On-disk group under `home/projects/<group>/`.
- * That encoded name is the provenance we store on `sessions.project` —
- * not a tenant, and not a decoded filesystem path (encoding is lossy).
+ * On-disk group under `home/projects/<group>/` (Claude Code, Cursor) or
+ * `home/sessions/<group>/` (Grok). That encoded name is the provenance
+ * we store on `sessions.project` — not a tenant, and not a decoded
+ * filesystem path (encoding is lossy). `projects` wins when both
+ * segments exist, so Claude's `projects/<group>/sessions/<id>.jsonl`
+ * stays the project group.
  */
 export function encodedProjectGroupFromPath(filePath: string): string | null {
   const parts = path.normalize(filePath).split(path.sep);
-  const i = parts.lastIndexOf("projects");
-  if (i < 0 || i + 1 >= parts.length) return null;
-  return parts[i + 1] || null;
+  const projects = parts.lastIndexOf("projects");
+  if (projects >= 0 && projects + 1 < parts.length && parts[projects + 1]) {
+    return parts[projects + 1];
+  }
+  const sessions = parts.lastIndexOf("sessions");
+  if (sessions >= 0 && sessions + 1 < parts.length && parts[sessions + 1]) {
+    return parts[sessions + 1];
+  }
+  return null;
 }
 
 // ---------------------------------------------------------------------------

@@ -3,6 +3,7 @@ import { homedir } from "node:os";
 import path from "node:path";
 import {
   encodeCursorProjectDir,
+  encodeGrokProjectDir,
   encodeProjectDir,
   resolveSources,
   resolveUserPath,
@@ -47,6 +48,28 @@ describe("encodeCursorProjectDir", () => {
   });
 });
 
+describe("encodeGrokProjectDir", () => {
+  it("URL-encodes a Windows cwd the way Grok does on disk", () => {
+    expect(encodeGrokProjectDir("C:\\dev\\app")).toBe("C%3A%5Cdev%5Capp");
+  });
+
+  it("URL-encodes a POSIX cwd", () => {
+    expect(encodeGrokProjectDir("/home/me/app")).toBe("%2Fhome%2Fme%2Fapp");
+  });
+
+  it("strips trailing slashes so they do not become a different group", () => {
+    expect(encodeGrokProjectDir("C:\\dev\\app\\")).toBe("C%3A%5Cdev%5Capp");
+    expect(encodeGrokProjectDir("/home/me/app/")).toBe("%2Fhome%2Fme%2Fapp");
+  });
+
+  it("is not Claude Code's or Cursor's encoding", () => {
+    expect(encodeGrokProjectDir("C:\\dev\\app")).not.toBe(encodeProjectDir("C:\\dev\\app"));
+    expect(encodeGrokProjectDir("C:\\dev\\app")).not.toBe(
+      encodeCursorProjectDir("C:\\dev\\app"),
+    );
+  });
+});
+
 describe("resolveSources", () => {
   it("treats empty or omitted sources as pull-off", () => {
     expect(resolveSources([])).toEqual([]);
@@ -84,16 +107,33 @@ describe("resolveSources", () => {
     ]);
   });
 
+  it("resolves a grok source and expands home", () => {
+    const resolved = resolveSources([
+      { kind: "grok", home: "~/.grok", cwd: "C:\\dev\\app" },
+    ]);
+    expect(resolved).toEqual([
+      {
+        kind: "grok",
+        home: path.join(homedir(), ".grok"),
+        cwd: "C:\\dev\\app",
+      },
+    ]);
+    expect(encodeGrokProjectDir(resolved[0].cwd!)).toBe("C%3A%5Cdev%5Capp");
+  });
+
   it("rejects an unknown kind with a clear error", () => {
     expect(() =>
-      resolveSources([{ kind: "grok", home: "~/.grok" }]),
-    ).toThrow(/Unknown source kind "grok"/);
+      resolveSources([{ kind: "codex", home: "~/.codex" }]),
+    ).toThrow(/Unknown source kind "codex"/);
     expect(() =>
-      resolveSources([{ kind: "grok", home: "~/.grok" }]),
+      resolveSources([{ kind: "codex", home: "~/.codex" }]),
     ).toThrow(/claude-code/);
     expect(() =>
-      resolveSources([{ kind: "grok", home: "~/.grok" }]),
+      resolveSources([{ kind: "codex", home: "~/.codex" }]),
     ).toThrow(/cursor/);
+    expect(() =>
+      resolveSources([{ kind: "codex", home: "~/.codex" }]),
+    ).toThrow(/grok/);
   });
 
   it("rejects a source missing home", () => {

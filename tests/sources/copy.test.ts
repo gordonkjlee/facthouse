@@ -288,8 +288,8 @@ describe("copySources", () => {
 
   it("rejects an unknown kind without inserting anything", async () => {
     await expect(
-      copySources(db, [{ kind: "grok", home: path.join(root, "nope") }]),
-    ).rejects.toThrow(/Unknown source kind "grok"/);
+      copySources(db, [{ kind: "codex", home: path.join(root, "nope") }]),
+    ).rejects.toThrow(/Unknown source kind "codex"/);
     expect(await events(db)).toHaveLength(0);
   });
 

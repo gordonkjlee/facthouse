@@ -45,6 +45,20 @@ describe("captureFactDescription", () => {
     expect(text.length).toBeGreaterThanOrEqual(120);
   });
 
+  it("stays a correction when claude-code and grok share one store", () => {
+    const mixed = captureFactDescription([
+      ...PULL_SOURCES,
+      { kind: "grok", home: "C:\\Users\\alex\\.grok", cwd: "C:\\dev\\app" },
+    ]);
+    const grokOnly = captureFactDescription([
+      { kind: "grok", home: "C:\\Users\\alex\\.grok", cwd: "C:\\dev\\app" },
+    ]);
+    expect(mixed).toBe(captureFactDescription(PULL_SOURCES));
+    expect(grokOnly).toBe(captureFactDescription(PULL_SOURCES));
+    expect(mixed).toMatch(/when you need to correct/i);
+    expect(mixed).not.toMatch(/proactively/i);
+  });
+
   it("tells a pull store this is a correction, not recapture", () => {
     const text = captureFactDescription(PULL_SOURCES);
     expect(text).toMatch(/when you need to correct/i);

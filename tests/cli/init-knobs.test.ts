@@ -146,15 +146,16 @@ describe("init knobs — one definition", () => {
     expect(INIT_PROMPTS.mcpPaste).not.toContain(INIT_PROMPTS.mcpVsCli);
   });
 
-  it("kind prompt names every shipped kind and not grok", () => {
+  it("kind prompt names every shipped kind", () => {
     for (const kind of CAPTURE_SOURCE_KINDS) {
       expect(INIT_PROMPTS.kind).toContain(kind);
     }
-    expect(INIT_PROMPTS.kind).not.toMatch(/grok/i);
+    expect(INIT_PROMPTS.kind).toMatch(/\bgrok\b/);
     const unknown = INIT_PROMPTS.unknownKind();
     for (const kind of CAPTURE_SOURCE_KINDS) {
       expect(unknown).toContain(`"${kind}"`);
     }
+    expect(unknown).not.toMatch(/codex/i);
   });
 
   it("INIT_PROMPTS has exactly the owned keys", () => {
@@ -252,6 +253,10 @@ describe("init knobs — one definition", () => {
       }),
     ).toBe("C:/Users/alex/.claude-work");
     expect(defaultHomeForKind("cursor")).toBe("~/.cursor");
+    expect(defaultHomeForKind("grok")).toBe("~/.grok");
+    expect(
+      defaultHomeForKind("grok", { GROK_HOME: "C:/Users/alex/.grok-work" }),
+    ).toBe("C:/Users/alex/.grok-work");
     expect(MORE_SETTING_IDS).toEqual([
       "cliModel",
       "cliIntegrateModel",
