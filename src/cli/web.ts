@@ -270,9 +270,11 @@ export function renderInitWebHtml(opts: {
   const homeDefaults = opts.homeDefaults ?? {
     "claude-code": defaultHomeForKind("claude-code", {}),
     cursor: defaultHomeForKind("cursor", {}),
+    grok: defaultHomeForKind("grok", {}),
   };
   const capture = posted?.get("capture") === "record" ? "record" : "copy";
-  const kind = posted?.get("kind") === "cursor" ? "cursor" : "claude-code";
+  const postedKind = posted?.get("kind");
+  const kind = isCaptureSourceKind(postedKind) ? postedKind : "claude-code";
   const dataDir = posted?.get("dataDir") ?? opts.dataDir;
   const home = posted?.get("home") ?? homeDefaults[kind] ?? "";
   const cwd = posted?.get("cwd") ?? opts.processCwd;
@@ -300,6 +302,7 @@ ${opts.error && !opts.field ? `<p class="warn">${escapeHtml(opts.error)}</p>` : 
         <select name="kind">
           <option value="claude-code"${kind === "claude-code" ? " selected" : ""}>Claude Code</option>
           <option value="cursor"${kind === "cursor" ? " selected" : ""}>Cursor</option>
+          <option value="grok"${kind === "grok" ? " selected" : ""}>Grok Build</option>
         </select>
       </label>
       ${fieldWarn(opts.field, "home", opts.error ?? "")}
@@ -527,6 +530,7 @@ export async function collectInitWebAnswers(
   const homeDefaults = {
     "claude-code": defaultHomeForKind("claude-code", process.env),
     cursor: defaultHomeForKind("cursor", process.env),
+    grok: defaultHomeForKind("grok", process.env),
   };
 
   const handle = await listenLoopback({

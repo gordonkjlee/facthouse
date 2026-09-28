@@ -21,13 +21,13 @@ facthouse init
 
 `facthouse init --web` is the same setup as a browser form — it prints a 127.0.0.1 URL and does not open a browser.
 
-Press Enter to accept each default (copy = Claude Code or Cursor session logs on disk; type record if the assistant should save facts). If you picked copy, init asks whether to copy existing logs, then whether to extract and integrate. Init prints an MCP snippet as soon as the store is written — add it to the client's MCP config while copy/extract run. Restart the client when init finishes.
+Press Enter to accept each default (copy = Claude Code, Cursor, or Grok session logs on disk; type record if the assistant should save facts). If you picked copy, init asks whether to copy existing logs, then whether to extract and integrate. Init prints an MCP snippet as soon as the store is written — add it to the client's MCP config while copy/extract run. Restart the client when init finishes.
 
 In the client, state something durable in ordinary conversation — there is no remember command.
 
 Ask it back in the next session, or `facthouse search`. That is the store.
 
-Copy from Claude Code or Cursor logs, or record from any MCP client: [How conversations get in](#how-conversations-get-in). Replay: [facthouse.dev/demo.html](https://facthouse.dev/demo.html). CLI: [below](#cli).
+Copy from Claude Code, Cursor, or Grok Build logs, or record from any MCP client with no transcript file: [How conversations get in](#how-conversations-get-in). Replay: [facthouse.dev/demo.html](https://facthouse.dev/demo.html). CLI: [below](#cli).
 
 ## What you get
 
@@ -77,11 +77,11 @@ Two ways. Pick one per store.
 
 | | Copy from transcripts | The assistant records |
 |---|---|---|
-| Who | Claude Code or Cursor (session logs on disk, under the client home) | Any MCP client (Grok, Desktop, …) |
+| Who | Claude Code, Cursor, or Grok Build (session logs on disk, under the client home) | Any MCP client with no transcript file (Desktop, …) |
 | How | Name a source; Facthouse copies new lines from those logs into the store | Empty `sources`; the assistant calls `capture_fact` |
-| First run | TTY walk-through, pick **copy**, set cwd; init asks whether to copy existing logs, then whether to extract and integrate | TTY walk-through, pick **record** |
+| First run | TTY walk-through, pick **copy**, choose the client, set cwd; init asks whether to copy existing logs, then whether to extract and integrate | TTY walk-through, pick **record** |
 
-On a copy store, capture_fact is a correction for every MCP client, not only the one that writes JSONL. Grok has no transcript adapter — do not put Claude Code on copy and Grok on the same store expecting Grok to record.
+On a copy store, capture_fact is a correction for every MCP client, not only the one that writes JSONL. Name a `grok` source on the same store as Claude Code. Do not also install record hooks.
 
 ```bash
 facthouse init
@@ -192,7 +192,7 @@ facthouse settings --data ~/my-memory
 
 #### `facthouse record`
 
-Inserts events directly into the database (no running server needed). Supported for demos and for stores that have no named source. Not the Claude Code or Cursor default — that is `sources` plus `facthouse consolidate`.
+Inserts events directly into the database (no running server needed). Supported for demos and for stores that have no named source. Not the Claude Code, Cursor, or Grok default — that is `sources` plus `facthouse consolidate`.
 
 ```bash
 # From a hook (reads JSON payload from stdin):
@@ -348,7 +348,7 @@ Example — placeholders only; do not put a real password in a committed file:
 
 Choose one mechanism per store.
 
-**Recommended — copy.** Name a `claude-code` or `cursor` source (set `cwd`) and run `facthouse consolidate` from the CLI first. The MCP server also copies at session start and when it handles a call. Grok and Codex are later adapters. Unknown `kind` values are rejected.
+**Recommended — copy.** Name a `claude-code`, `cursor`, or `grok` source (set `cwd`) and run `facthouse consolidate` from the CLI first. The MCP server also copies at session start and when it handles a call. Codex is a later adapter. Unknown `kind` values are rejected.
 
 ```json
 {
@@ -357,12 +357,17 @@ Choose one mechanism per store.
       "kind": "claude-code",
       "home": "~/.claude",
       "cwd": "C:\\dev\\app"
+    },
+    {
+      "kind": "grok",
+      "home": "~/.grok",
+      "cwd": "C:\\dev\\app"
     }
   ]
 }
 ```
 
-`home` is the client config dir (`~/.claude` or `~/.cursor` — path examples, not extra discovery). Cursor is `"kind": "cursor"` and `home/projects/*/agent-transcripts/**/*.jsonl` only — not Composer SQLite. Cursor encodes `C:\\dev\\app` as `c-dev-app` (Claude Code uses `C--dev-app`). A first backfill of more than 50 lines takes several runs, or one `facthouse consolidate --all`.
+`home` is the client config dir (`~/.claude`, `~/.cursor`, or `~/.grok` — path examples, not extra discovery). Cursor is `"kind": "cursor"` and `home/projects/*/agent-transcripts/**/*.jsonl` only — not Composer SQLite. Grok is `"kind": "grok"` and `home/sessions/<encoded-cwd>/<session-id>/chat_history.jsonl` only — not `updates.jsonl`. Cursor encodes `C:\\dev\\app` as `c-dev-app` (Claude Code uses `C--dev-app`; Grok URL-encodes it as `C%3A%5Cdev%5Capp`). A first backfill of more than 50 lines takes several runs, or one `facthouse consolidate --all`.
 
 **Alternative — record, no sources.** Leave `sources` empty. Pipe a client hook payload into `facthouse record` if you have one. MCP `log_event` / `capture_fact` keep working.
 
@@ -481,7 +486,7 @@ The live script `npm run test:http-intelligence` has passed on `qwen2.5vl:7b`.
 
 ### CLI demo (no transcript source)
 
-Throwaway store, not the capture path for a real Claude Code or Cursor home. These three lines are typed in.
+Throwaway store, not the capture path for a real Claude Code, Cursor, or Grok home. These three lines are typed in.
 
 <!-- x-release-please-start-version -->
 ```bash
@@ -516,13 +521,13 @@ om stats
 
 ## Integration
 
-Facthouse's tool descriptions tell assistants when to search and when a correction is worth staging. They are not how Claude Code conversations enter the store — that is copy from a named source.
+Facthouse's tool descriptions tell assistants when to search and when a correction is worth staging. They are not how Claude Code or Grok conversations enter the store — that is copy from a named source.
 
 ### Without configuration
 
-Claude Code or Cursor: name a `sources` entry (set `cwd`) and run `facthouse consolidate` from the CLI first. MCP session start also copies. `capture_fact` is there if the assistant needs to correct or add something copy-plus-extraction will not produce.
+Claude Code, Cursor, or Grok: name a `sources` entry (set `cwd`) and run `facthouse consolidate` from the CLI first. MCP session start also copies. `capture_fact` is there if the assistant needs to correct or add something copy-plus-extraction will not produce.
 
-Clients with no copy adapter still rely on `log_event` / `capture_fact` until their adapter exists.
+Clients with no transcript file (Desktop, Codex) still rely on `log_event` / `capture_fact`.
 
 ### Hook points
 
@@ -582,7 +587,7 @@ Cursor and Windsurf consume tools but not resources, so `memory://profile` will 
 
 ### Claude Desktop / other MCP clients
 
-No copy adapter yet. Tool descriptions handle search and optional `capture_fact`; conversations are not tailed until a later adapter exists.
+Desktop and Codex have no copy adapter yet. Tool descriptions handle search and optional `capture_fact`; those conversations are not tailed. Grok Build is a copy kind (`kind: "grok"`) on the same store as Claude Code.
 
 ## Reclaiming space
 

@@ -49,6 +49,19 @@ export function encodeCursorProjectDir(cwd: string): string {
     .replace(/^-+|-+$/g, "");
 }
 
+/**
+ * Grok Build's on-disk project group name under `~/.grok/sessions/`.
+ * URL-encode the cwd the way Grok does. `C:\dev\app` → `C%3A%5Cdev%5Capp`;
+ * `/home/me/app` → `%2Fhome%2Fme%2Fapp`. Not Claude Code's `C--dev-app`
+ * and not Cursor's `c-dev-app`. Trailing slashes are stripped so they
+ * do not become a different group. A name longer than 255 bytes is
+ * Grok's slug-plus-hash case; discovery honours that group's `.cwd`.
+ */
+export function encodeGrokProjectDir(cwd: string): string {
+  const trimmed = cwd.replace(/[\\/]+$/, "");
+  return encodeURIComponent(trimmed);
+}
+
 function supportedKindsList(): string {
   return CAPTURE_SOURCE_KINDS.map((k) => `"${k}"`).join(" and ");
 }
@@ -93,7 +106,7 @@ export function resolveSources(sources: unknown): ResolvedCaptureSource[] {
         "config.sources[" +
           index +
           '] is missing "home" (the client config dir, ' +
-          "e.g. ~/.claude for claude-code or ~/.cursor for cursor).",
+          "e.g. ~/.claude, ~/.cursor, or ~/.grok).",
       );
     }
     if (entry.cwd !== undefined && typeof entry.cwd !== "string") {

@@ -15,6 +15,7 @@ import {
 } from "../types/config.js";
 import {
   encodeCursorProjectDir,
+  encodeGrokProjectDir,
   encodeProjectDir,
 } from "../sources/resolve.js";
 import {
@@ -158,6 +159,28 @@ function parseTimeoutMs(raw: string): number | "empty" | "invalid" {
   return n;
 }
 
+function encodedGroupForKind(kind: CaptureSourceKind, stored: string): string {
+  if (kind === "cursor") return encodeCursorProjectDir(stored);
+  if (kind === "grok") return encodeGrokProjectDir(stored);
+  return encodeProjectDir(stored);
+}
+
+/** Group directory under the client home. Null when the name would escape it. */
+function groupDirForKind(
+  kind: CaptureSourceKind,
+  homeAbs: string,
+  encoded: string,
+): string | null {
+  if (!encoded || encoded === "." || encoded === ".." || /[\\/]/.test(encoded)) {
+    return null;
+  }
+  const parent = path.join(homeAbs, kind === "grok" ? "sessions" : "projects");
+  const candidate = path.join(parent, encoded);
+  const rel = path.relative(parent, candidate);
+  if (!rel || rel.startsWith("..") || path.isAbsolute(rel)) return null;
+  return candidate;
+}
+
 type CaptureOutcome = "copy" | "record" | "cwd-skipped";
 
 async function askCapture(
@@ -223,10 +246,9 @@ async function askCapture(
   }
 
   if (homeOk) {
-    const encoded =
-      kind === "cursor" ? encodeCursorProjectDir(stored) : encodeProjectDir(stored);
-    const groupPath = path.join(homeAbs, "projects", encoded);
-    if (!deps.exists(groupPath)) {
+    const encoded = encodedGroupForKind(kind, stored);
+    const groupPath = groupDirForKind(kind, homeAbs, encoded);
+    if (!groupPath || !deps.exists(groupPath)) {
       io.write(INIT_PROMPTS.projectGroupMissing(home, stored, encoded));
     }
   }

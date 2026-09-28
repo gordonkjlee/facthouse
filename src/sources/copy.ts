@@ -17,6 +17,7 @@ import {
   copyClaudeCodeFile,
 } from "./claude-code.js";
 import { discoverCursorFiles, copyCursorFile } from "./cursor.js";
+import { discoverGrokFiles, copyGrokFile } from "./grok.js";
 import type { JsonlFileCopy } from "./jsonl-copy.js";
 import { resolveSources, type ResolvedCaptureSource } from "./resolve.js";
 
@@ -44,6 +45,10 @@ const adapters: Record<CaptureSourceKind, SourceAdapter> = {
   cursor: {
     discover: discoverCursorFiles,
     copy: copyCursorFile,
+  },
+  grok: {
+    discover: discoverGrokFiles,
+    copy: copyGrokFile,
   },
 };
 
