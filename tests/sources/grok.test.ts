@@ -206,7 +206,8 @@ describe("copySources grok", () => {
 
   it("cwd restricts discovery to the encoded group and does not join a Windows path", async () => {
     const home = path.join(root, "grok-home");
-    const keep = encodeGrokProjectDir("C:\\dev\\app");
+    const rawCwd = "C:\\dev\\app";
+    const keep = encodeGrokProjectDir(rawCwd);
     const other = encodeGrokProjectDir("C:\\dev\\other");
     writeJsonl(
       path.join(sessionDir(home, keep, "sess-keep"), "chat_history.jsonl"),
@@ -216,15 +217,31 @@ describe("copySources grok", () => {
       path.join(sessionDir(home, other, "sess-other"), "chat_history.jsonl"),
       fixtureLines(),
     );
-    // A directory whose name is the raw Windows cwd must not be the join target.
-    writeJsonl(
-      path.join(sessionDir(home, "C:\\dev\\app", "sess-trap"), "chat_history.jsonl"),
-      fixtureLines(),
-    );
 
-    const filtered = await copySources(db, [
-      { kind: "grok", home, cwd: "C:\\dev\\app" },
-    ]);
+    // Joining the raw Windows cwd is not a child of sessions/. Windows
+    // path.relative reports that join as the absolute `C:\dev\app` (a colon
+    // inside the temp tree, which mkdir rejects). On POSIX the same string
+    // is one directory name, so plant a decoy transcript there.
+    const sessionsRoot = path.join(home, "sessions");
+    const winRel = path.win32.relative(sessionsRoot, path.win32.join(sessionsRoot, rawCwd));
+    expect(path.win32.isAbsolute(winRel)).toBe(true);
+    expect(grokGroupNames(rawCwd)).toEqual([keep]);
+    expect(grokGroupNames(rawCwd)).not.toContain(rawCwd);
+
+    const candidate = path.join(sessionsRoot, rawCwd);
+    const rel = path.relative(sessionsRoot, candidate);
+    const legalChild =
+      rel !== "" && !rel.startsWith("..") && !path.isAbsolute(rel) && !rel.includes(path.sep);
+    // POSIX can plant a directory named with the raw cwd. Windows cannot:
+    // that join is the absolute path above, and mkdir would throw ENOENT.
+    expect(legalChild).toBe(process.platform !== "win32");
+    if (legalChild) {
+      const trapFile = path.join(candidate, "sess-trap", "chat_history.jsonl");
+      writeJsonl(trapFile, fixtureLines());
+      expect(readFileSync(trapFile, "utf8").length).toBeGreaterThan(0);
+    }
+
+    const filtered = await copySources(db, [{ kind: "grok", home, cwd: rawCwd }]);
     expect(filtered.files).toBe(1);
     expect((await events(db)).every((r) => r.client_session_id === "sess-keep")).toBe(true);
   });
