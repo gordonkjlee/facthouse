@@ -17,6 +17,7 @@ import {
   encodeCursorProjectDir,
   encodeProjectDir,
 } from "../sources/resolve.js";
+import { grokGroupNames } from "../sources/grok.js";
 import {
   INIT_PROMPTS,
   MORE_SETTING_IDS,
@@ -223,11 +224,18 @@ async function askCapture(
   }
 
   if (homeOk) {
-    const encoded =
-      kind === "cursor" ? encodeCursorProjectDir(stored) : encodeProjectDir(stored);
-    const groupPath = path.join(homeAbs, "projects", encoded);
-    if (!deps.exists(groupPath)) {
-      io.write(INIT_PROMPTS.projectGroupMissing(home, stored, encoded));
+    // Each client's own layout and encoding — the adapter's, not a second one.
+    // A Grok cwd too long to encode lives in a slug group found by its
+    // `.cwd` file at copy time; do not warn about a name Grok never wrote.
+    const grok = kind === "grok" ? grokGroupNames(stored) : null;
+    const { root, names } = grok
+      ? { root: path.join(homeAbs, "sessions"), names: grok.names }
+      : {
+          root: path.join(homeAbs, "projects"),
+          names: [kind === "cursor" ? encodeCursorProjectDir(stored) : encodeProjectDir(stored)],
+        };
+    if (!grok?.tooLong && !names.some((name) => deps.exists(path.join(root, name)))) {
+      io.write(INIT_PROMPTS.projectGroupMissing(home, stored, names[0] ?? stored));
     }
   }
 

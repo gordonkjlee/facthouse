@@ -168,21 +168,7 @@ export function mapGrokLine(
  * a `.cwd` file; that is matched instead.
  */
 export function grokGroupsForCwd(sessionsRoot: string, cwd: string): string[] {
-  const trimmed = cwd.replace(/[\\/]+$/, "");
-  if (!trimmed) return [];
-  const spellings = new Set<string>([trimmed]);
-  if (/^[a-zA-Z]:[\\/]/.test(trimmed)) {
-    spellings.add(trimmed[0]!.toUpperCase() + trimmed.slice(1).replace(/\//g, "\\"));
-  }
-
-  const names = new Set<string>();
-  let tooLong = false;
-  for (const spelling of spellings) {
-    const encoded = encodeGrokSessionDir(spelling);
-    if (Buffer.byteLength(encoded, "utf8") > MAX_GROUP_BYTES) tooLong = true;
-    else names.add(encoded);
-  }
-  if (!/[\\/]/.test(trimmed)) names.add(trimmed);
+  const { spellings, names, tooLong } = grokGroupNames(cwd);
 
   const dirs: string[] = [];
   for (const name of names) {
@@ -199,8 +185,40 @@ export function grokGroupsForCwd(sessionsRoot: string, cwd: string): string[] {
   }
   // Two spellings can name one directory on a case-insensitive disk.
   const unique = new Map<string, string>();
-  for (const dir of dirs) unique.set(realDir(dir), dir);
+  for (const dir of dirs) {
+    const real = realDir(dir);
+    if (!unique.has(real)) unique.set(real, dir);
+  }
   return [...unique.values()];
+}
+
+/**
+ * The group names Grok could have written for a cwd, Grok's own spelling
+ * first. Pure — init uses it to say whether the group exists without a
+ * second encoding. `tooLong` means the real group is a slug found by `.cwd`.
+ */
+export function grokGroupNames(cwd: string): {
+  spellings: Set<string>;
+  names: string[];
+  tooLong: boolean;
+} {
+  const trimmed = cwd.replace(/[\\/]+$/, "");
+  const spellings = new Set<string>();
+  if (!trimmed) return { spellings, names: [], tooLong: false };
+  if (/^[a-zA-Z]:[\\/]/.test(trimmed)) {
+    spellings.add(trimmed[0]!.toUpperCase() + trimmed.slice(1).replace(/\//g, "\\"));
+  }
+  spellings.add(trimmed);
+
+  const names = new Set<string>();
+  let tooLong = false;
+  for (const spelling of spellings) {
+    const encoded = encodeGrokSessionDir(spelling);
+    if (Buffer.byteLength(encoded, "utf8") > MAX_GROUP_BYTES) tooLong = true;
+    else names.add(encoded);
+  }
+  if (!/[\\/]/.test(trimmed)) names.add(trimmed);
+  return { spellings, names: [...names], tooLong };
 }
 
 function realDir(dir: string): string {
