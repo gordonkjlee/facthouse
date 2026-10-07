@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.32.0](https://github.com/gordonkjlee/facthouse/compare/v0.31.0...v0.32.0) (2026-10-07)
+
+
+### Features
+
+* **sources:** copy Grok Build sessions into the same store ([#294](https://github.com/gordonkjlee/facthouse/issues/294)) ([5a18d39](https://github.com/gordonkjlee/facthouse/commit/5a18d396e20c07d12180f6a88740d3cb784ad409))
+
 ## [0.31.0](https://github.com/gordonkjlee/facthouse/compare/v0.30.0...v0.31.0) (2026-09-10)
 
 
