@@ -8,6 +8,7 @@ import {
 } from "../../src/tools/capture-fact-description.js";
 import { DURABLE_FACT } from "../../src/intelligence/extract-prompt.js";
 import { GITHUB_REPO, NPM_PACKAGE } from "../../src/identity.js";
+import { CAPTURE_SOURCE_KINDS } from "../../src/types/config.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const src = (rel: string) =>
@@ -115,6 +116,16 @@ describe("README instruction layer for capture and identity", () => {
     // The tool description is generated. A pasted copy in the README is a
     // second definition that will drift the moment either side changes.
     expect(README).not.toMatch(/proactively whenever you learn/i);
+  });
+
+  it("names every copy kind where it says which sources to name", () => {
+    const line = README.split(/\r?\n/).find((l) => l.startsWith("**Recommended — copy.**"));
+    expect(line).toBeDefined();
+    for (const kind of CAPTURE_SOURCE_KINDS) expect(line).toContain("`" + kind + "`");
+    // Grok copies now; nothing may still say it has no adapter or must record.
+    expect(README).not.toMatch(/Grok has no transcript adapter/i);
+    expect(README).not.toMatch(/Grok and Codex are later adapters/i);
+    expect(README).not.toMatch(/Any MCP client \(Grok/);
   });
 
   it("does not tell clients to search only personal categories", () => {

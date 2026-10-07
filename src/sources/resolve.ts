@@ -8,7 +8,7 @@
  */
 
 import {
-  CAPTURE_SOURCE_KINDS,
+  captureSourceKindsList,
   isCaptureSourceKind,
   type CaptureSourceKind,
 } from "../types/config.js";
@@ -49,8 +49,15 @@ export function encodeCursorProjectDir(cwd: string): string {
     .replace(/^-+|-+$/g, "");
 }
 
-function supportedKindsList(): string {
-  return CAPTURE_SOURCE_KINDS.map((k) => `"${k}"`).join(" and ");
+/**
+ * Grok Build's on-disk session group under `~/.grok/sessions/`: the cwd
+ * URL-encoded as Grok saw it. `C:\dev\app` → `C%3A%5Cdev%5Capp`;
+ * `/home/me/app` → `%2Fhome%2Fme%2Fapp`. A third vocabulary, not Claude
+ * Code's or Cursor's — the three must not be mixed.
+ */
+export function encodeGrokSessionDir(cwd: string): string {
+  const trimmed = cwd.replace(/[\\/]+$/, "");
+  return trimmed ? encodeURIComponent(trimmed) : "";
 }
 
 /**
@@ -84,7 +91,7 @@ export function resolveSources(sources: unknown): ResolvedCaptureSource[] {
           " at sources[" +
           index +
           "]. This version supports " +
-          supportedKindsList() +
+          captureSourceKindsList() +
           ".",
       );
     }
@@ -93,7 +100,7 @@ export function resolveSources(sources: unknown): ResolvedCaptureSource[] {
         "config.sources[" +
           index +
           '] is missing "home" (the client config dir, ' +
-          "e.g. ~/.claude for claude-code or ~/.cursor for cursor).",
+          "e.g. ~/.claude for claude-code, ~/.cursor for cursor, ~/.grok for grok).",
       );
     }
     if (entry.cwd !== undefined && typeof entry.cwd !== "string") {

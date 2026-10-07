@@ -307,6 +307,36 @@ describe("collectInitAnswers", () => {
     expect(io.writes.join("\n")).not.toMatch(/does not exist yet/);
   });
 
+  it("looks for a Grok group under sessions/ in Grok's encoding", async () => {
+    const homeAbs = resolveUserPath("~/.grok");
+    const grokGroup = path.join(homeAbs, "sessions", "C%3A%5Cdev%5Capp");
+    const claudeShaped = path.join(homeAbs, "projects", "C--dev-app");
+    const missing = INIT_PROMPTS.projectGroupMissing("~/.grok", "C:\\dev\\app", "C%3A%5Cdev%5Capp");
+
+    const found = fakeIo(["copy", "grok", "", "", "n"]);
+    await collectInitAnswers(found, seed, deps(new Set([homeAbs, grokGroup])));
+    expect(found.writes).not.toContain(missing);
+
+    // A Claude-shaped group under the Grok home is not Grok's.
+    const wrong = fakeIo(["copy", "grok", "", "", "n"]);
+    await collectInitAnswers(wrong, seed, deps(new Set([homeAbs, claudeShaped])));
+    expect(wrong.writes).toContain(missing);
+
+    // Grok's spelling is found from a forward-slash cwd too.
+    const slashed = fakeIo(["copy", "grok", "", "C:/dev/app", "n"]);
+    const slashedDeps = deps(new Set([homeAbs, grokGroup, "C:/dev/app"]));
+    await collectInitAnswers(slashed, seed, slashedDeps);
+    expect(slashed.writes.join("\n")).not.toMatch(/no project group/);
+  });
+
+  it("does not warn about a Grok group too long to encode", async () => {
+    const homeAbs = resolveUserPath("~/.grok");
+    const longCwd = "C:\\dev\\" + "deep\\".repeat(60) + "app";
+    const io = fakeIo(["copy", "grok", "", longCwd, "n"]);
+    await collectInitAnswers(io, seed, deps(new Set([homeAbs, longCwd])));
+    expect(io.writes.join("\n")).not.toMatch(/no project group/);
+  });
+
   it("skips the source on cwd skip and still asks search and More", async () => {
     const io = fakeIo(["copy", "", "", "skip", "n"]);
     const result = await collectInitAnswers(io, seed, deps());
@@ -317,11 +347,20 @@ describe("collectInitAnswers", () => {
     expect(io.prompts).toContain(INIT_PROMPTS.more);
   });
 
-  it("re-prompts an unknown kind and does not write grok", async () => {
-    const io = fakeIo(["copy", "grok", "claude-code", "", "", "n"]);
+  it("re-prompts an unknown kind and does not write codex", async () => {
+    const io = fakeIo(["copy", "codex", "claude-code", "", "", "n"]);
     const result = await collectInitAnswers(io, seed, deps());
     expect(io.writes).toContain(INIT_PROMPTS.unknownKind());
     expect(result.overlay.sources?.[0]?.kind).toBe("claude-code");
+  });
+
+  it("offers grok as a copy kind with Grok's own home default", async () => {
+    const io = fakeIo(["copy", "grok", "", "", "n"]);
+    const result = await collectInitAnswers(io, seed, deps());
+    expect(io.writes).not.toContain(INIT_PROMPTS.unknownKind());
+    expect(result.overlay.sources).toEqual([
+      { kind: "grok", home: "~/.grok", cwd: "C:\\dev\\app" },
+    ]);
   });
 
   it("hints a POSIX cwd on Windows", async () => {

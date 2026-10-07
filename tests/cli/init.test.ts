@@ -421,9 +421,9 @@ describe("sourcesStatusLines", () => {
   });
 
   it("does not swallow an unknown kind", () => {
-    const text = sourcesStatusLines([{ kind: "grok", home: "~/.grok" }]).join("\n");
+    const text = sourcesStatusLines([{ kind: "codex", home: "~/.codex" }]).join("\n");
     expect(text).toMatch(/invalid/i);
-    expect(text).toMatch(/grok/);
+    expect(text).toMatch(/codex/);
   });
 });
 
@@ -435,7 +435,7 @@ describe("appendCaptureRecipe", () => {
   });
 
   it("does not throw or mix-warn on invalid sources", () => {
-    const lines = appendCaptureRecipe([{ kind: "grok", home: "~/.grok" }]);
+    const lines = appendCaptureRecipe([{ kind: "codex", home: "~/.codex" }]);
     expect(lines.join("\n")).toMatch(/invalid/i);
     expect(lines.join("\n")).not.toMatch(/record hooks/i);
   });

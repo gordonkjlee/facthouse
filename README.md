@@ -21,13 +21,13 @@ facthouse init
 
 `facthouse init --web` is the same setup as a browser form — it prints a 127.0.0.1 URL and does not open a browser.
 
-Press Enter to accept each default (copy = Claude Code or Cursor session logs on disk; type record if the assistant should save facts). If you picked copy, init asks whether to copy existing logs, then whether to extract and integrate. Init prints an MCP snippet as soon as the store is written — add it to the client's MCP config while copy/extract run. Restart the client when init finishes.
+Press Enter to accept each default (copy = Claude Code, Cursor or Grok Build session logs on disk; type record if the assistant should save facts). If you picked copy, init asks whether to copy existing logs, then whether to extract and integrate. Init prints an MCP snippet as soon as the store is written — add it to the client's MCP config while copy/extract run. Restart the client when init finishes.
 
 In the client, state something durable in ordinary conversation — there is no remember command.
 
 Ask it back in the next session, or `facthouse search`. That is the store.
 
-Copy from Claude Code or Cursor logs, or record from any MCP client: [How conversations get in](#how-conversations-get-in). Replay: [facthouse.dev/demo.html](https://facthouse.dev/demo.html). CLI: [below](#cli).
+Copy from Claude Code, Cursor or Grok Build logs, or record from any MCP client: [How conversations get in](#how-conversations-get-in). Replay: [facthouse.dev/demo.html](https://facthouse.dev/demo.html). CLI: [below](#cli).
 
 ## What you get
 
@@ -77,11 +77,11 @@ Two ways. Pick one per store.
 
 | | Copy from transcripts | The assistant records |
 |---|---|---|
-| Who | Claude Code or Cursor (session logs on disk, under the client home) | Any MCP client (Grok, Desktop, …) |
+| Who | Claude Code, Cursor or Grok Build (session logs on disk, under the client home) | Any MCP client with no log on disk (Desktop, …) |
 | How | Name a source; Facthouse copies new lines from those logs into the store | Empty `sources`; the assistant calls `capture_fact` |
 | First run | TTY walk-through, pick **copy**, set cwd; init asks whether to copy existing logs, then whether to extract and integrate | TTY walk-through, pick **record** |
 
-On a copy store, capture_fact is a correction for every MCP client, not only the one that writes JSONL. Grok has no transcript adapter — do not put Claude Code on copy and Grok on the same store expecting Grok to record.
+On a copy store, capture_fact is a correction for every MCP client, not only the one that writes JSONL. To use Claude Code and Grok Build on one store, name a `claude-code` source and a `grok` source with the same `cwd`: both copy in, and neither is asked to record. Do not also install record hooks on that store.
 
 ```bash
 facthouse init
@@ -348,7 +348,7 @@ Example — placeholders only; do not put a real password in a committed file:
 
 Choose one mechanism per store.
 
-**Recommended — copy.** Name a `claude-code` or `cursor` source (set `cwd`) and run `facthouse consolidate` from the CLI first. The MCP server also copies at session start and when it handles a call. Grok and Codex are later adapters. Unknown `kind` values are rejected.
+**Recommended — copy.** Name a `claude-code`, `cursor` or `grok` source (set `cwd`) and run `facthouse consolidate` from the CLI first. The MCP server also copies at session start and when it handles a call. Codex is a later adapter. Unknown `kind` values are rejected.
 
 ```json
 {
@@ -520,7 +520,7 @@ Facthouse's tool descriptions tell assistants when to search and when a correcti
 
 ### Without configuration
 
-Claude Code or Cursor: name a `sources` entry (set `cwd`) and run `facthouse consolidate` from the CLI first. MCP session start also copies. `capture_fact` is there if the assistant needs to correct or add something copy-plus-extraction will not produce.
+Claude Code, Cursor or Grok Build: name a `sources` entry (set `cwd`) and run `facthouse consolidate` from the CLI first. MCP session start also copies. `capture_fact` is there if the assistant needs to correct or add something copy-plus-extraction will not produce.
 
 Clients with no copy adapter still rely on `log_event` / `capture_fact` until their adapter exists.
 
@@ -579,6 +579,8 @@ When the facthouse MCP server is available:
 ```
 
 Cursor and Windsurf consume tools but not resources, so `memory://profile` will not load on its own there. Cursor conversations themselves are copied with `kind: "cursor"` (JSONL under `~/.cursor/projects/`, not the SQLite composer store).
+
+Grok Build conversations are copied with `kind: "grok"`: `chat_history.jsonl` under `~/.grok/sessions/` (or `GROK_HOME`), not `updates.jsonl`. Reasoning, system lines, injected reminders and sub-agent runs (sessions a parent lists under its `subagents/`) are skipped.
 
 ### Claude Desktop / other MCP clients
 

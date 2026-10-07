@@ -146,11 +146,16 @@ describe("init knobs — one definition", () => {
     expect(INIT_PROMPTS.mcpPaste).not.toContain(INIT_PROMPTS.mcpVsCli);
   });
 
-  it("kind prompt names every shipped kind and not grok", () => {
+  it("kind prompt names every shipped kind and no later adapter", () => {
     for (const kind of CAPTURE_SOURCE_KINDS) {
       expect(INIT_PROMPTS.kind).toContain(kind);
     }
-    expect(INIT_PROMPTS.kind).not.toMatch(/grok/i);
+    expect(CAPTURE_SOURCE_KINDS).toContain("grok");
+    expect(INIT_PROMPTS.kind).not.toMatch(/codex/i);
+    // Grok Build copies now; the record line must not still claim it.
+    const [copyLine, recordLine] = INIT_PROMPTS.capture.split("\n").slice(1, 3);
+    expect(copyLine).toMatch(/Grok Build/);
+    expect(recordLine).not.toMatch(/Grok/);
     const unknown = INIT_PROMPTS.unknownKind();
     for (const kind of CAPTURE_SOURCE_KINDS) {
       expect(unknown).toContain(`"${kind}"`);
@@ -252,6 +257,14 @@ describe("init knobs — one definition", () => {
       }),
     ).toBe("C:/Users/alex/.claude-work");
     expect(defaultHomeForKind("cursor")).toBe("~/.cursor");
+    expect(defaultHomeForKind("grok")).toBe("~/.grok");
+    expect(defaultHomeForKind("grok", { GROK_HOME: "C:/Users/alex/.grok-work" })).toBe(
+      "C:/Users/alex/.grok-work",
+    );
+    // Each client's own variable only: Claude's dir is not Grok's home.
+    expect(defaultHomeForKind("grok", { CLAUDE_CONFIG_DIR: "C:/Users/alex/.claude-work" })).toBe(
+      "~/.grok",
+    );
     expect(MORE_SETTING_IDS).toEqual([
       "cliModel",
       "cliIntegrateModel",

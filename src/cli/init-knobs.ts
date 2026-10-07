@@ -9,7 +9,7 @@
 
 import {
   DEFAULT_CONFIG,
-  CAPTURE_SOURCE_KINDS,
+  captureSourceKindsList,
   CLI_DEFAULT_MODEL,
   CLI_DEFAULT_INTEGRATE_MODEL,
   CLI_DEFAULT_TIMEOUT_MS,
@@ -437,6 +437,7 @@ export function moreShownFromConfig(
 export const INIT_SYNTHETIC = {
   claudeHome: "~/.claude",
   cursorHome: "~/.cursor",
+  grokHome: "~/.grok",
   cwd: "C:\\dev\\app",
   personalDir: "C:\\Users\\alex\\.facthouse-personal",
   workDir: "C:\\Users\\alex\\.facthouse-work",
@@ -456,13 +457,10 @@ export function defaultHomeForKind(
   env: NodeJS.ProcessEnv = {},
 ): string {
   if (kind === "cursor") return INIT_SYNTHETIC.cursorHome;
+  if (kind === "grok") return env.GROK_HOME?.trim() || INIT_SYNTHETIC.grokHome;
   const fromEnv = env.CLAUDE_CONFIG_DIR?.trim();
   if (fromEnv) return fromEnv;
   return INIT_SYNTHETIC.claudeHome;
-}
-
-function supportedKindsList(): string {
-  return CAPTURE_SOURCE_KINDS.map((k) => `"${k}"`).join(" and ");
 }
 
 /** First line of an INIT_PROMPTS string, before the default in brackets. */
@@ -487,15 +485,16 @@ export const INIT_PROMPTS = {
   dataDir: (shown: string) => `Data directory [${shown}]: `,
   capture:
     "How do conversations get in?\n" +
-    "  copy    session logs on disk (Claude Code or Cursor)\n" +
-    "  record  the assistant saves facts as you talk (Grok, Desktop, …)\n" +
+    "  copy    session logs on disk (Claude Code, Cursor or Grok Build)\n" +
+    "  record  the assistant saves facts as you talk (Desktop, …)\n" +
     "  [copy]: ",
   kind:
     "Which client writes those logs?  [claude-code]\n" +
     "  claude-code  Claude Code\n" +
     "  cursor       Cursor\n" +
+    "  grok         Grok Build\n" +
     "  [claude-code]: ",
-  unknownKind: () => `This version supports ${supportedKindsList()}.`,
+  unknownKind: () => `This version supports ${captureSourceKindsList()}.`,
   home: (shown: string) =>
     `Where those logs live (client home, not the project)  [${shown}]: `,
   cwd: (shown: string) =>
@@ -680,7 +679,7 @@ export const INIT_PROMPTS = {
     "If npm install -g fails because a command named mcp already exists, remove that leftover command and retry.",
   /** Quick Start after `npx -y @facthouse/mcp` + TTY init. */
   quickStartNext:
-    "Press Enter to accept each default (copy = Claude Code or Cursor session logs on disk; type record if the assistant should save facts). " +
+    "Press Enter to accept each default (copy = Claude Code, Cursor or Grok Build session logs on disk; type record if the assistant should save facts). " +
     "If you picked copy, init asks whether to copy existing logs, then whether to extract and integrate. " +
     "Init prints an MCP snippet as soon as the store is written — add it to the client's MCP config while copy/extract run. Restart the client when init finishes.",
   /** MCP env does not apply to CLI or hooks. Do not write $FACTHOUSE_DATA (hang-safety). */
