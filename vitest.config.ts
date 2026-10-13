@@ -3,6 +3,8 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   test: {
     globals: true,
+    // tests/ui is Playwright (ui-screenshots workflow), not vitest.
+    exclude: ["**/node_modules/**", "**/dist/**", "tests/ui/**"],
     // GitHub Windows runners often spend more than vitest's 5s default on
     // CLI-spawn tests (init + log-event). The assertions still catch hangs;
     // 20s is a wall-clock budget, not a latency claim.
