@@ -287,7 +287,13 @@ describe("init knobs — one definition", () => {
     expect(INIT_PROMPTS.extractTimedOut(180)).not.toMatch(/[Cc]ontinuing/);
     expect(INIT_PROMPTS.moreCliTimeout("45000")).toMatch(/Idle silence/);
     expect(INIT_PROMPTS.extractingNow(3)).not.toMatch(/several minutes/);
-    expect(INIT_PROMPTS.homeMissing("~/.claude")).toContain("~/.claude");
+    expect(INIT_PROMPTS.homeMissing("~/.claude")).toBe(
+      "Note: ~/.claude does not exist yet. Copy writes nothing until the client creates that folder. A later copy picks the logs up.",
+    );
+    expect(INIT_PROMPTS.homeMissing("~/.grok")).toBe(
+      "Note: ~/.grok does not exist yet. Copy writes nothing until the client creates that folder. A later copy picks the logs up.",
+    );
+    expect(INIT_PROMPTS.homeMissing("~/.claude")).not.toMatch(/\bfail\b/i);
     expect(INIT_PROMPTS.projectGroupMissing("~/.claude", "C:\\dev\\app", "C--dev-app")).toContain(
       "C--dev-app",
     );

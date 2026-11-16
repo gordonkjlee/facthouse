@@ -559,7 +559,7 @@ export const INIT_PROMPTS = {
   configMalformed:
     "config.json is malformed. Fix or restore it, or pass --force to replace it.",
   homeMissing: (stored: string) =>
-    `Note: ${stored} does not exist yet. Copy will fail until the client has written it.`,
+    `Note: ${stored} does not exist yet. Copy writes nothing until the client creates that folder. A later copy picks the logs up.`,
   projectGroupMissing: (home: string, cwd: string, encoded: string) =>
     `Note: no project group for cwd ${cwd} under ${home} (looked for ${encoded}).`,
   gitBashCwdHint: (cwd: string, encoded: string) =>

@@ -3,6 +3,8 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import {
+  homeAfterKindChange,
+  initHomeDefaults,
   listenLoopback,
   originAllowed,
   parseInitWebPost,
@@ -14,6 +16,7 @@ import {
   SETTINGS_WEB_TITLE,
 } from "../../src/cli/web.js";
 import { INIT_PROMPTS } from "../../src/cli/init-knobs.js";
+import { resolveUserPath } from "../../src/paths.js";
 
 const ROOT = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 
@@ -60,6 +63,23 @@ describe("parseInitWebPost", () => {
     expect(parsed.error).toBe(INIT_PROMPTS.notAPath);
   });
 
+  it("copy writes a grok source and a missing home is still accepted", () => {
+    const parsed = parseInitWebPost(
+      new URLSearchParams({
+        capture: "copy",
+        kind: "grok",
+        home: "~/.grok",
+        cwd: "C:\\dev\\app",
+      }),
+      { processCwd: "C:\\tmp", dataDir: "C:\\Users\\alex\\.facthouse" },
+    );
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+    expect(parsed.overlay.sources).toEqual([
+      { kind: "grok", home: "~/.grok", cwd: "C:\\dev\\app" },
+    ]);
+  });
+
   it("record leaves sources unset", () => {
     const parsed = parseInitWebPost(new URLSearchParams({ capture: "record" }), {
       processCwd: "C:\\dev\\app",
@@ -68,6 +88,115 @@ describe("parseInitWebPost", () => {
     expect(parsed.ok).toBe(true);
     if (!parsed.ok) return;
     expect(parsed.overlay.sources).toBeUndefined();
+  });
+});
+
+describe("init web grok", () => {
+  const seed = {
+    token: "t",
+    dataDir: "C:\\Users\\alex\\.facthouse",
+    processCwd: "C:\\dev\\app",
+  };
+  const present = () => true;
+
+  it("renders Grok Build third and keeps Claude Code selected", () => {
+    const html = renderInitWebHtml({ ...seed, exists: present });
+    const select = html.slice(html.indexOf('<select name="kind">'), html.indexOf("</select>"));
+    expect(select.indexOf('value="claude-code"')).toBeLessThan(select.indexOf('value="cursor"'));
+    expect(select.indexOf('value="cursor"')).toBeLessThan(select.indexOf('value="grok"'));
+    expect(select).toContain('<option value="claude-code" selected>Claude Code</option>');
+    expect(select).toContain('<option value="grok">Grok Build</option>');
+    expect(html).toContain(homeAfterKindChange.toString());
+  });
+
+  it("fills each kind's home default, including Grok from GROK_HOME", () => {
+    const homeDefaults = initHomeDefaults({
+      CLAUDE_CONFIG_DIR: "C:/Users/alex/.claude-work",
+      GROK_HOME: "C:/Users/alex/.grok-work",
+    });
+    expect(homeDefaults).toEqual({
+      "claude-code": "C:/Users/alex/.claude-work",
+      cursor: "~/.cursor",
+      grok: "C:/Users/alex/.grok-work",
+    });
+    const landing = renderInitWebHtml({ ...seed, homeDefaults, exists: present });
+    expect(landing).toContain(JSON.stringify(homeDefaults));
+    expect(landing).toContain('name="home" value="C:/Users/alex/.claude-work"');
+    const grok = renderInitWebHtml({
+      ...seed,
+      homeDefaults,
+      posted: new URLSearchParams({ kind: "grok" }),
+      exists: present,
+    });
+    expect(grok).toContain('<option value="grok" selected>Grok Build</option>');
+    expect(grok).toContain('name="home" value="C:/Users/alex/.grok-work"');
+    expect(grok).not.toContain('<option value="claude-code" selected>');
+  });
+
+  it("a validation redraw keeps the posted grok kind and home", () => {
+    const html = renderInitWebHtml({
+      ...seed,
+      posted: new URLSearchParams({
+        dataDir: "please put it next to the repo",
+        capture: "copy",
+        kind: "grok",
+        home: "C:/Users/alex/.grok-custom",
+        cwd: "C:\\dev\\app",
+      }),
+      error: INIT_PROMPTS.notAPath,
+      field: "dataDir",
+      exists: present,
+    });
+    expect(html).toContain('<option value="grok" selected>Grok Build</option>');
+    expect(html).not.toContain('<option value="claude-code" selected>');
+    expect(html).toContain('name="home" value="C:/Users/alex/.grok-custom"');
+    expect(html).toContain("please put it next to the repo");
+  });
+
+  it("shows the missing-home note and still leaves the form submittable", () => {
+    const grokAbs = resolveUserPath("~/.grok");
+    const html = renderInitWebHtml({
+      ...seed,
+      homeDefaults: initHomeDefaults({}),
+      posted: new URLSearchParams({
+        capture: "copy",
+        kind: "grok",
+        home: "~/.grok",
+        cwd: "C:\\dev\\app",
+      }),
+      exists: (abs) => abs !== grokAbs,
+    });
+    const note = INIT_PROMPTS.homeMissing("~/.grok");
+    expect(html).toContain(`<p class="warn" data-home-note>${note}</p>`);
+    expect(html).not.toMatch(/data-home-note hidden/);
+    const presentHtml = renderInitWebHtml({
+      ...seed,
+      posted: new URLSearchParams({ kind: "grok", home: "~/.grok", capture: "copy" }),
+      exists: present,
+    });
+    expect(presentHtml).toContain('data-home-note hidden');
+    expect(presentHtml).not.toContain(note);
+  });
+
+  it("replaces the previous kind default and keeps a custom home", () => {
+    const defaults = initHomeDefaults({
+      CLAUDE_CONFIG_DIR: "C:/Users/alex/.claude-work",
+      GROK_HOME: "C:/Users/alex/.grok-work",
+    });
+    expect(homeAfterKindChange("~/.cursor", "cursor", "grok", defaults)).toBe(
+      "C:/Users/alex/.grok-work",
+    );
+    expect(homeAfterKindChange("C:/Users/alex/.claude-work", "claude-code", "grok", defaults)).toBe(
+      "C:/Users/alex/.grok-work",
+    );
+    expect(homeAfterKindChange("C:/Users/alex/.grok-work", "grok", "claude-code", defaults)).toBe(
+      "C:/Users/alex/.claude-work",
+    );
+    expect(homeAfterKindChange("", "claude-code", "cursor", defaults)).toBe("~/.cursor");
+    expect(homeAfterKindChange("D:/mine", "claude-code", "grok", defaults)).toBe("D:/mine");
+    expect(homeAfterKindChange("C:/Users/alex/.grok-work", "claude-code", "cursor", defaults)).toBe(
+      "C:/Users/alex/.grok-work",
+    );
   });
 });
 
