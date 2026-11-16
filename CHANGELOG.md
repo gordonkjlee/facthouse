@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.33.0](https://github.com/gordonkjlee/facthouse/compare/v0.32.0...v0.33.0) (2026-11-16)
+
+
+### Features
+
+* **init:** offer Grok Build in setup ([#325](https://github.com/gordonkjlee/facthouse/issues/325)) ([606dd96](https://github.com/gordonkjlee/facthouse/commit/606dd96ee2cb8f8ceab8aadb76f0bd075eefa9af))
+
+
+### Bug Fixes
+
+* **ci:** tarball wait reads an empty URL ([#327](https://github.com/gordonkjlee/facthouse/issues/327)) ([bf3c3a0](https://github.com/gordonkjlee/facthouse/commit/bf3c3a0b05679d8df4d162675a9989c3bdec2397))
+
 ## [0.32.0](https://github.com/gordonkjlee/facthouse/compare/v0.31.0...v0.32.0) (2026-11-16)
 
 
