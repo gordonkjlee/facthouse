@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.32.0](https://github.com/gordonkjlee/facthouse/compare/v0.31.0...v0.32.0) (2026-11-16)
+
+
+### Features
+
+* **sources:** copy Grok Build sessions into the same store ([#294](https://github.com/gordonkjlee/facthouse/issues/294)) ([5a18d39](https://github.com/gordonkjlee/facthouse/commit/5a18d396e20c07d12180f6a88740d3cb784ad409))
+
+
+### Bug Fixes
+
+* **copy:** restore approved short pitch ([#319](https://github.com/gordonkjlee/facthouse/issues/319)) ([dcf5e75](https://github.com/gordonkjlee/facthouse/commit/dcf5e752452e69e31267359f20438854b578f095))
+
 ## [0.31.0](https://github.com/gordonkjlee/facthouse/compare/v0.30.0...v0.31.0) (2026-09-10)
 
 
