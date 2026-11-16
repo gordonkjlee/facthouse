@@ -3,7 +3,10 @@ import { homedir } from "node:os";
 import path from "node:path";
 import {
   encodeCursorProjectDir,
+  encodeGrokSessionDir,
   encodeProjectDir,
+  projectKey,
+  projectRelation,
   resolveSources,
   resolveUserPath,
 } from "../../src/sources/resolve.js";
@@ -44,6 +47,68 @@ describe("encodeCursorProjectDir", () => {
     expect(encodeCursorProjectDir("C:\\dev\\app")).not.toBe(
       encodeProjectDir("C:\\dev\\app"),
     );
+  });
+});
+
+describe("projectKey", () => {
+  it("folds every client spelling of one cwd onto one key", () => {
+    expect(projectKey("C%3A%5Cdev%5Capp")).toBe("c-dev-app");
+    expect(projectKey("C--dev-app")).toBe("c-dev-app");
+    expect(projectKey("c-dev-app")).toBe("c-dev-app");
+    expect(projectKey("C:\\dev\\app")).toBe("c-dev-app");
+  });
+
+  it("matches a percent-encoded group to the cwd it names", () => {
+    for (const cwd of ["C:\\dev\\app", "/home/alex/app", "/home/alex/my app"]) {
+      expect(projectKey(encodeGrokSessionDir(cwd))).toBe(projectKey(cwd));
+    }
+    // Parentheses are left literal by encodeGrokSessionDir. The group name
+    // below is the percent-encoded cwd, written out so the key can be checked
+    // without changing that encoder.
+    const x86 = "C:\\Program Files (x86)\\app";
+    expect(projectKey("C%3A%5CProgram%20Files%20%28x86%29%5Capp")).toBe(projectKey(x86));
+    expect(projectKey(x86)).toBe("c-program-files-x86-app");
+  });
+
+  it("returns null when the value is not a cwd", () => {
+    expect(projectKey("app-0123456789abcdef")).toBeNull();
+    expect(projectKey("12345")).toBeNull();
+    expect(projectKey("")).toBeNull();
+    expect(projectKey("%E0%A4%A")).toBeNull();
+    expect(projectKey(null)).toBeNull();
+    expect(projectKey("   ")).toBeNull();
+    expect(projectKey("***")).toBeNull();
+  });
+
+  it("returns null only for a short slug-plus-hash group", () => {
+    const atLimit = "a".repeat(40) + "-0123456789abcdef";
+    expect(Buffer.byteLength(atLimit, "utf8")).toBe(57);
+    expect(projectKey(atLimit)).toBeNull();
+    const over = "a".repeat(41) + "-0123456789abcdef";
+    expect(Buffer.byteLength(over, "utf8")).toBe(58);
+    expect(projectKey(over)).toBe(over);
+  });
+});
+
+describe("projectRelation", () => {
+  it("is not comparable when either key is missing", () => {
+    expect(projectRelation(null, null)).toBe("not_comparable");
+    expect(projectRelation("12345", null)).toBe("not_comparable");
+    expect(projectRelation("", "c-dev-app")).toBe("not_comparable");
+    expect(projectRelation("c-dev-app", "%E0%A4%A")).toBe("not_comparable");
+  });
+
+  it("treats a worktree or subdirectory launch as the same project", () => {
+    expect(projectRelation("c-dev-app", "c-dev-app-pkg")).toBe("same");
+    expect(projectRelation("c-dev-app-pkg", "c-dev-app")).toBe("same");
+    expect(projectRelation("/home/alex/app", "/home/alex/app/pkg")).toBe("same");
+    expect(projectRelation("C--dev-app", "C--dev-app-pkg")).toBe("same");
+    expect(projectRelation("c-dev-app", "c-dev-app")).toBe("same");
+  });
+
+  it("does not treat a shared name fragment as the same project", () => {
+    expect(projectRelation("acme", "C--dev-acme-warehouse")).toBe("different");
+    expect(projectRelation("c-dev-app", "c-dev-application")).toBe("different");
   });
 });
 

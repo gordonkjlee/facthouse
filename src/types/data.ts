@@ -57,6 +57,13 @@ export const SOURCE_QUALITY_VALUES = [
 ] as const;
 export type SourceQuality = (typeof SOURCE_QUALITY_VALUES)[number];
 
+/**
+ * How the projects two facts were recorded in relate. Evidence for a
+ * supersession decision, not a filter on search or consolidation.
+ */
+export const CONTEXT_VERDICTS = ["same", "different", "not_comparable"] as const;
+export type ContextVerdict = (typeof CONTEXT_VERDICTS)[number];
+
 /** A consolidation run over session facts. Can happen multiple times per session. */
 export interface Consolidation {
   id: string;

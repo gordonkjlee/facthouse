@@ -10,7 +10,7 @@ import {
   grokGroupsForCwd,
   mapGrokLine,
 } from "../../src/sources/grok.js";
-import { encodeGrokSessionDir, resolveSources } from "../../src/sources/resolve.js";
+import { encodeGrokSessionDir, projectRelation, resolveSources } from "../../src/sources/resolve.js";
 import { captureFactDescription } from "../../src/tools/capture-fact-description.js";
 import { SOURCE_MTIME_META } from "../../src/intelligence/line-time.js";
 
@@ -355,5 +355,30 @@ describe("copySources with kind grok", () => {
     expect(text).toBe(captureFactDescription([{ kind: "claude-code", home: claudeHome, cwd: CWD }]));
     expect(text).toMatch(/when you need to correct/i);
     expect(text).not.toMatch(/proactively/i);
+  });
+
+  it("records both clients' own group names and relates them as the same project", async () => {
+    const claudeHome = path.join(root, "Users", "alex", ".claude");
+    writeJsonl(path.join(claudeHome, "projects", "C--dev-app", "claude-1.jsonl"), [
+      JSON.stringify({
+        type: "user",
+        sessionId: "claude-1",
+        timestamp: "2026-01-01T12:00:00Z",
+        message: { role: "user", content: "Robin is on the platform team." },
+      }),
+    ]);
+    writeJsonl(path.join(session(home, GROUP, "grok-1"), "chat_history.jsonl"), grokLines());
+    await copySources(db, [
+      { kind: "claude-code", home: claudeHome, cwd: CWD },
+      { kind: "grok", home, cwd: CWD },
+    ]);
+
+    const rows = (await db
+      .prepare(`SELECT id, project FROM sessions WHERE id IN ('claude-1', 'grok-1')`)
+      .all()) as Array<{ id: string; project: string | null }>;
+    const byId = new Map(rows.map((row) => [row.id, row.project]));
+    expect(byId.get("claude-1")).toBe("C--dev-app");
+    expect(byId.get("grok-1")).toBe(GROUP);
+    expect(projectRelation(byId.get("claude-1") ?? null, byId.get("grok-1") ?? null)).toBe("same");
   });
 });

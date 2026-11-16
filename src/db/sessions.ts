@@ -144,6 +144,33 @@ export async function updateLastActivity(
   ).run(new Date().toISOString(), sessionId);
 }
 
+/** How many session ids one `IN` lookup binds. Callers with more chunk. */
+const PROJECT_LOOKUP_CHUNK = 500;
+
+/**
+ * The project recorded on each session, keyed by session id.
+ *
+ * One `SELECT id, project FROM sessions WHERE id IN (...)` per chunk of
+ * {@link PROJECT_LOOKUP_CHUNK}. Ids with no session row are absent from
+ * the map. A session whose project is null is present, with a null value.
+ * The stored project string is returned as recorded — not rewritten.
+ */
+export async function getProjectsForSessions(
+  db: Db,
+  ids: readonly string[],
+): Promise<Map<string, string | null>> {
+  const projects = new Map<string, string | null>();
+  for (let offset = 0; offset < ids.length; offset += PROJECT_LOOKUP_CHUNK) {
+    const chunk = ids.slice(offset, offset + PROJECT_LOOKUP_CHUNK);
+    const placeholders = chunk.map(() => "?").join(", ");
+    const rows = (await db
+      .prepare(`SELECT id, project FROM sessions WHERE id IN (${placeholders})`)
+      .all(...chunk)) as Array<{ id: string; project: string | null }>;
+    for (const row of rows) projects.set(row.id, row.project);
+  }
+  return projects;
+}
+
 /** Retrieve a session by ID, or null if not found. */
 export async function getSession(
   db: Db,
