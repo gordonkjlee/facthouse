@@ -65,6 +65,10 @@ describe("cursor directory listing — one definition", () => {
 
   it("description tells Directory users Add to Cursor is enough for a record store", () => {
     expect(listing.description.startsWith(LOCKUP)).toBe(true);
+    expect(LOCKUP).toBe(
+      "Local AI memory: neuroscience-inspired Data→Information→Knowledge in SQLite you own.",
+    );
+    expect(listing.description).not.toContain("A local memory engine any AI tool can use.");
     expect(listing.description).toMatch(/In Cursor/);
     expect(listing.description).toMatch(/Add to Cursor/);
     expect(listing.description).toContain(NODE_REQUIREMENT_LINE);
@@ -73,7 +77,8 @@ describe("cursor directory listing — one definition", () => {
     expect(listing.description).toContain(INIT_PROMPTS.copyRecipe);
     expect(listing.description).toMatch(/Kind cursor/);
     expect(listing.description).toMatch(/Hooks tab/);
-    expect(listing.description).not.toMatch(/JSONL|record store|SQLite you own|you own the file|Mem0|openmemory/i);
+    const afterPitch = listing.description.slice(LOCKUP.length);
+    expect(afterPitch).not.toMatch(/JSONL|record store|SQLite you own|you own the file|Mem0|openmemory/i);
   });
 
   it("setup is Add to Cursor, then optional copy and hook, not a README dump", () => {

@@ -35,7 +35,13 @@ describe("identity", () => {
     expect(pkg.homepage).toBe(HOMEPAGE);
     expect(pkg.description).toBe(LOCKUP);
     expect(HOMEPAGE).toBe("https://facthouse.dev");
-    expect(LOCKUP).toBe("A local memory engine any AI tool can use.");
+    expect(LOCKUP).toBe(
+      "Local AI memory: neuroscience-inspired Data→Information→Knowledge in SQLite you own.",
+    );
+    expect(LOCKUP.length).toBe(84);
+    expect(LOCKUP.length).toBeLessThanOrEqual(100);
+    expect(pkg.description).not.toBe("A local memory engine any AI tool can use.");
+    expect(LOCKUP).not.toBe("A local memory engine any AI tool can use.");
     expect(PRODUCT_NAME).toBe("Facthouse");
     expect(DEFAULT_MCP_SERVER_NAME).toBe("facthouse");
     expect(ENV_PREFIX).toBe("FACTHOUSE");

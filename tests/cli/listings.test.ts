@@ -18,17 +18,26 @@ describe("listing surfaces — one inventory", () => {
     const server = JSON.parse(readFileSync(path.join(ROOT, "server.json"), "utf8")) as {
       description: string;
     };
+    const approved =
+      "Local AI memory: neuroscience-inspired Data→Information→Knowledge in SQLite you own.";
+    const rejected = "A local memory engine any AI tool can use.";
+    expect(LOCKUP).toBe(approved);
+    expect(LOCKUP.length).toBe(84);
     expect(LOCKUP.length).toBeLessThanOrEqual(100);
     expect(pkg.description).toBe(LOCKUP);
     expect(server.description).toBe(LOCKUP);
+    expect(pkg.description).not.toBe(rejected);
+    expect(server.description).not.toBe(rejected);
+    expect(LOCKUP).not.toBe(rejected);
     const pages = readFileSync(
       path.join(ROOT, ".github/scripts/build_pages.py"),
       "utf8",
     );
     expect(pages).toContain("Local AI memory: neuroscience-inspired");
     expect(pages).toContain("Data→Information→Knowledge in SQLite you own.");
-    expect(pages).not.toContain(`PITCH = "${LOCKUP}"`);
-    expect(LOCKUP).not.toMatch(/SQLite you own|you own the file/i);
+    expect(pages).not.toContain(rejected);
+    expect(LOCKUP).toMatch(/SQLite you own/);
+    expect(LOCKUP).not.toMatch(/you own the file/i);
     const pagesMeta = LISTING_SURFACES.find((s) => s.id === "pages-meta");
     expect(pagesMeta?.dump).toMatch(/SHORT_PITCH/);
     expect(pagesMeta?.dump).not.toMatch(/LOCKUP/);
