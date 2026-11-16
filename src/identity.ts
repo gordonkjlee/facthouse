@@ -16,7 +16,8 @@ export const DEFAULT_MCP_SERVER_NAME = "facthouse";
 export const GITHUB_REPO = "gordonkjlee/facthouse";
 export const HOMEPAGE = "https://facthouse.dev";
 /** Listings, npm, and server.json. README first prose is longer; do not paste this into the README lede. */
-export const LOCKUP = "A local memory engine any AI tool can use.";
+export const LOCKUP =
+  "Local AI memory: neuroscience-inspired Data→Information→Knowledge in SQLite you own.";
 export const DEFAULT_DATA_DIRNAME = ".facthouse";
 export const ENV_PREFIX = "FACTHOUSE";
 export const LOG_PREFIX = "[facthouse]";

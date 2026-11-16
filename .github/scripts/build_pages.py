@@ -28,9 +28,9 @@ DOMAIN = "facthouse.dev"
 SITE_ORIGIN = f"https://{DOMAIN}"
 GITHUB = "https://github.com/gordonkjlee/facthouse"
 NPM = "https://www.npmjs.com/package/@facthouse/mcp"
-# Approved cramped-field pitch for site meta and JSON-LD (≤100 chars).
-# Visible landing lede is the README. This is not LOCKUP — the 42-char
-# "any AI tool can use" line is rejected for public site / JSON-LD.
+# Approved short pitch for site meta and JSON-LD (≤100 chars).
+# Same text as package.json description, server.json description, and LOCKUP.
+# Visible landing lede is the README; do not paste this into the hero.
 # MCP Registry server.json description maxLength is 100 characters.
 PITCH = (
     "Local AI memory: neuroscience-inspired "
@@ -182,10 +182,10 @@ def split_readme(text: str) -> tuple[str, str]:
 
 
 def listing_description() -> str:
-    """Approved SHORT_PITCH for site meta and JSON-LD.
+    """Approved short pitch for site meta and JSON-LD.
 
-    Do not read package.json here. npm / registry may still carry LOCKUP;
-    facthouse.dev meta and SoftwareApplication.description must not.
+    Visible landing lede is the README. PITCH is the same sentence as
+    package.json description, server.json description, and LOCKUP.
     """
     return PITCH
 

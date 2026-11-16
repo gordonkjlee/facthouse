@@ -15,7 +15,7 @@ SHORT_PITCH = (
     "Local AI memory: neuroscience-inspired "
     "Data→Information→Knowledge in SQLite you own."
 )
-LOCKUP = "A local memory engine any AI tool can use."
+REJECTED_PITCH = "A local memory engine any AI tool can use."
 README_PITCH = (
     "Facthouse is a local memory engine for AI tools. Most “memory” products "
     "index chat logs. Facthouse takes agent activity - messages, tool use, "
@@ -80,7 +80,7 @@ def test_builds_site_from_readme(tmp_path: Path):
     assert "(extracted facts)" in index
     assert "(integrated beliefs on an entity graph)" in index
     assert "The store is a SQLite file on your disk." in index
-    assert LOCKUP not in index
+    assert REJECTED_PITCH not in index
     assert "paste the snippet it prints" not in index
     assert "Install `@facthouse/mcp`" not in index
     assert "Install <code>@facthouse/mcp</code>" not in index
@@ -197,7 +197,7 @@ def test_public_surfaces_have_no_rival_disambiguation():
     assert_no_rival_copy(demo, "site/demo.html")
     assert README_PITCH in readme
     assert "The store is a SQLite file on your disk." in readme
-    assert LOCKUP not in readme
+    assert REJECTED_PITCH not in readme
 
 
 def test_listing_description_is_approved_neuroscience_pitch():
@@ -205,8 +205,12 @@ def test_listing_description_is_approved_neuroscience_pitch():
     server = json.loads((ROOT / "server.json").read_text(encoding="utf-8"))
     assert build_pages.PITCH == SHORT_PITCH
     assert build_pages.listing_description() == SHORT_PITCH
-    assert build_pages.listing_description() != LOCKUP
-    # Site meta / JSON-LD must not follow npm LOCKUP if the two diverge.
+    assert build_pages.listing_description() != REJECTED_PITCH
+    assert pkg["description"] == SHORT_PITCH
+    assert server["description"] == SHORT_PITCH
+    assert pkg["description"] != REJECTED_PITCH
+    assert server["description"] != REJECTED_PITCH
+    assert REJECTED_PITCH not in SHORT_PITCH
     assert SHORT_PITCH == (
         "Local AI memory: neuroscience-inspired "
         "Data→Information→Knowledge in SQLite you own."
@@ -277,8 +281,8 @@ def test_index_has_software_application_json_ld(tmp_path: Path):
         "https://www.npmjs.com/package/@facthouse/mcp",
     ]
     assert data["description"] == SHORT_PITCH
-    assert data["description"] != LOCKUP
-    assert LOCKUP not in body
+    assert data["description"] != REJECTED_PITCH
+    assert REJECTED_PITCH not in body
     assert "www.facthouse.dev" not in body
     assert "openmemory" not in body.lower()
     assert "mem0" not in body.lower()
