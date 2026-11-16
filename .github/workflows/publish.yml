@@ -239,14 +239,28 @@ jobs:
           ATTEMPT=0
           while [ "$SECONDS" -lt "$DEADLINE" ]; do
             ATTEMPT=$((ATTEMPT + 1))
-            if OUT=$(npm view "@facthouse/mcp@${VERSION}" version 2>&1); then
+            # npm view can name the version while dist.tarball still 404s
+            # (about 5 minutes on 0.32.0). The smoke install needs the bytes.
+            META=$(npm view "@facthouse/mcp@${VERSION}" version dist.tarball --json 2>/dev/null || true)
+            TARBALL=$(printf '%s\n' "$META" | jq -r 'if type == "object" then (.["dist.tarball"] // empty) else empty end' 2>/dev/null || true)
+            CODE="000"
+            if [ -n "$TARBALL" ]; then
+              CURL_MAX=20
+              LEFT_NOW=$((DEADLINE - SECONDS))
+              if [ "$LEFT_NOW" -lt "$CURL_MAX" ]; then CURL_MAX=$LEFT_NOW; fi
+              if [ "$CURL_MAX" -gt 0 ]; then
+                CODE=$(curl -sS -L --max-time "$CURL_MAX" -o /dev/null -w "%{http_code}" "$TARBALL" || true)
+              fi
+              CODE="${CODE:-000}"
+            fi
+            if [ "$CODE" = "200" ]; then
               echo "resolved=true" >> "$GITHUB_OUTPUT"
               echo "waited=$SECONDS" >> "$GITHUB_OUTPUT"
-              echo "@facthouse/mcp@${VERSION} is live on npm after ${SECONDS}s ($ATTEMPT attempt(s))."
+              echo "@facthouse/mcp@${VERSION} tarball is HTTP 200 after ${SECONDS}s ($ATTEMPT attempt(s))."
               exit 0
             fi
             LEFT=$((DEADLINE - SECONDS))
-            echo "attempt ${ATTEMPT}: not resolvable after ${SECONDS}s (${LEFT}s left): ${OUT}"
+            echo "attempt ${ATTEMPT}: dist.tarball HTTP ${CODE} after ${SECONDS}s (${LEFT}s left)"
             if [ "$LEFT" -le 0 ]; then
               break
             fi
@@ -258,7 +272,7 @@ jobs:
           done
           echo "resolved=false" >> "$GITHUB_OUTPUT"
           echo "waited=$SECONDS" >> "$GITHUB_OUTPUT"
-          echo "::error::Release ${VERSION} is not resolvable from npm after ${SECONDS}s. If npm accepted the publish, it may still be in publish-time scanning — or it never landed."
+          echo "::error::Release ${VERSION} tarball was not HTTP 200 after ${SECONDS}s. npm view can resolve while the tarball URL still 404s."
           exit 1
 
       # Resolving proves the metadata is there. It does not prove the package
@@ -302,7 +316,7 @@ jobs:
           if [ "$RESOLVE" != "success" ]; then
             TITLE="Release ${TAG} did not become installable from npm"
             {
-              echo "The GitHub release **${TAG}** exists, but npm view @facthouse/mcp@${VERSION} version was still empty after waiting **${WAITED:-?}s** (budget ${MAX_WAIT:-?}s)."
+              echo "The GitHub release **${TAG}** exists, but the dist.tarball URL for @facthouse/mcp@${VERSION} was not HTTP 200 after waiting **${WAITED:-?}s** (budget ${MAX_WAIT:-?}s)."
               echo
               echo "Publish job result: ${PUBLISH_RESULT}. This run accepted a publish: ${ACCEPTED:-false}. Dist-tag showed an in-flight version: ${PROCESSING:-false}."
               echo

@@ -20,7 +20,12 @@ import {
   type MoreShown,
   type MoreSettingId,
 } from "./init-knobs.js";
-import { isCaptureSourceKind, isStageOnFail } from "../types/config.js";
+import {
+  CAPTURE_SOURCE_KINDS,
+  isCaptureSourceKind,
+  isStageOnFail,
+  type CaptureSourceKind,
+} from "../types/config.js";
 import {
   copyOrRecord,
   storeCwdAnswer,
@@ -190,7 +195,7 @@ input[type="radio"], input[type="checkbox"] { width: auto; margin: 0; }
 fieldset { border: 1px solid var(--line); border-radius: 0.4rem; margin: 1rem 0; padding: 0.75rem 1rem 1rem; }
 legend { color: var(--gold); padding: 0 0.35rem; }
 button { margin-top: 1.25rem; background: var(--gold); color: var(--mark); border: 0; padding: 0.55rem 1rem; border-radius: 0.3rem; font-weight: 600; cursor: pointer; }
-.copy-only[hidden], .http-only[hidden], .more-only[hidden] { display: none; }
+.copy-only[hidden], .http-only[hidden], .more-only[hidden], .warn[hidden] { display: none; }
 </style>
 </head>
 <body>
@@ -257,6 +262,62 @@ function fieldWarn(field: string | undefined, want: string, message: string): st
   return `<p class="warn">${escapeHtml(message)}</p>`;
 }
 
+const KIND_LABEL: Record<CaptureSourceKind, string> = {
+  "claude-code": "Claude Code",
+  cursor: "Cursor",
+  grok: "Grok Build",
+};
+
+/** Home field after a kind change. A custom path stays; a blank or the previous default follows the new kind. */
+export function homeAfterKindChange(
+  currentHome: string,
+  fromKind: string,
+  toKind: string,
+  defaults: Record<string, string>,
+): string {
+  const next = defaults[toKind];
+  if (typeof next !== "string") return currentHome;
+  const prev = defaults[fromKind];
+  if (currentHome.trim() === "" || currentHome === prev) return next;
+  return currentHome;
+}
+
+export function initHomeDefaults(env: NodeJS.ProcessEnv = {}): Record<string, string> {
+  return {
+    "claude-code": defaultHomeForKind("claude-code", env),
+    cursor: defaultHomeForKind("cursor", env),
+    grok: defaultHomeForKind("grok", env),
+  };
+}
+
+function selectedKind(posted: URLSearchParams | undefined): CaptureSourceKind {
+  const raw = posted?.get("kind")?.trim().toLowerCase() ?? "";
+  return isCaptureSourceKind(raw) ? raw : "claude-code";
+}
+
+/** Note text when this stored home is not a directory yet. Null when it exists or is not a path. */
+function homeMissingNote(
+  stored: string,
+  exists: (absPath: string) => boolean,
+): string | null {
+  if (stored.trim() === "" || !acceptTypedPath(stored, exists)) return null;
+  if (exists(resolveUserPath(stored))) return null;
+  return INIT_PROMPTS.homeMissing(stored);
+}
+
+function homeNotesFor(
+  homes: Record<string, string>,
+  current: string,
+  exists: (absPath: string) => boolean,
+): Record<string, string | null> {
+  const notes: Record<string, string | null> = {};
+  for (const stored of [...Object.values(homes), current]) {
+    if (Object.prototype.hasOwnProperty.call(notes, stored)) continue;
+    notes[stored] = homeMissingNote(stored, exists);
+  }
+  return notes;
+}
+
 export function renderInitWebHtml(opts: {
   token: string;
   dataDir: string;
@@ -265,16 +326,21 @@ export function renderInitWebHtml(opts: {
   posted?: URLSearchParams;
   error?: string;
   field?: string;
+  exists?: (absPath: string) => boolean;
 }): string {
   const posted = opts.posted;
-  const homeDefaults = opts.homeDefaults ?? {
-    "claude-code": defaultHomeForKind("claude-code", {}),
-    cursor: defaultHomeForKind("cursor", {}),
-  };
+  const exists = opts.exists ?? existsSync;
+  const homeDefaults = opts.homeDefaults ?? initHomeDefaults();
   const capture = posted?.get("capture") === "record" ? "record" : "copy";
-  const kind = posted?.get("kind") === "cursor" ? "cursor" : "claude-code";
+  const kind = selectedKind(posted);
   const dataDir = posted?.get("dataDir") ?? opts.dataDir;
   const home = posted?.get("home") ?? homeDefaults[kind] ?? "";
+  const homeNotes = homeNotesFor(homeDefaults, home, exists);
+  const homeNote = homeNotes[home] ?? null;
+  const kindOptions = CAPTURE_SOURCE_KINDS.map(
+    (value) =>
+      `          <option value="${value}"${value === kind ? " selected" : ""}>${KIND_LABEL[value]}</option>`,
+  ).join("\n");
   const cwd = posted?.get("cwd") ?? opts.processCwd;
   const moreOn = posted?.get("more") === "yes";
   const embedding = (posted?.get("embedding") ?? "off").toLowerCase();
@@ -298,14 +364,14 @@ ${opts.error && !opts.field ? `<p class="warn">${escapeHtml(opts.error)}</p>` : 
     <div class="copy-only"${capture === "copy" ? "" : " hidden"}>
       <label>Source kind
         <select name="kind">
-          <option value="claude-code"${kind === "claude-code" ? " selected" : ""}>Claude Code</option>
-          <option value="cursor"${kind === "cursor" ? " selected" : ""}>Cursor</option>
+${kindOptions}
         </select>
       </label>
       ${fieldWarn(opts.field, "home", opts.error ?? "")}
       <label>${escapeHtml(promptLabel(INIT_PROMPTS.home("")))}
         <input name="home" value="${escapeHtml(home)}" autocomplete="off">
       </label>
+      <p class="warn" data-home-note${homeNote ? "" : " hidden"}>${homeNote ? escapeHtml(homeNote) : ""}</p>
       ${fieldWarn(opts.field, "cwd", opts.error ?? "")}
       <label>${escapeHtml(promptLabel(INIT_PROMPTS.cwd("")))}
         <input name="cwd" value="${escapeHtml(cwd)}" autocomplete="off">
@@ -330,6 +396,8 @@ ${opts.error && !opts.field ? `<p class="warn">${escapeHtml(opts.error)}</p>` : 
   var form = document.querySelector("form");
   if (!form) return;
   var homes = ${JSON.stringify(homeDefaults)};
+  var homeNotes = ${JSON.stringify(homeNotes)};
+  var homeAfterKindChange = ${homeAfterKindChange.toString()};
   function sync() {
     var copy = form.querySelector('input[name="capture"][value="copy"]');
     var block = form.querySelector(".copy-only");
@@ -344,14 +412,29 @@ ${opts.error && !opts.field ? `<p class="warn">${escapeHtml(opts.error)}</p>` : 
   }
   var kind = form.querySelector('select[name="kind"]');
   var home = form.querySelector('input[name="home"]');
+  function syncHomeNote() {
+    var el = form.querySelector("[data-home-note]");
+    if (!el || !home) return;
+    var text = Object.prototype.hasOwnProperty.call(homeNotes, home.value) ? homeNotes[home.value] : null;
+    if (typeof text === "string" && text) {
+      el.hidden = false;
+      el.textContent = text;
+    } else {
+      el.hidden = true;
+    }
+  }
   if (kind && home) {
+    var currentKind = kind.value;
     kind.addEventListener("change", function () {
-      var next = homes[kind.value];
-      if (typeof next === "string") home.value = next;
+      home.value = homeAfterKindChange(home.value, currentKind, kind.value, homes);
+      currentKind = kind.value;
+      syncHomeNote();
     });
+    home.addEventListener("input", syncHomeNote);
   }
   form.addEventListener("change", sync);
   sync();
+  syncHomeNote();
 })();
 </script>`;
   return wrapPage(INIT_WEB_TITLE, inner);
@@ -524,10 +607,7 @@ export async function collectInitWebAnswers(
   let dataDir = seed.dataDir;
   let overlay: InitOverlay = {};
   let captureAskedAndEmpty = false;
-  const homeDefaults = {
-    "claude-code": defaultHomeForKind("claude-code", process.env),
-    cursor: defaultHomeForKind("cursor", process.env),
-  };
+  const homeDefaults = initHomeDefaults(process.env);
 
   const handle = await listenLoopback({
     token,
@@ -537,6 +617,7 @@ export async function collectInitWebAnswers(
       dataDir: seed.dataDir,
       processCwd: opts.processCwd,
       homeDefaults,
+      exists,
     }),
     onPost: (params) => {
       const parsed = parseInitWebPost(params, {
@@ -554,6 +635,7 @@ export async function collectInitWebAnswers(
             posted: params,
             error: parsed.error,
             field: parsed.field,
+            exists,
           }),
         };
       }
