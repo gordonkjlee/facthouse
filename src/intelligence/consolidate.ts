@@ -206,6 +206,8 @@ export interface ConsolidationResult {
   supersessions: number;
   /** Pairs kept active because the decision declined a supersession. */
   keptAlongside: number;
+  /** Exact restatements and paraphrases recorded against an existing fact. */
+  corroborations: number;
   /** Decision rows written this run, in write order. */
   relations: ConsolidationRelation[];
   /** Events the copy step inserted this run (0 when copy did not run). */
@@ -327,6 +329,7 @@ export async function consolidate(
       entitiesLinked: 0,
       supersessions: 0,
       keptAlongside: 0,
+      corroborations: 0,
       relations: [],
       summary: null,
       openThreads: [],
@@ -419,6 +422,7 @@ export async function consolidate(
         entitiesLinked: 0,
         supersessions: 0,
         keptAlongside: 0,
+        corroborations: 0,
         relations: [],
         summary: null,
         openThreads: [],
@@ -526,6 +530,7 @@ export async function consolidate(
         entitiesLinked: 0,
         supersessions: 0,
         keptAlongside: 0,
+        corroborations: 0,
         relations: [],
         eventsCopied,
         eventsRemaining: await remainingEvents(),
@@ -646,11 +651,31 @@ export async function consolidate(
      *  reconcile decision — candidate is a paraphrase / corroboration of an
      *  existing fact, so instead of integrating we strengthen the existing one. */
     const enrichments: Array<{ existingFactId: string; confidenceDelta: number }> = [];
-    // Intra-batch dedup: track normalised content already queued for integration.
-    // Without this, two session_facts with identical content from different sessions
-    // both pass same-session hash dedup and both pass reconcile (neither has a integrated
-    // twin yet), producing duplicate rows in the facts table.
-    const seenBatchContent = new Set<string>();
+    // Intra-batch dedup. The value is the session fact that will receive the
+    // one K. A later twin recorded in a different project does not get a
+    // second K; the winner is explicit-first, then earliest created_at.
+    // That choice does not reorder `classified`.
+    const seenBatchContent = new Map<string, string>();
+    const batchTwins: Array<{ winnerSessionFactId: string; loserSessionFactId: string }> = [];
+    const absorbedTwins: Array<{
+      factId: string;
+      sessionFactId: string;
+      verdict: ContextVerdict;
+      factProject: string | null;
+      candidateProject: string | null;
+      reason: string;
+    }> = [];
+    const projectOf = (sessionId: string | null | undefined): string | null => {
+      if (!sessionId) return null;
+      return projectBySession.get(sessionId) ?? null;
+    };
+    const preferRestatementWinner = (current: SessionFact, incumbent: SessionFact): SessionFact => {
+      const currentExplicit = current.source_origin === "explicit";
+      const incumbentExplicit = incumbent.source_origin === "explicit";
+      if (currentExplicit !== incumbentExplicit) return currentExplicit ? current : incumbent;
+      if (current.created_at < incumbent.created_at) return current;
+      return incumbent;
+    };
 
     let integrateDone = 0;
     for (const cf of classified) {
@@ -661,9 +686,29 @@ export async function consolidate(
       // Shared normalisation with cross-batch reconcile (heuristic.ts) so
       // "I prefer coffee" vs "I prefer coffee." is consistently handled.
       const normalised = normaliseForDedup(cf.content);
-      if (seenBatchContent.has(normalised)) {
-        rejected++;
-        continue;
+      const incumbentId = seenBatchContent.get(normalised);
+      let displacedId: string | null = null;
+      if (incumbentId) {
+        const incumbent = sessionFactMap.get(incumbentId);
+        const relation = projectRelation(
+          projectOf(sessionFact.session_id),
+          projectOf(incumbent?.session_id),
+        );
+        if (relation === "different" && incumbent && preferRestatementWinner(sessionFact, incumbent).id === sessionFact.id) {
+          // This fact becomes the single K. The incumbent is rejected below,
+          // once reconcile agrees it should be integrated.
+          displacedId = incumbentId;
+          seenBatchContent.delete(normalised);
+        } else {
+          if (relation === "different" && incumbent) {
+            batchTwins.push({
+              winnerSessionFactId: incumbentId,
+              loserSessionFactId: sessionFact.id,
+            });
+          }
+          rejected++;
+          continue;
+        }
       }
 
       const domainFacts = await getDomainFacts(cf.domain);
@@ -672,6 +717,24 @@ export async function consolidate(
       caller.onIntegrateProgress?.(integrateDone, classified.length);
 
       if (decision.kind === "noop") {
+        if (displacedId) seenBatchContent.set(normalised, displacedId);
+        const twin = domainFacts.find((fact) => normaliseForDedup(fact.content) === normalised);
+        if (twin) {
+          const relation = projectRelation(
+            projectOf(sessionFact.session_id),
+            projectOf(twin.session_id),
+          );
+          if (relation === "different") {
+            absorbedTwins.push({
+              factId: twin.id,
+              sessionFactId: sessionFact.id,
+              verdict: relation,
+              factProject: projectOf(twin.session_id),
+              candidateProject: projectOf(sessionFact.session_id),
+              reason: "restatement",
+            });
+          }
+        }
         rejected++;
         continue;
       }
@@ -681,9 +744,21 @@ export async function consolidate(
         // hallucinated an id, fall through to the add path as a safer default.
         const target = domainFacts.find((f) => f.id === decision.existingFactId);
         if (target) {
+          if (displacedId) seenBatchContent.set(normalised, displacedId);
           enrichments.push({
             existingFactId: decision.existingFactId,
             confidenceDelta: 0.1,
+          });
+          absorbedTwins.push({
+            factId: target.id,
+            sessionFactId: sessionFact.id,
+            verdict: projectRelation(
+              projectOf(sessionFact.session_id),
+              projectOf(target.session_id),
+            ),
+            factProject: projectOf(target.session_id),
+            candidateProject: projectOf(sessionFact.session_id),
+            reason: "paraphrase (enrich)",
           });
           rejected++;
           continue;
@@ -691,7 +766,16 @@ export async function consolidate(
         // else: hallucinated id → treat as add
       }
 
-      seenBatchContent.add(normalised);
+      if (displacedId) {
+        const idx = toIntegrate.findIndex((item) => item.sessionFactId === displacedId);
+        if (idx >= 0) toIntegrate.splice(idx, 1);
+        rejected++;
+        batchTwins.push({
+          winnerSessionFactId: sessionFact.id,
+          loserSessionFactId: displacedId,
+        });
+      }
+      seenBatchContent.set(normalised, cf.id);
       // Confidence/importance: explicit captures carry their own values; for
       // inferred facts the extraction signals are the most informative input.
       // Precedence: explicit > LLM signal > default.
@@ -1071,6 +1155,51 @@ export async function consolidate(
         });
       }
 
+      const writeCorroboration = async (row: {
+        factId: string;
+        sessionFactId: string;
+        verdict: ContextVerdict;
+        factProject: string | null;
+        candidateProject: string | null;
+        reason: string;
+      }) => {
+        await insertFactRelation(db, {
+          consolidationId,
+          factId: row.factId,
+          relatedFactId: null,
+          sessionFactId: row.sessionFactId,
+          kind: "corroborated_by",
+          contextVerdict: row.verdict,
+          factProject: row.factProject,
+          candidateProject: row.candidateProject,
+          basis: null,
+          reason: row.reason,
+          decidedBy: null,
+        });
+        relations.push({
+          kind: "corroborated_by",
+          fact_id: row.factId,
+          related_fact_id: null,
+          context_verdict: row.verdict,
+          reason: row.reason,
+        });
+      };
+      for (const twin of batchTwins) {
+        const factId = factIdBySessionFact.get(twin.winnerSessionFactId);
+        if (!factId) continue;
+        const winner = sessionFactMap.get(twin.winnerSessionFactId);
+        const loser = sessionFactMap.get(twin.loserSessionFactId);
+        await writeCorroboration({
+          factId,
+          sessionFactId: twin.loserSessionFactId,
+          verdict: "different",
+          factProject: projectOf(winner?.session_id),
+          candidateProject: projectOf(loser?.session_id),
+          reason: "restatement",
+        });
+      }
+      for (const twin of absorbedTwins) await writeCorroboration(twin);
+
       // Apply enrich decisions — boost existing facts' confidence (capped at 1.0)
       // for each paraphrase/corroboration the LLM identified.
       const enrichStmt = db.prepare(
@@ -1243,6 +1372,8 @@ export async function consolidate(
       entitiesLinked: writeResults.entitiesLinked,
       supersessions: supersessionCount,
       keptAlongside,
+      corroborations: writeResults.relations.filter((row) => row.kind === "corroborated_by")
+        .length,
       relations: writeResults.relations,
       eventsCopied,
       eventsRemaining: await remainingEvents(),

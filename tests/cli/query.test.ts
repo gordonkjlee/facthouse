@@ -573,6 +573,7 @@ describe("formatConsolidate", () => {
       entitiesLinked: 0,
       supersessions: 0,
       keptAlongside: 0,
+      corroborations: 0,
       relations: [],
       eventsCopied: 0,
       eventsRemaining: 531,
@@ -647,6 +648,8 @@ describe("formatConsolidate", () => {
   it("prints kept alongside only when a pair was declined", () => {
     expect(formatConsolidate(run())).not.toContain("Kept alongside");
     expect(formatConsolidate(run({ keptAlongside: 2 }))).toContain("Kept alongside     2");
+    expect(formatConsolidate(run())).not.toContain("Corroborations");
+    expect(formatConsolidate(run({ corroborations: 1 }))).toContain("Corroborations     1");
   });
 
   it("omits semantic lines when search is off", () => {

@@ -43,6 +43,8 @@ export function rewriteToPostgres(sql: string): string {
   out = out.replace(/INSERT\s+OR\s+REPLACE\s+INTO/gi, "INSERT INTO");
   out = out.replace(/BEGIN\s+IMMEDIATE/gi, "BEGIN");
   out = out.replace(/datetime\s*\(\s*'now'\s*\)/gi, "now()");
+  // Postgres has no scalar MIN. The confidence cap is the two-argument form.
+  out = out.replace(/\bMIN\s*\(\s*1\.0\s*,/gi, "LEAST(1.0,");
 
   let n = 0;
   out = out.replace(/'[^']*'|\$[0-9]+|\?/g, (m) => {

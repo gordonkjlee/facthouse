@@ -477,6 +477,7 @@ export function mcpConsolidatePayload(result: ConsolidationResult): {
   entities_linked: number;
   supersessions: number;
   kept_alongside: number;
+  corroborations: number;
   reasons: Array<{
     kind: ConsolidationResult["relations"][number]["kind"];
     fact_id: string;
@@ -502,6 +503,7 @@ export function mcpConsolidatePayload(result: ConsolidationResult): {
     entities_linked: result.entitiesLinked,
     supersessions: result.supersessions,
     kept_alongside: result.keptAlongside,
+    corroborations: result.corroborations,
     reasons: result.relations.slice(0, MCP_RELATION_CAP).map((row) => ({
       kind: row.kind,
       fact_id: row.fact_id,

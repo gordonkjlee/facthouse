@@ -1046,6 +1046,7 @@ export async function consolidateInProcess(
         entitiesLinked: 0,
         supersessions: 0,
         keptAlongside: 0,
+        corroborations: 0,
         relations: [],
         eventsCopied: 0,
         eventsRemaining: remaining,

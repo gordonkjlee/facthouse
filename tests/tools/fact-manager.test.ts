@@ -327,6 +327,7 @@ describe("mcpConsolidatePayload", () => {
       entitiesLinked: 0,
       supersessions: 0,
       keptAlongside: 2,
+      corroborations: 1,
       relations,
       eventsCopied: 0,
       eventsRemaining: 0,
@@ -336,6 +337,7 @@ describe("mcpConsolidatePayload", () => {
       examinedThrough: 0,
     } as never);
     expect(body.kept_alongside).toBe(2);
+    expect(body.corroborations).toBe(1);
     expect(body.reasons).toHaveLength(20);
     expect(body.reasons[0]).toEqual({
       kind: "kept_alongside",
