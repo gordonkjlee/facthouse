@@ -43,8 +43,8 @@ jobs:
           test "$(tr -d '\n' < "_site/${INDEXNOW_KEY}.txt")" = "${INDEXNOW_KEY}"
           test "$(tr -d '\n' < _site/CNAME)" = "facthouse.dev"
 
-      - name: Pages builder tests
-        run: python -m pytest .github/scripts/test_build_pages.py -q
+      - name: Repo script tests
+        run: python -m pytest .github/scripts/test_build_pages.py .github/scripts/test_wait_for_npm_tarball.py -q
 
       # configure-pages calls the Pages API and fails while has_pages is false.
       # PRs only need a green build; publish steps run after merge (or dispatch).

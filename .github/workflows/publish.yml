@@ -210,9 +210,17 @@ jobs:
       # publish job uses. Installing as they do is the only way this catches an
       # npm-version-specific break: npm 12 made dependency lifecycle scripts
       # opt-in, which silently produced an installable-but-crashing package.
+      # The same upgrade is why `npm view --json` in the wait script is an array.
+      # The script accepts that shape. Pinning npm 10 here would hide the install
+      # break this step exists to catch.
       - if: steps.expected.outputs.check == 'true'
         name: Use the npm a real user would have
         run: npm install -g npm@latest && npm --version
+
+      # The probe is a file in this repo so the npm 12 JSON shape can be tested.
+      # The rest of the job only talks to the registry.
+      - if: steps.expected.outputs.check == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - if: steps.expected.outputs.check == 'true'
         name: Is ${{ steps.expected.outputs.tag }} resolvable from npm?
@@ -235,45 +243,7 @@ jobs:
           fi
           echo "Waiting up to ${MAX_WAIT}s for @facthouse/mcp@${VERSION} (accepted=${ACCEPTED:-false} processing=${PROCESSING:-false})"
           echo "max_wait=$MAX_WAIT" >> "$GITHUB_OUTPUT"
-          DEADLINE=$((SECONDS + MAX_WAIT))
-          ATTEMPT=0
-          while [ "$SECONDS" -lt "$DEADLINE" ]; do
-            ATTEMPT=$((ATTEMPT + 1))
-            # npm view can name the version while dist.tarball still 404s
-            # (about 5 minutes on 0.32.0). The smoke install needs the bytes.
-            META=$(npm view "@facthouse/mcp@${VERSION}" version dist.tarball --json 2>/dev/null || true)
-            TARBALL=$(printf '%s\n' "$META" | jq -r 'if type == "object" then (.["dist.tarball"] // empty) else empty end' 2>/dev/null || true)
-            CODE="000"
-            if [ -n "$TARBALL" ]; then
-              CURL_MAX=20
-              LEFT_NOW=$((DEADLINE - SECONDS))
-              if [ "$LEFT_NOW" -lt "$CURL_MAX" ]; then CURL_MAX=$LEFT_NOW; fi
-              if [ "$CURL_MAX" -gt 0 ]; then
-                CODE=$(curl -sS -L --max-time "$CURL_MAX" -o /dev/null -w "%{http_code}" "$TARBALL" || true)
-              fi
-              CODE="${CODE:-000}"
-            fi
-            if [ "$CODE" = "200" ]; then
-              echo "resolved=true" >> "$GITHUB_OUTPUT"
-              echo "waited=$SECONDS" >> "$GITHUB_OUTPUT"
-              echo "@facthouse/mcp@${VERSION} tarball is HTTP 200 after ${SECONDS}s ($ATTEMPT attempt(s))."
-              exit 0
-            fi
-            LEFT=$((DEADLINE - SECONDS))
-            echo "attempt ${ATTEMPT}: dist.tarball HTTP ${CODE} after ${SECONDS}s (${LEFT}s left)"
-            if [ "$LEFT" -le 0 ]; then
-              break
-            fi
-            SLEEP=30
-            if [ "$SLEEP" -gt "$LEFT" ]; then
-              SLEEP=$LEFT
-            fi
-            sleep "$SLEEP"
-          done
-          echo "resolved=false" >> "$GITHUB_OUTPUT"
-          echo "waited=$SECONDS" >> "$GITHUB_OUTPUT"
-          echo "::error::Release ${VERSION} tarball was not HTTP 200 after ${SECONDS}s. npm view can resolve while the tarball URL still 404s."
-          exit 1
+          bash .github/scripts/wait_for_npm_tarball.sh "$VERSION" "$MAX_WAIT"
 
       # Resolving proves the metadata is there. It does not prove the package
       # works — a published-but-broken package is the failure that actually
