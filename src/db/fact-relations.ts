@@ -9,6 +9,8 @@
 
 import { randomUUID } from "node:crypto";
 import type { Db } from "./connection.js";
+import { getProjectsForSessions } from "./sessions.js";
+import { projectKey } from "../sources/resolve.js";
 import type {
   ContextVerdict,
   FactRelationKind,
@@ -114,6 +116,58 @@ export async function insertFactRelation(
  * One `SELECT` per chunk of {@link RELATION_LOOKUP_CHUNK}. Ids with no row
  * are absent. Order within an id is `created_at`, then `id`.
  */
+/** The decision fields a reader shows next to a fact. */
+export interface FactDecisionView {
+  kind: FactRelationKind;
+  related_fact_id: string | null;
+  context_verdict: ContextVerdict;
+  basis: SupersessionBasis | null;
+  reason: string;
+}
+
+export function factDecisionView(row: FactRelation): FactDecisionView {
+  return {
+    kind: row.kind,
+    related_fact_id: row.related_fact_id,
+    context_verdict: row.context_verdict,
+    basis: row.basis,
+    reason: row.reason,
+  };
+}
+
+/** Decisions for these fact ids, one batched read. Ids with none are absent. */
+export async function decisionsByFactId(
+  db: Db,
+  ids: readonly string[],
+): Promise<Map<string, FactDecisionView[]>> {
+  const rows = await getFactRelationsFor(db, ids);
+  const out = new Map<string, FactDecisionView[]>();
+  for (const [id, list] of rows) out.set(id, list.map(factDecisionView));
+  return out;
+}
+
+/**
+ * Short key for the place each fact was recorded, keyed by fact id.
+ * Null when the stored value carries no cwd. Not a rank input.
+ */
+export async function recordedInByFactId(
+  db: Db,
+  facts: ReadonlyArray<{ id: string; session_id: string | null }>,
+): Promise<Map<string, string | null>> {
+  const sessionIds = [
+    ...new Set(
+      facts.map((fact) => fact.session_id).filter((id): id is string => !!id),
+    ),
+  ];
+  const bySession = await getProjectsForSessions(db, sessionIds);
+  const out = new Map<string, string | null>();
+  for (const fact of facts) {
+    const raw = fact.session_id ? (bySession.get(fact.session_id) ?? null) : null;
+    out.set(fact.id, projectKey(raw));
+  }
+  return out;
+}
+
 export async function getFactRelationsFor(
   db: Db,
   ids: readonly string[],

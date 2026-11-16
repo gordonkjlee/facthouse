@@ -14,6 +14,7 @@ import type { InterlocutorConfig } from "../types/config.js";
 import { resolveEntityFamily, getEntityEdges, SAME_AS } from "../db/entities.js";
 import { getFactsByEntity } from "../db/facts.js";
 import { hybridSearch } from "./index.js";
+import { decisionsByFactId, type FactDecisionView } from "../db/fact-relations.js";
 
 /** Strongest 1-hop neighbours shown by `get_context`. */
 const CONTEXT_EDGE_CAP = 10;
@@ -60,7 +61,7 @@ export async function lookupNamedSubject(
     name,
     entity: null,
     entities: [],
-    facts,
+    facts: await withDecisions(db, facts),
     relationships: [],
     type_missed: false,
   };
@@ -184,10 +185,24 @@ async function packNamedSubject(
     name,
     entity: primary,
     entities,
-    facts,
+    facts: await withDecisions(db, facts),
     relationships,
     type_missed: typeMissed,
   };
+}
+
+async function withDecisions<T extends { id: string }>(
+  db: Db,
+  facts: T[],
+): Promise<Array<T & { relations: FactDecisionView[] }>> {
+  const byFact = await decisionsByFactId(
+    db,
+    facts.map((fact) => fact.id),
+  );
+  return facts.map((fact) => ({
+    ...fact,
+    relations: byFact.get(fact.id) ?? [],
+  }));
 }
 
 function pickPrimaryEntity(

@@ -334,6 +334,16 @@ export interface SearchResult {
   source: Source | null;
   /** Extra evidence kinds (assent / observation / restatement), not a score. */
   backing?: BackingType[];
+  /** Short key for the place the fact was recorded. Null when there is none. */
+  recorded_in?: string | null;
+  /** Decisions that name this fact. Attached after ranking. */
+  relations?: Array<{
+    kind: FactRelationKind;
+    related_fact_id: string | null;
+    context_verdict: ContextVerdict;
+    basis: SupersessionBasis | null;
+    reason: string;
+  }>;
 }
 
 /** Search response with retrieval quality signals for calling AIs. */

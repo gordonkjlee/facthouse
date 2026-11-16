@@ -254,6 +254,138 @@ describe("inspect graph HTML", () => {
     expect(html).not.toMatch(/writeFile|save config/i);
   });
 
+  it("carries the session, the key and the decision rows", async () => {
+    const { createSession } = await import("../../src/db/sessions.js");
+    const { insertFactRelation } = await import("../../src/db/fact-relations.js");
+    const session = await createSession(db, {
+      source_tool: "claude-code",
+      project: "C--dev-home",
+    });
+    const row = await fact("Alex prefers terse replies.", { session_id: session.id });
+    await insertFactRelation(db, {
+      consolidationId: "c1",
+      factId: row.id,
+      relatedFactId: "older",
+      sessionFactId: "sf1",
+      kind: "kept_alongside",
+      contextVerdict: "different",
+      factProject: "C--dev-home",
+      candidateProject: "C--dev-work",
+      basis: "uncertain",
+      reason: "both can hold",
+      decidedBy: "cli",
+    });
+    const payload = await loadGraphPayload(db, { cap: 50 });
+    const loaded = payload.facts.find((item) => item.id === row.id);
+    expect(loaded?.session_id).toBe(session.id);
+    expect(loaded?.recorded_in).toBe("c-dev-home");
+    expect(payload.sessions[session.id]).toBe("C--dev-home");
+    expect(payload.fact_relations).toEqual([
+      expect.objectContaining({
+        fact_id: row.id,
+        kind: "kept_alongside",
+        basis: "uncertain",
+        reason: "both can hold",
+      }),
+    ]);
+
+    const json = await runInspect(db, { dataDir, layer: "k", json: true, limit: 10 });
+    const parsed = JSON.parse(json.stdout!);
+    expect(parsed.k[0].relations[0]).toMatchObject({
+      kind: "kept_alongside",
+      reason: "both can hold",
+    });
+    const text = await runInspect(db, { dataDir, layer: "k", limit: 10 });
+    expect(text.stdout).toContain("kept_alongside: both can hold");
+  });
+
+  it("returns an empty decision list when the table is missing", async () => {
+    await fact("Alex prefers terse replies.");
+    await db.exec(`DROP TABLE fact_relations`);
+    const payload = await loadGraphPayload(db, { cap: 50 });
+    expect(payload.fact_relations).toEqual([]);
+    expect(payload.facts).toHaveLength(1);
+  });
+
+  it("renders decision chips; no filter control present", () => {
+    const html = renderInspectHtml({
+      nodes: [
+        {
+          id: "e1",
+          name: "Alex",
+          type: "person",
+          canonical_name: "alex",
+          degree: 0,
+          about: 1,
+          mentions: 0,
+        },
+      ],
+      edges: [],
+      facts: [
+        {
+          id: "f1",
+          content: "Alex prefers terse replies.",
+          domain: "preferences",
+          subdomain: null,
+          confidence: 0.7,
+          importance: 0.5,
+          source_type: "conversation",
+          source_tool: null,
+          created_at: "2026-01-01T00:00:00.000Z",
+          valid_from: null,
+          valid_until: null,
+          speaker_role: null,
+          speaker: null,
+          source_id: null,
+          status: "active",
+          superseded_by: null,
+          is_latest: 1,
+          session_id: "s1",
+          recorded_in: "c-dev-home",
+        },
+      ],
+      links: [{ fact_id: "f1", entity_id: "e1", relationship: "subject_of" }],
+      info: [],
+      events: [],
+      sources: [],
+      iToD: [],
+      dByEntity: {},
+      eventCount: 0,
+      eventShown: 0,
+      dCap: 36,
+      selectedId: "e1",
+      cap: 50,
+      sessions: { s1: "C--dev-home" },
+      fact_relations: [
+        {
+          fact_id: "f1",
+          related_fact_id: "f0",
+          kind: "kept_alongside",
+          context_verdict: "different",
+          basis: "uncertain",
+          reason: "both can hold",
+        },
+        {
+          fact_id: "f1",
+          related_fact_id: null,
+          kind: "corroborated_by",
+          context_verdict: "different",
+          basis: null,
+          reason: "restatement",
+        },
+      ],
+    });
+    expect(html).toContain("kept alongside ");
+    expect(html).toContain("corroborated ×");
+    expect(html).toContain("you have said both");
+    expect(html).toContain("recorded in ");
+    expect(html).toContain("superseded ← ");
+    expect(html).toContain("c-dev-home");
+    expect(html).toContain("C--dev-home");
+    expect(html).toContain("both can hold");
+    expect(html).not.toMatch(/Filter by project|project-tab|group-by/i);
+  });
+
   it("inspect --json includes package_version", async () => {
     const result = await runInspect(db, {
       dataDir,

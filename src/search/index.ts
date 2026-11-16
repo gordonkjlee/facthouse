@@ -24,6 +24,7 @@ import {
 } from "../db/facts.js";
 import { resolveEntityFamily, getEntitiesForFacts } from "../db/entities.js";
 import { keywordSearchPending, getBackingKindsByContent } from "../db/session-facts.js";
+import { decisionsByFactId, recordedInByFactId } from "../db/fact-relations.js";
 import { vectorSearch, type VectorSearchOpts } from "./vector.js";
 import { interlocutorRankMultiplier } from "./interlocutor-rank.js";
 import type { InterlocutorConfig } from "../types/config.js";
@@ -521,15 +522,25 @@ export async function hybridSearch(
     db,
     topResults.map(({ fact }) => fact.content),
   );
+  // After ranking. These fields describe a result; they do not choose it.
+  const pageFacts = topResults.map(({ fact }) => fact);
+  const recordedByFact = await recordedInByFactId(db, pageFacts);
+  const decisionsByFact = await decisionsByFactId(
+    db,
+    pageFacts.map((fact) => fact.id),
+  );
 
   const results: SearchResult[] = topResults.map(({ fact, score }) => {
     const backing = backingByContent.get(fact.content);
+    const relations = decisionsByFact.get(fact.id) ?? [];
     return {
       fact,
       score: Math.round(score * 10000) / 10000,
       entities: entitiesByFact.get(fact.id) ?? [],
       source: null,
       ...(backing && backing.length > 0 ? { backing } : {}),
+      recorded_in: recordedByFact.get(fact.id) ?? null,
+      ...(relations.length > 0 ? { relations } : {}),
     };
   });
 
