@@ -11,6 +11,8 @@ import type {
   Referent,
   TopicSegment,
   SourceQuality,
+  ContextVerdict,
+  SupersessionBasis,
 } from "../types/data.js";
 import type { IntelligenceUsage } from "./usage.js";
 
@@ -134,6 +136,23 @@ export interface ExtractedFact {
 export interface SupersessionCandidate {
   existingFactId: string;
   reason: string;
+  /** Absent when the provider did not say, or said something outside the list. */
+  basis?: SupersessionBasis;
+  /** The provider that produced this proposal. The fallback reports itself. */
+  source_quality: SourceQuality;
+}
+
+/**
+ * Evidence passed into supersession. `project` and `projects` are short
+ * keys. `verdicts` compares the new fact's recorded project with each
+ * existing fact's. `answeredBy` is filled by the provider that actually
+ * answered, including a decision not to propose.
+ */
+export interface SupersessionContext {
+  project: string | null;
+  verdicts: ReadonlyMap<string, ContextVerdict>;
+  projects: ReadonlyMap<string, string | null>;
+  answeredBy?: SourceQuality;
 }
 
 /** Result of reconciling a candidate against existing knowledge.
@@ -192,10 +211,15 @@ export interface IntelligenceProvider {
     extras?: ExtractExtras,
   ): Promise<ExtractionOutcome>;
 
-  /** Detect if a new fact supersedes an existing one. */
+  /**
+   * Detect if a new fact supersedes an existing one.
+   * `context`, when present, carries the project each fact was recorded in.
+   * Reconcile does not take it.
+   */
   detectSupersession(
     newFact: ClassifiedFact,
     existingFacts: Fact[],
+    context?: SupersessionContext,
   ): Promise<SupersessionCandidate | null>;
 
   /** Reconcile candidate against existing knowledge: 'add' if new, 'noop' if

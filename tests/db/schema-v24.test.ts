@@ -34,8 +34,8 @@ async function columns(): Promise<string[]> {
 describe("schema v24", () => {
   it("is the current version and a fresh store has facts_integrated", async () => {
     await applySchema(db);
-    expect(SCHEMA_VERSION).toBe(24);
-    expect(await getSchemaVersion(db)).toBe(24);
+    expect(SCHEMA_VERSION).toBeGreaterThanOrEqual(24);
+    expect(await getSchemaVersion(db)).toBe(SCHEMA_VERSION);
     expect(await columns()).toContain("facts_integrated");
     expect(await columns()).not.toContain("facts_graduated");
   });
@@ -57,7 +57,7 @@ describe("schema v24", () => {
 
     await applySchema(db);
 
-    expect(await getSchemaVersion(db)).toBe(24);
+    expect(await getSchemaVersion(db)).toBe(SCHEMA_VERSION);
     expect(await columns()).toContain("facts_integrated");
     expect(await columns()).not.toContain("facts_graduated");
     const row = (await db
@@ -70,7 +70,7 @@ describe("schema v24", () => {
     await applySchema(db);
     await pragmaWrite(db, "user_version = 23");
     await applySchema(db);
-    expect(await getSchemaVersion(db)).toBe(24);
+    expect(await getSchemaVersion(db)).toBe(SCHEMA_VERSION);
     expect(await columns()).toContain("facts_integrated");
   });
 });

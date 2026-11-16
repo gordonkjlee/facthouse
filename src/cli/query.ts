@@ -191,6 +191,7 @@ export function formatConsolidate(r: ConsolidationResult): string {
     `  Entities           ${r.entitiesCreated} created, ${r.entitiesLinked} linked`,
   );
   if (r.supersessions > 0) lines.push(`  Supersessions      ${r.supersessions}`);
+  if (r.keptAlongside > 0) lines.push(`  Kept alongside     ${r.keptAlongside}`);
   lines.push(`  Lines remaining    ${r.eventsRemaining}`);
   if (r.extractionDegraded) {
     lines.push(`  Extraction         degraded — see the message above`);

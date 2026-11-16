@@ -25,6 +25,12 @@ import type {
 } from "./types.js";
 import { UsageAccumulator, type IntelligenceUsage } from "./usage.js";
 import { createHeuristicProvider } from "./heuristic.js";
+import {
+  SUPERSESSION_CONTEXT_INSTRUCTION,
+  buildSupersessionCandidate,
+  noteSupersessionAnswer,
+  supersessionPayload,
+} from "./supersession.js";
 import { ConsolidateAbortError } from "./abort.js";
 import { domainRoutingInstruction } from "../schemas/domains.js";
 import type { DomainDef } from "../types/config.js";
@@ -332,7 +338,7 @@ export function createSamplingProvider(
       );
     },
 
-    async detectSupersession(newFact, existingFacts) {
+    async detectSupersession(newFact, existingFacts, context) {
       if (existingFacts.length === 0) return null;
       // Filter to same-domain active candidates before sampling — cuts payload.
       const candidates = existingFacts.filter(
@@ -341,27 +347,44 @@ export function createSamplingProvider(
       if (candidates.length === 0) return null;
       return withFallback<SupersessionCandidate | null>(
         async () => {
-          const payload = {
-            new: { content: newFact.content, domain: newFact.domain },
-            existing: candidates.map((f) => ({ id: f.id, content: f.content })),
-          };
+          const built = supersessionPayload(newFact, candidates, context);
+          const payload = { new: built.incoming, existing: built.existing };
           const raw = await ask(
             "You detect whether a new fact supersedes (invalidates and replaces) an existing one. " +
               "Supersession applies when the new fact negates, updates, or replaces the older one " +
               "(e.g. 'I moved to Porto' supersedes 'I live in Lisbon'; " +
               "'I no longer drink coffee' supersedes 'I prefer coffee'). " +
               "Paraphrase or additional detail is NOT supersession. " +
-              "Respond with JSON only: either {existingFactId: '...', reason: '...'} or null. No prose.",
+              "Respond with JSON only: either {existingFactId: '...', reason: '...', basis: '...'} or null. No prose. " +
+              SUPERSESSION_CONTEXT_INSTRUCTION,
             JSON.stringify(payload),
             "supersede",
           );
-          const parsed = parseJson<SupersessionCandidate | null>(raw);
-          if (!parsed || !parsed.existingFactId) return null;
-          // Guard against hallucinated IDs.
-          const exists = candidates.some((f) => f.id === parsed.existingFactId);
-          return exists ? parsed : null;
+          const parsed = parseJson<unknown>(raw);
+          noteSupersessionAnswer(context, "sampling");
+          if (parsed == null || typeof parsed !== "object" || Array.isArray(parsed)) {
+            return null;
+          }
+          const row = parsed as {
+            existingFactId?: unknown;
+            reason?: unknown;
+            basis?: unknown;
+          };
+          // An omitted basis must not fail the call. Only a missing id, or
+          // JSON that does not parse, leaves this attempt.
+          if (typeof row.existingFactId !== "string" || row.existingFactId === "") {
+            return null;
+          }
+          const exists = candidates.some((f) => f.id === row.existingFactId);
+          if (!exists) return null;
+          return buildSupersessionCandidate(
+            row.existingFactId,
+            row.reason,
+            row.basis,
+            "sampling",
+          );
         },
-        () => fallback.detectSupersession(newFact, existingFacts),
+        () => fallback.detectSupersession(newFact, existingFacts, context),
       );
     },
 

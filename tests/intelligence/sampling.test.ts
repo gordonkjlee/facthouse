@@ -225,6 +225,61 @@ describe("sampling intelligence provider", () => {
     expect(usage!.stages.classify.calls).toBe(1);
     expect(usage).not.toHaveProperty("input_tokens");
   });
+
+  it("sends the new fact id and keeps a hit that omits basis", async () => {
+    let fellBack = false;
+    const server = makeServer({
+      createMessage: vi.fn().mockResolvedValue({
+        content: {
+          type: "text",
+          text: JSON.stringify({ existingFactId: "f1", reason: "replaced" }),
+        },
+      }),
+    });
+    const fallback = {
+      ...createHeuristicProvider(),
+      async detectSupersession() {
+        fellBack = true;
+        return null;
+      },
+    };
+    const provider = createSamplingProvider(server, fallback as never);
+    const result = await provider.detectSupersession(
+      { id: "s1", content: "booked_at is back", domain: "pipeline" } as never,
+      [
+        {
+          id: "f1",
+          content: "booked_at was missing",
+          domain: "pipeline",
+          status: "active",
+          is_latest: true,
+        },
+      ] as never,
+      {
+        project: "c-dev-home",
+        verdicts: new Map([["f1", "different"]]),
+        projects: new Map([["f1", "c-dev-work"]]),
+      },
+    );
+    expect(fellBack).toBe(false);
+    expect(result?.existingFactId).toBe("f1");
+    expect(result?.basis).toBeUndefined();
+    expect(result?.source_quality).toBe("sampling");
+    const call = (server.createMessage as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    expect(call.systemPrompt).toContain("named artefact");
+    expect(call.systemPrompt).toContain("a state that cannot hold twice");
+    expect(call.systemPrompt).toContain('"update"');
+    expect(call.systemPrompt).toContain('"coexists"');
+    expect(call.systemPrompt).toContain('"uncertain"');
+    const payload = JSON.parse(call.messages[0].content.text) as {
+      new: { id: string; project: string };
+      existing: Array<{ project: string; context: string }>;
+    };
+    expect(payload.new.id).toBe("s1");
+    expect(payload.new.project).toBe("c-dev-home");
+    expect(payload.existing[0]?.project).toBe("c-dev-work");
+    expect(payload.existing[0]?.context).toBe("different");
+  });
 });
 import { PERSONAL_VOCABULARY } from "../fixtures/vocabulary.js";
 import { createHeuristicProvider } from "../../src/intelligence/heuristic.js";

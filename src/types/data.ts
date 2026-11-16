@@ -64,6 +64,26 @@ export type SourceQuality = (typeof SOURCE_QUALITY_VALUES)[number];
 export const CONTEXT_VERDICTS = ["same", "different", "not_comparable"] as const;
 export type ContextVerdict = (typeof CONTEXT_VERDICTS)[number];
 
+/**
+ * Why a supersession was proposed. `update` is a change to one specific
+ * thing. `coexists` means both statements can hold. `uncertain` means the
+ * provider could not tell those apart.
+ */
+export const SUPERSESSION_BASES = ["update", "coexists", "uncertain"] as const;
+export type SupersessionBasis = (typeof SUPERSESSION_BASES)[number];
+
+/**
+ * A recorded supersession decision. The row is evidence of what was decided;
+ * it is not a filter on search or on the domain candidate pool.
+ */
+export const FACT_RELATION_KINDS = [
+  "supersedes",
+  "kept_alongside",
+  "corroborated_by",
+  "overlap_noted",
+] as const;
+export type FactRelationKind = (typeof FACT_RELATION_KINDS)[number];
+
 /** A consolidation run over session facts. Can happen multiple times per session. */
 export interface Consolidation {
   id: string;

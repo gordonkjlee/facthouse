@@ -16,10 +16,14 @@ import { randomUUID } from "node:crypto";
 import { withTransaction } from "../db/connection.js";
 import type { Db } from "../db/connection.js";
 import type {
+  ContextVerdict,
   Entity,
   Fact,
+  FactRelationKind,
   SessionEvent,
   SessionFact,
+  SourceQuality,
+  SupersessionBasis,
   TopicSegment,
 } from "../types/data.js";
 import {
@@ -34,7 +38,16 @@ import type {
   ExtractedEntity,
   ExtractedFact,
   ExtractionOutcome,
+  SupersessionContext,
 } from "./types.js";
+import {
+  NEGATION_WORDS,
+  SUPERSESSION_JACCARD_MIN,
+  jaccardSimilarity,
+} from "./heuristic.js";
+import { getProjectsForSessions } from "../db/sessions.js";
+import { insertFactRelation } from "../db/fact-relations.js";
+import { projectKey, projectRelation } from "../sources/resolve.js";
 import {
   EXTRACT_EVIDENCE_SLICE,
   EXTRACT_REREAD_CONFIDENCE,
@@ -175,6 +188,14 @@ export interface ConsolidateCaller {
   onEmbedEnd?: () => void;
 }
 
+export interface ConsolidationRelation {
+  kind: FactRelationKind;
+  fact_id: string;
+  related_fact_id: string | null;
+  context_verdict: ContextVerdict;
+  reason: string;
+}
+
 export interface ConsolidationResult {
   consolidationId: string;
   factsIn: number;
@@ -183,6 +204,10 @@ export interface ConsolidationResult {
   entitiesCreated: number;
   entitiesLinked: number;
   supersessions: number;
+  /** Pairs kept active because the decision declined a supersession. */
+  keptAlongside: number;
+  /** Decision rows written this run, in write order. */
+  relations: ConsolidationRelation[];
   /** Events the copy step inserted this run (0 when copy did not run). */
   eventsCopied: number;
   /** Unexamined events left in D after this run. Non-zero after a capped extract. */
@@ -301,6 +326,8 @@ export async function consolidate(
       entitiesCreated: 0,
       entitiesLinked: 0,
       supersessions: 0,
+      keptAlongside: 0,
+      relations: [],
       summary: null,
       openThreads: [],
       skipped: true,
@@ -391,6 +418,8 @@ export async function consolidate(
         entitiesCreated: 0,
         entitiesLinked: 0,
         supersessions: 0,
+        keptAlongside: 0,
+        relations: [],
         summary: null,
         openThreads: [],
         skipped: true,
@@ -496,6 +525,8 @@ export async function consolidate(
         entitiesCreated: 0,
         entitiesLinked: 0,
         supersessions: 0,
+        keptAlongside: 0,
+        relations: [],
         eventsCopied,
         eventsRemaining: await remainingEvents(),
         summary: null,
@@ -512,6 +543,10 @@ export async function consolidate(
 
     // Build lookup map for O(1) access in Phase C and D
     const sessionFactMap = new Map(sessionFacts.map((f) => [f.id, f]));
+    const projectBySession = await getProjectsForSessions(
+      db,
+      [...new Set(sessionFacts.map((f) => f.session_id))],
+    );
 
     // Step 1: Classify domains. For session_facts that carry a domain_hint
     // from extraction (set by CLI/sampling providers via subdomain_hint etc.),
@@ -581,6 +616,18 @@ export async function consolidate(
       if (!cached) {
         cached = await getFactsByDomain(db, domain);
         domainCache.set(domain, cached);
+        const missing: string[] = [];
+        const seen = new Set<string>();
+        for (const fact of cached) {
+          const id = fact.session_id;
+          if (!id || projectBySession.has(id) || seen.has(id)) continue;
+          seen.add(id);
+          missing.push(id);
+        }
+        if (missing.length > 0) {
+          const more = await getProjectsForSessions(db, missing);
+          for (const [id, project] of more) projectBySession.set(id, project);
+        }
       }
       return cached;
     };
@@ -697,33 +744,129 @@ export async function consolidate(
     // in the same batch claimed the target first. Surfaced via openThreads so
     // the user knows their contradiction signal was partially lost.
     const droppedSupersessions: Array<{ newContent: string; targetedContent: string }> = [];
+    const pendingRelations: Array<{
+      sessionFactId: string;
+      kind: FactRelationKind;
+      relatedFactId: string;
+      verdict: ContextVerdict;
+      basis: SupersessionBasis | null;
+      reason: string;
+      decidedBy: SourceQuality | null;
+      factProject: string | null;
+      candidateProject: string | null;
+    }> = [];
+    let keptAlongside = 0;
+    const recordedProject = (sessionId: string | null | undefined): string | null => {
+      if (!sessionId) return null;
+      return projectBySession.get(sessionId) ?? null;
+    };
 
     // toIntegrate is ordered by capture time (classifyFacts preserves input order).
     // First candidate to claim an existing fact wins — temporal priority.
+    // The candidate pool is the domain scan. The project each fact was
+    // recorded in is evidence on the decision, not a filter on that pool.
     for (const item of toIntegrate) {
-      // Supersession is domain-scoped. FTS5 is the wrong tool here: it fails
-      // when the new fact contains negation tokens ("no longer", "stopped")
-      // that don't appear in the old fact. Use cached domain scan instead.
+      const sessionFact = sessionFactMap.get(item.sessionFactId);
       const candidates = await getDomainFacts(item.domain);
-      const candidate = { id: item.sessionFactId, content: item.content, domain: item.domain, subdomain: item.subdomain };
-      const result = await intelligence.detectSupersession(candidate, candidates);
+      const factProject = recordedProject(sessionFact?.session_id);
+      const verdicts = new Map<string, ContextVerdict>();
+      const projects = new Map<string, string | null>();
+      for (const existing of candidates) {
+        const candidateProject = recordedProject(existing.session_id);
+        verdicts.set(existing.id, projectRelation(factProject, candidateProject));
+        projects.set(existing.id, projectKey(candidateProject));
+      }
+      const context: SupersessionContext = {
+        project: projectKey(factProject),
+        verdicts,
+        projects,
+      };
+      const candidate = {
+        id: item.sessionFactId,
+        content: item.content,
+        domain: item.domain,
+        subdomain: item.subdomain,
+      };
+      const result = await intelligence.detectSupersession(candidate, candidates, context);
       // Intentional: confidence is NOT compared here. A low-confidence new fact
       // with a clear negation marker ("I no longer prefer X") can supersede a
       // high-confidence prior. The negation signal is itself strong evidence
       // of a belief update; requiring confidence parity would make it impossible
       // for tentative corrections to update stale knowledge.
-      if (result) {
-        if (!alreadySuperseded.has(result.existingFactId)) {
-          supersessionMap.set(item.sessionFactId, result.existingFactId);
-          alreadySuperseded.add(result.existingFactId);
+      const decidedBy = context.answeredBy ?? result?.source_quality ?? null;
+      const proposedId = result?.existingFactId;
+      const proposedVerdict = proposedId ? verdicts.get(proposedId) : undefined;
+      if (result && proposedId) {
+        const basis = result.basis;
+        const accept =
+          basis === "coexists" ? false
+          : basis === "uncertain" ? false
+          : proposedVerdict !== "different" ? true
+          : basis === "update" ? true
+          : NEGATION_WORDS.test(item.content);
+        const related = candidates.find((c) => c.id === proposedId);
+        const reason = result.reason.trim() !== "" ? result.reason : "no reason returned";
+        if (accept) {
+          if (!alreadySuperseded.has(proposedId)) {
+            supersessionMap.set(item.sessionFactId, proposedId);
+            alreadySuperseded.add(proposedId);
+            pendingRelations.push({
+              sessionFactId: item.sessionFactId,
+              kind: "supersedes",
+              relatedFactId: proposedId,
+              verdict: proposedVerdict ?? "not_comparable",
+              basis: basis ?? null,
+              reason,
+              decidedBy,
+              factProject,
+              candidateProject: recordedProject(related?.session_id),
+            });
+          } else {
+            droppedSupersessions.push({
+              newContent: item.content,
+              targetedContent: related?.content ?? proposedId,
+            });
+          }
         } else {
-          // Another candidate already claimed this target. This candidate will
-          // integrate as a plain insert rather than a supersession — record the
-          // conflict so it can surface in openThreads.
-          const targeted = candidates.find((c) => c.id === result.existingFactId);
-          droppedSupersessions.push({
-            newContent: item.content,
-            targetedContent: targeted?.content ?? result.existingFactId,
+          keptAlongside += 1;
+          pendingRelations.push({
+            sessionFactId: item.sessionFactId,
+            kind: "kept_alongside",
+            relatedFactId: proposedId,
+            verdict: proposedVerdict ?? "not_comparable",
+            basis: basis ?? null,
+            reason,
+            decidedBy,
+            factProject,
+            candidateProject: recordedProject(related?.session_id),
+          });
+        }
+      }
+
+      if (proposedVerdict !== "different") {
+        let best: { id: string; similarity: number } | null = null;
+        for (const existing of candidates) {
+          if (existing.id === proposedId) continue;
+          if (verdicts.get(existing.id) !== "different") continue;
+          const similarity = jaccardSimilarity(item.content, existing.content);
+          if (similarity < SUPERSESSION_JACCARD_MIN) continue;
+          if (!best || similarity > best.similarity) best = { id: existing.id, similarity };
+        }
+        if (best) {
+          const related = candidates.find((c) => c.id === best.id);
+          const pct = (best.similarity * 100).toFixed(0);
+          let reason = `no supersession proposed; overlap ${pct}%`;
+          if (NEGATION_WORDS.test(item.content)) reason += "; lexical trigger fired";
+          pendingRelations.push({
+            sessionFactId: item.sessionFactId,
+            kind: "overlap_noted",
+            relatedFactId: best.id,
+            verdict: "different",
+            basis: null,
+            reason,
+            decidedBy,
+            factProject,
+            candidateProject: recordedProject(related?.session_id),
           });
         }
       }
@@ -736,6 +879,7 @@ export async function consolidate(
     const writeResults = await withTransaction(db, async () => {
       let entitiesCreated = 0;
       let entitiesLinked = 0;
+      const factIdBySessionFact = new Map<string, string>();
 
       // Ensure all unique domains exist once, before the per-fact loop
       const uniqueDomains = new Set(toIntegrate.map((item) => item.domain));
@@ -809,6 +953,7 @@ export async function consolidate(
               valid_from: validFrom,
             });
         integratedFacts.push(integratedFact);
+        factIdBySessionFact.set(item.sessionFactId, integratedFact.id);
 
         // Link entities
         const extractedEntities = entityMap.get(item.sessionFactId);
@@ -900,6 +1045,32 @@ export async function consolidate(
         }
       }
 
+      const relations: ConsolidationRelation[] = [];
+      for (const rel of pendingRelations) {
+        const factId = factIdBySessionFact.get(rel.sessionFactId);
+        if (!factId) continue;
+        await insertFactRelation(db, {
+          consolidationId,
+          factId,
+          relatedFactId: rel.relatedFactId,
+          sessionFactId: rel.sessionFactId,
+          kind: rel.kind,
+          contextVerdict: rel.verdict,
+          factProject: rel.factProject,
+          candidateProject: rel.candidateProject,
+          basis: rel.basis,
+          reason: rel.reason,
+          decidedBy: rel.decidedBy,
+        });
+        relations.push({
+          kind: rel.kind,
+          fact_id: factId,
+          related_fact_id: rel.relatedFactId,
+          context_verdict: rel.verdict,
+          reason: rel.reason,
+        });
+      }
+
       // Apply enrich decisions — boost existing facts' confidence (capped at 1.0)
       // for each paraphrase/corroboration the LLM identified.
       const enrichStmt = db.prepare(
@@ -931,7 +1102,7 @@ export async function consolidate(
         new Date().toISOString(),
       );
 
-      return { entitiesCreated, entitiesLinked };
+      return { entitiesCreated, entitiesLinked, relations };
     });
     phaseDCommitted = true;
 
@@ -1071,6 +1242,8 @@ export async function consolidate(
       entitiesCreated: writeResults.entitiesCreated,
       entitiesLinked: writeResults.entitiesLinked,
       supersessions: supersessionCount,
+      keptAlongside,
+      relations: writeResults.relations,
       eventsCopied,
       eventsRemaining: await remainingEvents(),
       embedding,

@@ -307,6 +307,47 @@ describe("get_session_context", () => {
   });
 });
 
+describe("mcpConsolidatePayload", () => {
+  const { mcpConsolidatePayload } = factMod;
+
+  it("reports kept_alongside and caps reasons", () => {
+    const relations = Array.from({ length: 25 }, (_, i) => ({
+      kind: "kept_alongside" as const,
+      fact_id: `n${i}`,
+      related_fact_id: `o${i}`,
+      context_verdict: "different" as const,
+      reason: `reason ${i}`,
+    }));
+    const body = mcpConsolidatePayload({
+      consolidationId: "c1",
+      factsIn: 3,
+      factsIntegrated: 2,
+      factsRejected: 1,
+      entitiesCreated: 0,
+      entitiesLinked: 0,
+      supersessions: 0,
+      keptAlongside: 2,
+      relations,
+      eventsCopied: 0,
+      eventsRemaining: 0,
+      summary: null,
+      openThreads: [],
+      skipped: false,
+      examinedThrough: 0,
+    } as never);
+    expect(body.kept_alongside).toBe(2);
+    expect(body.reasons).toHaveLength(20);
+    expect(body.reasons[0]).toEqual({
+      kind: "kept_alongside",
+      fact_id: "n0",
+      related_fact_id: "o0",
+      context_verdict: "different",
+      reason: "reason 0",
+    });
+    expect(body).not.toHaveProperty("reasons.20");
+  });
+});
+
 describe("mcpEmbeddingField", () => {
   const { mcpEmbeddingField } = factMod;
 

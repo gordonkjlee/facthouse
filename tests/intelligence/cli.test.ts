@@ -911,6 +911,26 @@ describe("createCliProvider — detectSupersession", () => {
       ],
     );
     expect(result?.existingFactId).toBe("f1");
+    expect(result?.basis).toBeUndefined();
+    expect(result?.source_quality).toBe("cli");
+    expect(lastStdin).toContain("named artefact");
+    expect(lastStdin).toContain("a state that cannot hold twice");
+    expect(lastStdin).toContain('"update"');
+    expect(lastStdin).toContain('"coexists"');
+    expect(lastStdin).toContain('"uncertain"');
+  });
+
+  it("requires basis on the stage schema", async () => {
+    const { readFileSync } = await import("node:fs");
+    const { fileURLToPath } = await import("node:url");
+    const src = readFileSync(
+      fileURLToPath(new URL("../../src/intelligence/cli.ts", import.meta.url)),
+      "utf8",
+    );
+    const start = src.indexOf("const STAGE_3_SCHEMA");
+    const end = src.indexOf("const STAGE_4_SCHEMA");
+    const schema = src.slice(start, end);
+    expect(schema).toMatch(/required:\s*\[[^\]]*basis/);
   });
 });
 

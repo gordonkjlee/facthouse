@@ -34,6 +34,12 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import type { IntelligenceProvider, ExtractedFact, ExtractedEntity, Referent } from "./types.js";
 import {
+  SUPERSESSION_CONTEXT_INSTRUCTION,
+  buildSupersessionCandidate,
+  noteSupersessionAnswer,
+  supersessionPayload,
+} from "./supersession.js";
+import {
   UsageAccumulator,
   parseEnvelopeUsage,
   type IntelligenceUsage,
@@ -703,8 +709,9 @@ const STAGE_3_SCHEMA = {
           new_id: { type: "string" },
           existing_id: { type: "string" },
           reason: { type: "string" },
+          basis: { type: "string", enum: ["update", "coexists", "uncertain"] },
         },
-        required: ["new_id", "existing_id", "reason"],
+        required: ["new_id", "existing_id", "reason", "basis"],
       },
     },
   },
@@ -1099,17 +1106,19 @@ export function createCliProvider(
       return { kind: "add" };
     },
 
-    async detectSupersession(newFact, existingFacts) {
+    async detectSupersession(newFact, existingFacts, context) {
       const candidates = existingFacts.filter(
         (f) => f.domain === newFact.domain && f.status === "active" && f.is_latest,
       );
       if (candidates.length === 0) return null;
 
+      const payload = supersessionPayload(newFact, candidates, context);
       const result = await runStage<{
         supersessions: Array<{
           new_id: string;
           existing_id: string;
           reason: string;
+          basis?: string;
         }>;
       }>(
         "stage-3-supersede",
@@ -1118,25 +1127,27 @@ export function createCliProvider(
           "'I moved to Porto' supersedes 'I live in Lisbon'; " +
           "'I no longer drink coffee' supersedes 'I prefer coffee'. " +
           "Paraphrase or additional detail is NOT supersession. " +
-          "Return strictly {supersessions: [{new_id, existing_id, reason}]} — " +
-          "omit entries where no supersession applies.",
+          "Return strictly {supersessions: [{new_id, existing_id, reason, basis}]} — " +
+          "omit entries where no supersession applies. " +
+          SUPERSESSION_CONTEXT_INSTRUCTION,
         {
-          new: [{ id: newFact.id, content: newFact.content, domain: newFact.domain }],
-          existing: candidates.map((f) => ({ id: f.id, content: f.content })),
+          new: [payload.incoming],
+          existing: payload.existing,
         },
         STAGE_3_SCHEMA,
       );
 
       if (!result || !Array.isArray(result.supersessions)) {
-        return fallback.detectSupersession(newFact, existingFacts);
+        return fallback.detectSupersession(newFact, existingFacts, context);
       }
 
+      noteSupersessionAnswer(context, "cli");
       // Find the first supersession targeting our newFact.
       const hit = result.supersessions.find((s) => s.new_id === newFact.id);
       if (!hit) return null;
       const exists = candidates.some((f) => f.id === hit.existing_id);
       if (!exists) return null; // hallucinated id
-      return { existingFactId: hit.existing_id, reason: hit.reason };
+      return buildSupersessionCandidate(hit.existing_id, hit.reason, hit.basis, "cli");
     },
 
     async summarise(sessionFacts, integratedFacts, priorSummary, closedTopics) {

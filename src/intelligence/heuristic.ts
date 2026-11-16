@@ -7,7 +7,10 @@
 import type {
   IntelligenceProvider,
   ExtractedEntity,
+  SupersessionCandidate,
+  SupersessionContext,
 } from "./types.js";
+import { noteSupersessionAnswer } from "./supersession.js";
 import {
   DEFAULT_DOMAIN,
   compilePatterns,
@@ -117,7 +120,7 @@ function tokenise(s: string): Set<string> {
 }
 
 /** Compute Jaccard similarity of content-word sets (stop words excluded). */
-function jaccardSimilarity(a: string, b: string): number {
+export function jaccardSimilarity(a: string, b: string): number {
   const wordsA = tokenise(a);
   const wordsB = tokenise(b);
   if (wordsA.size === 0 && wordsB.size === 0) return 0;
@@ -132,13 +135,28 @@ function jaccardSimilarity(a: string, b: string): number {
 
 // Reliable logical-negation markers only. "switched"/"changed" removed because
 // they misfire on routine work-domain text ("I changed jobs", "I switched desks").
-const NEGATION_WORDS = /\b(not|no longer|don't|doesn't|stopped|quit|now prefer|instead)\b/i;
+export const NEGATION_WORDS = /\b(not|no longer|don't|doesn't|stopped|quit|now prefer|instead)\b/i;
 
 // Minimum Jaccard overlap (content-word tokens, stop words excluded) required
 // to consider two facts as candidates for supersession. Empirically tuned;
 // known to false-positive on unrelated preferences that share "prefer"/"roast"
 // (see tests/intelligence/heuristic.test.ts for the known-limitation case).
-const SUPERSESSION_JACCARD_MIN = 0.3;
+export const SUPERSESSION_JACCARD_MIN = 0.3;
+
+const VERDICT_RANK: Record<string, number> = {
+  same: 0,
+  not_comparable: 1,
+  different: 2,
+};
+
+function heuristicCandidate(existingId: string, similarity: number): SupersessionCandidate {
+  return {
+    existingFactId: existingId,
+    reason: `High word overlap (${(similarity * 100).toFixed(0)}%) with contradictory signal`,
+    basis: "update",
+    source_quality: "heuristic",
+  };
+}
 
 
 // ---------------------------------------------------------------------------
@@ -194,25 +212,36 @@ export function createHeuristicProvider(
     // Known limitation: location-change supersession ("I moved to Porto"
     // should supersede "I live in Lisbon") is invisible here — no negation
     // marker, minimal word overlap. Requires semantic reasoning (LLM provider).
-    async detectSupersession(newFact, existingFacts) {
-      for (const existing of existingFacts) {
+    async detectSupersession(newFact, existingFacts, context?: SupersessionContext) {
+      noteSupersessionAnswer(context, "heuristic");
+      const passing: Array<{ id: string; similarity: number; index: number }> = [];
+      for (let index = 0; index < existingFacts.length; index++) {
+        const existing = existingFacts[index]!;
         if (existing.domain !== newFact.domain) continue;
         if (existing.status !== "active" || !existing.is_latest) continue;
 
         const similarity = jaccardSimilarity(newFact.content, existing.content);
 
-        // Supersession requires negation signal + word overlap + different content
+        // Supersession requires negation signal + word overlap + different content.
+        // The floor is unchanged. Context only chooses among facts that pass it.
         const hasNegation = NEGATION_WORDS.test(newFact.content);
         const contentDiffers = newFact.content.toLowerCase() !== existing.content.toLowerCase();
 
         if (similarity >= SUPERSESSION_JACCARD_MIN && contentDiffers && hasNegation) {
-          return {
-            existingFactId: existing.id,
-            reason: `High word overlap (${(similarity * 100).toFixed(0)}%) with contradictory signal`,
-          };
+          if (!context) return heuristicCandidate(existing.id, similarity);
+          passing.push({ id: existing.id, similarity, index });
         }
       }
-      return null;
+      if (!context || passing.length === 0) return null;
+      passing.sort((a, b) => {
+        const av = VERDICT_RANK[context.verdicts.get(a.id) ?? "not_comparable"] ?? 1;
+        const bv = VERDICT_RANK[context.verdicts.get(b.id) ?? "not_comparable"] ?? 1;
+        if (av !== bv) return av - bv;
+        if (a.similarity !== b.similarity) return b.similarity - a.similarity;
+        return a.index - b.index;
+      });
+      const best = passing[0]!;
+      return heuristicCandidate(best.id, best.similarity);
     },
 
     async reconcile(candidate, existingFacts) {
