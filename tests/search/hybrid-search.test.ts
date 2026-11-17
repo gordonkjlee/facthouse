@@ -29,6 +29,48 @@ describe("hybridSearch", () => {
     });
   }
 
+  it("keeps rank and score when a decision row is added", async () => {
+    const { createSession } = await import("../../src/db/sessions.js");
+    const { insertFactRelation } = await import("../../src/db/fact-relations.js");
+    const session = await createSession(db, {
+      source_tool: "claude-code",
+      project: "C--dev-home",
+    });
+    const terse = await dbMod.insertFact(db, {
+      content: "Alex prefers terse replies at the desk.",
+      domain: "preferences",
+      source_type: "conversation",
+      session_id: session.id,
+    });
+    await dbMod.insertFact(db, {
+      content: "Alex prefers detailed replies in the evening.",
+      domain: "preferences",
+      source_type: "conversation",
+      session_id: session.id,
+    });
+    const before = await searchMod.hybridSearch(db, "replies");
+    await insertFactRelation(db, {
+      consolidationId: "c1",
+      factId: terse.id,
+      relatedFactId: "other",
+      sessionFactId: "sf1",
+      kind: "kept_alongside",
+      contextVerdict: "different",
+      factProject: "C--dev-home",
+      candidateProject: "C--dev-work",
+      basis: "coexists",
+      reason: "both can hold",
+      decidedBy: "cli",
+    });
+    const after = await searchMod.hybridSearch(db, "replies");
+    expect(after.results.map((row) => [row.fact.id, row.score])).toEqual(
+      before.results.map((row) => [row.fact.id, row.score]),
+    );
+    const hit = after.results.find((row) => row.fact.id === terse.id);
+    expect(hit?.recorded_in).toBe("c-dev-home");
+    expect(hit?.relations?.[0]?.kind).toBe("kept_alongside");
+  });
+
   it("returns empty results for empty query", async () => {
     await insertFact("I prefer coffee", "preferences");
 

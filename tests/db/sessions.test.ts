@@ -11,12 +11,14 @@ const {
   ensureSession,
   getSession,
   getLatestSession,
+  getProjectsForSessions,
   insertEvent,
   getEventById,
   getEvents,
   getEventCount,
   conversationRef,
 } = await import("../../src/db/sessions.js");
+const { openPgliteDatabase } = await import("../helpers/pglite-store.js");
 
 let db: Db;
 
@@ -148,7 +150,44 @@ describe("sessions", () => {
   it("returns null when no sessions exist", async () => {
     expect(await getLatestSession(db)).toBeNull();
   });
+
+  it("returns the project recorded on each session and omits unknown ids", async () => {
+    await expectProjectLookup(db);
+  }, 30_000);
 });
+
+describe("getProjectsForSessions on Postgres", () => {
+  it("returns the project recorded on each session and omits unknown ids", async () => {
+    const pg = await openPgliteDatabase();
+    try {
+      await expectProjectLookup(pg);
+    } finally {
+      await closeDatabase(pg);
+    }
+  }, 60_000);
+});
+
+async function expectProjectLookup(database: Db): Promise<void> {
+  const ids: string[] = [];
+  await database.transaction(async () => {
+    for (let i = 0; i < 600; i++) {
+      const session = await createSession(database, {
+        source_tool: "claude-code",
+        project: i % 17 === 0 ? null : `C--dev-app-${i}`,
+      });
+      ids.push(session.id);
+    }
+  });
+  const unknown = "00000000-0000-0000-0000-000000000000";
+  const map = await getProjectsForSessions(database, [...ids, unknown]);
+  expect(map.size).toBe(600);
+  expect(map.has(unknown)).toBe(false);
+  for (let i = 0; i < ids.length; i++) {
+    if (i % 17 === 0) expect(map.get(ids[i]!)).toBeNull();
+    else expect(map.get(ids[i]!)).toBe(`C--dev-app-${i}`);
+  }
+  expect((await getProjectsForSessions(database, [])).size).toBe(0);
+}
 
 describe("session events", () => {
   let sessionId: string;

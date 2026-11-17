@@ -33,6 +33,11 @@
  */
 
 import { describe, it, expect } from "vitest";
+import {
+  CONTEXT_VERDICTS,
+  FACT_RELATION_KINDS,
+  SUPERSESSION_BASES,
+} from "../../src/types/data.js";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -188,5 +193,19 @@ describe("the shipped config declares nothing that is never read", () => {
     // A field here is a setting a user can change with no effect — which is
     // worse than a missing setting, because it reads as a working control.
     expect(dormant).toEqual([]);
+  });
+});
+
+describe("supersession vocabulary is quoted outside its declaration", () => {
+  it("names every kind, verdict and basis in src", () => {
+    const code = textOutside("types/data.ts");
+    const missing = [
+      ...FACT_RELATION_KINDS,
+      ...CONTEXT_VERDICTS,
+      ...SUPERSESSION_BASES,
+    ].filter(
+      (value) => !code.includes(`"${value}"`) && !code.includes(`'${value}'`),
+    );
+    expect(missing).toEqual([]);
   });
 });

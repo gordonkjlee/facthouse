@@ -12,6 +12,7 @@ import {
   isCaptureSourceKind,
   type CaptureSourceKind,
 } from "../types/config.js";
+import type { ContextVerdict } from "../types/data.js";
 import { expandTilde, resolveUserPath } from "../paths.js";
 
 export { expandTilde, resolveUserPath } from "../paths.js";
@@ -58,6 +59,61 @@ export function encodeCursorProjectDir(cwd: string): string {
 export function encodeGrokSessionDir(cwd: string): string {
   const trimmed = cwd.replace(/[\\/]+$/, "");
   return trimmed ? encodeURIComponent(trimmed) : "";
+}
+
+/**
+ * One comparable key for the project a session was recorded in.
+ *
+ * `sessions.project` keeps the client's own group name. Callers compare
+ * keys; they do not rewrite the stored value. There is one normal form,
+ * `encodeCursorProjectDir` — no second encoding lives here.
+ *
+ * Returns null when `v` carries no cwd: null or blank, an opaque numeric
+ * id (`/^\d+$/`), a percent-encoded group whose escape is malformed, or a
+ * slug-plus-hash group (`-[0-9a-f]{16}`, at most 57 bytes) that does not
+ * contain the original path. A percent-encoded group (it contains `%` and
+ * matches `/^[A-Za-z0-9._~%-]+$/`) is decoded first. Anything else is used
+ * as stored, then passed through `encodeCursorProjectDir`.
+ */
+export function projectKey(v: string | null): string | null {
+  if (v == null || v.trim() === "" || /^\d+$/.test(v)) return null;
+
+  let raw: string;
+  if (v.includes("%") && /^[A-Za-z0-9._~%-]+$/.test(v)) {
+    try {
+      raw = decodeURIComponent(v);
+    } catch {
+      return null;
+    }
+  } else if (/-[0-9a-f]{16}$/.test(v) && Buffer.byteLength(v, "utf8") <= 57) {
+    return null;
+  } else {
+    raw = v;
+  }
+
+  const key = encodeCursorProjectDir(raw);
+  return key === "" ? null : key;
+}
+
+/**
+ * How two recorded project values relate. The decision uses only their
+ * keys — never which client wrote the session.
+ *
+ * `not_comparable` when either key is null (including both). `same` when
+ * the keys are equal, or when one is a `-`-delimited prefix of the other
+ * (a worktree or a subdirectory launch of the same project). Otherwise
+ * `different`.
+ */
+export function projectRelation(
+  a: string | null,
+  b: string | null,
+): ContextVerdict {
+  const left = projectKey(a);
+  const right = projectKey(b);
+  if (left == null || right == null) return "not_comparable";
+  if (left === right) return "same";
+  if (left.startsWith(right + "-") || right.startsWith(left + "-")) return "same";
+  return "different";
 }
 
 /**

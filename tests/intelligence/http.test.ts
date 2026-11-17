@@ -558,3 +558,75 @@ describe("httpChatJson", () => {
     expect(result.json).toEqual({ ok: true });
   });
 });
+
+describe("http detectSupersession", () => {
+  it("sends the counter-instruction and keeps a hit that omits basis", async () => {
+    let prompt = "";
+    let fellBack = false;
+    const fallback = {
+      ...createHeuristicProvider(),
+      async detectSupersession() {
+        fellBack = true;
+        return null;
+      },
+    };
+    const provider = createHttpProvider(
+      {
+        model: "local-test",
+        fetch: async (_url, init) => {
+          const body = JSON.parse(init.body ?? "{}") as {
+            messages?: Array<{ content?: string }>;
+          };
+          prompt = body.messages?.[0]?.content ?? "";
+          return {
+            ok: true,
+            status: 200,
+            async text() {
+              return JSON.stringify({
+                choices: [
+                  {
+                    message: {
+                      content: JSON.stringify({
+                        supersessions: [
+                          { new_id: "s1", existing_id: "f1", reason: "replaced" },
+                        ],
+                      }),
+                    },
+                  },
+                ],
+              });
+            },
+          };
+        },
+      },
+      fallback,
+    );
+    const result = await provider.detectSupersession(
+      { id: "s1", content: "booked_at is back", domain: "pipeline" } as never,
+      [
+        {
+          id: "f1",
+          content: "booked_at was missing",
+          domain: "pipeline",
+          status: "active",
+          is_latest: true,
+        },
+      ] as never,
+      {
+        project: "c-dev-home",
+        verdicts: new Map([["f1", "different"]]),
+        projects: new Map([["f1", "c-dev-work"]]),
+      },
+    );
+    expect(fellBack).toBe(false);
+    expect(result?.existingFactId).toBe("f1");
+    expect(result?.basis).toBeUndefined();
+    expect(result?.source_quality).toBe("http");
+    expect(prompt).toContain("named artefact");
+    expect(prompt).toContain("a state that cannot hold twice");
+    expect(prompt).toContain('"update"');
+    expect(prompt).toContain('"coexists"');
+    expect(prompt).toContain('"uncertain"');
+    expect(prompt).toContain("c-dev-home");
+  });
+});

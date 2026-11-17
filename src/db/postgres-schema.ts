@@ -396,4 +396,26 @@ CREATE TABLE IF NOT EXISTS intelligence_runs (
   project TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_intelligence_runs_created ON intelligence_runs(created_at);
+
+CREATE TABLE IF NOT EXISTS fact_relations (
+  id TEXT PRIMARY KEY,
+  consolidation_id TEXT NOT NULL,
+  fact_id TEXT NOT NULL,
+  related_fact_id TEXT,
+  session_fact_id TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  context_verdict TEXT NOT NULL,
+  fact_project TEXT,
+  candidate_project TEXT,
+  basis TEXT,
+  reason TEXT NOT NULL,
+  decided_by TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_fact_relations_fact
+  ON fact_relations(fact_id);
+CREATE INDEX IF NOT EXISTS idx_fact_relations_related
+  ON fact_relations(related_fact_id);
+CREATE INDEX IF NOT EXISTS idx_fact_relations_session_fact
+  ON fact_relations(session_fact_id);
 `;

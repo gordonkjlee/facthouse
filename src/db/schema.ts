@@ -96,6 +96,9 @@ export async function applySchema(db: Db): Promise<void> {
   if (version < 24) {
     await applyV24(db);
   }
+  if (version < 25) {
+    await applyV25(db);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -1042,4 +1045,38 @@ async function applyV24(db: Db): Promise<void> {
     );
   }
   await pragmaWrite(db, "user_version = 24");
+}
+
+/**
+ * v25: a record of each supersession decision. The project each fact was
+ * recorded in is evidence on the row, not a constraint. No CHECK list — the
+ * vocabulary lives with the writer, and a later kind must not require a
+ * rebuild. No foreign keys: the row is written in the same transaction as
+ * the fact, and a missing neighbour must not fail that write.
+ */
+async function applyV25(db: Db): Promise<void> {
+  await db.exec(`
+CREATE TABLE IF NOT EXISTS fact_relations (
+  id TEXT PRIMARY KEY,
+  consolidation_id TEXT NOT NULL,
+  fact_id TEXT NOT NULL,
+  related_fact_id TEXT,
+  session_fact_id TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  context_verdict TEXT NOT NULL,
+  fact_project TEXT,
+  candidate_project TEXT,
+  basis TEXT,
+  reason TEXT NOT NULL,
+  decided_by TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_fact_relations_fact
+  ON fact_relations(fact_id);
+CREATE INDEX IF NOT EXISTS idx_fact_relations_related
+  ON fact_relations(related_fact_id);
+CREATE INDEX IF NOT EXISTS idx_fact_relations_session_fact
+  ON fact_relations(session_fact_id);
+`);
+  await pragmaWrite(db, "user_version = 25");
 }

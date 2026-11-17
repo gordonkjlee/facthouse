@@ -443,23 +443,7 @@ export function createFactManager(
                 content: [
                   {
                     type: "text" as const,
-                    text: JSON.stringify({
-                      consolidation_id: result.consolidationId,
-                      facts_in: result.factsIn,
-                      facts_integrated: result.factsIntegrated,
-                      facts_rejected: result.factsRejected,
-                      entities_created: result.entitiesCreated,
-                      entities_linked: result.entitiesLinked,
-                      supersessions: result.supersessions,
-                      events_copied: result.eventsCopied,
-                      events_remaining: result.eventsRemaining,
-                      summary: result.summary,
-                      skipped: result.skipped,
-                      skip_reason: result.skipReason ?? null,
-                      extraction_degraded: result.extractionDegraded === true,
-                      examined_through: result.examinedThrough,
-                      embedding: mcpEmbeddingField(result),
-                    }),
+                    text: JSON.stringify(mcpConsolidatePayload(result)),
                   },
                 ],
               };
@@ -479,6 +463,63 @@ export function createFactManager(
   };
 
   return manager;
+}
+
+const MCP_RELATION_CAP = 20;
+
+/** JSON body of the consolidate tool. Relation reasons are capped. */
+export function mcpConsolidatePayload(result: ConsolidationResult): {
+  consolidation_id: string;
+  facts_in: number;
+  facts_integrated: number;
+  facts_rejected: number;
+  entities_created: number;
+  entities_linked: number;
+  supersessions: number;
+  kept_alongside: number;
+  corroborations: number;
+  reasons: Array<{
+    kind: ConsolidationResult["relations"][number]["kind"];
+    fact_id: string;
+    related_fact_id: string | null;
+    context_verdict: string;
+    reason: string;
+  }>;
+  events_copied: number;
+  events_remaining: number;
+  summary: string | null;
+  skipped: boolean;
+  skip_reason: string | null;
+  extraction_degraded: boolean;
+  examined_through: number;
+  embedding: ReturnType<typeof mcpEmbeddingField>;
+} {
+  return {
+    consolidation_id: result.consolidationId,
+    facts_in: result.factsIn,
+    facts_integrated: result.factsIntegrated,
+    facts_rejected: result.factsRejected,
+    entities_created: result.entitiesCreated,
+    entities_linked: result.entitiesLinked,
+    supersessions: result.supersessions,
+    kept_alongside: result.keptAlongside,
+    corroborations: result.corroborations,
+    reasons: result.relations.slice(0, MCP_RELATION_CAP).map((row) => ({
+      kind: row.kind,
+      fact_id: row.fact_id,
+      related_fact_id: row.related_fact_id,
+      context_verdict: row.context_verdict,
+      reason: row.reason,
+    })),
+    events_copied: result.eventsCopied,
+    events_remaining: result.eventsRemaining,
+    summary: result.summary,
+    skipped: result.skipped,
+    skip_reason: result.skipReason ?? null,
+    extraction_degraded: result.extractionDegraded === true,
+    examined_through: result.examinedThrough,
+    embedding: mcpEmbeddingField(result),
+  };
 }
 
 export function mcpEmbeddingField(result: ConsolidationResult): {

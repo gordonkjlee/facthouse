@@ -279,6 +279,74 @@ describe("lookupNamedSubject", () => {
     );
   });
 
+  it("attaches decisions on a named subject and on a search fill", async () => {
+    const { insertFactRelation } = await import("../../src/db/fact-relations.js");
+    const alex = await dbMod.createEntity(db, { type: "person", name: "Alex" });
+    const about = await dbMod.insertFact(db, {
+      content: "Alex prefers terse replies.",
+      domain: "preferences",
+      source_type: "conversation",
+    });
+    await dbMod.linkFactEntity(db, about.id, alex.id, SUBJECT_OF);
+    await insertFactRelation(db, {
+      consolidationId: "c1",
+      factId: about.id,
+      relatedFactId: "other",
+      sessionFactId: "sf1",
+      kind: "kept_alongside",
+      contextVerdict: "different",
+      factProject: "C--dev-home",
+      candidateProject: "C--dev-work",
+      basis: "coexists",
+      reason: "both can hold",
+      decidedBy: "cli",
+    });
+    const named = await lookupNamedSubject(db, "Alex");
+    expect(named.found).toBe(true);
+    expect(named.facts[0]?.relations).toEqual([
+      {
+        kind: "kept_alongside",
+        related_fact_id: "other",
+        context_verdict: "different",
+        basis: "coexists",
+        reason: "both can hold",
+      },
+    ]);
+
+    const zephyr = await dbMod.insertFact(db, {
+      content: "Zephyr keeps the staging key.",
+      domain: "work",
+      source_type: "conversation",
+    });
+    await insertFactRelation(db, {
+      consolidationId: "c1",
+      factId: zephyr.id,
+      relatedFactId: null,
+      sessionFactId: "sf2",
+      kind: "corroborated_by",
+      contextVerdict: "different",
+      factProject: "C--dev-work",
+      candidateProject: "C--dev-home",
+      basis: null,
+      reason: "restatement",
+      decidedBy: null,
+    });
+    const filled = await lookupNamedSubject(db, "Zephyr");
+    expect(filled.found).toBe(false);
+    expect(filled.entity).toBeNull();
+    expect(filled.facts.some((fact) => fact.id === zephyr.id)).toBe(true);
+    const hit = filled.facts.find((fact) => fact.id === zephyr.id);
+    expect(hit?.relations).toEqual([
+      {
+        kind: "corroborated_by",
+        related_fact_id: null,
+        context_verdict: "different",
+        basis: null,
+        reason: "restatement",
+      },
+    ]);
+  });
+
   it("returns empty when nothing is known", async () => {
     const lookup = await lookupNamedSubject(db, "Nobody");
     expect(lookup.found).toBe(false);

@@ -31,6 +31,12 @@ import {
 import { domainRoutingInstruction, normaliseDomainName } from "../schemas/domains.js";
 import { UsageAccumulator, addOptional, type IntelligenceUsage } from "./usage.js";
 import { createHeuristicProvider } from "./heuristic.js";
+import {
+  SUPERSESSION_CONTEXT_INSTRUCTION,
+  buildSupersessionCandidate,
+  noteSupersessionAnswer,
+  supersessionPayload,
+} from "./supersession.js";
 import { ConsolidateAbortError } from "./abort.js";
 
 export function httpModelOf(config: HttpProviderConfig | undefined): string | null {
@@ -610,34 +616,44 @@ export function createHttpProvider(
       return { kind: "add" };
     },
 
-    async detectSupersession(newFact, existingFacts) {
+    async detectSupersession(newFact, existingFacts, context) {
       const candidates = existingFacts.filter(
         (f) => f.domain === newFact.domain && f.status === "active" && f.is_latest,
       );
       if (candidates.length === 0) return null;
+      const payload = supersessionPayload(newFact, candidates, context);
       const json = await runStage(
         "stage-3-supersede",
         "You detect whether a new fact supersedes (invalidates and replaces) an existing one. " +
           "Supersession applies for negations, updates, or replacements. " +
           "Paraphrase or additional detail is NOT supersession. " +
-          "Return strictly {supersessions: [{new_id, existing_id, reason}]} — " +
-          "omit entries where no supersession applies." +
+          "Return strictly {supersessions: [{new_id, existing_id, reason, basis}]} — " +
+          "omit entries where no supersession applies. " +
+          SUPERSESSION_CONTEXT_INSTRUCTION +
           `\n\nINPUT:\n${JSON.stringify({
-            new: [{ id: newFact.id, content: newFact.content, domain: newFact.domain }],
-            existing: candidates.map((f) => ({ id: f.id, content: f.content })),
+            new: [payload.incoming],
+            existing: payload.existing,
           })}`,
       );
       const supersessions = (json as { supersessions?: unknown } | null)?.supersessions;
+      // A missing basis on an otherwise valid hit is not a failure. Only a
+      // missing or non-array list falls through to the heuristic.
       if (!json || !Array.isArray(supersessions)) {
-        return fallback.detectSupersession(newFact, existingFacts);
+        return fallback.detectSupersession(newFact, existingFacts, context);
       }
+      noteSupersessionAnswer(context, "http");
       const hit = (
-        supersessions as Array<{ new_id: string; existing_id: string; reason: string }>
+        supersessions as Array<{
+          new_id?: unknown;
+          existing_id?: unknown;
+          reason?: unknown;
+          basis?: unknown;
+        }>
       ).find((s) => s.new_id === newFact.id);
-      if (!hit) return null;
+      if (!hit || typeof hit.existing_id !== "string") return null;
       const exists = candidates.some((f) => f.id === hit.existing_id);
       if (!exists) return null;
-      return { existingFactId: hit.existing_id, reason: hit.reason };
+      return buildSupersessionCandidate(hit.existing_id, hit.reason, hit.basis, "http");
     },
 
     async summarise(sessionFacts, integratedFacts, priorSummary, closedTopics) {

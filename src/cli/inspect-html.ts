@@ -386,14 +386,26 @@ function dataIdsForI(iId){const key=iId+":"+(selected?selected.id:"");if(dataIds
   let ids;if(primary.length)ids=expandEventIds(primary);else{const irow=infoById.get(iId);const conv=irow&&irow.session_id;const convIds=conv?(eventsByConv.get(conv)||[]):[];
     const around=selected?(DATA.dByEntity[selected.id]||[]):[];const aroundSet=new Set(around);const overlap=convIds.filter(id=>aroundSet.has(id));ids=overlap.length?expandEventIds(overlap):[...new Set(convIds)];}
   dataIdsCache.set(key,ids);return ids;}
+function relationsFor(f){return (DATA.fact_relations||[]).filter(r=>r&&(r.fact_id===f.id||r.related_fact_id===f.id));}
 function factCard(f,flag,kind){
   const superseded=f.status==="superseded";const expired=!superseded&&!!f.valid_until;const when=validityLabel(f);
   const meters=showDetails?"<div class='meters'>"+meterHtml("conf",f.confidence)+meterHtml("imp",f.importance)+"</div>":"";
   let drill="";if(kind==="k"&&f.source_id){const iid=iIdForFact(f.id);drill=iid&&infoById.has(iid)?" <a class='link jump-i' data-id='"+esc(f.id)+"'>Show Information</a>":"";}
   if(kind==="i"&&f.id){const n=dataIdsForI(f.id).length;drill=n?" <a class='link jump-d' data-iid='"+esc(f.id)+"'>Show Data ("+n+")</a>":" <span class='dom'>No Data in this snapshot</span>";}
-  const ended=superseded?"<span class='chip'>superseded</span>":expired?"<span class='chip'>no longer valid</span>":"";
+  const rels=relationsFor(f);
+  const sup=rels.find(r=>r.kind==="supersedes"&&(r.related_fact_id===f.id||r.fact_id===f.superseded_by));
+  const ended=sup?"<span class='chip'>superseded ← "+esc(sup.reason)+" ("+esc(sup.context_verdict)+")</span>":superseded?"<span class='chip'>superseded</span>":expired?"<span class='chip'>no longer valid</span>":"";
+  const kept=rels.filter(r=>r.kind==="kept_alongside");
+  const corroborated=rels.filter(r=>r.kind==="corroborated_by"&&r.fact_id===f.id);
+  const uncertain=rels.some(r=>r.basis==="uncertain");
+  const raw=f.session_id&&DATA.sessions?DATA.sessions[f.session_id]:null;
+  let chips="";
+  if(kept.length)chips+="<span class='chip'>kept alongside "+kept.length+"</span>";
+  if(corroborated.length)chips+="<span class='chip'>corroborated ×"+corroborated.length+"</span>";
+  if(uncertain)chips+="<span class='chip'>you have said both</span>";
+  if(f.recorded_in)chips+="<span class='chip' title='"+esc(raw==null?"":raw)+"'>recorded in "+esc(f.recorded_in)+"</span>";
   const klass=superseded?" superseded":expired?" expired":"";
-  return "<div class='fact"+klass+"'><div class='fact-head'><div class='fact-left'><span class='flag"+(flag==="mention"?" mention":"")+"'>"+flag+"</span>"+ended+(f.domain||f.domain_hint?"<span class='dom'>"+esc(f.domain||f.domain_hint)+"</span>":"")+"</div>"+(when?"<span class='when'>"+esc(when)+"</span>":"")+"</div><div>"+esc(f.content)+"</div>"+meters+(drill?"<div class='fact-actions'>"+drill+"</div>":"")+"</div>";
+  return "<div class='fact"+klass+"'><div class='fact-head'><div class='fact-left'><span class='flag"+(flag==="mention"?" mention":"")+"'>"+flag+"</span>"+ended+chips+(f.domain||f.domain_hint?"<span class='dom'>"+esc(f.domain||f.domain_hint)+"</span>":"")+"</div>"+(when?"<span class='when'>"+esc(when)+"</span>":"")+"</div><div>"+esc(f.content)+"</div>"+meters+(drill?"<div class='fact-actions'>"+drill+"</div>":"")+"</div>";
 }
 function eventBlock(e,extra){if(!e)return "";const more=e.full?" <a class='link more' data-id='"+esc(e.id)+"'>Expand</a>":"";const chip=extra?"<span class='chip'>"+esc(extra)+"</span>":"";const time=clock(eventWhen(e));
   return "<div class='fact' data-eid='"+esc(e.id)+"'><div class='fact-head'><div class='fact-left'><span class='flag mention'>"+esc(toolLabel(e))+"</span>"+chip+"</div>"+(time?"<span class='when'>"+esc(time)+"</span>":"")+"</div><div class='txt'>"+esc(e.content)+"</div>"+more+"</div>";}

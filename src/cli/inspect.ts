@@ -95,6 +95,11 @@ function formatLayers(rows: InspectLayerRows, which: InspectLayer): string {
       for (const r of rows.k) {
         chunks.push(`  ${r.domain}${r.entities ? `  ·  ${r.entities}` : ""}`);
         chunks.push(`    ${r.content}`);
+        if (r.relations.length) {
+          chunks.push(
+            `    ${r.relations.map((rel) => `${rel.kind}: ${rel.reason}`).join("; ")}`,
+          );
+        }
       }
     } else if (layer === "entities") {
       chunks.push("", `Entities (${rows.entity_total})`, "");

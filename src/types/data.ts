@@ -57,6 +57,33 @@ export const SOURCE_QUALITY_VALUES = [
 ] as const;
 export type SourceQuality = (typeof SOURCE_QUALITY_VALUES)[number];
 
+/**
+ * How the projects two facts were recorded in relate. Evidence for a
+ * supersession decision, not a filter on search or consolidation.
+ */
+export const CONTEXT_VERDICTS = ["same", "different", "not_comparable"] as const;
+export type ContextVerdict = (typeof CONTEXT_VERDICTS)[number];
+
+/**
+ * Why a supersession was proposed. `update` is a change to one specific
+ * thing. `coexists` means both statements can hold. `uncertain` means the
+ * provider could not tell those apart.
+ */
+export const SUPERSESSION_BASES = ["update", "coexists", "uncertain"] as const;
+export type SupersessionBasis = (typeof SUPERSESSION_BASES)[number];
+
+/**
+ * A recorded supersession decision. The row is evidence of what was decided;
+ * it is not a filter on search or on the domain candidate pool.
+ */
+export const FACT_RELATION_KINDS = [
+  "supersedes",
+  "kept_alongside",
+  "corroborated_by",
+  "overlap_noted",
+] as const;
+export type FactRelationKind = (typeof FACT_RELATION_KINDS)[number];
+
 /** A consolidation run over session facts. Can happen multiple times per session. */
 export interface Consolidation {
   id: string;
@@ -307,6 +334,16 @@ export interface SearchResult {
   source: Source | null;
   /** Extra evidence kinds (assent / observation / restatement), not a score. */
   backing?: BackingType[];
+  /** Short key for the place the fact was recorded. Null when there is none. */
+  recorded_in?: string | null;
+  /** Decisions that name this fact. Attached after ranking. */
+  relations?: Array<{
+    kind: FactRelationKind;
+    related_fact_id: string | null;
+    context_verdict: ContextVerdict;
+    basis: SupersessionBasis | null;
+    reason: string;
+  }>;
 }
 
 /** Search response with retrieval quality signals for calling AIs. */

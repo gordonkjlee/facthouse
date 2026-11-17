@@ -6,6 +6,9 @@ import type { Db } from "../db/connection.js";
 import { currencyClause } from "../db/facts.js";
 import { SUBJECT_OF } from "../db/entities.js";
 import { getUnconsolidatedFacts } from "../db/session-facts.js";
+import { decisionsByFactId } from "../db/fact-relations.js";
+import { getProjectsForSessions } from "../db/sessions.js";
+import { projectKey } from "../sources/resolve.js";
 import { getStats, type KnowledgeStats } from "../db/stats.js";
 import type { SemanticIntent } from "../embedding/provider.js";
 import {
@@ -40,6 +43,9 @@ export interface InspectFactRow {
   status: string;
   superseded_by: string | null;
   is_latest: number;
+  session_id: string | null;
+  /** Short key from projectKey of the session value. Null when it has no cwd. */
+  recorded_in: string | null;
 }
 
 export interface InspectInfoRow {
@@ -98,6 +104,18 @@ export interface InspectGraphPayload {
   dCap: number;
   selectedId: string | null;
   cap: number;
+  /** Raw value recorded on each session the facts reference. */
+  sessions: Record<string, string | null>;
+  fact_relations: InspectRelationRow[];
+}
+
+export interface InspectRelationRow {
+  fact_id: string;
+  related_fact_id: string | null;
+  kind: string;
+  context_verdict: string;
+  basis: string | null;
+  reason: string;
 }
 
 export interface InspectLayerRows {
@@ -109,7 +127,18 @@ export interface InspectLayerRows {
     content: string;
   }>;
   i: Array<{ content: string; domain_hint: string | null; created_at: string }>;
-  k: Array<{ content: string; domain: string; entities: string }>;
+  k: Array<{
+    content: string;
+    domain: string;
+    entities: string;
+    relations: Array<{
+      kind: string;
+      related_fact_id: string | null;
+      context_verdict: string;
+      basis: string | null;
+      reason: string;
+    }>;
+  }>;
   entities: Array<{ type: string; name: string; id: string }>;
   graph: Array<{
     from: string;
@@ -242,10 +271,17 @@ export async function loadLayerRows(
       namesByFact.set(row.fact_id, list);
     }
   }
+  let decisions = new Map<string, InspectLayerRows["k"][number]["relations"]>();
+  try {
+    decisions = await decisionsByFactId(db, kIds);
+  } catch {
+    decisions = new Map();
+  }
   const k = kRows.map((r) => ({
     content: r.content,
     domain: r.domain,
     entities: (namesByFact.get(r.id) ?? []).join(", "),
+    relations: decisions.get(r.id) ?? [],
   }));
 
   const entityTotal = (
@@ -316,15 +352,40 @@ export async function loadGraphPayload(
     )
     .all()) as InspectEdge[];
 
-  const facts = (await db
+  const factRows = (await db
     .prepare(
       `SELECT id, content, domain, subdomain, confidence, importance,
               source_type, source_tool, created_at, valid_from, valid_until,
-              speaker_role, speaker, source_id, status, superseded_by, is_latest
+              speaker_role, speaker, source_id, status, superseded_by, is_latest,
+              session_id
          FROM facts
         WHERE status IN ('active', 'superseded')`,
     )
-    .all()) as InspectFactRow[];
+    .all()) as Array<Omit<InspectFactRow, "recorded_in">>;
+  const sessionIds = [
+    ...new Set(
+      factRows
+        .map((row) => row.session_id)
+        .filter((id): id is string => typeof id === "string" && id !== ""),
+    ),
+  ];
+  let sessions: Record<string, string | null> = {};
+  try {
+    sessions = Object.fromEntries(await getProjectsForSessions(db, sessionIds));
+  } catch {
+    sessions = {};
+  }
+  const facts: InspectFactRow[] = factRows.map((row) => ({
+    ...row,
+    session_id: row.session_id ?? null,
+    recorded_in: projectKey(
+      row.session_id ? (sessions[row.session_id] ?? null) : null,
+    ),
+  }));
+  const fact_relations = await loadFactRelations(
+    db,
+    facts.map((row) => row.id),
+  );
 
   const links = (await db
     .prepare(`SELECT fact_id, entity_id, relationship FROM fact_entities`)
@@ -590,7 +651,37 @@ export async function loadGraphPayload(
     dCap: D_CAP,
     selectedId,
     cap: opts.all ? Math.max(nodes.length, 1) : opts.cap,
+    sessions,
+    fact_relations,
   };
+}
+
+/** Relations that name one of these facts. A missing table is an empty list. */
+async function loadFactRelations(
+  db: Db,
+  ids: string[],
+): Promise<InspectRelationRow[]> {
+  if (ids.length === 0) return [];
+  try {
+    const out: InspectRelationRow[] = [];
+    const chunk = 500;
+    for (let offset = 0; offset < ids.length; offset += chunk) {
+      const slice = ids.slice(offset, offset + chunk);
+      const placeholders = slice.map(() => "?").join(", ");
+      const rows = (await db
+        .prepare(
+          `SELECT fact_id, related_fact_id, kind, context_verdict, basis, reason
+             FROM fact_relations
+            WHERE fact_id IN (${placeholders})
+               OR related_fact_id IN (${placeholders})`,
+        )
+        .all(...slice, ...slice)) as InspectRelationRow[];
+      out.push(...rows);
+    }
+    return out;
+  } catch {
+    return [];
+  }
 }
 
 export async function loadHealth(

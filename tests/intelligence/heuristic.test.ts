@@ -293,6 +293,37 @@ describe("detectSupersession", () => {
     const result = await provider.detectSupersession(newFact, [superseded]);
     expect(result).toBeNull();
   });
+
+  it("prefers the same project when several candidates pass the floor", async () => {
+    const newFact: ClassifiedFact = {
+      id: "new-id",
+      content: "I no longer prefer dark roast coffee every morning",
+      domain: "preferences",
+      subdomain: null,
+    };
+    const different = {
+      ...fakeFact2("I prefer dark roast coffee every morning", "preferences"),
+      id: "diff-id",
+    };
+    const same = {
+      ...fakeFact2("I prefer dark roast coffee every morning today", "preferences"),
+      id: "same-id",
+    };
+    const result = await provider.detectSupersession(newFact, [different, same], {
+      project: "c-dev-app",
+      verdicts: new Map([
+        ["diff-id", "different"],
+        ["same-id", "same"],
+      ]),
+      projects: new Map([
+        ["diff-id", "c-dev-other"],
+        ["same-id", "c-dev-app"],
+      ]),
+    });
+    expect(result?.existingFactId).toBe("same-id");
+    expect(result?.basis).toBe("update");
+    expect(result?.source_quality).toBe("heuristic");
+  });
 });
 
 describe("reconcile", () => {

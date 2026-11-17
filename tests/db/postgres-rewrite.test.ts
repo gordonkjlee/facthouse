@@ -41,6 +41,15 @@ describe("rewriteToPostgres", () => {
     expect(rewriteToPostgres("BEGIN IMMEDIATE")).toBe("BEGIN");
   });
 
+  it("rewrites two-argument MIN(1.0, to LEAST", () => {
+    const sql = rewriteToPostgres(
+      `UPDATE facts SET confidence = MIN(1.0, confidence + ?) WHERE id = ?`,
+    );
+    expect(sql).toBe(
+      `UPDATE facts SET confidence = LEAST(1.0, confidence + $1) WHERE id = $2`,
+    );
+  });
+
   it("does not rewrite placeholders inside string literals", () => {
     expect(rewriteToPostgres(`SELECT '?' AS q, ?`)).toBe(`SELECT '?' AS q, $1`);
   });
