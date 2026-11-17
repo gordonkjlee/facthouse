@@ -652,6 +652,28 @@ describe("formatConsolidate", () => {
     expect(formatConsolidate(run({ corroborations: 1 }))).toContain("Corroborations     1");
   });
 
+  it("prints one line when the run stopped on the token budget", () => {
+    const out = formatConsolidate(
+      run({
+        eventsRemaining: 12,
+        budgetStop: {
+          stopped: true,
+          provider: "cli",
+          scale: "week",
+          used: 10_000_000,
+          cap: 10_000_000,
+          capName: "CLI weekly cap",
+          resetsAt: "2028-01-15T00:00:00.000Z",
+          eventsUnexamined: 12,
+        },
+      }),
+    );
+    expect(out).toContain(
+      "Stopped at the token budget. 10M used · 0 remaining. 10M CLI weekly cap · resets 15 Jan. 12 lines still unexamined.",
+    );
+    expect(out).not.toContain("Skipped");
+  });
+
   it("omits semantic lines when search is off", () => {
     const out = formatConsolidate(
       run({

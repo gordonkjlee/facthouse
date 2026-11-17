@@ -1022,6 +1022,7 @@ export async function consolidateInProcess(
       opts.print !== false &&
       steps.extract &&
       !result.extractionDegraded &&
+      !result.budgetStop &&
       result.eventsRemaining > 0
     ) {
       console.error(

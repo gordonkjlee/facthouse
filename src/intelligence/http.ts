@@ -693,5 +693,9 @@ export function createHttpProvider(
     takeUsage(): IntelligenceUsage | null {
       return usageAcc.take();
     },
+
+    peekUsage(): IntelligenceUsage | null {
+      return usageAcc.peek();
+    },
   };
 }

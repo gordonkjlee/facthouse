@@ -93,6 +93,38 @@ export function tokenBudgetUsageLead(opts: {
   };
 }
 
+/** One sentence for a run that stopped because the cap was reached. */
+export function formatBudgetStopLine(
+  stop: {
+    provider: string;
+    scale: TokenWindow;
+    used: number;
+    cap: number;
+    resetsAt: string | null;
+    eventsUnexamined: number;
+    unmetered?: boolean;
+  },
+  now = new Date(),
+): string {
+  const waiting =
+    stop.eventsUnexamined === 1
+      ? "1 line still unexamined"
+      : `${stop.eventsUnexamined} lines still unexamined`;
+  if (stop.unmetered) {
+    return `${tokenBudgetUnmeteredMessage(stop.provider)} ${waiting}.`;
+  }
+  const copy = tokenBudgetUsageLead({
+    provider: stop.provider,
+    scale: stop.scale,
+    used: stop.used,
+    remaining: Math.max(0, stop.cap - stop.used),
+    cap: stop.cap,
+    resets_at: stop.resetsAt,
+    now,
+  });
+  return `Stopped at the token budget. ${copy.lead}. ${copy.detail}. ${waiting}.`;
+}
+
 const SUFFIX: Record<string, number> = { k: 1_000, m: 1_000_000, g: 1_000_000_000 };
 
 export class TokenBudgetError extends Error {
@@ -130,6 +162,17 @@ export interface TokenBudgetVerdict {
   skip: boolean;
   reason?: string;
   report: TokenBudgetReport;
+}
+
+/** The window that tripped the same rule as `verdictForProvider`. */
+export interface TokenBudgetBreach {
+  provider: BilledProvider;
+  scale: TokenWindow;
+  used: number;
+  cap: number;
+  resets_at: string | null;
+  /** A billed call in the window did not report tokens. */
+  unmetered: boolean;
 }
 
 export const TOKEN_BUDGET_HOW_TO =
@@ -299,37 +342,67 @@ export function evaluateTokenBudget(
   };
 }
 
+/**
+ * First window that refuses more billed work for this provider.
+ * Unmetered calls win over a numeric cap, matching the start-of-run gate.
+ * Windows are checked in hour, day, week, month order.
+ */
+export function breachForProvider(
+  report: TokenBudgetReport,
+  provider: string,
+): TokenBudgetBreach | null {
+  if (!isBilledProvider(provider)) return null;
+  const slice = report.providers[provider];
+  if (!slice) return null;
+  const first = slice.windows[0];
+  if (slice.unmetered && first) {
+    return {
+      provider,
+      scale: first.scale,
+      used: first.used,
+      cap: first.cap,
+      resets_at: first.resets_at,
+      unmetered: true,
+    };
+  }
+  for (const w of slice.windows) {
+    if (w.used >= w.cap) {
+      return {
+        provider,
+        scale: w.scale,
+        used: w.used,
+        cap: w.cap,
+        resets_at: w.resets_at,
+        unmetered: false,
+      };
+    }
+  }
+  return null;
+}
+
 export function verdictForProvider(
   report: TokenBudgetReport,
   provider: string,
 ): TokenBudgetVerdict {
-  if (!isBilledProvider(provider)) {
-    return { skip: false, report };
-  }
-  const slice = report.providers[provider];
-  if (!slice) return { skip: false, report };
-  if (slice.unmetered) {
+  const breach = breachForProvider(report, provider);
+  if (!breach) return { skip: false, report };
+  if (breach.unmetered) {
     return {
       skip: true,
       reason: tokenBudgetUnmeteredMessage(provider),
       report,
     };
   }
-  for (const w of slice.windows) {
-    if (w.used >= w.cap) {
-      return {
-        skip: true,
-        reason: tokenBudgetRefusedMessage({
-          provider,
-          scale: w.scale,
-          used: w.used,
-          cap: w.cap,
-        }),
-        report,
-      };
-    }
-  }
-  return { skip: false, report };
+  return {
+    skip: true,
+    reason: tokenBudgetRefusedMessage({
+      provider,
+      scale: breach.scale,
+      used: breach.used,
+      cap: breach.cap,
+    }),
+    report,
+  };
 }
 
 export function tokenBudgetRefusedMessage(opts: {

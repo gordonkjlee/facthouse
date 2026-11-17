@@ -1192,5 +1192,9 @@ export function createCliProvider(
     takeUsage(): IntelligenceUsage | null {
       return usageAcc.take();
     },
+
+    peekUsage(): IntelligenceUsage | null {
+      return usageAcc.peek();
+    },
   };
 }
