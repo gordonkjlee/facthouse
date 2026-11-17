@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.34.0](https://github.com/gordonkjlee/facthouse/compare/v0.33.0...v0.34.0) (2026-11-17)
+
+
+### Features
+
+* provenance and context-aware supersession ([#328](https://github.com/gordonkjlee/facthouse/issues/328)) ([25e22a5](https://github.com/gordonkjlee/facthouse/commit/25e22a5976ffc4010276cb26a8ab76051321aabd))
+
 ## [0.33.0](https://github.com/gordonkjlee/facthouse/compare/v0.32.0...v0.33.0) (2026-11-16)
 
 
