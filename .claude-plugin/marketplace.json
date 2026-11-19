@@ -1,0 +1,13 @@
+{
+  "name": "facthouse",
+  "owner": {
+    "name": "Gordon Lee"
+  },
+  "plugins": [
+    {
+      "name": "facthouse",
+      "source": "./plugins/facthouse",
+      "description": "Local AI memory: neuroscience-inspired Data→Information→Knowledge in SQLite you own."
+    }
+  ]
+}

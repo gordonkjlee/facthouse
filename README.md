@@ -579,12 +579,10 @@ On [Cursor Directory](https://cursor.directory/plugins/facthouse), **Add to Curs
 Add to `.cursorrules` (Cursor) or `.windsurfrules` (Windsurf) in your project root:
 
 ```
-When the facthouse MCP server is available:
-- At the start of every conversation, before answering, call get_session_context unless you already loaded the memory://briefing resource. That call returns the same working briefing the resource would have injected. Tools-only clients never fetch resources.
-- Before answering questions this store might already know, call search_knowledge
-- To find out everything known about a particular person, project, or thing, call get_entity
-- Call capture_fact only to correct or add something copy or extraction missed
+Facthouse memory is available; follow the server's instructions (call `get_session_context` at the start); use the facthouse skills to save and search.
 ```
+
+The installable Cursor and Claude Code plugin is `plugins/facthouse`. It ships this same rule. Windsurf does not load those skills; follow the tool descriptions the server sends for search and save.
 
 Cursor and Windsurf consume tools but not resources, so `memory://profile` will not load on its own there. Cursor conversations themselves are copied with `kind: "cursor"` (JSONL under `~/.cursor/projects/`, not the SQLite composer store).
 

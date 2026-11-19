@@ -101,9 +101,11 @@ describe("cursor directory listing — one definition", () => {
     expect(numbered).toEqual(["1. ", "2. ", "3. "]);
   });
 
-  it("rules lead with session bootstrap and freeze against the README Cursor block", () => {
+  it("rules are the thin shared rule and freeze against the README Cursor block", () => {
     expect(listing.rules).toBe(CURSOR_RULES_BODY);
-    expect(listing.rules).toContain(SESSION_BOOTSTRAP_INSTRUCTIONS);
+    expect(listing.rules).toMatch(/get_session_context/);
+    expect(listing.rules).toMatch(/facthouse skills/);
+    expect(listing.rules).not.toContain(SESSION_BOOTSTRAP_INSTRUCTIONS);
     expect(listing.rules).not.toMatch(/When context is getting long/);
     expect(listing.rules).not.toMatch(/call consolidate/);
     expect(readmeText()).toContain(CURSOR_RULES_BODY);

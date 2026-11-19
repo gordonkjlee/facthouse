@@ -20,7 +20,6 @@ import {
   npmPackageSpec,
   pathFreeCli,
 } from "../identity.js";
-import { SESSION_BOOTSTRAP_INSTRUCTIONS } from "../tools/resources.js";
 import { mcpConfigSnippet } from "./init.js";
 import { INIT_PROMPTS, silentEmbeddingProvider } from "./init-knobs.js";
 import { CURSOR_DIRECTORY_ORIGIN } from "./listings.js";
@@ -38,15 +37,15 @@ export const LISTING_DEFAULT_DATA_DIR = "~/.facthouse";
 export { CURSOR_DIRECTORY_ORIGIN };
 
 /**
- * Tools-only client rules. README § Cursor / Windsurf repeats this block.
- * Cursor Directory gets it as the Rules field, not inside Setup.
- * First bullet is `SESSION_BOOTSTRAP_INSTRUCTIONS` — one definition.
+ * Thin always-on rule. Skills carry save and search.
+ *
+ * One definition for the Cursor Directory Rules field, the README Cursor
+ * block, and `plugins/facthouse/rules/facthouse.mdc` (body after frontmatter).
+ * Do not paste `SESSION_BOOTSTRAP_INSTRUCTIONS` here. The server already
+ * sends that text; the rule tells the client to follow it.
  */
-export const CURSOR_RULES_BODY = `When the facthouse MCP server is available:
-- ${SESSION_BOOTSTRAP_INSTRUCTIONS}
-- Before answering questions this store might already know, call search_knowledge
-- To find out everything known about a particular person, project, or thing, call get_entity
-- Call capture_fact only to correct or add something copy or extraction missed`;
+export const CURSOR_RULES_BODY =
+  "Facthouse memory is available; follow the server's instructions (call `get_session_context` at the start); use the facthouse skills to save and search.";
 
 export interface CursorDirectoryListing {
   origin: string;
