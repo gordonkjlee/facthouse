@@ -49,6 +49,8 @@ FTS5 (words) and optional embeddings (meaning) are indexes of **K**. They are no
 
 Two speeds. **Copy** tails named transcripts into Data. **Extract** turns new transcript lines into self-contained facts (D→I). **Integrate** fits them into what the store already knows: domains, entities, duplicates, contradictions, the graph (I→K). `consolidate` is the umbrella: copy, extract, and integrate together. Extract is capped at 50 lines per run, so a first backfill is never spent on the lot; when extract runs, it takes the oldest 50 lines. Consolidation does not invent a sentence nobody said.
 
+One consolidation writes the store at a time. While the run is alive it refreshes a lease every 30 seconds, including during a long model call, so a long extract is not treated as abandoned. A second `consolidate` skips with “Another consolidation is in progress” until that lease is free. If this run loses the lease, it stops at the next extract batch, leaves marks at the last finished batch, and does not start integrate.
+
 A hook cannot call MCP tools — those exist only on the assistant’s connection — and it must not wait for a model pass. So it does not invoke `consolidate`. It runs `facthouse notify …`, which tells the **already-running** server that a moment happened and returns at once. `consolidate` is the pipeline verb (MCP tool or CLI); the caller waits. `notify compaction` is that verb asked of the live server, asynchronously. `notify threshold` is a different policy (extract only, if due).
 
 **Automatic**
@@ -320,7 +322,7 @@ Point each store's `sources.cwd` (or hook `--data`) at that store only. Two dire
 
 SQLite is the default and needs no extra software. To use Postgres instead, set `storage.provider` to `"postgres"` in that store's `config.json`, or `FACTHOUSE_STORAGE=postgres` on the MCP entry, and set `FACTHOUSE_POSTGRES_URL` to a `postgres://` (or `postgresql://`) URL. The password belongs in the environment, not in `config.json`. If the URL is missing or the server cannot be reached, Facthouse stops; it does not create a SQLite file.
 
-The data directory is still the memory: `config.json` and the scheduler socket live there. Tables live at the URL. Two memories need two directories and two databases.
+The data directory is still the memory: `config.json` and the scheduler socket live there. Tables live at the URL. Two memories need two directories and two databases. On Postgres the consolidation lease is also a session advisory lock held on a connection kept open for the whole run. When that connection drops, Postgres releases the lock. A stale lease row can be taken only by a run that holds the lock.
 
 Init does not ask which engine to use. `facthouse init --yes` still writes sqlite.
 

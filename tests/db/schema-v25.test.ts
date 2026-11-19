@@ -86,8 +86,8 @@ async function roundTrip(database: Db): Promise<void> {
 describe("schema v25", () => {
   it("is the current version and a fresh store has the decision table", async () => {
     await applySchema(db);
-    expect(SCHEMA_VERSION).toBe(25);
-    expect(await getSchemaVersion(db)).toBe(25);
+    expect(SCHEMA_VERSION).toBe(26);
+    expect(await getSchemaVersion(db)).toBe(26);
     const tables = (await db
       .prepare(`SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'fact_relations'`)
       .all()) as Array<{ name: string }>;
@@ -100,7 +100,7 @@ describe("schema v25", () => {
     await db.exec(`DROP TABLE fact_relations`);
     await pragmaWrite(db, "user_version = 24");
     await applySchema(db);
-    expect(await getSchemaVersion(db)).toBe(25);
+    expect(await getSchemaVersion(db)).toBe(26);
     const indexes = (await db.prepare(`PRAGMA index_list(fact_relations)`).all()) as Array<{
       name: string;
     }>;
@@ -132,13 +132,13 @@ describe("schema v25 on Postgres", () => {
   it("reaches 25 from a store seeded at 24 and round-trips a row", async () => {
     const pg = await openPgliteDatabase();
     try {
-      expect(await getSchemaVersion(pg)).toBe(25);
+      expect(await getSchemaVersion(pg)).toBe(26);
       await pg.exec(`DROP TABLE fact_relations`);
       await pg.exec(`DELETE FROM schema_migrations`);
       await pg.prepare(`INSERT INTO schema_migrations (version) VALUES (?)`).run(24);
       expect(await getSchemaVersion(pg)).toBe(24);
       await applySchema(pg);
-      expect(await getSchemaVersion(pg)).toBe(25);
+      expect(await getSchemaVersion(pg)).toBe(26);
       const indexes = (await pg
         .prepare(
           `SELECT indexname FROM pg_indexes WHERE tablename = 'fact_relations'`,

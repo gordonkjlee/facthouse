@@ -101,7 +101,13 @@ import {
 import { isAboutTheUser } from "./subject.js";
 import { ensureDomain, loadStoreVocabulary } from "../db/domains.js";
 import { importanceDefaults, normaliseDomainName } from "../schemas/domains.js";
-import { acquireLock, releaseLock } from "../db/consolidation-lock.js";
+import {
+  acquireLock,
+  refreshLock,
+  releaseLock,
+  startLockHeartbeat,
+  LOCK_LOST_REASON,
+} from "../db/consolidation-lock.js";
 import {
   advanceExtractMarksToCurrentMax,
   conversationExtractThrough,
@@ -515,7 +521,39 @@ export async function consolidate(
     };
   };
 
+  // Lost the lease. Not a thrown error: the caller sees a skip, and
+  // nothing past the last finished extract batch is written.
+  const skipLost = async (): Promise<ConsolidationResult> => {
+    const examinedThrough = await extractWatermark(db);
+    const factsIn = extractPending.reduce((n, p) => n + p.facts.length, 0);
+    await releaseLock(db, consolidationId);
+    return {
+      consolidationId,
+      factsIn,
+      factsIntegrated: 0,
+      factsRejected: 0,
+      entitiesCreated: 0,
+      entitiesLinked: 0,
+      supersessions: 0,
+      keptAlongside: 0,
+      corroborations: 0,
+      relations: [],
+      summary: null,
+      openThreads: [],
+      skipped: true,
+      skipReason: LOCK_LOST_REASON,
+      eventsCopied,
+      eventsRemaining: await remainingEvents(),
+      examinedThrough,
+      extractionDegraded,
+      prefixCommitted,
+    };
+  };
+
   try {
+    // Heartbeat for the whole run, including a single long model call.
+    // releaseLock stops the timer. It is unref'd, so it cannot hold the process.
+    startLockHeartbeat(db, consolidationId);
     // Phase B: D→I event extraction (if this run examines events).
     // Session facts land unclaimed so a later run that includes integrate
     // can claim them; which moments run which steps is MOMENT_POLICY.
@@ -542,10 +580,12 @@ export async function consolidate(
               return liveBreach(extractType);
             }
           : undefined,
+        () => refreshLock(db, consolidationId),
       );
       extractionDegraded = extracted.degraded;
       extractPending = extracted.pending;
       prefixCommitted = extracted.prefixCommitted;
+      if (extracted.lockLost) return await skipLost();
       if (extracted.extractStopped && extracted.tokenBreach) {
         tokenBreach = extracted.tokenBreach;
         stoppedForBudget = true;
@@ -582,6 +622,8 @@ export async function consolidate(
 
     if (integrateNow) {
       throwIfAborted(caller.abort);
+      // Last check before integrate. Once integrate starts it is not split.
+      if (!(await refreshLock(db, consolidationId))) return await skipLost();
       caller.onIntegrateStart?.((await getUnconsolidatedFacts(db)).length);
       await claimForConsolidation(db, consolidationId);
     }
@@ -1848,6 +1890,8 @@ type ExtractResult = {
   /** Set only when a later batch or conversation was left unexamined. */
   tokenBreach: TokenBudgetBreach | null;
   extractStopped: boolean;
+  /** The lease was lost. Pending holds only batches already committed. */
+  lockLost: boolean;
 };
 
 function truncateForPrompt(
@@ -1955,6 +1999,7 @@ async function extractFactsFromEvents(
   progressTotal?: number,
   onModelChunk?: (lines: number, durationMs: number) => void,
   onTokenBudget?: () => Promise<TokenBudgetBreach | null>,
+  ownsLock?: () => Promise<boolean>,
 ): Promise<ExtractResult> {
   const empty: ExtractResult = {
     degraded: false,
@@ -1962,6 +2007,7 @@ async function extractFactsFromEvents(
     prefixCommitted: false,
     tokenBreach: null,
     extractStopped: false,
+    lockLost: false,
   };
   const workingMemorySize =
     config?.extraction?.working_memory_size ??
@@ -1997,6 +2043,19 @@ async function extractFactsFromEvents(
   let tokenBreach: TokenBudgetBreach | null = null;
   let extractStopped = false;
 
+  const leaseLost = async (): Promise<boolean> => {
+    if (!ownsLock) return false;
+    return !(await ownsLock());
+  };
+  const lostExtract = (): ExtractResult => ({
+    degraded,
+    pending,
+    prefixCommitted: degraded && advanced,
+    tokenBreach: extractStopped ? tokenBreach : null,
+    extractStopped,
+    lockLost: true,
+  });
+
   // Oldest conversations first, bounded by `limit` events across the run. A
   // per-conversation mark advances only through what this run examined, so a
   // truncated tail is simply the next run's work — never a claim to have read it.
@@ -2006,6 +2065,7 @@ async function extractFactsFromEvents(
   for (let convIndex = 0; convIndex < conversations.length; convIndex++) {
     const conv = conversations[convIndex]!;
     throwIfAborted(abort);
+    if (await leaseLost()) return lostExtract();
     if (budget <= 0) break;
     if (conv.kind === "unkeyed") {
       await setConversationExtractThrough(db, conv, conv.minSequence);
@@ -2082,6 +2142,7 @@ async function extractFactsFromEvents(
 
     while (work.length > 0) {
       throwIfAborted(abort);
+      if (await leaseLost()) return lostExtract();
       const chunk = work.shift()!;
       const evidence =
         earlierThisRun.length > 0
@@ -2111,6 +2172,7 @@ async function extractFactsFromEvents(
       );
       throwIfAborted(abort);
       if (outcome.aborted) throw new ConsolidateAbortError();
+      if (await leaseLost()) return lostExtract();
       if (
         outcome.degraded &&
         outcome.degradedKind === "overflow" &&
@@ -2164,6 +2226,7 @@ async function extractFactsFromEvents(
         );
         throwIfAborted(abort);
         if (outcome.aborted) throw new ConsolidateAbortError();
+        if (await leaseLost()) return lostExtract();
         if (
           outcome.degraded &&
           outcome.degradedKind === "overflow" &&
@@ -2246,6 +2309,7 @@ async function extractFactsFromEvents(
     if (budgetCut) break;
 
     if (!conversationDegraded) {
+      if (await leaseLost()) return lostExtract();
       await persistPending(db, thisPending);
       const maxLoaded = lastSeq(loaded);
       if (maxLoaded != null) {
@@ -2277,6 +2341,7 @@ async function extractFactsFromEvents(
     prefixCommitted: degraded && advanced,
     tokenBreach: extractStopped ? tokenBreach : null,
     extractStopped,
+    lockLost: false,
   };
 }
 

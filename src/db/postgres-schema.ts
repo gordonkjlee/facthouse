@@ -62,6 +62,12 @@ export async function applyPostgresSchema(db: Db): Promise<void> {
       $v24$;
     `);
   }
+  if (version > 0 && version < 26) {
+    await db.exec(`
+      ALTER TABLE consolidation_lock ADD COLUMN IF NOT EXISTS heartbeat_at TIMESTAMPTZ;
+      UPDATE consolidation_lock SET heartbeat_at = started_at WHERE heartbeat_at IS NULL;
+    `);
+  }
   await db
     .prepare(`INSERT OR IGNORE INTO schema_migrations (version) VALUES (?)`)
     .run(SCHEMA_VERSION);
@@ -237,7 +243,8 @@ CREATE TABLE IF NOT EXISTS domains (
 CREATE TABLE IF NOT EXISTS consolidation_lock (
   id INTEGER PRIMARY KEY CHECK (id = 1),
   holder TEXT NOT NULL,
-  started_at TIMESTAMPTZ NOT NULL
+  started_at TIMESTAMPTZ NOT NULL,
+  heartbeat_at TIMESTAMPTZ
 );
 
 CREATE TABLE IF NOT EXISTS facts (
