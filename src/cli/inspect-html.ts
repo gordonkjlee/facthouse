@@ -57,9 +57,10 @@ ${ledgerInspectCss()}
   html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
     font: 13px/1.45 "Segoe UI", ui-sans-serif, system-ui, sans-serif; }
   :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-  #app { display: grid; grid-template-rows: auto 1fr; height: 100%; }
+  #app { display: grid; grid-template-rows: auto 1fr; height: 100%; min-width: 0; }
   header { display: flex; flex-wrap: wrap; gap: 12px 20px; align-items: center;
-    padding: 12px 18px; border-bottom: 1px solid var(--line); background: var(--panel); }
+    padding: 12px 18px; border-bottom: 1px solid var(--line); background: var(--panel);
+    min-width: 0; }
   .brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
   .brand-mark { display: block; width: 28px; height: 28px; flex: 0 0 auto; border-radius: 6px;
     overflow: hidden; box-shadow: 0 0 0 1px var(--line); }
@@ -74,6 +75,11 @@ ${ledgerInspectCss()}
     background: var(--input); color: var(--text); border: 1px solid var(--line);
     border-radius: 8px; padding: 7px 10px; font: inherit; }
   input[type="search"] { width: 260px; }
+  @media (max-width: 520px) {
+    .controls { min-width: 0; max-width: 100%; }
+    input[type="search"] { width: min(260px, 100%); }
+    .controls select { max-width: 100%; }
+  }
   input[type="range"] { width: 92px; }
   button { cursor: pointer; transition: border-color .12s, color .12s, background .12s; }
   button:hover { border-color: var(--accent); color: var(--accent); }
@@ -82,9 +88,10 @@ ${ledgerInspectCss()}
     justify-content: center; background: var(--elev); }
   .icon-btn svg { width: 16px; height: 16px; fill: none; stroke: currentColor;
     stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
-  #stage { display: grid; min-height: 0; --panel: 420px;
-    grid-template-columns: 1fr 6px var(--panel); grid-template-areas: "graph split panel"; }
-  #stage.dock-left { grid-template-columns: var(--panel) 6px 1fr;
+  #stage { display: grid; min-height: 0; min-width: 0; --panel: 420px;
+    grid-template-columns: minmax(0, 1fr) 6px minmax(0, var(--panel));
+    grid-template-areas: "graph split panel"; }
+  #stage.dock-left { grid-template-columns: minmax(0, var(--panel)) 6px minmax(0, 1fr);
     grid-template-areas: "panel split graph"; }
   #stage.dock-bottom { grid-template-columns: 1fr; grid-template-rows: 1fr 6px var(--panel);
     grid-template-areas: "graph" "split" "panel"; }
@@ -148,7 +155,8 @@ ${ledgerInspectCss()}
   .meter i b { display: block; height: 100%; background: var(--accent); border-radius: 2px; }
   .meter.imp i b { background: var(--mention); }
   .meter.quiet { opacity: 0.4; }
-  .chip { display: inline-block; padding: 1px 7px; border-radius: 999px; background: var(--chip); font-size: 11px; }
+  .chip { display: inline-block; max-width: 100%; padding: 1px 7px; border-radius: 999px;
+    background: var(--chip); font-size: 11px; overflow-wrap: anywhere; }
   #panelTools { position: absolute; top: 10px; right: 12px; z-index: 4; display: flex; gap: 4px; }
   #dockWrap { position: relative; }
   #dockBtn { width: 28px; height: 24px; padding: 2px; display: flex; align-items: center; justify-content: center; }
@@ -176,7 +184,7 @@ ${ledgerInspectCss()}
   #spend:target { display: block; }
   html.view-spend .graph-only,
   html:has(#spend:target) .graph-only { display: none; }
-  #stage, #spend { grid-row: 2; min-height: 0; }
+  #stage, #spend { grid-row: 2; min-height: 0; min-width: 0; }
   #spend {
     display: none; overflow: auto; padding: 20px 24px 48px;
     --card: var(--elev); --ink: var(--text); --gold: var(--mention);

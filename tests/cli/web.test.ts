@@ -178,6 +178,25 @@ describe("init web grok", () => {
     expect(presentHtml).not.toContain(note);
   });
 
+  it("keeps a long path inside the form box", () => {
+    const path =
+      "/home/alex/work/repositories/extremely-long-unbroken-project-path/" +
+      "clients/facthouse-memory-store/" +
+      "a".repeat(80);
+    const html = renderInitWebHtml({
+      ...seed,
+      dataDir: path,
+      processCwd: path,
+      homeDefaults: { "claude-code": path, cursor: path, grok: path },
+      exists: () => false,
+    });
+    expect(html).toContain(`value="${path}"`);
+    expect(html).toContain("box-sizing: border-box");
+    expect(html).toMatch(/fieldset\s*\{[^}]*min-width:\s*0/);
+    expect(html).toMatch(/\.warn\s*\{[^}]*overflow-wrap:\s*anywhere/);
+    expect(html).toMatch(/min-width:\s*0/);
+  });
+
   it("replaces the previous kind default and keeps a custom home", () => {
     const defaults = initHomeDefaults({
       CLAUDE_CONFIG_DIR: "C:/Users/alex/.claude-work",

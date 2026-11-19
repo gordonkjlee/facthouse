@@ -27,12 +27,12 @@ export const INTELLIGENCE_ROUTING_CSS = `
     background: var(--card, var(--elev)); border: 1px solid var(--line); border-radius: 12px; }
   .intel-card h2 { margin: 0 0 6px; font-size: 15px; font-weight: 650; }
   .intel-card .do { color: var(--muted); font-size: 12px; margin: 0 0 12px; }
-  .intel-grid { display: grid; gap: 8px 12px; grid-template-columns: 7rem 1fr 8rem; align-items: center; }
+  .intel-grid { display: grid; gap: 8px 12px; grid-template-columns: 7rem minmax(0, 1fr) 8rem; align-items: center; }
   .intel-grid label { color: var(--muted); font-size: 12px; }
-  .intel-grid select, .intel-grid input { width: 100%; }
-  .intel-hosts { margin: 10px 0 0; padding: 0; list-style: none; color: var(--muted); font-size: 12px; }
+  .intel-grid select, .intel-grid input { width: 100%; min-width: 0; max-width: 100%; }
+  .intel-hosts { margin: 10px 0 0; padding: 0; list-style: none; color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
   .intel-json { margin: 12px 0 8px; padding: 10px 12px; background: var(--input); border-radius: 8px;
-    overflow: auto; font: 12px/1.4 ui-monospace, monospace; white-space: pre; }
+    max-width: 100%; overflow-x: auto; font: 12px/1.4 ui-monospace, monospace; white-space: pre; }
   .intel-card .copy { margin-top: 4px; }
 `;
 
