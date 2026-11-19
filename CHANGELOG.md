@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.35.2](https://github.com/gordonkjlee/facthouse/compare/v0.35.1...v0.35.2) (2026-11-19)
+
+
+### Bug Fixes
+
+* encode Grok session folders like urlencoding ([#336](https://github.com/gordonkjlee/facthouse/issues/336)) ([8d6f205](https://github.com/gordonkjlee/facthouse/commit/8d6f20578aabab24a77ac9a7685c960bdfa39f35))
+
 ## [0.35.1](https://github.com/gordonkjlee/facthouse/compare/v0.35.0...v0.35.1) (2026-11-19)
 
 
