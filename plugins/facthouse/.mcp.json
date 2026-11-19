@@ -4,7 +4,7 @@
       "command": "npx",
       "args": [
         "-y",
-        "@facthouse/mcp@0.36.0"
+        "@facthouse/mcp@0.36.1"
       ]
     }
   }

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.36.1](https://github.com/gordonkjlee/facthouse/compare/v0.36.0...v0.36.1) (2026-11-19)
+
+
+### Bug Fixes
+
+* stop inspect page overflowing on phone widths ([#342](https://github.com/gordonkjlee/facthouse/issues/342)) ([f758571](https://github.com/gordonkjlee/facthouse/commit/f7585712f33973dbd27a0dff508d995a5ad34d59))
+
 ## [0.36.0](https://github.com/gordonkjlee/facthouse/compare/v0.35.2...v0.36.0) (2026-11-19)
 
 

@@ -2,7 +2,7 @@
   "name": "facthouse",
   "displayName": "Facthouse",
   "description": "Local AI memory: neuroscience-inspired Data→Information→Knowledge in SQLite you own.",
-  "version": "0.36.0",
+  "version": "0.36.1",
   "author": {
     "name": "Gordon Lee"
   },
