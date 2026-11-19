@@ -225,8 +225,7 @@ async function askCapture(
 
   if (homeOk) {
     // Each client's own layout and encoding — the adapter's, not a second one.
-    // A Grok cwd too long to encode lives in a slug group found by its
-    // `.cwd` file at copy time; do not warn about a name Grok never wrote.
+    // A long Grok cwd is the slug-hash name from encodeGrokSessionDir.
     const grok = kind === "grok" ? grokGroupNames(stored) : null;
     const { root, names } = grok
       ? { root: path.join(homeAbs, "sessions"), names: grok.names }
@@ -234,7 +233,7 @@ async function askCapture(
           root: path.join(homeAbs, "projects"),
           names: [kind === "cursor" ? encodeCursorProjectDir(stored) : encodeProjectDir(stored)],
         };
-    if (!grok?.tooLong && !names.some((name) => deps.exists(path.join(root, name)))) {
+    if (!names.some((name) => deps.exists(path.join(root, name)))) {
       io.write(INIT_PROMPTS.projectGroupMissing(home, stored, names[0] ?? stored));
     }
   }

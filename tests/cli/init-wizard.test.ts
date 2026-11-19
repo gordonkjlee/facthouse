@@ -17,6 +17,7 @@ import {
 import { INIT_PROMPTS, MORE_SETTING_IDS } from "../../src/cli/init-knobs.js";
 import { CONFIG_FILENAME } from "../../src/config.js";
 import { expandTilde, resolveUserPath } from "../../src/paths.js";
+import { encodeGrokSessionDir } from "../../src/sources/resolve.js";
 
 const ROOT = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 
@@ -329,12 +330,20 @@ describe("collectInitAnswers", () => {
     expect(slashed.writes.join("\n")).not.toMatch(/no project group/);
   });
 
-  it("does not warn about a Grok group too long to encode", async () => {
+  it("looks for a long Grok cwd under its slug-hash group", async () => {
     const homeAbs = resolveUserPath("~/.grok");
     const longCwd = "C:\\dev\\" + "deep\\".repeat(60) + "app";
-    const io = fakeIo(["copy", "grok", "", longCwd, "n"]);
-    await collectInitAnswers(io, seed, deps(new Set([homeAbs, longCwd])));
-    expect(io.writes.join("\n")).not.toMatch(/no project group/);
+    const groupName = encodeGrokSessionDir(longCwd);
+    const group = path.join(homeAbs, "sessions", groupName);
+    const missing = INIT_PROMPTS.projectGroupMissing("~/.grok", longCwd, groupName);
+
+    const found = fakeIo(["copy", "grok", "", longCwd, "n"]);
+    await collectInitAnswers(found, seed, deps(new Set([homeAbs, group, longCwd])));
+    expect(found.writes).not.toContain(missing);
+
+    const absent = fakeIo(["copy", "grok", "", longCwd, "n"]);
+    await collectInitAnswers(absent, seed, deps(new Set([homeAbs, longCwd])));
+    expect(absent.writes).toContain(missing);
   });
 
   it("skips the source on cwd skip and still asks search and More", async () => {

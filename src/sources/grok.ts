@@ -8,7 +8,8 @@
  * Layout:
  *   home/sessions/<group>/<session-id>/chat_history.jsonl
  *
- * `<group>` is the cwd URL-encoded (`C%3A%5Cdev%5Capp`). Only
+ * `<group>` is `encode_cwd_dirname(cwd)`: percent-encoded (`C%3A%5Cdev%5Capp`),
+ * or `{slug}-{16 hex}` when that encoding exceeds 255 bytes. Only
  * `chat_history.jsonl` is copied: one line is one model-bound record.
  * `updates.jsonl` (the chunked restore stream), `events.jsonl`, the system
  * prompt, summaries and compaction files are not walked, and nothing outside
@@ -34,9 +35,6 @@ import { copyJsonlFile, isDir, type JsonlFileCopy } from "./jsonl-copy.js";
 import { encodeGrokSessionDir, type ResolvedCaptureSource } from "./resolve.js";
 
 export const GROK_TRANSCRIPT = "chat_history.jsonl";
-
-/** Grok falls back to a slug-plus-hash group past this many bytes. */
-const MAX_GROUP_BYTES = 255;
 
 /**
  * Discover Grok `chat_history.jsonl` files for one configured home.
@@ -163,12 +161,14 @@ export function mapGrokLine(
  * Grok encodes the path it saw, so a Windows cwd written with forward
  * slashes or a lower-case drive is also tried in Grok's own form. A cwd that
  * is already one segment (the on-disk group) is honoured literally. An
- * absolute path is never joined as a child of `sessions/`. When the encoded
- * name is too long, Grok's slug-plus-hash group records the original path in
- * a `.cwd` file; that is matched instead.
+ * absolute path is never joined as a child of `sessions/`. When none of
+ * those directories exist, `<group>/.cwd` can still name the cwd: Grok
+ * writes that file only for a hash-shortened folder
+ * (`ensure_sessions_cwd_dir_in`, crates/codegen/xai-grok-config/src/paths.rs
+ * lines 162-166).
  */
 export function grokGroupsForCwd(sessionsRoot: string, cwd: string): string[] {
-  const { spellings, names, tooLong } = grokGroupNames(cwd);
+  const { spellings, names } = grokGroupNames(cwd);
 
   const dirs: string[] = [];
   for (const name of names) {
@@ -177,7 +177,7 @@ export function grokGroupsForCwd(sessionsRoot: string, cwd: string): string[] {
     if (!rel || rel.startsWith("..") || path.isAbsolute(rel) || rel.includes(path.sep)) continue;
     if (isDir(candidate)) dirs.push(candidate);
   }
-  if (tooLong) {
+  if (dirs.length === 0) {
     for (const group of listDirs(sessionsRoot)) {
       const recorded = readCwdFile(group);
       if (recorded !== null && spellings.has(recorded.replace(/[\\/]+$/, ""))) dirs.push(group);
@@ -195,30 +195,28 @@ export function grokGroupsForCwd(sessionsRoot: string, cwd: string): string[] {
 /**
  * The group names Grok could have written for a cwd, Grok's own spelling
  * first. Pure — init uses it to say whether the group exists without a
- * second encoding. `tooLong` means the real group is a slug found by `.cwd`.
+ * second encoding. A long cwd's name is the slug-hash from
+ * `encodeGrokSessionDir`, not the raw percent-encoding.
  */
 export function grokGroupNames(cwd: string): {
   spellings: Set<string>;
   names: string[];
-  tooLong: boolean;
 } {
   const trimmed = cwd.replace(/[\\/]+$/, "");
   const spellings = new Set<string>();
-  if (!trimmed) return { spellings, names: [], tooLong: false };
+  if (!trimmed) return { spellings, names: [] };
   if (/^[a-zA-Z]:[\\/]/.test(trimmed)) {
     spellings.add(trimmed[0]!.toUpperCase() + trimmed.slice(1).replace(/\//g, "\\"));
   }
   spellings.add(trimmed);
 
   const names = new Set<string>();
-  let tooLong = false;
   for (const spelling of spellings) {
     const encoded = encodeGrokSessionDir(spelling);
-    if (Buffer.byteLength(encoded, "utf8") > MAX_GROUP_BYTES) tooLong = true;
-    else names.add(encoded);
+    if (encoded) names.add(encoded);
   }
   if (!/[\\/]/.test(trimmed)) names.add(trimmed);
-  return { spellings, names: [...names], tooLong };
+  return { spellings, names: [...names] };
 }
 
 function realDir(dir: string): string {
