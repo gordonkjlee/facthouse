@@ -99,6 +99,9 @@ export async function applySchema(db: Db): Promise<void> {
   if (version < 25) {
     await applyV25(db);
   }
+  if (version < 26) {
+    await applyV26(db);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -1079,4 +1082,33 @@ CREATE INDEX IF NOT EXISTS idx_fact_relations_session_fact
   ON fact_relations(session_fact_id);
 `);
   await pragmaWrite(db, "user_version = 25");
+}
+
+/**
+ * v26: the consolidation lease records a heartbeat separately from when
+ * the run started. A long extract refreshes the heartbeat; started_at
+ * stays the moment the run took the row. Nullable so a row written by
+ * an older build still has a lease (its started_at).
+ */
+async function applyV26(db: Db): Promise<void> {
+  // A fixture can sit at v21+ without the v3 tables. A real store has the row
+  // from v3; only then is there a lease to extend.
+  const table = (await db
+    .prepare(
+      `SELECT 1 AS ok FROM sqlite_master
+       WHERE type = 'table' AND name = 'consolidation_lock'`,
+    )
+    .get()) as { ok: number } | undefined;
+  if (table) {
+    const cols = (await db.prepare(`PRAGMA table_info(consolidation_lock)`).all()) as Array<{
+      name: string;
+    }>;
+    if (!cols.some((c) => c.name === "heartbeat_at")) {
+      await db.exec(`ALTER TABLE consolidation_lock ADD COLUMN heartbeat_at TEXT`);
+    }
+    await db.exec(
+      `UPDATE consolidation_lock SET heartbeat_at = started_at WHERE heartbeat_at IS NULL`,
+    );
+  }
+  await pragmaWrite(db, "user_version = 26");
 }

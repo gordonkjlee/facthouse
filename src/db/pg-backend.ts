@@ -14,7 +14,28 @@ import type { Db } from "./connection.js";
 const CONNECT_TIMEOUT_MS = 10_000;
 
 class PgClientBackend implements PostgresBackend {
-  constructor(private readonly client: Client) {}
+  constructor(
+    private readonly client: Client,
+    private readonly url: string,
+  ) {}
+
+  /**
+   * A new TCP session. Advisory locks are per session; a pooled or shared
+   * client would drop them at the next checkout.
+   */
+  async openSession(): Promise<PostgresBackend> {
+    const client = new Client({
+      connectionString: this.url,
+      connectionTimeoutMillis: CONNECT_TIMEOUT_MS,
+    });
+    try {
+      await client.connect();
+    } catch (err) {
+      await client.end().catch(() => undefined);
+      throw err;
+    }
+    return new PgClientBackend(client, this.url);
+  }
 
   async query(
     sql: string,
@@ -56,5 +77,5 @@ export async function connectPostgres(url: string): Promise<Db> {
     await client.end().catch(() => undefined);
     throw err;
   }
-  return attachPostgres(new PgClientBackend(client));
+  return attachPostgres(new PgClientBackend(client, url));
 }

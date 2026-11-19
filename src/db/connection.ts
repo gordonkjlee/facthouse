@@ -96,6 +96,7 @@ class SqliteDb implements Db {
   }
 
   async close(): Promise<void> {
+    await runCloseHooks(this);
     try {
       this.raw.close();
     } catch {
@@ -128,6 +129,31 @@ export function openDatabase(dbPath: string): Db {
 /** Close the database connection. Safe to call multiple times. */
 export async function closeDatabase(db: Db): Promise<void> {
   await db.close();
+}
+
+/**
+ * Run when this handle closes, before the underlying connection drops.
+ * Used so a session advisory lock is released with the store that holds it.
+ */
+const closeHooks = new WeakMap<object, Array<() => Promise<void>>>();
+
+export function onDatabaseClose(db: object, hook: () => Promise<void>): void {
+  const list = closeHooks.get(db);
+  if (list) list.push(hook);
+  else closeHooks.set(db, [hook]);
+}
+
+export async function runCloseHooks(db: object): Promise<void> {
+  const list = closeHooks.get(db);
+  closeHooks.delete(db);
+  if (!list) return;
+  for (const hook of list) {
+    try {
+      await hook();
+    } catch {
+      // Closing still has to finish. A hook must not strand the connection.
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------

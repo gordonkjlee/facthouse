@@ -13,6 +13,7 @@
  */
 
 import { AsyncLocalStorage } from "node:async_hooks";
+import { runCloseHooks } from "./connection.js";
 import type { Db, Dialect, RunResult, SqlParam, Statement } from "./connection.js";
 
 /** Minimal backend: PGlite in tests, `pg` in production. */
@@ -23,10 +24,30 @@ export interface PostgresBackend {
   ): Promise<{ rows: Record<string, unknown>[]; rowCount: number }>;
   exec(sql: string): Promise<void>;
   close(): Promise<void>;
+  /**
+   * A second session on the same server. Session advisory locks die with
+   * the connection that took them, so they cannot live on a shared client.
+   * Absent on the in-process test engine, which has only one session.
+   */
+  openSession?(): Promise<PostgresBackend>;
 }
 
+const sessionOpeners = new WeakMap<object, () => Promise<PostgresBackend>>();
+
 export function attachPostgres(backend: PostgresBackend): Db {
-  return new PostgresDb(backend);
+  const db = new PostgresDb(backend);
+  if (backend.openSession) {
+    const open = backend.openSession.bind(backend);
+    sessionOpeners.set(db, () => open());
+  }
+  return db;
+}
+
+/** Dedicated session factory, when this handle can open one. */
+export function postgresSessionOpener(
+  db: object,
+): (() => Promise<PostgresBackend>) | undefined {
+  return sessionOpeners.get(db);
 }
 
 /**
@@ -111,6 +132,7 @@ class PostgresDb implements Db {
   }
 
   async close(): Promise<void> {
+    await runCloseHooks(this);
     await this.backend.close();
   }
 
