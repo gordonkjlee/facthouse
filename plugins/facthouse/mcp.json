@@ -2,7 +2,10 @@
   "mcpServers": {
     "facthouse": {
       "command": "npx",
-      "args": ["-y", "@facthouse/mcp@0.35.2"]
+      "args": [
+        "-y",
+        "@facthouse/mcp@0.36.0"
+      ]
     }
   }
 }

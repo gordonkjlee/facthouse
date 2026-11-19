@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.36.0](https://github.com/gordonkjlee/facthouse/compare/v0.35.2...v0.36.0) (2026-11-19)
+
+
+### Features
+
+* Cursor and Claude Code plugin with memory skills ([#339](https://github.com/gordonkjlee/facthouse/issues/339)) ([de516d1](https://github.com/gordonkjlee/facthouse/commit/de516d11e6bd3b9e83043d59c7ee325c831eb98d))
+
 ## [0.35.2](https://github.com/gordonkjlee/facthouse/compare/v0.35.1...v0.35.2) (2026-11-19)
 
 
