@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.35.1](https://github.com/gordonkjlee/facthouse/compare/v0.35.0...v0.35.1) (2026-11-19)
+
+
+### Bug Fixes
+
+* keep the consolidation lock alive with a heartbeat ([#334](https://github.com/gordonkjlee/facthouse/issues/334)) ([37a6161](https://github.com/gordonkjlee/facthouse/commit/37a6161925e77cd46adf252d668499af27574be1))
+
 ## [0.35.0](https://github.com/gordonkjlee/facthouse/compare/v0.34.0...v0.35.0) (2026-11-19)
 
 
