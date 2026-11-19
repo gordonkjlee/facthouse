@@ -1,0 +1,24 @@
+{
+  "name": "facthouse",
+  "displayName": "Facthouse",
+  "description": "Local AI memory: neuroscience-inspired Data→Information→Knowledge in SQLite you own.",
+  "version": "0.35.2",
+  "author": {
+    "name": "Gordon Lee"
+  },
+  "homepage": "https://facthouse.dev",
+  "repository": "https://github.com/gordonkjlee/facthouse",
+  "license": "MIT",
+  "keywords": [
+    "facthouse",
+    "mcp",
+    "mcp-server",
+    "model-context-protocol",
+    "ai-memory",
+    "local-memory",
+    "sqlite",
+    "knowledge-engine",
+    "entity-graph"
+  ],
+  "icon": "./assets/logo.png"
+}

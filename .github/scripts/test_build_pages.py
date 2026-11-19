@@ -185,6 +185,21 @@ def test_pitch_helpers_keep_readme_lede():
     assert "<strong>Data (what happened" not in html
 
 
+def _plugin_text_files() -> list[tuple[str, str]]:
+    root = ROOT / "plugins"
+    found: list[tuple[str, str]] = []
+    assert root.is_dir(), "plugins/ is part of the public copy"
+    for path in sorted(root.rglob("*")):
+        if not path.is_file():
+            continue
+        if path.suffix.lower() not in {".md", ".mdc", ".json", ".txt"}:
+            continue
+        label = str(path.relative_to(ROOT))
+        found.append((label, path.read_text(encoding="utf-8")))
+    assert found, "plugins/ has no public text"
+    return found
+
+
 def test_public_surfaces_have_no_rival_disambiguation():
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
     pkg = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))
@@ -195,6 +210,9 @@ def test_public_surfaces_have_no_rival_disambiguation():
     assert_no_rival_copy(pkg["description"], "package.json description")
     assert_no_rival_copy(server["description"], "server.json description")
     assert_no_rival_copy(demo, "site/demo.html")
+    for label, text in _plugin_text_files():
+        assert_no_rival_copy(text, label)
+        assert ("day" + "book") not in text.lower(), label
     assert README_PITCH in readme
     assert "The store is a SQLite file on your disk." in readme
     assert REJECTED_PITCH not in readme
@@ -224,6 +242,14 @@ def test_listing_description_is_approved_neuroscience_pitch():
     assert "you own" in SHORT_PITCH.lower()
     assert "Wisdom" not in SHORT_PITCH
     assert "FactMem" not in SHORT_PITCH
+    for manifest in (
+        ROOT / "plugins" / "facthouse" / ".cursor-plugin" / "plugin.json",
+        ROOT / "plugins" / "facthouse" / ".claude-plugin" / "plugin.json",
+    ):
+        description = json.loads(manifest.read_text(encoding="utf-8"))["description"]
+        assert description == SHORT_PITCH
+        assert description == pkg["description"]
+        assert_no_rival_copy(description, str(manifest.relative_to(ROOT)))
 
 
 def test_split_readme_uses_lede_and_keeps_image():
