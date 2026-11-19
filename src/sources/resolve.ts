@@ -7,6 +7,7 @@
  * typo cannot silently become "nothing happened".
  */
 
+import { blake3 } from "@noble/hashes/blake3";
 import {
   captureSourceKindsList,
   isCaptureSourceKind,
@@ -51,14 +52,113 @@ export function encodeCursorProjectDir(cwd: string): string {
 }
 
 /**
- * Grok Build's on-disk session group under `~/.grok/sessions/`: the cwd
- * URL-encoded as Grok saw it. `C:\dev\app` → `C%3A%5Cdev%5Capp`;
- * `/home/me/app` → `%2Fhome%2Fme%2Fapp`. A third vocabulary, not Claude
- * Code's or Cursor's — the three must not be mixed.
+ * Bytes in one directory name (APFS, ext4, NTFS). Grok's `MAX_DIRNAME_BYTES`.
+ * crates/codegen/xai-grok-config/src/paths.rs line 56.
+ */
+const GROK_DIRNAME_MAX_BYTES = 255;
+
+/** `slugify(..., 40)` then `-` then 16 hex chars. paths.rs lines 72-77. */
+const GROK_SLUG_MAX_CHARS = 40;
+const GROK_HASH_HEX_CHARS = 16;
+
+/**
+ * Grok Build's session-group directory under `~/.grok/sessions/`.
+ *
+ * `encode_cwd_dirname` in crates/codegen/xai-grok-config/src/paths.rs
+ * lines 61-78 (grok-build 2bdd1d6a6369de0e8c68132ea4539e9abd9e14a8) percent-encodes
+ * the cwd with Rust `urlencoding` 2.1.3 `encode`: UTF-8 bytes, keep
+ * `A-Z a-z 0-9 - . _ ~`, escape every other byte as uppercase `%XX`.
+ * `C:\dev\app` → `C%3A%5Cdev%5Capp`; `/home/me/app` → `%2Fhome%2Fme%2Fapp`.
+ * Trailing slashes are stripped first, so a configured `C:\dev\app\` matches
+ * the directory Grok created from `current_dir` (no trailing separator).
+ * The same stripped string is what gets hashed below.
+ *
+ * When that name is longer than 255 bytes, the directory is
+ * `{slug}-{hex16}`. `slug` is `slugify(file_name, 40)` (paths.rs lines 179-193);
+ * an empty slug becomes `workspace`. `hex16` is the first 16 chars of
+ * `blake3::hash(cwd.as_bytes()).to_hex()` (paths.rs lines 66-67). `file_name`
+ * (paths.rs lines 68-71) is Rust `Path`: a drive-letter or UNC cwd was written
+ * on Windows, so both `\` and `/` separate it; any other cwd was written on
+ * Unix, so only `/` separates it.
  */
 export function encodeGrokSessionDir(cwd: string): string {
   const trimmed = cwd.replace(/[\\/]+$/, "");
-  return trimmed ? encodeURIComponent(trimmed) : "";
+  if (!trimmed) return "";
+  const encoded = encodeUrlencoding(trimmed);
+  if (Buffer.byteLength(encoded, "utf8") <= GROK_DIRNAME_MAX_BYTES) return encoded;
+  const slug = slugify(grokCwdLeaf(trimmed), GROK_SLUG_MAX_CHARS);
+  return `${slug === "" ? "workspace" : slug}-${blake3Hex16(trimmed)}`;
+}
+
+/** Rust `urlencoding::encode` (crate 2.1.3): unreserved bytes only, uppercase hex. */
+function encodeUrlencoding(text: string): string {
+  const bytes = Buffer.from(text, "utf8");
+  let out = "";
+  for (const byte of bytes) {
+    if (
+      (byte >= 0x30 && byte <= 0x39) ||
+      (byte >= 0x41 && byte <= 0x5a) ||
+      (byte >= 0x61 && byte <= 0x7a) ||
+      byte === 0x2d ||
+      byte === 0x2e ||
+      byte === 0x5f ||
+      byte === 0x7e
+    ) {
+      out += String.fromCharCode(byte);
+    } else {
+      out += `%${byte.toString(16).toUpperCase().padStart(2, "0")}`;
+    }
+  }
+  return out;
+}
+
+/** First 16 lowercase hex chars of BLAKE3(UTF-8 cwd). blake3 1.8 `hash().to_hex()`. */
+function blake3Hex16(cwd: string): string {
+  const digest = blake3(Buffer.from(cwd, "utf8"));
+  return Buffer.from(digest).toString("hex").slice(0, GROK_HASH_HEX_CHARS);
+}
+
+/**
+ * `slugify` in paths.rs lines 179-193: lowercase, ASCII alphanumerics kept,
+ * every other run becomes one `-`, edges trimmed, then at most `maxLen` chars.
+ */
+function slugify(input: string, maxLen: number): string {
+  let result = "";
+  let prevDash = false;
+  for (const char of input.toLowerCase()) {
+    const code = char.codePointAt(0) ?? 0;
+    const asciiAlnum =
+      (code >= 48 && code <= 57) || (code >= 65 && code <= 90) || (code >= 97 && code <= 122);
+    if (asciiAlnum) {
+      result += char;
+      prevDash = false;
+    } else if (!prevDash) {
+      result += "-";
+      prevDash = true;
+    }
+  }
+  const trimmed = result.replace(/^-+|-+$/g, "");
+  return Array.from(trimmed).slice(0, maxLen).join("");
+}
+
+/**
+ * Last normal path component, or `workspace` when Rust `Path::file_name`
+ * would be `None` (`..`, `.`, or a root).
+ */
+function grokCwdLeaf(cwd: string): string {
+  const windows = /^[A-Za-z]:/.test(cwd) || cwd.startsWith("\\\\");
+  let parts: string[];
+  if (!windows) {
+    parts = cwd.split("/");
+  } else if (cwd.startsWith("\\\\")) {
+    parts = cwd.slice(2).split(/[\\/]/).slice(2);
+  } else {
+    parts = cwd.slice(2).split(/[\\/]/);
+  }
+  while (parts.length > 0 && parts[parts.length - 1] === "") parts.pop();
+  const last = parts[parts.length - 1];
+  if (last === undefined || last === "." || last === "..") return "workspace";
+  return last;
 }
 
 /**

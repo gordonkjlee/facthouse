@@ -102,12 +102,46 @@ afterEach(async () => {
   rmSync(root, { recursive: true, force: true });
 });
 
+/**
+ * Fixtures from Grok Build `encode_cwd_dirname` (paths.rs lines 61-78,
+ * urlencoding 2.1.3, blake3 1.8). Expected strings were computed from that
+ * algorithm, not from `encodeGrokSessionDir`.
+ *
+ * The long Windows cwd percent-encodes to 264 bytes, over the 255-byte cap.
+ * Its leaf is `My App!` → slug `my-app`; the 16 hex chars are
+ * BLAKE3(cwd UTF-8) truncated.
+ */
+const LONG_WINDOWS_CWD = "C:\\Program Files (x86)\\" + "vendor\\".repeat(24) + "My App!";
+
 describe("encodeGrokSessionDir", () => {
-  it("URL-encodes the cwd the way Grok names its group", () => {
-    expect(encodeGrokSessionDir("C:\\dev\\app")).toBe("C%3A%5Cdev%5Capp");
-    expect(encodeGrokSessionDir("C:\\dev\\app\\")).toBe("C%3A%5Cdev%5Capp");
-    expect(encodeGrokSessionDir("/home/alex/app")).toBe("%2Fhome%2Falex%2Fapp");
-    expect(encodeGrokSessionDir("C:\\dev\\my-app")).toBe("C%3A%5Cdev%5Cmy-app");
+  it.each([
+    ["plain Windows path", "C:\\dev\\app", "C%3A%5Cdev%5Capp"],
+    ["trailing slash stripped", "C:\\dev\\app\\", "C%3A%5Cdev%5Capp"],
+    ["hyphen kept", "C:\\dev\\my-app", "C%3A%5Cdev%5Cmy-app"],
+    ["spaces", "C:\\Program Files\\app", "C%3A%5CProgram%20Files%5Capp"],
+    ["exclamation", "C:\\dev\\app!", "C%3A%5Cdev%5Capp%21"],
+    ["asterisk", "C:\\dev\\app*", "C%3A%5Cdev%5Capp%2A"],
+    ["apostrophe", "C:\\dev\\app'", "C%3A%5Cdev%5Capp%27"],
+    ["open paren", "C:\\dev\\app(", "C%3A%5Cdev%5Capp%28"],
+    ["close paren", "C:\\dev\\app)", "C%3A%5Cdev%5Capp%29"],
+    ["non-ASCII", "/home/alex/café", "%2Fhome%2Falex%2Fcaf%C3%A9"],
+    ["Windows drive with (x86)", "C:\\Program Files (x86)\\app", "C%3A%5CProgram%20Files%20%28x86%29%5Capp"],
+    ["POSIX path", "/home/alex/app", "%2Fhome%2Falex%2Fapp"],
+    ["long name over 255 bytes", LONG_WINDOWS_CWD, "my-app-db0e03b7f8c61599"],
+    // Leaf is only CJK, so slugify is empty and Grok uses `workspace`.
+    ["long name with an empty slug", "/Users/test/" + "中".repeat(30), "workspace-43f12fb9a5ee1037"],
+  ])("%s", (_label, cwd, expected) => {
+    expect(encodeGrokSessionDir(cwd)).toBe(expected);
+  });
+
+  it("keeps a 255-byte encoding and shortens 256 bytes to slug-hash", () => {
+    // `/` + 252 `a` encodes to `%2F` + 252 `a` = 255 bytes, still reversible.
+    const atLimit = "/" + "a".repeat(252);
+    expect(encodeGrokSessionDir(atLimit)).toBe("%2F" + "a".repeat(252));
+    // `/` + 253 `b` encodes to 256 bytes. Leaf slug is 40 `b`; hex is BLAKE3.
+    expect(encodeGrokSessionDir("/" + "b".repeat(253))).toBe(
+      "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb-c2e0275525be631f",
+    );
   });
 });
 
@@ -235,9 +269,16 @@ describe("discoverGrokFiles", () => {
     expect(grokGroupsForCwd(sessionsRoot, "..")).toEqual([]);
   });
 
-  it("matches a long cwd through the group's .cwd file", () => {
+  it("finds a long cwd by the slug-hash folder Grok would have written", () => {
+    const group = session(home, "my-app-db0e03b7f8c61599", "s1");
+    writeJsonl(path.join(group, "chat_history.jsonl"), grokLines());
+    const [src] = resolveSources([{ kind: "grok", home, cwd: LONG_WINDOWS_CWD }]);
+    expect(discoverGrokFiles(src!)).toEqual([path.join(group, "chat_history.jsonl")]);
+  });
+
+  it("matches a long cwd through the group's .cwd file when the computed folder is absent", () => {
     const longCwd = "C:\\dev\\" + "deep\\".repeat(60) + "app";
-    expect(Buffer.byteLength(encodeGrokSessionDir(longCwd))).toBeGreaterThan(255);
+    expect(encodeGrokSessionDir(longCwd)).not.toBe("app-1a2b3c4d");
     const group = path.join(home, "sessions", "app-1a2b3c4d");
     writeFileSync(path.join((mkdirSync(group, { recursive: true }), group), ".cwd"), longCwd + "\n");
     writeJsonl(path.join(group, "s1", "chat_history.jsonl"), grokLines());

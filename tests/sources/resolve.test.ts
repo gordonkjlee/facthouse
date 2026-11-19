@@ -59,12 +59,16 @@ describe("projectKey", () => {
   });
 
   it("matches a percent-encoded group to the cwd it names", () => {
-    for (const cwd of ["C:\\dev\\app", "/home/alex/app", "/home/alex/my app"]) {
+    for (const cwd of [
+      "C:\\dev\\app",
+      "/home/alex/app",
+      "/home/alex/my app",
+      "C:\\Program Files (x86)\\app",
+    ]) {
       expect(projectKey(encodeGrokSessionDir(cwd))).toBe(projectKey(cwd));
     }
-    // Parentheses are left literal by encodeGrokSessionDir. The group name
-    // below is the percent-encoded cwd, written out so the key can be checked
-    // without changing that encoder.
+    // Literal group name: parentheses are `%28` and `%29`, the same bytes
+    // `urlencoding::encode` writes.
     const x86 = "C:\\Program Files (x86)\\app";
     expect(projectKey("C%3A%5CProgram%20Files%20%28x86%29%5Capp")).toBe(projectKey(x86));
     expect(projectKey(x86)).toBe("c-program-files-x86-app");
