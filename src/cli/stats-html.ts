@@ -120,8 +120,11 @@ export const SPEND_BOARD_CSS = `
     pointer-events: none; box-shadow: 0 10px 30px rgba(0,0,0,.4);
   }
   #om-tip strong { display: block; margin-bottom: 4px; font-size: 12px; }
+  #om-advanced { min-width: 0; max-width: 100%; }
+  #om-runs { display: block; max-width: 100%; overflow-x: auto; }
   #om-advanced table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 8px; }
-  #om-advanced th, #om-advanced td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  #om-advanced th, #om-advanced td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line);
+    vertical-align: top; overflow-wrap: anywhere; }
   #om-advanced th { color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: .04em; }
   #om-advanced td.num { font-variant-numeric: tabular-nums; text-align: right; }
   #om-advanced .pill { display: inline-block; padding: 1px 6px; border-radius: 999px; background: var(--chip, #243044); font-size: 11px; }

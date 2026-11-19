@@ -222,6 +222,12 @@ describe("inspect graph HTML", () => {
     expect(html).toContain("brand-mark");
     expect(html).toContain('cx="16.00"');
     expect(html).toContain('cx="6.20"');
+    expect(html).toContain("box-sizing: border-box");
+    expect(html).toContain("minmax(0, 1fr) 6px minmax(0, var(--panel))");
+    expect(html).toContain("minmax(0, var(--panel)) 6px minmax(0, 1fr)");
+    expect(html).toContain("overflow-wrap: anywhere");
+    expect(html).toContain("overflow-x: auto");
+    expect(html).toContain("width: min(260px, 100%)");
   });
 
   it("Spend includes a routing card that copies JSON and does not save", async () => {

@@ -181,18 +181,18 @@ ${ledgerInspectCss()}
 html { box-sizing: border-box; }
 *, *::before, *::after { box-sizing: inherit; }
 body { margin: 0; font-family: ui-sans-serif, system-ui, sans-serif; background: var(--bg); color: var(--text); }
-main { max-width: 36rem; width: 100%; margin: 0 auto; padding: 1.5rem 1.15rem 3rem; }
+main { max-width: 36rem; width: 100%; min-width: 0; margin: 0 auto; padding: 1.5rem 1.15rem 3rem; }
 h1 { font-size: 1.35rem; color: var(--gold); }
-label, .hint { display: block; margin: 0.85rem 0 0.25rem; }
-.hint { color: var(--muted); font-size: 0.9rem; white-space: pre-wrap; overflow-wrap: break-word; }
-.warn { color: var(--warn); margin: 0.85rem 0 0.25rem; }
-.choice { display: flex; align-items: center; gap: 0.4rem; margin: 0.45rem 0; }
+label, .hint { display: block; margin: 0.85rem 0 0.25rem; overflow-wrap: anywhere; }
+.hint { color: var(--muted); font-size: 0.9rem; white-space: pre-wrap; overflow-wrap: anywhere; }
+.warn { color: var(--warn); margin: 0.85rem 0 0.25rem; overflow-wrap: anywhere; }
+.choice { display: flex; align-items: center; gap: 0.4rem; margin: 0.45rem 0; min-width: 0; }
 input[type="text"], input:not([type]), input[type="number"], select {
-  width: 100%; padding: 0.45rem 0.55rem; background: var(--panel); color: var(--text);
+  width: 100%; max-width: 100%; min-width: 0; padding: 0.45rem 0.55rem; background: var(--panel); color: var(--text);
   border: 1px solid var(--line); border-radius: 0.3rem;
 }
 input[type="radio"], input[type="checkbox"] { width: auto; margin: 0; }
-fieldset { border: 1px solid var(--line); border-radius: 0.4rem; margin: 1rem 0; padding: 0.75rem 1rem 1rem; }
+fieldset { min-width: 0; max-width: 100%; border: 1px solid var(--line); border-radius: 0.4rem; margin: 1rem 0; padding: 0.75rem 1rem 1rem; }
 legend { color: var(--gold); padding: 0 0.35rem; }
 button { margin-top: 1.25rem; background: var(--gold); color: var(--mark); border: 0; padding: 0.55rem 1rem; border-radius: 0.3rem; font-weight: 600; cursor: pointer; }
 .copy-only[hidden], .http-only[hidden], .more-only[hidden], .warn[hidden] { display: none; }
