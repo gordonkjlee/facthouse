@@ -53,13 +53,15 @@ interface PluginManifest {
   repository: string;
   license: string;
   keywords: string[];
-  logo: string;
+  logo?: string;
+  icon?: string;
   rules?: string;
 }
 
 interface Marketplace {
   name: string;
   owner: { name: string };
+  metadata?: { description: string };
   plugins: Array<{ name: string; source: string; description?: string }>;
 }
 
@@ -163,7 +165,10 @@ describe("facthouse plugin manifests", () => {
   const claudeMcp = readJson<McpFile>("plugins/facthouse/.mcp.json");
 
   it("marketplaces name facthouse and point at the plugin directory", () => {
-    expect(claudeMarket).toEqual(cursorMarket);
+    const { metadata, ...claudeRest } = claudeMarket;
+    expect(claudeRest).toEqual(cursorMarket);
+    expect(metadata).toEqual({ description: PITCH });
+    expect(cursorMarket.metadata).toBeUndefined();
     expect(cursorMarket.name).toBe("facthouse");
     expect(cursorMarket.owner.name).toBe(pkg.author);
     expect(cursorMarket.plugins).toEqual([
@@ -178,10 +183,14 @@ describe("facthouse plugin manifests", () => {
   it("plugin manifests carry the approved pitch and shared metadata", () => {
     expect(LOCKUP).toBe(PITCH);
     expect(pkg.description).toBe(PITCH);
-    const { rules, ...shared } = cursorPlugin;
+    const { rules, logo, ...shared } = cursorPlugin;
     expect(rules).toBe("./rules/facthouse.mdc");
-    expect(claudePlugin).toEqual(shared);
-    expect(claudePlugin).not.toHaveProperty("rules");
+    expect(logo).toBe("assets/logo.png");
+    expect(cursorPlugin.icon).toBeUndefined();
+    expect(claudePlugin).toEqual({ ...shared, icon: "./assets/logo.png" });
+    expect(claudePlugin.logo).toBeUndefined();
+    expect(claudePlugin.rules).toBeUndefined();
+    expect(claudePlugin.icon).toBe("./assets/logo.png");
     expect(cursorPlugin.name).toBe("facthouse");
     expect(cursorPlugin.displayName).toBe("Facthouse");
     expect(cursorPlugin.description).toBe(PITCH);
@@ -193,7 +202,6 @@ describe("facthouse plugin manifests", () => {
     expect(cursorPlugin.repository).toBe("https://github.com/gordonkjlee/facthouse");
     expect(cursorPlugin.license).toBe(pkg.license);
     expect(cursorPlugin.keywords).toEqual(pkg.keywords);
-    expect(cursorPlugin.logo).toBe("assets/logo.png");
   });
 
   it("keeps manifest paths relative", () => {
@@ -258,7 +266,7 @@ describe("facthouse plugin manifests", () => {
     for (const file of texts) {
       const text = readFileSync(file, "utf8");
       expect(text, file).not.toMatch(RIVAL);
-      expect(text.toLowerCase(), file).not.toContain("daybook");
+      expect(text.toLowerCase(), file).not.toContain("day" + "book");
     }
   });
 });
@@ -300,6 +308,15 @@ describe("facthouse plugin rule and skills", () => {
     expect(text).toMatch(/how to run/);
     expect(text).toMatch(/domain_hint/);
     expect(text).toMatch(/project name/i);
+    expect(frontmatter(text).description).toMatch(/first contact/i);
+    expect(frontmatter(text).description).not.toMatch(/beginning work/i);
+    const searchAt = text.indexOf("`search_knowledge` for the project name");
+    const saveAt = text.indexOf("For each missing item, call `capture_fact`");
+    expect(searchAt).toBeGreaterThan(-1);
+    expect(saveAt).toBeGreaterThan(searchAt);
+    expect(text).toMatch(/already exist/);
+    expect(text).toMatch(/explicitly asked to index/);
+    expect(text).toMatch(/Save only what is missing/);
     expect(text).toMatch(/not registered/);
     expect(text).toMatch(/skip it/);
     expect(text).toMatch(/Do not tell the user you skipped it/);
@@ -324,6 +341,7 @@ describe("facthouse plugin rule and skills", () => {
     expect(text).toMatch(/copies transcripts/);
     expect(text).toMatch(/correction/);
     expect(text).toMatch(/extraction would miss/);
+    expect(text).toMatch(/Never save secrets, tokens or passwords/);
   });
 
   it("search uses the real read tools and says when nothing is stored", () => {

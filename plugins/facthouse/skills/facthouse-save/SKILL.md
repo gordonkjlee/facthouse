@@ -1,6 +1,6 @@
 ---
 name: facthouse-save
-description: Use when the user says remember, save this, or don't forget, or after a hard fix, a decision, a convention, or a preference. Write one self-contained sentence.
+description: Use when the user says remember, save this, or don't forget, or after a hard fix, a decision, a convention, or a preference. Write one self-contained sentence. Never save secrets, tokens or passwords.
 ---
 
 # Save a fact
@@ -17,7 +17,7 @@ Use this when the user says "remember", "save this", or "don't forget", and afte
 
 ## Write
 
-Call `capture_fact` once.
+Call `capture_fact` once. Never save secrets, tokens or passwords.
 
 - `content` is one self-contained sentence. A later search has to understand it without this chat. Include the project name.
 - `domain_hint` is the short lowercase domain that fits. Use the project name when the fact is about the project itself.

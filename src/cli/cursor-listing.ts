@@ -37,7 +37,8 @@ export const LISTING_DEFAULT_DATA_DIR = "~/.facthouse";
 export { CURSOR_DIRECTORY_ORIGIN };
 
 /**
- * Thin always-on rule. Skills carry save and search.
+ * Thin always-on rule. One sentence for clients with the facthouse skills
+ * and for clients that only have the tools.
  *
  * One definition for the Cursor Directory Rules field, the README Cursor
  * block, and `plugins/facthouse/rules/facthouse.mdc` (body after frontmatter).
@@ -45,7 +46,7 @@ export { CURSOR_DIRECTORY_ORIGIN };
  * sends that text; the rule tells the client to follow it.
  */
 export const CURSOR_RULES_BODY =
-  "Facthouse memory is available; follow the server's instructions (call `get_session_context` at the start); use the facthouse skills to save and search.";
+  "Facthouse memory is available. Follow the server's instructions (call `get_session_context` at the start). Use the facthouse skills to save and search; without them, call `search_knowledge` before answering questions about past work, `get_entity` for a named person or project, and `capture_fact` only to correct or add what was missed.";
 
 export interface CursorDirectoryListing {
   origin: string;

@@ -1,6 +1,6 @@
 ---
-description: Facthouse memory is available. Follow the server's instructions and use the facthouse skills to save and search.
+description: Facthouse memory is available. Follow the server's instructions, and save or search with the facthouse skills or the named tools.
 alwaysApply: true
 ---
 
-Facthouse memory is available; follow the server's instructions (call `get_session_context` at the start); use the facthouse skills to save and search.
+Facthouse memory is available. Follow the server's instructions (call `get_session_context` at the start). Use the facthouse skills to save and search; without them, call `search_knowledge` before answering questions about past work, `get_entity` for a named person or project, and `capture_fact` only to correct or add what was missed.

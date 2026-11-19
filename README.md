@@ -579,10 +579,10 @@ On [Cursor Directory](https://cursor.directory/plugins/facthouse), **Add to Curs
 Add to `.cursorrules` (Cursor) or `.windsurfrules` (Windsurf) in your project root:
 
 ```
-Facthouse memory is available; follow the server's instructions (call `get_session_context` at the start); use the facthouse skills to save and search.
+Facthouse memory is available. Follow the server's instructions (call `get_session_context` at the start). Use the facthouse skills to save and search; without them, call `search_knowledge` before answering questions about past work, `get_entity` for a named person or project, and `capture_fact` only to correct or add what was missed.
 ```
 
-The installable Cursor and Claude Code plugin is `plugins/facthouse`. It ships this same rule. Windsurf does not load those skills; follow the tool descriptions the server sends for search and save.
+The installable Cursor and Claude Code plugin is `plugins/facthouse`. It ships this same rule.
 
 Cursor and Windsurf consume tools but not resources, so `memory://profile` will not load on its own there. Cursor conversations themselves are copied with `kind: "cursor"` (JSONL under `~/.cursor/projects/`, not the SQLite composer store).
 

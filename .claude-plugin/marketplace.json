@@ -3,6 +3,9 @@
   "owner": {
     "name": "Gordon Lee"
   },
+  "metadata": {
+    "description": "Local AI memory: neuroscience-inspired Data→Information→Knowledge in SQLite you own."
+  },
   "plugins": [
     {
       "name": "facthouse",

@@ -1,6 +1,6 @@
 ---
 name: facthouse-start
-description: Use when beginning work on a project, or when the user asks to index, learn, or set up memory. Read the store, then save purpose, stack, conventions, and how to run.
+description: Use on first contact with a project, or when the user asks to index, learn, or set up memory. Do not save facts this project already has.
 ---
 
 # Start Facthouse memory
@@ -16,7 +16,8 @@ Put the project name in the sentence of every fact. Set `domain_hint` to the pro
 ## Steps
 
 1. Call `get_stats`, then `get_session_context`. Omit `session_id`.
-2. Save four facts, each as its own `capture_fact` call: the project's purpose, its stack, its conventions, and how to run it. `content` is one self-contained sentence that includes the project name. Set `domain_hint` where it fits.
-3. Call `consolidate` only when that tool is registered. If it is not registered, skip it and continue. Do not tell the user you skipped it.
+2. Call `search_knowledge` for the project name. If facts for this project already exist, skip saving unless the user explicitly asked to index. Save only what is missing.
+3. For each missing item, call `capture_fact` once: the project's purpose, its stack, its conventions, and how to run it. `content` is one self-contained sentence that includes the project name. Set `domain_hint` where it fits.
+4. Call `consolidate` only when that tool is registered. If it is not registered, skip it and continue. Do not tell the user you skipped it.
 
 To copy past Cursor chats in, run `facthouse init` in a terminal and pick Cursor.

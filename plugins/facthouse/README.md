@@ -28,12 +28,18 @@ The store is a SQLite file on your computer. Facthouse does not upload the datab
 
 Copy this directory to `~/.cursor/plugins/local/facthouse` and restart Cursor.
 
-Claude Code loads the same directory with `--plugin-dir`.
+Claude Code, from this repository's marketplace:
+
+```
+/plugin install facthouse --marketplace gordonkjlee/facthouse
+```
+
+Claude Code can also load this directory with `--plugin-dir`.
 
 ## Skills
 
-- `facthouse-start` runs when you begin work on a project, or when you ask to index, learn, or set up memory.
+- `facthouse-start` runs on first contact with a project, or when you ask to index, learn, or set up memory. It skips facts this project already has.
 - `facthouse-save` runs when you say remember, save this, or don't forget, and after a hard fix, a decision, a convention, or a preference.
 - `facthouse-search` runs when you ask about previous work, past bugs, decisions, people, projects, or last time.
 
-The Cursor rule in `rules/facthouse.mdc` is always on. It says Facthouse memory is available, to follow the server's instructions (`get_session_context` at the start), and to use these skills.
+The Cursor rule in `rules/facthouse.mdc` is always on. Its text is the same as the Cursor Directory rules field: follow the server's instructions, use these skills to save and search, and without them call `search_knowledge`, `get_entity`, and `capture_fact`.

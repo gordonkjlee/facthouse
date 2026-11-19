@@ -20,5 +20,5 @@
     "knowledge-engine",
     "entity-graph"
   ],
-  "logo": "assets/logo.png"
+  "icon": "./assets/logo.png"
 }

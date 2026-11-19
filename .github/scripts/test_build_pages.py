@@ -212,7 +212,7 @@ def test_public_surfaces_have_no_rival_disambiguation():
     assert_no_rival_copy(demo, "site/demo.html")
     for label, text in _plugin_text_files():
         assert_no_rival_copy(text, label)
-        assert "daybook" not in text.lower(), label
+        assert ("day" + "book") not in text.lower(), label
     assert README_PITCH in readme
     assert "The store is a SQLite file on your disk." in readme
     assert REJECTED_PITCH not in readme

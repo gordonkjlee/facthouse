@@ -105,6 +105,10 @@ describe("cursor directory listing — one definition", () => {
     expect(listing.rules).toBe(CURSOR_RULES_BODY);
     expect(listing.rules).toMatch(/get_session_context/);
     expect(listing.rules).toMatch(/facthouse skills/);
+    expect(listing.rules).toMatch(/without them/);
+    expect(listing.rules).toMatch(/search_knowledge/);
+    expect(listing.rules).toMatch(/get_entity/);
+    expect(listing.rules).toMatch(/capture_fact/);
     expect(listing.rules).not.toContain(SESSION_BOOTSTRAP_INSTRUCTIONS);
     expect(listing.rules).not.toMatch(/When context is getting long/);
     expect(listing.rules).not.toMatch(/call consolidate/);
