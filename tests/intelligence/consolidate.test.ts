@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import type { Db } from "../../src/db/connection.js";
+import { DEFAULT_CONFIG } from "../../src/types/config.js";
 
 // ---------------------------------------------------------------------------
 // Guard: skip when native bindings are unavailable
@@ -23,7 +24,11 @@ const { createStageRouter } = await import("../../src/intelligence/stage-router.
 const { insertIntelligenceRun, listIntelligenceRuns } = await import(
   "../../src/db/intelligence-runs.js"
 );
-const { extractWatermark } = await import("../../src/db/extract-watermarks.js");
+const {
+  extractWatermark,
+  conversationExtractThrough,
+  unexaminedEventCount,
+} = await import("../../src/db/extract-watermarks.js");
 const { UsageAccumulator } = await import("../../src/intelligence/usage.js");
 import { PERSONAL_VOCABULARY } from "../fixtures/vocabulary.js";
 
@@ -1578,6 +1583,9 @@ describe("token budget gate", () => {
       takeUsage() {
         return acc.take();
       },
+      peekUsage() {
+        return acc.peek();
+      },
     };
     return {
       provider,
@@ -1702,7 +1710,7 @@ describe("token budget gate", () => {
     expect(pending.n).toBe(1);
   });
 
-  it("lets this run finish past the cap and skips the next threshold run", async () => {
+  it("finishes the in-flight batch past the cap, skips integrate, and blocks the next run", async () => {
     await seedEvent();
     const spy = extractingSpy();
     const first = await consolidate(
@@ -1711,14 +1719,25 @@ describe("token budget gate", () => {
       cliConfig({ cli: { week: "50" } }),
     );
     expect(first.skipped).toBe(false);
+    expect(first.extractionDegraded).toBeFalsy();
     expect(spy.calls).toBe(1);
     expect(first.usage?.input_tokens).toBe(80);
+    expect(first.factsIntegrated).toBe(0);
+    expect(first.budgetStop?.stopped).toBe(true);
+    expect(first.budgetStop?.used).toBe(100);
+    const pending = (await db
+      .prepare(
+        `SELECT COUNT(*) AS n FROM session_facts WHERE consolidation_id IS NULL`,
+      )
+      .get()) as { n: number };
+    expect(pending.n).toBe(1);
     const second = await consolidate(
       db,
       spy.provider as never,
       cliConfig({ cli: { week: "50" } }),
     );
     expect(second.skipped).toBe(true);
+    expect(second.budgetStop).toBeUndefined();
     expect(spy.calls).toBe(1);
     expect(second.skipReason).toMatch(/last 7 days/);
   });
@@ -1943,6 +1962,241 @@ describe("token budget gate", () => {
       )
       .get()) as { n: number };
     expect(pending.n).toBeGreaterThan(0);
+  });
+
+  function meteredExtract(opts: {
+    providerName?: string;
+    tokens?: number;
+    /** From this call onward, record a billed call with no token counts. */
+    unmeteredFromCall?: number;
+    integrateTokens?: number;
+  }) {
+    let calls = 0;
+    const seen: string[] = [];
+    const name = opts.providerName ?? "cli";
+    const acc = new UsageAccumulator({ provider: name, model: "haiku" });
+    const base = createHeuristicProvider(PERSONAL_VOCABULARY);
+    const provider = {
+      ...base,
+      async extractFactsFromEvents(events: Array<{ content: string | null }>) {
+        calls += 1;
+        const text = events.map((e) => e.content ?? "").join(" ");
+        seen.push(text);
+        const unmetered =
+          opts.unmeteredFromCall != null && calls >= opts.unmeteredFromCall;
+        acc.record("extract", {
+          provider: name,
+          elapsed_ms: 1,
+          ...(unmetered
+            ? {}
+            : { input_tokens: opts.tokens ?? 60, output_tokens: 0 }),
+        });
+        return {
+          facts: [
+            {
+              content: `Remembered ${calls}: ${text.slice(0, 40)}`,
+              domain_hint: "preferences",
+            },
+          ],
+          degraded: false,
+          confidence: 0.9,
+        };
+      },
+      async reconcile(
+        candidate: Parameters<typeof base.reconcile>[0],
+        existing: Parameters<typeof base.reconcile>[1],
+      ) {
+        if (opts.integrateTokens) {
+          acc.record("reconcile", {
+            provider: name,
+            input_tokens: opts.integrateTokens,
+            output_tokens: 0,
+            elapsed_ms: 1,
+          });
+        }
+        return base.reconcile(candidate, existing);
+      },
+      peekUsage() {
+        return acc.peek();
+      },
+      takeUsage() {
+        return acc.take();
+      },
+    };
+    return {
+      provider,
+      seen,
+      get calls() {
+        return calls;
+      },
+    };
+  }
+
+  async function seedFatLines(n: number): Promise<number[]> {
+    const width = DEFAULT_CONFIG.extraction.max_content_length;
+    const seqs: number[] = [];
+    for (let i = 0; i < n; i++) {
+      const row = await insertEvent(db, {
+        client_session_id: "sess-budget",
+        event_type: "message",
+        role: "user",
+        content: `line ${i + 1} about oat milk at Acme `.padEnd(width, "x"),
+      });
+      seqs.push(row.sequence);
+    }
+    return seqs;
+  }
+
+  function batchedCli(cap: number | null) {
+    return {
+      extraction: { enabled: true, batch_size: 1 } as never,
+      intelligence: {
+        provider: "cli" as const,
+        api_key: null,
+        ...(cap == null ? {} : { token_budget: { cli: { week: cap } } }),
+      },
+    };
+  }
+
+  it("stops extract between batches and the next run resumes at that mark", async () => {
+    const seqs = await seedFatLines(3);
+    const spy = meteredExtract({ tokens: 60 });
+    const first = await consolidate(db, spy.provider as never, batchedCli(100));
+    expect(spy.calls).toBe(2);
+    expect(spy.seen).toHaveLength(2);
+    expect(spy.seen.some((text) => text.includes("line 3"))).toBe(false);
+    expect(first.skipped).toBe(false);
+    expect(first.extractionDegraded).toBeFalsy();
+    expect(first.factsIntegrated).toBe(0);
+    expect(first.budgetStop).toMatchObject({
+      stopped: true,
+      provider: "cli",
+      scale: "week",
+      used: 120,
+      cap: 100,
+      capName: "CLI weekly cap",
+      eventsUnexamined: 1,
+    });
+    expect(first.budgetStop?.resetsAt).toEqual(expect.any(String));
+    expect(first.eventsRemaining).toBe(1);
+    expect(await conversationExtractThrough(db, { kind: "client", id: "sess-budget" })).toBe(
+      seqs[1],
+    );
+    expect(await unexaminedEventCount(db)).toBe(1);
+    const unclaimed = (await db
+      .prepare(
+        `SELECT COUNT(*) AS n FROM session_facts WHERE consolidation_id IS NULL`,
+      )
+      .get()) as { n: number };
+    expect(unclaimed.n).toBe(2);
+    const runs = await listIntelligenceRuns(db);
+    expect(runs).toHaveLength(1);
+    expect(runs[0]?.usage.input_tokens).toBe(120);
+
+    const second = await consolidate(
+      db,
+      spy.provider as never,
+      batchedCli(100_000),
+    );
+    expect(second.skipped).toBe(false);
+    expect(second.budgetStop).toBeUndefined();
+    expect(spy.calls).toBe(3);
+    expect(spy.seen.some((text) => text.includes("line 3"))).toBe(true);
+    expect(await conversationExtractThrough(db, { kind: "client", id: "sess-budget" })).toBe(
+      seqs[2],
+    );
+    expect(await unexaminedEventCount(db)).toBe(0);
+    expect(second.factsIntegrated).toBeGreaterThan(0);
+    const claimed = (await db
+      .prepare(
+        `SELECT COUNT(*) AS n FROM session_facts WHERE consolidation_id IS NOT NULL`,
+      )
+      .get()) as { n: number };
+    expect(claimed.n).toBeGreaterThan(0);
+  });
+
+  it("skips integrate when the cap is reached before it and leaves session facts unclaimed", async () => {
+    await seedFatLines(1);
+    const spy = meteredExtract({ tokens: 80 });
+    const result = await consolidate(db, spy.provider as never, batchedCli(50));
+    expect(spy.calls).toBe(1);
+    expect(result.skipped).toBe(false);
+    expect(result.factsIntegrated).toBe(0);
+    expect(result.budgetStop?.stopped).toBe(true);
+    expect(result.budgetStop?.eventsUnexamined).toBe(0);
+    const pending = (await db
+      .prepare(
+        `SELECT COUNT(*) AS n FROM session_facts WHERE consolidation_id IS NULL`,
+      )
+      .get()) as { n: number };
+    expect(pending.n).toBe(1);
+    const integrated = (await db
+      .prepare(`SELECT COUNT(*) AS n FROM facts`)
+      .get()) as { n: number };
+    expect(integrated.n).toBe(0);
+  });
+
+  it("finishes integrate that has already started even when that step crosses the cap", async () => {
+    await seedEvent();
+    const spy = meteredExtract({ tokens: 40, integrateTokens: 200 });
+    const result = await consolidate(db, spy.provider as never, batchedCli(100));
+    expect(spy.calls).toBe(1);
+    expect(result.budgetStop).toBeUndefined();
+    expect(result.factsIntegrated).toBe(1);
+    expect(result.usage?.input_tokens).toBe(240);
+    const claimed = (await db
+      .prepare(
+        `SELECT COUNT(*) AS n FROM session_facts WHERE consolidation_id IS NOT NULL`,
+      )
+      .get()) as { n: number };
+    expect(claimed.n).toBe(1);
+  });
+
+  it("does not stop local HTTP extract when reported tokens exceed the CLI cap", async () => {
+    const seqs = await seedFatLines(3);
+    const spy = meteredExtract({ providerName: "http", tokens: 5_000_000 });
+    const result = await consolidate(db, spy.provider as never, {
+      extraction: { enabled: true, batch_size: 1 } as never,
+      intelligence: {
+        provider: "cli",
+        api_key: null,
+        http: { model: "qwen2.5:7b" },
+        token_budget: { cli: { week: 1 } },
+      },
+    });
+    expect(spy.calls).toBe(3);
+    expect(result.skipped).toBe(false);
+    expect(result.budgetStop).toBeUndefined();
+    expect(result.extractionDegraded).toBeFalsy();
+    expect(await unexaminedEventCount(db)).toBe(0);
+    expect(await conversationExtractThrough(db, { kind: "client", id: "sess-budget" })).toBe(
+      seqs[2],
+    );
+  });
+
+  it("leaves an unset budget unlimited across batches", async () => {
+    await seedFatLines(3);
+    const spy = meteredExtract({ tokens: 5_000_000 });
+    const result = await consolidate(db, spy.provider as never, batchedCli(null));
+    expect(spy.calls).toBe(3);
+    expect(result.skipped).toBe(false);
+    expect(result.budgetStop).toBeUndefined();
+    expect(result.factsIntegrated).toBeGreaterThan(0);
+    expect(await unexaminedEventCount(db)).toBe(0);
+  });
+
+  it("stops before the next batch when a billed call reports no tokens", async () => {
+    const seqs = await seedFatLines(3);
+    const spy = meteredExtract({ unmeteredFromCall: 1 });
+    const result = await consolidate(db, spy.provider as never, batchedCli(10_000_000));
+    expect(spy.calls).toBe(1);
+    expect(result.skipped).toBe(false);
+    expect(result.extractionDegraded).toBeFalsy();
+    expect(result.budgetStop?.unmetered).toBe(true);
+    expect(result.budgetStop?.eventsUnexamined).toBe(2);
+    expect(await conversationExtractThrough(db, { kind: "client", id: "sess-budget" })).toBe(
+      seqs[0],
+    );
   });
 });
 

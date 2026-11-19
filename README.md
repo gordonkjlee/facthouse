@@ -437,7 +437,13 @@ Set `temporal.mode` to `bitemporal` to record when the system retracted a belief
 
 `facthouse stats` and `get_stats` report billed consolidation calls: tokens, elapsed time, and the provider plus model on each stage (extract, classify, entities, reconcile, supersede, summarise). A run that did not report tokens omits those fields rather than showing zero. Embeddings are a different API and are not this number.
 
-Optional `intelligence.token_budget` caps billed extract per provider on rolling windows. Unset is unlimited. Over the cap, consolidate skips extract, holds the watermark, and does not fall back to the heuristic. Stats and inspect Spend show used and remaining on each cap, and when oldest usage in that window ages out (`resets`).
+Optional `intelligence.token_budget` caps billed extract per provider on rolling windows (`cli`, `sampling`, and `api`). Unset is unlimited. Local HTTP extract is not billed and never trips the cap.
+
+At the start of a run, if the window is already full, consolidate skips extract, holds every mark where it was, and does not fall back to the heuristic. During a run it checks again after each extract batch. The batch already in flight finishes (so a run can go past the cap by one batch), then extract stops before the next batch. Marks stay on the last batch that finished — they are not moved over events that were not examined. Integrate is checked once, before it starts: if the cap is already reached, it does not start, and the session facts from this run stay unclaimed for a later run. If integrate has started, it finishes even when that step crosses the cap.
+
+That stop is a normal finish. The command exits 0 and prints one line: tokens used and remaining, the cap name, when the oldest usage in the window ages out, and how many lines are still unexamined. The same fields are on the `consolidate` tool result. The partial run's real token usage is still recorded. The next consolidate continues from those marks once the window has room.
+
+Stats and inspect Spend show used and remaining on each cap, and when oldest usage in that window ages out (`resets`).
 
 ```json
 "intelligence": {

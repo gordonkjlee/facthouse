@@ -32,6 +32,7 @@ import { startScheduler, type Scheduler } from "./scheduler.js";
 import { loadShippedStoreConfig, ensureBitemporalSince } from "./config.js";
 import { startNotifyListener, type NotifyListener } from "./ipc/scheduler-ipc.js";
 import { createCopyHeartbeat } from "./sources/copy.js";
+import { formatBudgetStopLine } from "./intelligence/token-budget.js";
 
 // ---------------------------------------------------------------------------
 // Parse arguments
@@ -284,7 +285,11 @@ async function main() {
       void sched.run("session_start").then((result) => {
         // Only the cap earns this line: a skipped or degraded run has its own
         // reason, and pointing at --all there would spawn the model on the lot.
-        if (
+        if (result?.budgetStop?.stopped) {
+          console.error(
+            `[facthouse] ${formatBudgetStopLine(result.budgetStop)}`,
+          );
+        } else if (
           result &&
           !result.skipped &&
           !result.extractionDegraded &&

@@ -329,8 +329,11 @@ export function registerReadTools(
       `not shown as zero.\n\n` +
       `\`token_budget\` is remaining room under optional ` +
       `intelligence.token_budget caps (per billed provider, rolling hour / day / ` +
-      `week / month). Unset means unlimited. Over the cap, consolidate skips ` +
-      `extract, holds the watermark, and does not fall back to the heuristic.`,
+      `week / month). Unset means unlimited. Over the cap at the start of a run, ` +
+      `consolidate skips extract, holds the watermark, and does not fall back ` +
+      `to the heuristic. A run already underway stops after the current extract ` +
+      `batch and does not start integrate. Local HTTP extract is not billed and ` +
+      `does not trip that stop.`,
     {},
     async () => {
       // Shared with `facthouse stats` so the tool and the CLI can't disagree.

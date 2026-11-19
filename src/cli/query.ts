@@ -24,6 +24,7 @@ import {
   TOKEN_BUDGET_HOW_TO,
   billedCapName,
   billedProviderName,
+  formatBudgetStopLine,
   formatResetAt,
   formatTokenCount,
 } from "../intelligence/token-budget.js";
@@ -194,6 +195,9 @@ export function formatConsolidate(r: ConsolidationResult): string {
   if (r.keptAlongside > 0) lines.push(`  Kept alongside     ${r.keptAlongside}`);
   if (r.corroborations > 0) lines.push(`  Corroborations     ${r.corroborations}`);
   lines.push(`  Lines remaining    ${r.eventsRemaining}`);
+  if (r.budgetStop?.stopped) {
+    lines.push(`  ${formatBudgetStopLine(r.budgetStop)}`);
+  }
   if (r.extractionDegraded) {
     lines.push(`  Extraction         degraded — see the message above`);
   }

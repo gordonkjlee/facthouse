@@ -909,6 +909,88 @@ describe.skipIf(!runnable)("cli entry — consolidate steps", () => {
     expect(r.status).toBe(1);
     expect(r.stderr).toMatch(/Unknown source kind "codex"/);
   });
+
+  it("stops mid-run on the token budget, prints one line, and exits 0", async () => {
+    const dir = path.join(root, "budget-stop");
+    run(["init", dir]);
+    const script = path.join(dir, "fake-cli.js");
+    writeFileSync(
+      script,
+      [
+        "let raw = '';",
+        "process.stdin.setEncoding('utf8');",
+        "process.stdin.on('data', (chunk) => { raw += chunk; });",
+        "process.stdin.on('end', () => {",
+        "  const envelope = {",
+        "    type: 'result',",
+        "    is_error: false,",
+        "    result: '',",
+        "    usage: { input_tokens: 60, output_tokens: 10 },",
+        "    structured_output: {",
+        "      facts: [{",
+        "        content: 'Alex prefers oat milk at Acme',",
+        "        domain: 'preferences',",
+        "        confidence: 0.9,",
+        "        entities: [],",
+        "      }],",
+        "      confidence: 0.9,",
+        "    },",
+        "  };",
+        "  process.stdout.write(JSON.stringify(envelope) + '\\n');",
+        "});",
+        "",
+      ].join("\n"),
+      "utf-8",
+    );
+    const configPath = path.join(dir, "config.json");
+    const config = JSON.parse(readFileSync(configPath, "utf-8"));
+    config.extraction = {
+      ...config.extraction,
+      enabled: true,
+      batch_size: 1,
+      max_content_length: 32,
+    };
+    config.intelligence = {
+      ...config.intelligence,
+      provider: "cli",
+      cli: { ...(config.intelligence?.cli ?? {}), command: [process.execPath, script] },
+      token_budget: { cli: { week: 100 } },
+    };
+    writeFileSync(configPath, JSON.stringify(config, null, 2), "utf-8");
+
+    const { openDatabase, closeDatabase } = await import("../../src/db/connection.js");
+    const { insertEvent } = await import("../../src/db/sessions.js");
+    const db = openDatabase(path.join(dir, "memory.db"));
+    const line = "Alex prefers oat milk at Acme today ".padEnd(80, "x");
+    for (let i = 0; i < 3; i++) {
+      await insertEvent(db, {
+        client_session_id: "sess-cli-budget",
+        event_type: "message",
+        role: "user",
+        content: `${i + 1} ${line}`,
+      });
+    }
+    await closeDatabase(db);
+
+    const stopped = run(["consolidate", "--data", dir], { FACTHOUSE_PROVIDER: "cli" });
+    expect(stopped.status).toBe(0);
+    expect(stopped.stdout).toContain("Stopped at the token budget");
+    expect(stopped.stdout).toContain("CLI weekly cap");
+    expect(stopped.stdout).toContain("1 line still unexamined");
+    expect(stopped.stderr).not.toContain("still waiting to be extracted");
+
+    const during = run(["stats", "--json", "--data", dir]);
+    expect(during.status).toBe(0);
+    expect(JSON.parse(during.stdout).extract.unextracted_events).toBe(1);
+
+    config.intelligence.token_budget = { cli: { week: 1_000_000 } };
+    writeFileSync(configPath, JSON.stringify(config, null, 2), "utf-8");
+    const resumed = run(["consolidate", "--data", dir], { FACTHOUSE_PROVIDER: "cli" });
+    expect(resumed.status).toBe(0);
+    expect(resumed.stdout).not.toContain("Stopped at the token budget");
+    const after = run(["stats", "--json", "--data", dir]);
+    expect(JSON.parse(after.stdout).extract.unextracted_events).toBe(0);
+  });
 });
 
 describe.skipIf(!runnable)("cli entry — notify", () => {

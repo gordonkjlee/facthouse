@@ -493,6 +493,17 @@ export function mcpConsolidatePayload(result: ConsolidationResult): {
   extraction_degraded: boolean;
   examined_through: number;
   embedding: ReturnType<typeof mcpEmbeddingField>;
+  budget_stop: {
+    stopped: true;
+    provider: string;
+    scale: string;
+    used: number;
+    cap: number;
+    cap_name: string;
+    resets_at: string | null;
+    events_unexamined: number;
+    unmetered?: boolean;
+  } | null;
 } {
   return {
     consolidation_id: result.consolidationId,
@@ -519,6 +530,19 @@ export function mcpConsolidatePayload(result: ConsolidationResult): {
     extraction_degraded: result.extractionDegraded === true,
     examined_through: result.examinedThrough,
     embedding: mcpEmbeddingField(result),
+    budget_stop: result.budgetStop
+      ? {
+          stopped: true,
+          provider: result.budgetStop.provider,
+          scale: result.budgetStop.scale,
+          used: result.budgetStop.used,
+          cap: result.budgetStop.cap,
+          cap_name: result.budgetStop.capName,
+          resets_at: result.budgetStop.resetsAt,
+          events_unexamined: result.budgetStop.eventsUnexamined,
+          ...(result.budgetStop.unmetered ? { unmetered: true } : {}),
+        }
+      : null,
   };
 }
 

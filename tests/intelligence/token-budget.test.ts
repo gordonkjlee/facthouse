@@ -13,6 +13,8 @@ import {
   forBilledProvider,
   formatResetAt,
   tokenBudgetUsageLead,
+  breachForProvider,
+  formatBudgetStopLine,
   TOKEN_BUDGET_HOW_TO,
   TOKEN_BUDGET_HOW_TO_SET,
   TokenBudgetError,
@@ -170,6 +172,14 @@ describe("evaluateTokenBudget", () => {
     expect(verdict.reason).toMatch(/last 7 days/);
     expect(verdict.reason).toMatch(/100/);
     expect(report.providers.cli?.windows[0]?.remaining).toBe(0);
+    expect(breachForProvider(report, "cli")).toMatchObject({
+      provider: "cli",
+      scale: "week",
+      used: 100,
+      cap: 100,
+      unmetered: false,
+    });
+    expect(breachForProvider(report, "http")).toBeNull();
   });
 
   it("requires every set window to pass", () => {

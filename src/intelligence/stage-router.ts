@@ -318,6 +318,13 @@ export function createStageRouter(
         ctx.cli?.takeUsage?.() ?? null,
       ]);
     },
+    peekUsage(): IntelligenceUsage | null {
+      return mergeUsage([
+        ...[...cliByModel.values()].map((p) => p.peekUsage?.() ?? null),
+        ...[...httpByModel.values()].map((p) => p.peekUsage?.() ?? null),
+        ctx.cli?.peekUsage?.() ?? null,
+      ]);
+    },
   };
   return self;
 }

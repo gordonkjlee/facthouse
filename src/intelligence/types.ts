@@ -249,4 +249,10 @@ export interface IntelligenceProvider {
    * provider (no subprocess). Null when nothing was billed — not a zero blob.
    */
   takeUsage?(): IntelligenceUsage | null;
+
+  /**
+   * Billed usage so far, without draining. Mid-run budget checks read this
+   * and still persist the same envelope at the end of the run.
+   */
+  peekUsage?(): IntelligenceUsage | null;
 }

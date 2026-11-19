@@ -181,6 +181,12 @@ export class UsageAccumulator {
     this.stages.clear();
     return snap.calls >= 1 ? snap : null;
   }
+
+  /** Usage so far. Does not drain — a mid-run budget check must leave the row intact. */
+  peek(): IntelligenceUsage | null {
+    const snap = this.snapshot();
+    return snap.calls >= 1 ? snap : null;
+  }
 }
 
 export function emptySpendRollup(): IntelligenceSpendRollup {
@@ -312,8 +318,14 @@ export function parseStoredUsage(raw: string): IntelligenceUsage | null {
 
 export interface UsageTaking {
   takeUsage?(): IntelligenceUsage | null;
+  /** Usage so far, without draining. Absent when the provider does not meter. */
+  peekUsage?(): IntelligenceUsage | null;
 }
 
 export function takeProviderUsage(provider: UsageTaking): IntelligenceUsage | null {
   return provider.takeUsage?.() ?? null;
+}
+
+export function peekProviderUsage(provider: UsageTaking): IntelligenceUsage | null {
+  return provider.peekUsage?.() ?? null;
 }

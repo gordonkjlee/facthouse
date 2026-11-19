@@ -347,6 +347,49 @@ describe("mcpConsolidatePayload", () => {
       reason: "reason 0",
     });
     expect(body).not.toHaveProperty("reasons.20");
+    expect(body.budget_stop).toBeNull();
+  });
+
+  it("carries a mid-run budget stop", () => {
+    const body = mcpConsolidatePayload({
+      consolidationId: "c1",
+      factsIn: 1,
+      factsIntegrated: 0,
+      factsRejected: 0,
+      entitiesCreated: 0,
+      entitiesLinked: 0,
+      supersessions: 0,
+      keptAlongside: 0,
+      corroborations: 0,
+      relations: [],
+      eventsCopied: 0,
+      eventsRemaining: 4,
+      summary: null,
+      openThreads: [],
+      skipped: false,
+      examinedThrough: 2,
+      budgetStop: {
+        stopped: true,
+        provider: "cli",
+        scale: "week",
+        used: 120,
+        cap: 100,
+        capName: "CLI weekly cap",
+        resetsAt: "2028-01-15T00:00:00.000Z",
+        eventsUnexamined: 4,
+      },
+    } as never);
+    expect(body.skipped).toBe(false);
+    expect(body.budget_stop).toEqual({
+      stopped: true,
+      provider: "cli",
+      scale: "week",
+      used: 120,
+      cap: 100,
+      cap_name: "CLI weekly cap",
+      resets_at: "2028-01-15T00:00:00.000Z",
+      events_unexamined: 4,
+    });
   });
 });
 

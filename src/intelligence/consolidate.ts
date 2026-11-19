@@ -123,8 +123,10 @@ import {
 } from "../db/embeddings.js";
 import { insertIntelligenceRun, listIntelligenceRunsSince } from "../db/intelligence-runs.js";
 import {
+  peekProviderUsage,
   takeProviderUsage,
   type IntelligenceUsage,
+  type StoredIntelligenceRun,
 } from "./usage.js";
 import {
   INTEGRATE_STAGE_NAMES,
@@ -133,12 +135,16 @@ import {
 } from "./stage-router.js";
 import type { IntelligenceConfig, IntelligenceStageName } from "../types/config.js";
 import {
+  billedCapName,
+  breachForProvider,
+  evaluateTokenBudget,
   getBoundTokenBudget,
   isBilledProvider,
   loadRunsForBudget,
   parseIntelligenceTokenBudget,
-  evaluateTokenBudget,
   verdictForProvider,
+  type TokenBudgetBreach,
+  type TokenWindow,
 } from "./token-budget.js";
 
 // ---------------------------------------------------------------------------
@@ -235,6 +241,13 @@ export interface ConsolidationResult {
   /** User Ctrl+C / abort. Integrate did not claim, or was unclaimed. */
   aborted?: boolean;
   /**
+   * Set when this run stopped because the token budget was reached after
+   * work had already started. A normal finish: not `skipped`, not degraded.
+   * Absent when the budget is unset, the run stayed under the cap, or the
+   * cap was already full before the run started (that path is `skipped`).
+   */
+  budgetStop?: ConsolidationBudgetStop;
+  /**
    * Billed intelligence for this run. Absent when nothing was billed (heuristic,
    * skip-if-busy, or a provider that does not report). Token keys are omitted
    * rather than zero when the provider did not send usage.
@@ -257,6 +270,25 @@ export interface EmbedRunReport {
   /** Current facts still without a vector for this model. Omitted when the pair is unknown. */
   missing?: number;
   error?: string;
+}
+
+/**
+ * A consolidate run that stopped on the token budget after it had started.
+ * The batch in flight is included in `used`. `eventsUnexamined` is the tail
+ * still waiting, including a batch that was not started.
+ */
+export interface ConsolidationBudgetStop {
+  stopped: true;
+  provider: string;
+  scale: TokenWindow;
+  used: number;
+  cap: number;
+  /** `billedCapName` — "CLI weekly cap". */
+  capName: string;
+  resetsAt: string | null;
+  eventsUnexamined: number;
+  /** A billed call in the window did not report tokens. */
+  unmetered?: boolean;
 }
 
 /** Same predicate as `formatConsolidate` / MCP consolidate JSON. */
@@ -375,12 +407,16 @@ export async function consolidate(
   let allowHttpCliFallback = true;
   const parsedBudget =
     getBoundTokenBudget(db) ?? parseIntelligenceTokenBudget(intel);
+  // One clock for the whole run so a long extract does not slide the window.
+  const budgetNow = new Date();
+  let budgetRuns: StoredIntelligenceRun[] = [];
   if (parsedBudget && (doExtract || doIntegrate)) {
-    const runs = await loadRunsForBudget(
+    budgetRuns = await loadRunsForBudget(
       (since) => listIntelligenceRunsSince(db, since),
       parsedBudget,
+      budgetNow,
     );
-    const report = evaluateTokenBudget(runs, parsedBudget);
+    const report = evaluateTokenBudget(budgetRuns, parsedBudget, budgetNow);
     if (doExtract) {
       const extractType = resolveStageProviderType(intel, "extract");
       if (isBilledProvider(extractType)) {
@@ -436,13 +472,55 @@ export async function consolidate(
   }
 
   const extractNow = doExtract && !skipExtract;
-  const integrateNow = doIntegrate && !skipIntegrate;
+  let integrateNow = doIntegrate && !skipIntegrate;
   setHttpExtractCliFallback(intelligence, allowHttpCliFallback);
+
+  // Prior window usage plus tokens this run has billed so far. The in-flight
+  // row is not written until the run finishes; peek leaves that envelope intact.
+  const liveBreach = (provider: string): TokenBudgetBreach | null => {
+    if (!parsedBudget || !isBilledProvider(provider)) return null;
+    const usage = peekProviderUsage(intelligence);
+    if (!usage) return null;
+    const inFlight: StoredIntelligenceRun = {
+      id: consolidationId,
+      kind: "consolidate",
+      consolidation_id: consolidationId,
+      created_at: budgetNow.toISOString(),
+      usage,
+    };
+    const report = evaluateTokenBudget(
+      [...budgetRuns, inFlight],
+      parsedBudget,
+      budgetNow,
+    );
+    return breachForProvider(report, provider);
+  };
+
+  const budgetStopFor = (
+    eventsUnexamined: number,
+    breach: TokenBudgetBreach | null,
+    stopped: boolean,
+  ): ConsolidationBudgetStop | undefined => {
+    if (!stopped || !breach) return undefined;
+    return {
+      stopped: true,
+      provider: breach.provider,
+      scale: breach.scale,
+      used: breach.used,
+      cap: breach.cap,
+      capName: billedCapName(breach.provider, breach.scale),
+      resetsAt: breach.resets_at,
+      eventsUnexamined,
+      ...(breach.unmetered ? { unmetered: true } : {}),
+    };
+  };
 
   try {
     // Phase B: D→I event extraction (if this run examines events).
     // Session facts land unclaimed so a later run that includes integrate
     // can claim them; which moments run which steps is MOMENT_POLICY.
+    let tokenBreach: TokenBudgetBreach | null = null;
+    let stoppedForBudget = false;
     if (extractNow && extractionEnabled) {
       const extracted = await extractFactsFromEvents(
         db,
@@ -455,10 +533,23 @@ export async function consolidate(
         caller.abort,
         caller.progressTotal,
         caller.onModelChunk,
+        parsedBudget
+          ? async () => {
+              const extractType = resolveStageProviderType(intel, "extract");
+              // Local HTTP is not a billed provider. Its tokens must not stop
+              // the run, including when a CLI cap is set beside it.
+              if (!isBilledProvider(extractType)) return null;
+              return liveBreach(extractType);
+            }
+          : undefined,
       );
       extractionDegraded = extracted.degraded;
       extractPending = extracted.pending;
       prefixCommitted = extracted.prefixCommitted;
+      if (extracted.extractStopped && extracted.tokenBreach) {
+        tokenBreach = extracted.tokenBreach;
+        stoppedForBudget = true;
+      }
     } else if (extractNow && !extractionEnabled) {
       // Policy decline, not provider-down: every conversation is examined
       // as empty through its current max sequence.
@@ -468,6 +559,26 @@ export async function consolidate(
     // Integrate-only leaves extract marks untouched. Extract writes per-id
     // marks as it goes; the run row audits the global MIN through.
     const effectiveWatermark = await extractWatermark(db);
+
+    // One check, before integrate starts. A batch that already crossed the
+    // cap leaves its session facts unclaimed. Once integrate begins it runs
+    // to completion, even if that step itself crosses the cap.
+    if (integrateNow && parsedBudget) {
+      for (const stage of INTEGRATE_STAGE_NAMES) {
+        const stageType = resolveStageProviderType(
+          intel,
+          stage as IntelligenceStageName,
+        );
+        if (!isBilledProvider(stageType)) continue;
+        const breach = liveBreach(stageType);
+        if (breach) {
+          integrateNow = false;
+          tokenBreach = tokenBreach ?? breach;
+          stoppedForBudget = true;
+          break;
+        }
+      }
+    }
 
     if (integrateNow) {
       throwIfAborted(caller.abort);
@@ -520,6 +631,12 @@ export async function consolidate(
         (n, p) => n + p.facts.length,
         0,
       );
+      const eventsRemaining = await remainingEvents();
+      const budgetStop = budgetStopFor(
+        eventsRemaining,
+        tokenBreach,
+        stoppedForBudget,
+      );
       return await finish({
         consolidationId,
         extractionDegraded,
@@ -533,7 +650,7 @@ export async function consolidate(
         corroborations: 0,
         relations: [],
         eventsCopied,
-        eventsRemaining: await remainingEvents(),
+        eventsRemaining,
         summary: null,
         openThreads: [],
         skipped: false,
@@ -541,6 +658,7 @@ export async function consolidate(
         examinedThrough: effectiveWatermark,
         prefixCommitted,
         ...(embedding ? { embedding } : {}),
+        ...(budgetStop ? { budgetStop } : {}),
       });
     }
 
@@ -1362,6 +1480,12 @@ export async function consolidate(
       }
     }
 
+    const eventsRemaining = await remainingEvents();
+    const budgetStop = budgetStopFor(
+      eventsRemaining,
+      tokenBreach,
+      stoppedForBudget,
+    );
     return await finish({
       consolidationId,
       extractionDegraded,
@@ -1376,7 +1500,7 @@ export async function consolidate(
         .length,
       relations: writeResults.relations,
       eventsCopied,
-      eventsRemaining: await remainingEvents(),
+      eventsRemaining,
       embedding,
       summary: summaryText,
       openThreads: threads,
@@ -1384,6 +1508,7 @@ export async function consolidate(
       ...(budgetReason ? { skipReason: budgetReason } : {}),
       examinedThrough: effectiveWatermark,
       prefixCommitted,
+      ...(budgetStop ? { budgetStop } : {}),
     });
   } catch (err) {
     // Only unclaim if Phase D hasn't committed — otherwise the facts are
@@ -1720,6 +1845,9 @@ type ExtractResult = {
   degraded: boolean;
   pending: ExtractPending[];
   prefixCommitted: boolean;
+  /** Set only when a later batch or conversation was left unexamined. */
+  tokenBreach: TokenBudgetBreach | null;
+  extractStopped: boolean;
 };
 
 function truncateForPrompt(
@@ -1826,11 +1954,14 @@ async function extractFactsFromEvents(
   abort?: AbortSignal,
   progressTotal?: number,
   onModelChunk?: (lines: number, durationMs: number) => void,
+  onTokenBudget?: () => Promise<TokenBudgetBreach | null>,
 ): Promise<ExtractResult> {
   const empty: ExtractResult = {
     degraded: false,
     pending: [],
     prefixCommitted: false,
+    tokenBreach: null,
+    extractStopped: false,
   };
   const workingMemorySize =
     config?.extraction?.working_memory_size ??
@@ -1863,6 +1994,8 @@ async function extractFactsFromEvents(
   const pending: ExtractPending[] = [];
   let degraded = false;
   let advanced = false;
+  let tokenBreach: TokenBudgetBreach | null = null;
+  let extractStopped = false;
 
   // Oldest conversations first, bounded by `limit` events across the run. A
   // per-conversation mark advances only through what this run examined, so a
@@ -1870,7 +2003,8 @@ async function extractFactsFromEvents(
   let budget = since ? Number.POSITIVE_INFINITY : (limit ?? Number.POSITIVE_INFINITY);
   const sinceMs = since?.getTime();
 
-  for (const conv of conversations) {
+  for (let convIndex = 0; convIndex < conversations.length; convIndex++) {
+    const conv = conversations[convIndex]!;
     throwIfAborted(abort);
     if (budget <= 0) break;
     if (conv.kind === "unkeyed") {
@@ -1923,6 +2057,28 @@ async function extractFactsFromEvents(
     const earlierThisRun: SessionEvent[] = [];
     let conversationDegraded = false;
     const work = [...chunks];
+    // True when this conversation still has chunks the cap said not to start.
+    // The mark must stay on the last finished batch, not the loaded tail.
+    let budgetCut = false;
+
+    async function noteBudgetAfterBatch(): Promise<"ok" | "cut" | "stop-after"> {
+      if (!onTokenBudget) return "ok";
+      const breach = await onTokenBudget();
+      if (!breach) return "ok";
+      tokenBreach = breach;
+      if (work.length > 0) {
+        await persistPending(db, thisPending);
+        const examined = thisPending.flatMap((p) => p.group.events);
+        const maxExamined = lastSeq(examined);
+        if (maxExamined != null) {
+          await setConversationExtractThrough(db, ref, maxExamined);
+          advanced = true;
+        }
+        pending.push(...thisPending);
+        return "cut";
+      }
+      return "stop-after";
+    }
 
     while (work.length > 0) {
       throwIfAborted(abort);
@@ -2045,6 +2201,13 @@ async function extractFactsFromEvents(
           earlierThisRun.push(...chunk);
           examinedLines += chunk.length;
           onProgress?.(examinedLines, total);
+          const rereadBudget = await noteBudgetAfterBatch();
+          if (rereadBudget === "cut") {
+            budgetCut = true;
+            extractStopped = true;
+            break;
+          }
+          if (rereadBudget === "stop-after") break;
           continue;
         }
       }
@@ -2071,7 +2234,16 @@ async function extractFactsFromEvents(
       earlierThisRun.push(...chunk);
       examinedLines += chunk.length;
       onProgress?.(examinedLines, total);
+      const batchBudget = await noteBudgetAfterBatch();
+      if (batchBudget === "cut") {
+        budgetCut = true;
+        extractStopped = true;
+        break;
+      }
+      if (batchBudget === "stop-after") break;
     }
+
+    if (budgetCut) break;
 
     if (!conversationDegraded) {
       await persistPending(db, thisPending);
@@ -2088,9 +2260,24 @@ async function extractFactsFromEvents(
       }
       pending.push(...thisPending);
     }
+
+    // The conversation's own chunks are done. Stop before the next
+    // conversation's first batch. The last conversation has nothing further
+    // to skip — integrate makes its own check.
+    if (tokenBreach && convIndex < conversations.length - 1) {
+      extractStopped = true;
+      break;
+    }
+    if (tokenBreach && !extractStopped) tokenBreach = null;
   }
 
-  return { degraded, pending, prefixCommitted: degraded && advanced };
+  return {
+    degraded,
+    pending,
+    prefixCommitted: degraded && advanced,
+    tokenBreach: extractStopped ? tokenBreach : null,
+    extractStopped,
+  };
 }
 
 
