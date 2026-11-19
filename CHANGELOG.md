@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.35.0](https://github.com/gordonkjlee/facthouse/compare/v0.34.0...v0.35.0) (2026-11-19)
+
+
+### Features
+
+* stop consolidate mid-run when the token budget is reached ([#330](https://github.com/gordonkjlee/facthouse/issues/330)) ([4bb23c4](https://github.com/gordonkjlee/facthouse/commit/4bb23c4e4dadc9e0c154b5f63462f78ce11bcc7b))
+
 ## [0.34.0](https://github.com/gordonkjlee/facthouse/compare/v0.33.0...v0.34.0) (2026-11-17)
 
 
